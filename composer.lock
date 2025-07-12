@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "1b35a4490d9df2b2060efd6d022439b8",
+    "content-hash": "d61fddab8c2fe95b68beba70a42104a0",
     "packages": [
         {
             "name": "backpack/basset",
@@ -371,6 +371,76 @@
                 "source": "https://github.com/Laravel-Backpack/theme-coreuiv2/tree/1.2.8"
             },
             "time": "2025-04-01T18:25:58+00:00"
+        },
+        {
+            "name": "backpack/theme-coreuiv4",
+            "version": "1.1.6",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/Laravel-Backpack/theme-coreuiv4.git",
+                "reference": "8da4facc75e2a1e23516d73a85c2b67add259b8d"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/Laravel-Backpack/theme-coreuiv4/zipball/8da4facc75e2a1e23516d73a85c2b67add259b8d",
+                "reference": "8da4facc75e2a1e23516d73a85c2b67add259b8d",
+                "shasum": ""
+            },
+            "require": {
+                "backpack/crud": "^6.2.1"
+            },
+            "require-dev": {
+                "orchestra/testbench": "~5|~6",
+                "phpunit/phpunit": "~9.0"
+            },
+            "type": "library",
+            "extra": {
+                "laravel": {
+                    "providers": [
+                        "Backpack\\ThemeCoreuiv4\\AddonServiceProvider"
+                    ]
+                }
+            },
+            "autoload": {
+                "psr-4": {
+                    "Backpack\\ThemeCoreuiv4\\": "src/"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "Cristian Tabacitu",
+                    "email": "hello@backpackforlaravel.com",
+                    "homepage": "https://backpackforlaravel.com"
+                },
+                {
+                    "name": "Antonio Almeida",
+                    "email": "promatik@gmail.com",
+                    "homepage": "https://backpackforlaravel.com"
+                },
+                {
+                    "name": "Mauro Martinez",
+                    "email": "maurohmartinez@gmail.com",
+                    "homepage": "https://backpackforlaravel.com"
+                }
+            ],
+            "description": "UI for Backpack v6 that uses CoreUI v4 and Bootstrap v5.",
+            "homepage": "https://github.com/backpack/theme-coreuiv4",
+            "keywords": [
+                "Backpack Addon",
+                "Backpack for Laravel",
+                "ThemeCoreuiv4",
+                "backpack",
+                "laravel"
+            ],
+            "support": {
+                "issues": "https://github.com/Laravel-Backpack/theme-coreuiv4/issues",
+                "source": "https://github.com/Laravel-Backpack/theme-coreuiv4/tree/1.1.6"
+            },
+            "time": "2025-04-01T18:25:00+00:00"
         },
         {
             "name": "backpack/theme-tabler",

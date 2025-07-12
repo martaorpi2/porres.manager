@@ -35,7 +35,10 @@ class Patient extends Model
     | RELATIONS
     |--------------------------------------------------------------------------
     */
-
+    public function social_work()
+    {
+        return $this->belongsTo(\App\Models\SocialWork::class);
+    }
     /*
     |--------------------------------------------------------------------------
     | SCOPES
