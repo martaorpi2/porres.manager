@@ -17,13 +17,7 @@ Route::group([
     'middleware' => ['web', 'admin'],
     'namespace' => 'App\Http\Controllers\Admin',
 ], function () { // custom admin routes
-    Route::crud('patient', 'PatientCrudController');
-    Route::crud('analysis-order', 'AnalysisOrderCrudController');
-    Route::crud('determination', 'DeterminationCrudController');
-    Route::crud('doctor', 'DoctorCrudController');
-    Route::crud('result', 'ResultCrudController');
-    Route::crud('sample', 'SampleCrudController');
-    Route::crud('social-work', 'SocialWorkCrudController');
+    
 }); // this should be the absolute last line of this file
 
 /**
