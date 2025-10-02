@@ -35,7 +35,15 @@ class AnalysisOrder extends Model
     | RELATIONS
     |--------------------------------------------------------------------------
     */
+    public function patient()
+    {
+        return $this->belongsTo(\App\Models\Patient::class);
+    }
 
+    public function doctor()
+    {
+        return $this->belongsTo(\App\Models\Doctor::class);
+    }
     /*
     |--------------------------------------------------------------------------
     | SCOPES

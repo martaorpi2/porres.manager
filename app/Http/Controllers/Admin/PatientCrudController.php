@@ -39,11 +39,7 @@ class PatientCrudController extends CrudController
      */
     protected function setupListOperation()
     {
-        try {
-            // tu código de filtros acá
-        } catch (\Throwable $e) {
-            dd($e->getMessage(), $e->getTraceAsString());
-        }
+        CRUD::removeButton('show');
         //CRUD::setFromDb(); // set columns from db columns.
         CRUD::column('dni')->label('DNI');  
         CRUD::column('last_name')->label('Apellido');  
@@ -59,7 +55,7 @@ class PatientCrudController extends CrudController
          * Columns can be defined using the fluent syntax:
          * - CRUD::column('price')->type('number');
          */
-        $this->crud->addFilter([
+        /*$this->crud->addFilter([
             'name'  => 'social_work_id',
             'type'  => 'dropdown',
             'label' => 'Obra Social'
@@ -77,7 +73,7 @@ class PatientCrudController extends CrudController
         false,
         function($value) {
             $this->crud->addClause('where', 'last_name', 'LIKE', "%$value%");
-        });
+        });*/
     }
 
     /**

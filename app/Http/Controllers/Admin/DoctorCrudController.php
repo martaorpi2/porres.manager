@@ -28,7 +28,7 @@ class DoctorCrudController extends CrudController
     {
         CRUD::setModel(\App\Models\Doctor::class);
         CRUD::setRoute(config('backpack.base.route_prefix') . '/doctor');
-        CRUD::setEntityNameStrings('doctor', 'doctors');
+        CRUD::setEntityNameStrings('médico', 'médicos');
     }
 
     /**
@@ -39,8 +39,13 @@ class DoctorCrudController extends CrudController
      */
     protected function setupListOperation()
     {
-        CRUD::setFromDb(); // set columns from db columns.
-
+        CRUD::removeButton('show');
+        //CRUD::setFromDb(); // set columns from db columns.
+        CRUD::column('last_name')->label('Apellido');  
+        CRUD::column('first_name')->label('Nombre');  
+        CRUD::column('license')->label('Matrícula');  
+        CRUD::column('specialty')->label('Especialidad');  
+        CRUD::column('phone')->label('Teléfono');  
         /**
          * Columns can be defined using the fluent syntax:
          * - CRUD::column('price')->type('number');
@@ -56,8 +61,37 @@ class DoctorCrudController extends CrudController
     protected function setupCreateOperation()
     {
         CRUD::setValidation(DoctorRequest::class);
-        CRUD::setFromDb(); // set fields from db columns.
-
+        //CRUD::setFromDb(); // set fields from db columns.
+        CRUD::addField([
+            'label' => 'Apellido',
+            'type' => 'text',
+            'name' => 'last_name',
+            'wrapper'   => ['class' => 'col-12 col-lg-4'],
+        ]);
+        CRUD::addField([
+            'label' => 'Nombre',
+            'type' => 'text',
+            'name' => 'first_name',
+            'wrapper'   => ['class' => 'col-12 col-lg-4'],
+        ]);
+        CRUD::addField([
+            'label' => 'Matrícula',
+            'type' => 'text',
+            'name' => 'license',
+            'wrapper'   => ['class' => 'col-12 col-lg-4'],
+        ]);
+        CRUD::addField([
+            'label' => 'Especialidad',
+            'type' => 'text',
+            'name' => 'specialty',
+            'wrapper'   => ['class' => 'col-12 col-lg-4'],
+        ]);
+        CRUD::addField([
+            'label' => 'Teléfono',
+            'type' => 'number',
+            'name' => 'phone',
+            'wrapper'   => ['class' => 'col-12 col-lg-4'],
+        ]);
         /**
          * Fields can be defined using the fluent syntax:
          * - CRUD::field('price')->type('number');

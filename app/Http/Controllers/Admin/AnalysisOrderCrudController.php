@@ -28,7 +28,7 @@ class AnalysisOrderCrudController extends CrudController
     {
         CRUD::setModel(\App\Models\AnalysisOrder::class);
         CRUD::setRoute(config('backpack.base.route_prefix') . '/analysis-order');
-        CRUD::setEntityNameStrings('analysis order', 'analysis orders');
+        CRUD::setEntityNameStrings('orden de análisis', 'ordenes de análisis');
     }
 
     /**
@@ -39,8 +39,14 @@ class AnalysisOrderCrudController extends CrudController
      */
     protected function setupListOperation()
     {
-        CRUD::setFromDb(); // set columns from db columns.
-
+        CRUD::removeButton('show');
+        //CRUD::setFromDb(); // set columns from db columns.
+        CRUD::column('patient_id')->label('Paciente');  
+        CRUD::column('doctor_id')->label('Médico Solicitante');  
+        CRUD::column('date')->label('Fecha');  
+        CRUD::column('total_price')->label('Monto Total');  
+        CRUD::column('priority')->label('Prioridad');  
+        CRUD::column('observations')->label('Observaciones');  
         /**
          * Columns can be defined using the fluent syntax:
          * - CRUD::column('price')->type('number');
@@ -56,8 +62,55 @@ class AnalysisOrderCrudController extends CrudController
     protected function setupCreateOperation()
     {
         CRUD::setValidation(AnalysisOrderRequest::class);
-        CRUD::setFromDb(); // set fields from db columns.
-
+        //CRUD::setFromDb(); // set fields from db columns.
+        CRUD::addField([
+            'label'     => 'Paciente',
+            'type'      => 'select',
+            'name'      => 'patient_id',
+            'entity'    => 'patient',
+            'attribute' => 'full_name',
+            'model'     => \App\Models\Patient::class,
+            'wrapper'   => [
+                'class' => 'form-group col-12 col-lg-4'
+            ],
+        ]);
+        CRUD::addField([
+            'label'     => 'Médico Solicitante',
+            'type'      => 'select',
+            'name'      => 'doctor_id',
+            'entity'    => 'doctor',
+            'attribute' => 'full_name',
+            'model'     => \App\Models\Doctor::class,
+            'wrapper'   => [
+                'class' => 'form-group col-12 col-lg-4'
+            ],
+        ]);
+        CRUD::addField([
+            'label' => 'Fecha',
+            'type' => 'date',
+            'name' => 'date',
+            'wrapper'   => ['class' => 'col-12 col-lg-4'],
+        ]);
+        CRUD::addField([
+            'label' => 'Monto Total',
+            'type' => 'number',
+            'attributes' => ['step' => 0.01],
+            'name' => 'total_price', // the method that defines the relationship in your Model
+            'wrapper'   => [
+                'class' => 'col-12 col-lg-4'
+            ],
+        ]);
+        CRUD::addField([
+            'label' => 'Prioridad',
+            'type' => 'enum',
+            'name' => 'priority',
+            'wrapper'   => ['class' => 'col-12 col-lg-4'],
+        ]);
+        CRUD::addField([
+            'label' => 'Observaciones',
+            'type' => 'textarea',
+            'name' => 'observations',
+        ]);
         /**
          * Fields can be defined using the fluent syntax:
          * - CRUD::field('price')->type('number');
