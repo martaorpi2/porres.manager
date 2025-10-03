@@ -3,3 +3,5 @@
 <li class="nav-item"><a class="nav-link" href="{{ backpack_url('dashboard') }}"><i class="la la-home nav-icon"></i> Inicio</a></li>
 
 {{--<x-backpack::menu-item title="Pacientes" icon="la la-question" :link="backpack_url('patient')" />--}}
+
+<x-backpack::menu-item title="Suppliers" icon="la la-question" :link="backpack_url('supplier')" />

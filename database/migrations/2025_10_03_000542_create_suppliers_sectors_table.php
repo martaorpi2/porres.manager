@@ -13,7 +13,12 @@ return new class extends Migration
     {
         Schema::create('suppliers_sectors', function (Blueprint $table) {
             $table->id();
+            $table->unsignedBigInteger('supplier_id');
+            $table->unsignedBigInteger('sector_id');
             $table->timestamps();
+
+            $table->foreign('supplier_id')->references('id')->on('suppliers')->onDelete('cascade');
+            $table->foreign('sector_id')->references('id')->on('sectors')->onDelete('cascade');
         });
     }
 

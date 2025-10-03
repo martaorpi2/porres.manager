@@ -36,6 +36,7 @@
 		@include('crud::inc.grouped_errors')
 
 		  <form method="post"
+                @csrf
 		  		action="{{ url($crud->route) }}"
 				@if ($crud->hasUploadFields('create'))
 				enctype="multipart/form-data"
