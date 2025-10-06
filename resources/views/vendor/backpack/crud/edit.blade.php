@@ -31,12 +31,12 @@
 		@include('crud::inc.grouped_errors')
 
 		  <form method="post"
-		  		@csrf
 		  		action="{{ url($crud->route.'/'.$entry->getKey()) }}"
 				@if ($crud->hasUploadFields('update', $entry->getKey()))
 				enctype="multipart/form-data"
 				@endif
 		  		>
+				@csrf
 		  {!! csrf_field() !!}
 		  {!! method_field('PUT') !!}
 

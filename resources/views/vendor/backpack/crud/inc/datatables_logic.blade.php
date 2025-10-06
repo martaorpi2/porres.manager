@@ -298,6 +298,12 @@
               "data": {
                 "totalEntryCount": "{{$crud->getOperationSetting('totalEntryCount') ?? false}}"
             },
+            beforeSend: function (xhr) {
+              var tokenMeta = document.querySelector('meta[name="csrf-token"]');
+              if (tokenMeta && tokenMeta.content) {
+                xhr.setRequestHeader('X-CSRF-TOKEN', tokenMeta.content);
+              }
+            },
           },
           dom:
             "<'row hidden'<'col-sm-6'i><'col-sm-6 d-print-none'f>>" +
