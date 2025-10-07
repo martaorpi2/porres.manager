@@ -41,6 +41,10 @@ class SupplierCrudController extends CrudController
     {
         //CRUD::setFromDb(); // set columns from db columns.
         CRUD::column('company_name')->label('Nombre');
+        CRUD::column('cuit')->label('Cuit');
+        CRUD::column('address')->label('Dirección');
+        CRUD::column('supplier_heading_id ')->label('Rubto');
+        CRUD::column('company_name')->label('Nombre');
         /**
          * Columns can be defined using the fluent syntax:
          * - CRUD::column('price')->type('number');

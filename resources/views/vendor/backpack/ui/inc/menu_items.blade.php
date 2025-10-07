@@ -4,4 +4,4 @@
 
 {{--<x-backpack::menu-item title="Pacientes" icon="la la-question" :link="backpack_url('patient')" />--}}
 
-<x-backpack::menu-item title="Suppliers" icon="la la-question" :link="backpack_url('supplier')" />
+<x-backpack::menu-item title="Proveedores" icon="la la-question" :link="backpack_url('supplier')" />
