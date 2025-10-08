@@ -11,7 +11,8 @@
         "backpack/theme-coreuiv4": "^1.1",
         "backpack/theme-tabler": "^1.2",
         "laravel/framework": "^11.0",
-        "laravel/tinker": "^2.9"
+        "laravel/tinker": "^2.9",
+        "spatie/laravel-permission": "^6.21"
     },
     "require-dev": {
         "backpack/generators": "^4.0",
