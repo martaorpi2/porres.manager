@@ -148,21 +148,21 @@ class TestDataSeeder extends Seeder
             [
                 'number' => 'OC-2025-001',
                 'date' => now()->subDays(10),
-                'status' => 'approved',
+                'status' => 'Aprobada',
                 'supplier_id' => 1,
                 'authorizing_user_id' => $user->id
             ],
             [
                 'number' => 'OC-2025-002',
                 'date' => now()->subDays(5),
-                'status' => 'pending',
+                'status' => 'Pendiente',
                 'supplier_id' => 2,
                 'authorizing_user_id' => $user->id
             ],
             [
                 'number' => 'OC-2025-003',
                 'date' => now()->subDays(2),
-                'status' => 'received',
+                'status' => 'Recibida',
                 'supplier_id' => 3,
                 'authorizing_user_id' => $user->id
             ]
@@ -195,7 +195,7 @@ class TestDataSeeder extends Seeder
                 'payment_number' => 'OP-2025-001',
                 'date' => now()->subDays(8),
                 'total_amount' => 480.00,
-                'status' => 'approved',
+                'status' => 'Aprobada',
                 'purchase_order_id' => 1,
                 'authorizing_user_id' => $user->id
             ],
@@ -203,7 +203,7 @@ class TestDataSeeder extends Seeder
                 'payment_number' => 'OP-2025-002',
                 'date' => now()->subDays(1),
                 'total_amount' => 170.00,
-                'status' => 'pending',
+                'status' => 'Pendiente',
                 'purchase_order_id' => 2,
                 'authorizing_user_id' => $user->id
             ]

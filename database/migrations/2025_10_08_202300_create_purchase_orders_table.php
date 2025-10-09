@@ -15,7 +15,7 @@ return new class extends Migration
             $table->id();
             $table->string('number')->unique();
             $table->date('date');
-            $table->enum('status', ['pending', 'approved', 'received'])->default('pending');
+            $table->enum('status', ['Pendiente', 'Aprobada', 'Recibida'])->default('Pendiente');
             $table->foreignId('supplier_id')->constrained('suppliers')->onDelete('cascade');
             $table->foreignId('authorizing_user_id')->constrained('users')->onDelete('cascade');
             $table->timestamps();

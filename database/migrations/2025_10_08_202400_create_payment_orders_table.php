@@ -16,7 +16,7 @@ return new class extends Migration
             $table->string('payment_number')->unique();
             $table->date('date');
             $table->decimal('total_amount', 12, 2);
-            $table->enum('status', ['pending', 'approved', 'executed'])->default('pending');
+            $table->enum('status', ['Pendiente', 'Aprobada', 'Ejecutada'])->default('Pendiente');
             $table->foreignId('purchase_order_id')->constrained('purchase_orders')->onDelete('cascade');
             $table->foreignId('authorizing_user_id')->constrained('users')->onDelete('cascade');
             $table->timestamps();
