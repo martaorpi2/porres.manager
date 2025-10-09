@@ -37,7 +37,12 @@ class Supplier extends Model
     */
     public function sectors()
     {
-        return $this->belongsToMany(App\Models\Sector::class, 'suppliers_sectors', 'supplier_id', 'sector_id');
+        return $this->belongsToMany(Sector::class, 'suppliers_sectors', 'supplier_id', 'sector_id');
+    }
+
+    public function heading()
+    {
+        return $this->belongsTo(\App\Models\SuppliersHeading::class, 'supplier_heading_id');
     }
     /*
     |--------------------------------------------------------------------------

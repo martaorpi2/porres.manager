@@ -6,7 +6,7 @@ use Backpack\CRUD\app\Models\Traits\CrudTrait;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
-class Sector extends Model
+class PurchaseOrder extends Model
 {
     use CrudTrait;
     use HasFactory;
@@ -17,7 +17,7 @@ class Sector extends Model
     |--------------------------------------------------------------------------
     */
 
-    protected $table = 'sectors';
+    protected $table = 'purchase_orders';
     // protected $primaryKey = 'id';
     // public $timestamps = false;
     protected $guarded = ['id'];
@@ -35,9 +35,9 @@ class Sector extends Model
     | RELATIONS
     |--------------------------------------------------------------------------
     */
-    public function suppliers()
+    public function supplier()
     {
-        return $this->belongsToMany(Supplier::class, 'suppliers_sectors', 'sector_id', 'supplier_id');
+        return $this->belongsTo(\App\Models\Supplier::class, 'supplier_id');
     }
     /*
     |--------------------------------------------------------------------------

@@ -2,16 +2,16 @@
 
 namespace App\Http\Controllers\Admin;
 
-use App\Http\Requests\SuppliersHeadingRequest;
+use App\Http\Requests\PaymentOrderRequest;
 use Backpack\CRUD\app\Http\Controllers\CrudController;
 use Backpack\CRUD\app\Library\CrudPanel\CrudPanelFacade as CRUD;
 
 /**
- * Class SuppliersHeadingCrudController
+ * Class PaymentOrderCrudController
  * @package App\Http\Controllers\Admin
  * @property-read \Backpack\CRUD\app\Library\CrudPanel\CrudPanel $crud
  */
-class SuppliersHeadingCrudController extends CrudController
+class PaymentOrderCrudController extends CrudController
 {
     use \Backpack\CRUD\app\Http\Controllers\Operations\ListOperation;
     use \Backpack\CRUD\app\Http\Controllers\Operations\CreateOperation;
@@ -26,9 +26,9 @@ class SuppliersHeadingCrudController extends CrudController
      */
     public function setup()
     {
-        CRUD::setModel(\App\Models\SuppliersHeading::class);
-        CRUD::setRoute(config('backpack.base.route_prefix') . '/suppliers-heading');
-        CRUD::setEntityNameStrings('rubro', 'rubros');
+        CRUD::setModel(\App\Models\PaymentOrder::class);
+        CRUD::setRoute(config('backpack.base.route_prefix') . '/payment-order');
+        CRUD::setEntityNameStrings('orden de pago', 'ordenes de pago');
     }
 
     /**
@@ -39,10 +39,8 @@ class SuppliersHeadingCrudController extends CrudController
      */
     protected function setupListOperation()
     {
-        CRUD::removeButton('show');
+        CRUD::setFromDb(); // set columns from db columns.
 
-        CRUD::column('name')->label('Nombre');
-        CRUD::column('description')->label('Descripción');
         /**
          * Columns can be defined using the fluent syntax:
          * - CRUD::column('price')->type('number');
@@ -57,9 +55,9 @@ class SuppliersHeadingCrudController extends CrudController
      */
     protected function setupCreateOperation()
     {
-        CRUD::setValidation(SuppliersHeadingRequest::class);
-        CRUD::field('name')->label('Nombre');
-        CRUD::field('description')->label('Descripción');
+        CRUD::setValidation(PaymentOrderRequest::class);
+        CRUD::setFromDb(); // set fields from db columns.
+
         /**
          * Fields can be defined using the fluent syntax:
          * - CRUD::field('price')->type('number');

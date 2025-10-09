@@ -2,16 +2,16 @@
 
 namespace App\Http\Controllers\Admin;
 
-use App\Http\Requests\SuppliersHeadingRequest;
+use App\Http\Requests\SectorRequest;
 use Backpack\CRUD\app\Http\Controllers\CrudController;
 use Backpack\CRUD\app\Library\CrudPanel\CrudPanelFacade as CRUD;
 
 /**
- * Class SuppliersHeadingCrudController
+ * Class SectorCrudController
  * @package App\Http\Controllers\Admin
  * @property-read \Backpack\CRUD\app\Library\CrudPanel\CrudPanel $crud
  */
-class SuppliersHeadingCrudController extends CrudController
+class SectorCrudController extends CrudController
 {
     use \Backpack\CRUD\app\Http\Controllers\Operations\ListOperation;
     use \Backpack\CRUD\app\Http\Controllers\Operations\CreateOperation;
@@ -26,9 +26,9 @@ class SuppliersHeadingCrudController extends CrudController
      */
     public function setup()
     {
-        CRUD::setModel(\App\Models\SuppliersHeading::class);
-        CRUD::setRoute(config('backpack.base.route_prefix') . '/suppliers-heading');
-        CRUD::setEntityNameStrings('rubro', 'rubros');
+        CRUD::setModel(\App\Models\Sector::class);
+        CRUD::setRoute(config('backpack.base.route_prefix') . '/sector');
+        CRUD::setEntityNameStrings('sector', 'sectores');
     }
 
     /**
@@ -57,7 +57,7 @@ class SuppliersHeadingCrudController extends CrudController
      */
     protected function setupCreateOperation()
     {
-        CRUD::setValidation(SuppliersHeadingRequest::class);
+        CRUD::setValidation(SectorRequest::class);
         CRUD::field('name')->label('Nombre');
         CRUD::field('description')->label('Descripción');
         /**

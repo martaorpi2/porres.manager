@@ -39,12 +39,34 @@ class SupplierCrudController extends CrudController
      */
     protected function setupListOperation()
     {
+        CRUD::removeButton('show');
         //CRUD::setFromDb(); // set columns from db columns.
         CRUD::column('company_name')->label('Nombre');
         CRUD::column('cuit')->label('Cuit');
         CRUD::column('address')->label('Dirección');
-        CRUD::column('supplier_heading_id')->label('Rubro');
-        CRUD::column('company_name')->label('Nombre');
+        CRUD::addColumn([
+            'name' => 'supplier_heading_id',
+            'label' => 'Rubro',
+            'type' => 'select',
+            'entity' => 'heading',
+            'attribute' => 'name',
+            'model' => 'App\Models\SuppliersHeading',
+        ]);
+        CRUD::addColumn([
+            'name'  => 'sectors',
+            'label' => 'Sectores',
+            'type'  => 'closure',
+            'function' => function($entry) {
+                $html = '';
+                foreach ($entry->sectors as $sector) {
+                    $html .= '<span class="badge rounded-pill bg-secondary me-1" style="font-size:0.8rem;">' 
+                            . e($sector->name) . '</span>';
+                }
+                return $html;
+            },
+            'escaped' => false, // permitimos HTML para mostrar las badges
+        ]);
+
         /**
          * Columns can be defined using the fluent syntax:
          * - CRUD::column('price')->type('number');
@@ -60,7 +82,27 @@ class SupplierCrudController extends CrudController
     protected function setupCreateOperation()
     {
         CRUD::setValidation(SupplierRequest::class);
-        CRUD::setFromDb(); // set fields from db columns.
+        //CRUD::setFromDb(); // set fields from db columns.
+        CRUD::field('company_name')->label('Nombre');
+        CRUD::field('cuit')->label('Cuit');
+        CRUD::field('address')->label('Dirección');
+        CRUD::addField([
+            'name' => 'supplier_heading_id',
+            'label' => 'Rubro',
+            'type' => 'select',
+            'entity' => 'heading',
+            'model' => 'App\Models\SuppliersHeading',
+            'attribute' => 'name',
+        ]);
+        CRUD::addField([
+            'name' => 'sectors',
+            'label' => 'Sectores',
+            'type' => 'select_multiple',
+            'entity' => 'sectors',
+            'attribute' => 'name',
+            'model' => 'App\Models\Sector',
+            'pivot' => true,
+        ]);
         /**
          * Fields can be defined using the fluent syntax:
          * - CRUD::field('price')->type('number');
