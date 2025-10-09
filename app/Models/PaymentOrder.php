@@ -35,7 +35,14 @@ class PaymentOrder extends Model
     | RELATIONS
     |--------------------------------------------------------------------------
     */
-
+    public function purchase_order()
+    {
+        return $this->belongsTo(\App\Models\PurchaseOrder::class, 'purchase_order_id');
+    }
+    public function user()
+    {
+        return $this->belongsTo(\App\Models\User::class, 'authorizing_user_id');
+    }
     /*
     |--------------------------------------------------------------------------
     | SCOPES

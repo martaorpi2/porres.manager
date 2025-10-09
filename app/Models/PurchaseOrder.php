@@ -39,6 +39,46 @@ class PurchaseOrder extends Model
     {
         return $this->belongsTo(\App\Models\Supplier::class, 'supplier_id');
     }
+    public function user()
+    {
+        return $this->belongsTo(\App\Models\User::class, 'authorizing_user_id');
+    }
+    /*
+    |--------------------------------------------------------------------------
+    | MODEL EVENTS
+    |--------------------------------------------------------------------------
+    */
+    /*protected static function booted(): void
+    {
+        static::creating(function (PurchaseOrder $purchaseOrder): void {
+            // Auto-generate sequential number if not provided
+            if (empty($purchaseOrder->number)) {
+                $purchaseOrder->number = self::generateNextNumber();
+            }
+        });
+    }
+
+    public static function generateNextNumber(): string
+    {
+        $year = now()->year;
+        $prefix = 'OC-' . $year . '-';
+
+        // Find the current max sequence for this year based on the number suffix
+        $last = static::query()
+            ->where('number', 'like', $prefix . '%')
+            ->orderByDesc('number')
+            ->value('number');
+
+        $nextSequence = 1;
+        if ($last) {
+            $parts = explode('-', $last);
+            $suffix = end($parts);
+            $seq = (int) ltrim($suffix, '0');
+            $nextSequence = $seq + 1;
+        }
+
+        return $prefix . str_pad((string) $nextSequence, 3, '0', STR_PAD_LEFT);
+    }*/
     /*
     |--------------------------------------------------------------------------
     | SCOPES

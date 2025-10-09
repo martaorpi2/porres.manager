@@ -44,7 +44,6 @@ class PurchaseOrderCrudController extends CrudController
         CRUD::column('number')->label('Numero');
         CRUD::column('date')->label('Fecha');
         CRUD::column('status')->label('Estado');
-        CRUD::column('supplier_id')->label('Proveedor');
         CRUD::addColumn([
             'name' => 'supplier_id',
             'label' => 'Proveedor',
@@ -53,7 +52,14 @@ class PurchaseOrderCrudController extends CrudController
             'attribute' => 'company_name',
             'model' => 'App\Models\Supplier',
         ]);
-        CRUD::column('authorizing_user_id')->label('Autoriza');
+        CRUD::addColumn([
+            'name' => 'authorizing_user_id',
+            'label' => 'Autoriza',
+            'type' => 'select',
+            'entity' => 'user',
+            'attribute' => 'name',
+            'model' => 'App\Models\User',
+        ]);
         /**
          * Columns can be defined using the fluent syntax:
          * - CRUD::column('price')->type('number');
@@ -69,8 +75,40 @@ class PurchaseOrderCrudController extends CrudController
     protected function setupCreateOperation()
     {
         CRUD::setValidation(PurchaseOrderRequest::class);
-        CRUD::setFromDb(); // set fields from db columns.
-
+        $ultimo = \App\Models\PurchaseOrder::max('id');
+        $nro = 'OC-'.date('Y').'-'.str_pad(($ultimo + 1), 3, '0', STR_PAD_LEFT);
+        CRUD::addField([
+            'name'  => 'number',
+            'label' => 'Número',
+            'type'  => 'text',
+            'default' => $nro, 
+            'attributes' => [
+                'readonly' => 'readonly', 
+            ],
+        ]);
+        CRUD::field('date')->label('Fecha');
+        CRUD::addField([
+            'name' => 'status',
+            'label' => 'Estado',
+            'type' => 'enum',
+        ]);
+        CRUD::field('supplier_id')->label('Proveedor');
+        CRUD::addField([
+            'name' => 'supplier_id',
+            'label' => 'Proveedor',
+            'type' => 'select',
+            'entity' => 'supplier',
+            'attribute' => 'company_name',
+            'model' => 'App\Models\Supplier',
+        ]);
+        CRUD::addField([
+            'name' => 'authorizing_user_id',
+            'label' => 'Autoriza',
+            'type' => 'select',
+            'entity' => 'user',
+            'attribute' => 'name',
+            'model' => 'App\Models\User',
+        ]);
         /**
          * Fields can be defined using the fluent syntax:
          * - CRUD::field('price')->type('number');
@@ -85,6 +123,6 @@ class PurchaseOrderCrudController extends CrudController
      */
     protected function setupUpdateOperation()
     {
-        $this->setupCreateOperation();
+		$this->setupCreateOperation();
     }
 }
