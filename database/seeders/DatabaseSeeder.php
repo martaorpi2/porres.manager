@@ -6,6 +6,7 @@ use App\Models\User;
 // use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
 use Database\Seeders\TestDataSeeder;
+use Database\Seeders\InventorySeeder;
 
 class DatabaseSeeder extends Seeder
 {
@@ -16,5 +17,8 @@ class DatabaseSeeder extends Seeder
     {
         // Seed full test dataset
         $this->call(TestDataSeeder::class);
+        
+        // Seed inventory data
+        $this->call(InventorySeeder::class);
     }
 }
