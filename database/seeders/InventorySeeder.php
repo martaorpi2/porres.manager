@@ -335,3 +335,4 @@ class InventorySeeder extends Seeder
         $this->command->info('- ' . count($movimientos) . ' Movimientos de Inventario');
     }
 }
+

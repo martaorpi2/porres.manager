@@ -24,6 +24,10 @@ class PurchaseOrder extends Model
     // protected $fillable = [];
     // protected $hidden = [];
 
+    protected $casts = [
+        'date' => 'date',
+    ];
+
     /*
     |--------------------------------------------------------------------------
     | FUNCTIONS
@@ -42,6 +46,11 @@ class PurchaseOrder extends Model
     public function user()
     {
         return $this->belongsTo(\App\Models\User::class, 'authorizing_user_id');
+    }
+
+    public function details()
+    {
+        return $this->hasMany(\App\Models\PurchaseOrderDetail::class, 'purchase_order_id');
     }
     /*
     |--------------------------------------------------------------------------
@@ -90,6 +99,10 @@ class PurchaseOrder extends Model
     | ACCESSORS
     |--------------------------------------------------------------------------
     */
+    public function getTotalAttribute()
+    {
+        return $this->details->sum('subtotal');
+    }
 
     /*
     |--------------------------------------------------------------------------

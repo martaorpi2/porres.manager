@@ -5,6 +5,8 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Requests\PurchaseOrderRequest;
 use Backpack\CRUD\app\Http\Controllers\CrudController;
 use Backpack\CRUD\app\Library\CrudPanel\CrudPanelFacade as CRUD;
+use Barryvdh\DomPDF\Facade\Pdf;
+use Illuminate\Http\Response;
 
 /**
  * Class PurchaseOrderCrudController
@@ -60,6 +62,10 @@ class PurchaseOrderCrudController extends CrudController
             'attribute' => 'name',
             'model' => 'App\Models\User',
         ]);
+
+        // Add PDF button
+        CRUD::addButton('line', 'pdf', 'view', 'crud::buttons.pdf', 'end');
+        
         /**
          * Columns can be defined using the fluent syntax:
          * - CRUD::column('price')->type('number');
@@ -124,5 +130,17 @@ class PurchaseOrderCrudController extends CrudController
     protected function setupUpdateOperation()
     {
 		$this->setupCreateOperation();
+    }
+
+    /**
+     * Generate PDF for a purchase order
+     */
+    public function generatePdf($id)
+    {
+        $purchaseOrder = \App\Models\PurchaseOrder::with(['supplier', 'details.input'])->findOrFail($id);
+        
+        $pdf = Pdf::loadView('purchase-order-pdf', compact('purchaseOrder'));
+        
+        return $pdf->stream('orden-compra-' . $purchaseOrder->number . '.pdf');
     }
 }
