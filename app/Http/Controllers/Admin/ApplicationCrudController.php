@@ -28,7 +28,7 @@ class ApplicationCrudController extends CrudController
     {
         CRUD::setModel(\App\Models\Application::class);
         CRUD::setRoute(config('backpack.base.route_prefix') . '/application');
-        CRUD::setEntityNameStrings('application', 'applications');
+        CRUD::setEntityNameStrings('solicitud', 'solicitudes');
     }
 
     /**
@@ -39,8 +39,9 @@ class ApplicationCrudController extends CrudController
      */
     protected function setupListOperation()
     {
-        CRUD::setFromDb(); // set columns from db columns.
-
+        //CRUD::setFromDb(); // set columns from db columns.
+        //CRUD::column('user_id')->label('Solicitante');
+        CRUD::column('status')->label('Estado');
         /**
          * Columns can be defined using the fluent syntax:
          * - CRUD::column('price')->type('number');
@@ -56,7 +57,15 @@ class ApplicationCrudController extends CrudController
     protected function setupCreateOperation()
     {
         CRUD::setValidation(ApplicationRequest::class);
-        CRUD::setFromDb(); // set fields from db columns.
+        CRUD::addField([
+            'name' => 'user_id',
+            'label' => 'Solicitante',
+            'type' => 'select',
+            'entity' => 'user',
+            'attribute' => 'name',
+            'model' => 'App\Models\User',
+        ]);
+        CRUD::field('status')->type('enum')->label('Estado');
 
         /**
          * Fields can be defined using the fluent syntax:

@@ -22,6 +22,7 @@ Route::group([
     Route::crud('purchase-order', 'PurchaseOrderCrudController');
     Route::get('purchase-order/{id}/pdf', 'PurchaseOrderCrudController@generatePdf')->name('purchase-order.pdf');
     Route::crud('payment-order', 'PaymentOrderCrudController');
+    Route::get('payment-order/{id}/pdf', 'PaymentOrderCrudController@generatePdf')->name('payment-order.pdf');
     Route::crud('sector', 'SectorCrudController');
     Route::crud('product', 'ProductCrudController');
     Route::crud('category', 'CategoryCrudController');
