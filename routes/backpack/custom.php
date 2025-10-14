@@ -25,6 +25,14 @@ Route::group([
     Route::crud('product', 'ProductCrudController');
     Route::crud('category', 'CategoryCrudController');
     Route::crud('location', 'LocationCrudController');
+    Route::crud('stock-level', 'StockLevelCrudController');
+    Route::crud('inventory-movement', 'InventoryMovementCrudController');
+    Route::crud('application', 'ApplicationCrudController');
+    Route::crud('request-detail', 'RequestDetailCrudController');
+    Route::crud('market-rate', 'MarketRateCrudController');
+    Route::crud('quote-detail', 'QuoteDetailCrudController');
+    Route::crud('reception', 'ReceptionCrudController');
+    Route::crud('devolution', 'DevolutionCrudController');
 }); // this should be the absolute last line of this file
 
 /**

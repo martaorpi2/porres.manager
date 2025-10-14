@@ -10,13 +10,29 @@
     <x-backpack::menu-dropdown-item title="Sectores" :link="backpack_url('sector')" />
 </x-backpack::menu-dropdown>
 
-<x-backpack::menu-dropdown title="Productos/Insumos" icon="la la-truck">
-    <x-backpack::menu-dropdown-item title="Listado" :link="backpack_url('product')" />
+<x-backpack::menu-dropdown title="Inventario" icon="la la-boxes">
+    <x-backpack::menu-dropdown-item title="Productos" :link="backpack_url('product')" />
     <x-backpack::menu-dropdown-item title="Categorías" :link="backpack_url('category')" />
     <x-backpack::menu-dropdown-item title="Ubicaciones" :link="backpack_url('location')" />
+    <x-backpack::menu-item title="Sotck" :link="backpack_url('stock-level')" />
+    <x-backpack::menu-item title="Movimientos" :link="backpack_url('inventory-movement')" />
 </x-backpack::menu-dropdown>
-<x-backpack::menu-item title="Ordenes de Compra" icon="la la-question" :link="backpack_url('purchase-order')" />
-<x-backpack::menu-item title="Ordenes de Pago" icon="la la-question" :link="backpack_url('payment-order')" />
+
+<x-backpack::menu-dropdown title="Solicitudes" icon="la la-file-alt">
+    <x-backpack::menu-item title="Listado" :link="backpack_url('application')" />
+    <x-backpack::menu-item title="Detalles" :link="backpack_url('request-detail')" />
+</x-backpack::menu-dropdown>
+
+<x-backpack::menu-dropdown title="Cotizaciones" icon="la la-calculator">
+    <x-backpack::menu-item title="Listado" :link="backpack_url('market-rate')" />
+    <x-backpack::menu-item title="Detalle" :link="backpack_url('quote-detail')" />
+</x-backpack::menu-dropdown>
+
+<x-backpack::menu-item title="Ordenes de Compra" icon="la la-shopping-cart" :link="backpack_url('purchase-order')" />
+<x-backpack::menu-item title="Ordenes de Pago" icon="la la-money-bill-wave" :link="backpack_url('payment-order')" />
+
+<x-backpack::menu-item title="Recepciones" icon="la la-truck-loading" :link="backpack_url('reception')" />
+<x-backpack::menu-item title="Devoluciones" icon="la la-undo-alt" :link="backpack_url('devolution')" />
 
 @push('after_scripts')
 <script>
