@@ -35,6 +35,16 @@ class QuoteDetail extends Model
     | RELATIONS
     |--------------------------------------------------------------------------
     */
+    
+    public function marketRate()
+    {
+        return $this->belongsTo(MarketRate::class);
+    }
+    
+    public function product()
+    {
+        return $this->belongsTo(Product::class);
+    }
 
     /*
     |--------------------------------------------------------------------------

@@ -35,6 +35,21 @@ class MarketRate extends Model
     | RELATIONS
     |--------------------------------------------------------------------------
     */
+    
+    public function supplier()
+    {
+        return $this->belongsTo(Supplier::class);
+    }
+    
+    public function application()
+    {
+        return $this->belongsTo(Application::class);
+    }
+    
+    public function quoteDetails()
+    {
+        return $this->hasMany(QuoteDetail::class);
+    }
 
     /*
     |--------------------------------------------------------------------------

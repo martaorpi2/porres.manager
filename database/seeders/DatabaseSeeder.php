@@ -5,9 +5,8 @@ namespace Database\Seeders;
 use App\Models\User;
 // use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
-use Database\Seeders\TestDataSeeder;
-use Database\Seeders\InventorySeeder;
-use Database\Seeders\AdditionalTestDataSeeder;
+use Database\Seeders\CleanDatabaseSeeder;
+use Database\Seeders\EducationalHealthDataSeeder;
 
 class DatabaseSeeder extends Seeder
 {
@@ -16,13 +15,10 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
-        // Seed full test dataset
-        $this->call(TestDataSeeder::class);
+        // Limpiar base de datos (excepto users)
+        $this->call(CleanDatabaseSeeder::class);
         
-        // Seed inventory data
-        $this->call(InventorySeeder::class);
-        
-        // Seed additional test data for applications, devolutions, market_rates, etc.
-        $this->call(AdditionalTestDataSeeder::class);
+        // Generar datos educativos y de salud
+        $this->call(EducationalHealthDataSeeder::class);
     }
 }
