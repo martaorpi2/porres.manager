@@ -18,11 +18,11 @@
     <x-backpack::menu-item title="Movimientos" :link="backpack_url('inventory-movement')" />
 </x-backpack::menu-dropdown>
 
-{{--<x-backpack::menu-dropdown title="Solicitudes" icon="la la-file-alt">
-    <x-backpack::menu-item title="Listado" :link="backpack_url('application')" />
-    <x-backpack::menu-item title="Detalles" :link="backpack_url('request-detail')" />
-</x-backpack::menu-dropdown>--}}
-<x-backpack::menu-item title="Solicitudes" icon="la la-file-alt" :link="backpack_url('application')" />
+<x-backpack::menu-dropdown title="Solicitudes" icon="la la-file-alt">
+    <x-backpack::menu-dropdown-item title="Solicitudes Generales" :link="backpack_url('general-request')" />
+    <x-backpack::menu-dropdown-item title="Solicitudes de Compra" :link="backpack_url('purchase-request')" />
+    <x-backpack::menu-dropdown-item title="Áreas de Responsabilidad" :link="backpack_url('responsibility-area')" />
+</x-backpack::menu-dropdown>
 
 <x-backpack::menu-dropdown title="Cotizaciones" icon="la la-calculator">
     <x-backpack::menu-item title="Listado" :link="backpack_url('market-rate')" />

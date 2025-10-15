@@ -36,6 +36,13 @@ Route::group([
     Route::crud('quote-detail', 'QuoteDetailCrudController');
     Route::crud('reception', 'ReceptionCrudController');
     Route::crud('devolution', 'DevolutionCrudController');
+    Route::crud('responsibility-area', 'ResponsibilityAreaCrudController');
+    Route::crud('purchase-request', 'PurchaseRequestCrudController');
+    Route::get('purchase-request/{id}/comparative-excel', 'PurchaseRequestCrudController@generateComparativeExcel')->name('purchase-request.comparative-excel');
+    Route::get('purchase-request/{id}/select-market-rate/{marketRateId}', 'PurchaseRequestCrudController@showSelectMarketRateForm')->name('purchase-request.show-select-market-rate');
+    Route::post('purchase-request/{id}/select-market-rate/{marketRateId}', 'PurchaseRequestCrudController@storeMarketRateSelection')->name('purchase-request.store-market-rate-selection');
+    Route::post('purchase-request/{id}/generate-purchase-order', 'PurchaseRequestCrudController@generatePurchaseOrder')->name('purchase-request.generate-purchase-order');
+    Route::crud('general-request', 'GeneralRequestCrudController');
 }); // this should be the absolute last line of this file
 
 /**

@@ -92,6 +92,15 @@ class EducationalHealthDataSeeder extends Seeder
         // 20. Crear movimientos de inventario
         $this->createInventoryMovements();
         
+        // 21. Crear áreas de responsabilidad
+        $this->createResponsibilityAreas();
+        
+        // 22. Crear solicitudes de compra
+        $this->createPurchaseRequests();
+        
+        // 23. Crear solicitudes generales
+        $this->createGeneralRequests();
+        
         $this->command->info('Datos educativos y de salud generados exitosamente.');
     }
 
@@ -1018,6 +1027,206 @@ class EducationalHealthDataSeeder extends Seeder
 
         foreach ($assignments as $assignment) {
             DB::table('suppliers_sectors')->insert($assignment);
+        }
+    }
+
+    private function createResponsibilityAreas()
+    {
+        $users = \App\Models\User::all();
+        
+        $areas = [
+            [
+                'name' => 'Informática',
+                'description' => 'Responsable de equipos de cómputo, software y sistemas informáticos',
+                'responsible_user_id' => $users->random()->id,
+                'is_active' => true,
+            ],
+            [
+                'name' => 'Insumos de Salud',
+                'description' => 'Responsable de material médico, reactivos y equipos de laboratorio',
+                'responsible_user_id' => $users->random()->id,
+                'is_active' => true,
+            ],
+            [
+                'name' => 'Mantenimiento',
+                'description' => 'Responsable de herramientas, repuestos y materiales de mantenimiento',
+                'responsible_user_id' => $users->random()->id,
+                'is_active' => true,
+            ],
+            [
+                'name' => 'Insumos Generales',
+                'description' => 'Responsable de material de oficina, limpieza y suministros generales',
+                'responsible_user_id' => $users->random()->id,
+                'is_active' => true,
+            ],
+        ];
+
+        foreach ($areas as $area) {
+            \App\Models\ResponsibilityArea::create($area);
+        }
+    }
+
+    private function createPurchaseRequests()
+    {
+        $users = \App\Models\User::all();
+        $areas = \App\Models\ResponsibilityArea::all();
+        $products = Product::all();
+        
+        $requests = [
+            [
+                'request_number' => 'SR-2024-0001',
+                'request_date' => Carbon::now()->subDays(10),
+                'status' => 'Aprobada',
+                'priority' => 'Alta',
+                'justification' => 'Reposición de equipos informáticos para el laboratorio de cómputo',
+                'observations' => 'Urgente para el inicio del semestre',
+                'responsibility_area_id' => 1, // Informática
+                'requesting_user_id' => $users->random()->id,
+                'approved_by' => $users->random()->id,
+                'approved_date' => Carbon::now()->subDays(8),
+                'total_amount' => 15000.00,
+            ],
+            [
+                'request_number' => 'SR-2024-0002',
+                'request_date' => Carbon::now()->subDays(5),
+                'status' => 'Pendiente',
+                'priority' => 'Media',
+                'justification' => 'Compra de reactivos para análisis clínicos',
+                'observations' => 'Stock mínimo alcanzado',
+                'responsibility_area_id' => 2, // Insumos de Salud
+                'requesting_user_id' => $users->random()->id,
+                'total_amount' => 8500.00,
+            ],
+            [
+                'request_number' => 'SR-2024-0003',
+                'request_date' => Carbon::now()->subDays(3),
+                'status' => 'En Proceso',
+                'priority' => 'Urgente',
+                'justification' => 'Herramientas para mantenimiento de equipos médicos',
+                'observations' => 'Equipos fuera de servicio',
+                'responsibility_area_id' => 3, // Mantenimiento
+                'requesting_user_id' => $users->random()->id,
+                'approved_by' => $users->random()->id,
+                'approved_date' => Carbon::now()->subDays(2),
+                'total_amount' => 3200.00,
+            ],
+        ];
+
+        foreach ($requests as $request) {
+            \App\Models\PurchaseRequest::create($request);
+        }
+
+        // Crear detalles de solicitudes
+        $this->createPurchaseRequestDetails();
+    }
+
+    private function createPurchaseRequestDetails()
+    {
+        $requests = \App\Models\PurchaseRequest::all();
+        $products = Product::all();
+        
+        $details = [
+            // Detalles para SR-2024-0001 (Informática)
+            [
+                'purchase_request_id' => 1,
+                'product_id' => 1, // Microscopio (como ejemplo de equipo)
+                'requested_quantity' => 2,
+                'specifications' => 'Equipos con garantía extendida',
+                'justification' => 'Para prácticas de laboratorio',
+                'estimated_unit_price' => 7500.00,
+                'estimated_total' => 15000.00,
+                'status' => 'Aprobada',
+            ],
+            // Detalles para SR-2024-0002 (Insumos de Salud)
+            [
+                'purchase_request_id' => 2,
+                'product_id' => 4, // Reactivo para Glucosa
+                'requested_quantity' => 10,
+                'specifications' => 'Reactivos de alta pureza',
+                'justification' => 'Reposición de stock',
+                'estimated_unit_price' => 850.00,
+                'estimated_total' => 8500.00,
+                'status' => 'Pendiente',
+            ],
+            [
+                'purchase_request_id' => 2,
+                'product_id' => 6, // Jeringas Descartables
+                'requested_quantity' => 5,
+                'specifications' => 'Jeringas estériles 5ml',
+                'justification' => 'Uso en prácticas',
+                'estimated_unit_price' => 45.00,
+                'estimated_total' => 225.00,
+                'status' => 'Pendiente',
+            ],
+            // Detalles para SR-2024-0003 (Mantenimiento)
+            [
+                'purchase_request_id' => 3,
+                'product_id' => 7, // Guantes de Látex
+                'requested_quantity' => 8,
+                'specifications' => 'Guantes de protección industrial',
+                'justification' => 'Para trabajos de mantenimiento',
+                'estimated_unit_price' => 25.50,
+                'estimated_total' => 204.00,
+                'status' => 'En Cotización',
+            ],
+        ];
+
+        foreach ($details as $detail) {
+            \App\Models\PurchaseRequestDetail::create($detail);
+        }
+    }
+
+    private function createGeneralRequests()
+    {
+        $users = \App\Models\User::all();
+        $areas = \App\Models\ResponsibilityArea::all();
+        
+        $requests = [
+            [
+                'created_by' => $users->random()->id,
+                'area_id' => $areas->random()->id,
+                'title' => 'Solicitud de Reactivos para Laboratorio Clínico',
+                'description' => 'Necesitamos reactivos para análisis de glucosa, colesterol y triglicéridos para las prácticas de los estudiantes de medicina.',
+                'priority' => 'Alta',
+                'status' => 'creada',
+            ],
+            [
+                'created_by' => $users->random()->id,
+                'area_id' => $areas->random()->id,
+                'title' => 'Reposición de Guantes de Protección',
+                'description' => 'Se requiere reposición de guantes de nitrilo para las prácticas de anatomía y laboratorio.',
+                'priority' => 'Media',
+                'status' => 'revisada_area',
+            ],
+            [
+                'created_by' => $users->random()->id,
+                'area_id' => $areas->random()->id,
+                'title' => 'Equipos de Computación para Aula de Informática',
+                'description' => 'Solicitud de 5 computadoras para renovar el aula de informática médica.',
+                'priority' => 'Baja',
+                'status' => 'creada',
+            ],
+            [
+                'created_by' => $users->random()->id,
+                'area_id' => $areas->random()->id,
+                'title' => 'Material de Limpieza para Laboratorios',
+                'description' => 'Necesitamos productos de limpieza especializados para equipos de laboratorio.',
+                'priority' => 'Media',
+                'status' => 'archivada',
+            ],
+            [
+                'created_by' => $users->random()->id,
+                'area_id' => $areas->random()->id,
+                'title' => 'Microscopios para Prácticas de Histología',
+                'description' => 'Solicitud de 3 microscopios ópticos para las prácticas de histología y citología.',
+                'priority' => 'Urgente',
+                'status' => 'convertida_a_compra',
+            ],
+        ];
+
+        foreach ($requests as $request) {
+            $request['number'] = \App\Models\GeneralRequest::generateNextNumber();
+            \App\Models\GeneralRequest::create($request);
         }
     }
 }
