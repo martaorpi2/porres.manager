@@ -44,4 +44,12 @@ class User extends Authenticatable
             'password' => 'hashed',
         ];
     }
+
+    /**
+     * Get the attribute that should be used to identify the user in Backpack CRUD
+     */
+    public function identifiableAttribute()
+    {
+        return $this->name;
+    }
 }

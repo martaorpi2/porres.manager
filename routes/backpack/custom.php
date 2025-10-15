@@ -30,6 +30,7 @@ Route::group([
     Route::crud('stock-level', 'StockLevelCrudController');
     Route::crud('inventory-movement', 'InventoryMovementCrudController');
     Route::crud('application', 'ApplicationCrudController');
+    Route::get('api/productos', 'ApplicationCrudController@getProductos')->name('api.productos');
     Route::crud('request-detail', 'RequestDetailCrudController');
     Route::crud('market-rate', 'MarketRateCrudController');
     Route::crud('quote-detail', 'QuoteDetailCrudController');

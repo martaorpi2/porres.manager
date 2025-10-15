@@ -28,7 +28,7 @@ class CategoryCrudController extends CrudController
     {
         CRUD::setModel(\App\Models\Category::class);
         CRUD::setRoute(config('backpack.base.route_prefix') . '/category');
-        CRUD::setEntityNameStrings('category', 'categories');
+        CRUD::setEntityNameStrings('categoria', 'categorias');
     }
 
     /**
@@ -39,8 +39,9 @@ class CategoryCrudController extends CrudController
      */
     protected function setupListOperation()
     {
-        CRUD::setFromDb(); // set columns from db columns.
+        CRUD::removeButton('show');
 
+        CRUD::column('name')->label('Nombre');
         /**
          * Columns can be defined using the fluent syntax:
          * - CRUD::column('price')->type('number');
@@ -56,8 +57,7 @@ class CategoryCrudController extends CrudController
     protected function setupCreateOperation()
     {
         CRUD::setValidation(CategoryRequest::class);
-        CRUD::setFromDb(); // set fields from db columns.
-
+        CRUD::field('name')->label('Nombre');
         /**
          * Fields can be defined using the fluent syntax:
          * - CRUD::field('price')->type('number');

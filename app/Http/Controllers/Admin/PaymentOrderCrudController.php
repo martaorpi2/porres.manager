@@ -41,7 +41,8 @@ class PaymentOrderCrudController extends CrudController
      */
     protected function setupListOperation()
     {
-        CRUD::removeButton('show');
+        // Habilitar el botón show para ver detalles
+        // CRUD::removeButton('show');
         
         CRUD::column('payment_number')->label('Número');
         CRUD::column('date')->label('Fecha');
@@ -130,6 +131,134 @@ class PaymentOrderCrudController extends CrudController
     protected function setupUpdateOperation()
     {
         $this->setupCreateOperation();
+    }
+
+    /**
+     * Define what happens when the Show operation is loaded.
+     * 
+     * @see https://backpackforlaravel.com/docs/crud-operation-show
+     * @return void
+     */
+    protected function setupShowOperation()
+    {
+        // Configurar las columnas que se mostrarán en la vista de detalles
+        CRUD::column('payment_number')->label('Número de Orden de Pago');
+        CRUD::column('date')->label('Fecha');
+        CRUD::column('total_amount')->label('Monto Total');
+        CRUD::column('status')->label('Estado');
+        
+        CRUD::addColumn([
+            'name' => 'purchase_order_id',
+            'label' => 'Orden de Compra Relacionada',
+            'type' => 'select',
+            'entity' => 'purchase_order',
+            'attribute' => 'number',
+            'model' => 'App\Models\PurchaseOrder',
+        ]);
+        
+        CRUD::addColumn([
+            'name' => 'authorizing_user_id',
+            'label' => 'Usuario Autorizador',
+            'type' => 'select',
+            'entity' => 'user',
+            'attribute' => 'name',
+            'model' => 'App\Models\User',
+        ]);
+
+        // Mostrar información de la orden de compra relacionada
+        CRUD::addColumn([
+            'name' => 'purchase_order_info',
+            'label' => 'Información de la Orden de Compra',
+            'type' => 'closure',
+            'function' => function($entry) {
+                $purchaseOrder = $entry->purchase_order;
+                if ($purchaseOrder) {
+                    $html = '<div class="card border-primary">';
+                    $html .= '<div class="card-header bg-primary text-white">';
+                    $html .= '<h6 class="mb-0"><i class="la la-shopping-cart"></i> Orden de Compra Relacionada</h6>';
+                    $html .= '</div>';
+                    $html .= '<div class="card-body">';
+                    $html .= '<div class="row">';
+                    $html .= '<div class="col-md-6">';
+                    $html .= '<p class="mb-1"><strong>Número:</strong> ' . e($purchaseOrder->number) . '</p>';
+                    $html .= '<p class="mb-1"><strong>Proveedor:</strong> ' . e($purchaseOrder->supplier->company_name) . '</p>';
+                    $html .= '</div>';
+                    $html .= '<div class="col-md-6">';
+                    $html .= '<p class="mb-1"><strong>Fecha:</strong> ' . $purchaseOrder->date->format('d/m/Y') . '</p>';
+                    $html .= '<p class="mb-1"><strong>Estado:</strong> <span class="badge bg-info">' . e($purchaseOrder->status) . '</span></p>';
+                    $html .= '</div>';
+                    $html .= '</div>';
+                    $html .= '<div class="row mt-2">';
+                    $html .= '<div class="col-12">';
+                    $html .= '<p class="mb-0"><strong>Total:</strong> <span class="h5 text-success">$' . number_format($purchaseOrder->total, 2) . '</span></p>';
+                    $html .= '</div>';
+                    $html .= '</div>';
+                    $html .= '</div></div>';
+                    return $html;
+                }
+                return '<div class="alert alert-warning">No hay orden de compra relacionada</div>';
+            },
+            'escaped' => false
+        ]);
+
+        // Mostrar detalles de pagos
+        CRUD::addColumn([
+            'name' => 'payment_details',
+            'label' => 'Detalles de Pagos',
+            'type' => 'closure',
+            'function' => function($entry) {
+                $details = \Illuminate\Support\Facades\DB::table('op_details')
+                    ->where('payment_order_id', $entry->id)
+                    ->get();
+                
+                if ($details->isEmpty()) {
+                    return '<div class="alert alert-info">No hay detalles de pago</div>';
+                }
+                
+                $html = '<div class="card border-success">';
+                $html .= '<div class="card-header bg-success text-white">';
+                $html .= '<h6 class="mb-0"><i class="la la-credit-card"></i> Detalles de Pagos</h6>';
+                $html .= '</div>';
+                $html .= '<div class="card-body p-0">';
+                $html .= '<div class="table-responsive">';
+                $html .= '<table class="table table-sm table-bordered mb-0">';
+                $html .= '<thead class="table-light">';
+                $html .= '<tr>';
+                $html .= '<th style="width: 20%;">Concepto</th>';
+                $html .= '<th style="width: 15%;">Monto</th>';
+                $html .= '<th style="width: 25%;">Método de Pago</th>';
+                $html .= '<th style="width: 20%;">Vencimiento</th>';
+                $html .= '<th style="width: 20%;">Estado</th>';
+                $html .= '</tr>';
+                $html .= '</thead>';
+                $html .= '<tbody>';
+                
+                foreach ($details as $detail) {
+                    $html .= '<tr>';
+                    $html .= '<td><span class="badge bg-secondary">' . ucfirst(e($detail->concept)) . '</span></td>';
+                    $html .= '<td class="text-end"><strong>$' . number_format($detail->amount, 2) . '</strong></td>';
+                    $html .= '<td>' . e($detail->method_payment) . '</td>';
+                    $html .= '<td>' . ($detail->expiration_date ? date('d/m/Y', strtotime($detail->expiration_date)) : '<span class="text-muted">N/A</span>') . '</td>';
+                    
+                    if ($detail->actual_payment_date) {
+                        $html .= '<td><span class="badge bg-success"><i class="la la-check"></i> Pagado</span><br><small class="text-muted">' . date('d/m/Y', strtotime($detail->actual_payment_date)) . '</small></td>';
+                    } else {
+                        $html .= '<td><span class="badge bg-warning"><i class="la la-clock"></i> Pendiente</span></td>';
+                    }
+                    
+                    $html .= '</tr>';
+                }
+                
+                $html .= '</tbody>';
+                $html .= '</table>';
+                $html .= '</div>';
+                $html .= '</div>';
+                $html .= '</div>';
+                
+                return $html;
+            },
+            'escaped' => false
+        ]);
     }
 
     /**

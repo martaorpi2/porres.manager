@@ -28,7 +28,7 @@ class LocationCrudController extends CrudController
     {
         CRUD::setModel(\App\Models\Location::class);
         CRUD::setRoute(config('backpack.base.route_prefix') . '/location');
-        CRUD::setEntityNameStrings('location', 'locations');
+        CRUD::setEntityNameStrings('ubicación', 'ubicaciones');
     }
 
     /**
@@ -39,8 +39,10 @@ class LocationCrudController extends CrudController
      */
     protected function setupListOperation()
     {
-        CRUD::setFromDb(); // set columns from db columns.
+        CRUD::removeButton('show');
 
+        CRUD::column('name')->label('Nombre');
+        CRUD::column('description')->label('Descripción');
         /**
          * Columns can be defined using the fluent syntax:
          * - CRUD::column('price')->type('number');
@@ -56,8 +58,8 @@ class LocationCrudController extends CrudController
     protected function setupCreateOperation()
     {
         CRUD::setValidation(LocationRequest::class);
-        CRUD::setFromDb(); // set fields from db columns.
-
+        CRUD::field('name')->label('Nombre');
+        CRUD::field('description')->label('Descripción');
         /**
          * Fields can be defined using the fluent syntax:
          * - CRUD::field('price')->type('number');

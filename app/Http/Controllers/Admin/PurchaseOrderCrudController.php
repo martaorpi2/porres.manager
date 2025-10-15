@@ -41,7 +41,8 @@ class PurchaseOrderCrudController extends CrudController
      */
     protected function setupListOperation()
     {
-        CRUD::removeButton('show');
+        // Habilitar el botón show para ver detalles
+        // CRUD::removeButton('show');
 
         CRUD::column('number')->label('Numero');
         CRUD::column('date')->label('Fecha');
@@ -130,6 +131,96 @@ class PurchaseOrderCrudController extends CrudController
     protected function setupUpdateOperation()
     {
 		$this->setupCreateOperation();
+    }
+
+    /**
+     * Define what happens when the Show operation is loaded.
+     * 
+     * @see https://backpackforlaravel.com/docs/crud-operation-show
+     * @return void
+     */
+    protected function setupShowOperation()
+    {
+        // Configurar las columnas que se mostrarán en la vista de detalles
+        CRUD::column('number')->label('Número');
+        CRUD::column('date')->label('Fecha');
+        CRUD::column('status')->label('Estado');
+        
+        CRUD::addColumn([
+            'name' => 'supplier_id',
+            'label' => 'Proveedor',
+            'type' => 'select',
+            'entity' => 'supplier',
+            'attribute' => 'company_name',
+            'model' => 'App\Models\Supplier',
+        ]);
+        
+        CRUD::addColumn([
+            'name' => 'authorizing_user_id',
+            'label' => 'Usuario Autorizador',
+            'type' => 'select',
+            'entity' => 'user',
+            'attribute' => 'name',
+            'model' => 'App\Models\User',
+        ]);
+
+        // Agregar columna calculada para el total
+        CRUD::addColumn([
+            'name' => 'total',
+            'label' => 'Total',
+            'type' => 'closure',
+            'function' => function($entry) {
+                return '$' . number_format($entry->total, 2);
+            }
+        ]);
+
+        // Mostrar detalles de la orden de compra
+        CRUD::addColumn([
+            'name' => 'details',
+            'label' => 'Detalles de la Orden',
+            'type' => 'closure',
+            'function' => function($entry) {
+                $details = $entry->details()->with('input')->get();
+                if ($details->isEmpty()) {
+                    return '<div class="alert alert-info">No hay detalles de productos</div>';
+                }
+                
+                $html = '<div class="card border-primary">';
+                $html .= '<div class="card-header bg-primary text-white">';
+                $html .= '<h6 class="mb-0"><i class="la la-shopping-cart"></i> Productos de la Orden</h6>';
+                $html .= '</div>';
+                $html .= '<div class="card-body p-0">';
+                $html .= '<div class="table-responsive">';
+                $html .= '<table class="table table-sm table-bordered mb-0">';
+                $html .= '<thead class="table-light">';
+                $html .= '<tr>';
+                $html .= '<th style="width: 40%;">Producto</th>';
+                $html .= '<th style="width: 20%;">Cantidad</th>';
+                $html .= '<th style="width: 20%;">Precio Unit.</th>';
+                $html .= '<th style="width: 20%;">Subtotal</th>';
+                $html .= '</tr>';
+                $html .= '</thead>';
+                $html .= '<tbody>';
+                
+                foreach ($details as $detail) {
+                    $html .= '<tr>';
+                    $html .= '<td><strong>' . e($detail->input->name) . '</strong><br><small class="text-muted">' . e($detail->input->description ?? 'Sin descripción') . '</small></td>';
+                    $html .= '<td><span class="badge bg-info">' . $detail->quantity . '</span> <small class="text-muted">' . e($detail->input->unit) . '</small></td>';
+                    $html .= '<td class="text-end"><strong>$' . number_format($detail->unit_price, 2) . '</strong></td>';
+                    $html .= '<td class="text-end"><span class="badge bg-success">$' . number_format($detail->subtotal, 2) . '</span></td>';
+                    $html .= '</tr>';
+                }
+                
+                $html .= '</tbody>';
+                $html .= '</table>';
+                $html .= '</div>';
+                $html .= '</div>';
+                $html .= '</div>';
+                
+                return $html;
+            },
+            'escaped' => false
+        ]);
     }
 
     /**

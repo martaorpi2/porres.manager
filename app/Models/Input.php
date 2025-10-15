@@ -24,3 +24,4 @@ class Input extends Model
         return $this->hasMany(PurchaseOrderDetail::class, 'input_id');
     }
 }
+

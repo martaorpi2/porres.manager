@@ -24,6 +24,10 @@ class PaymentOrder extends Model
     // protected $fillable = [];
     // protected $hidden = [];
 
+    protected $casts = [
+        'date' => 'date',
+    ];
+
     /*
     |--------------------------------------------------------------------------
     | FUNCTIONS

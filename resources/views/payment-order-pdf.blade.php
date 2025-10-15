@@ -15,6 +15,14 @@
         th { background: #f3f3f3; }
         .right { text-align: right; }
         .mb-4 { margin-bottom: 16px; }
+        .total-box { 
+            border: 2px solid #333; 
+            padding: 10px; 
+            text-align: right; 
+            font-weight: bold; 
+            font-size: 14px;
+            margin: 12px 0;
+        }
     </style>
     @php
         $po = $paymentOrder->purchase_order; // related purchase order
@@ -64,8 +72,11 @@
         </tbody>
     </table>
 
+    <div class="total-box">
+        Total Orden de Pago: {{ money_format_local($paymentOrder->total_amount) }}
+    </div>
+
     <div class="box">
-        <div><strong>Total Orden de Pago:</strong> {{ money_format_local($paymentOrder->total_amount) }}</div>
         <div><strong>Estado:</strong> {{ $paymentOrder->status }}</div>
         <div><strong>Observaciones:</strong> {{ $paymentOrder->observations ?? '' }}</div>
     </div>

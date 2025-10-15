@@ -7,6 +7,7 @@ use App\Models\User;
 use Illuminate\Database\Seeder;
 use Database\Seeders\TestDataSeeder;
 use Database\Seeders\InventorySeeder;
+use Database\Seeders\AdditionalTestDataSeeder;
 
 class DatabaseSeeder extends Seeder
 {
@@ -20,5 +21,8 @@ class DatabaseSeeder extends Seeder
         
         // Seed inventory data
         $this->call(InventorySeeder::class);
+        
+        // Seed additional test data for applications, devolutions, market_rates, etc.
+        $this->call(AdditionalTestDataSeeder::class);
     }
 }

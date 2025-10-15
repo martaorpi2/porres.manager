@@ -39,6 +39,11 @@ class Application extends Model
     {
         return $this->belongsTo(\App\Models\User::class, 'user_id');
     }
+
+    public function requestDetails()
+    {
+        return $this->hasMany(RequestDetail::class, 'application_id');
+    }
     /*
     |--------------------------------------------------------------------------
     | SCOPES

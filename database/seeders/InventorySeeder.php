@@ -336,3 +336,4 @@ class InventorySeeder extends Seeder
     }
 }
 
+

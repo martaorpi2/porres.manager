@@ -35,6 +35,15 @@ class RequestDetail extends Model
     | RELATIONS
     |--------------------------------------------------------------------------
     */
+    public function application()
+    {
+        return $this->belongsTo(Application::class, 'application_id');
+    }
+
+    public function product()
+    {
+        return $this->belongsTo(Product::class, 'product_id');
+    }
 
     /*
     |--------------------------------------------------------------------------

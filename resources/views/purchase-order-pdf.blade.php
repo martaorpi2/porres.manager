@@ -5,170 +5,88 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Orden de Compra - {{ $purchaseOrder->number }}</title>
     <style>
-        body {
-            font-family: Arial, sans-serif;
-            margin: 0;
-            padding: 20px;
-            font-size: 12px;
-            line-height: 1.4;
-        }
-        .header {
-            text-align: center;
-            margin-bottom: 30px;
-        }
-        .title {
-            font-size: 18px;
-            font-weight: bold;
-            margin-bottom: 20px;
-        }
-        .order-info {
-            margin-bottom: 20px;
-        }
-        .order-number {
-            font-size: 16px;
-            font-weight: bold;
-            margin-bottom: 10px;
-        }
-        .supplier-info {
-            margin-bottom: 20px;
-            border: 1px solid #ddd;
-            padding: 15px;
-            background-color: #f9f9f9;
-        }
-        .supplier-info h3 {
-            margin-top: 0;
-            margin-bottom: 10px;
+        body { font-family: DejaVu Sans, sans-serif; font-size: 12px; color: #222; }
+        h1 { font-size: 18px; margin: 0 0 10px 0; }
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+        .muted { color: #666; }
+        .box { border: 1px solid #ccc; padding: 10px; margin-bottom: 12px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 6px; }
+        th, td { padding: 6px 8px; border: 1px solid #ddd; text-align: left; }
+        th { background: #f3f3f3; }
+        .right { text-align: right; }
+        .center { text-align: center; }
+        .mb-4 { margin-bottom: 16px; }
+        .total-box { 
+            border: 2px solid #333; 
+            padding: 10px; 
+            text-align: right; 
+            font-weight: bold; 
             font-size: 14px;
-        }
-        .supplier-details {
-            margin-bottom: 5px;
-        }
-        .products-table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-bottom: 20px;
-        }
-        .products-table th,
-        .products-table td {
-            border: 1px solid #ddd;
-            padding: 8px;
-            text-align: left;
-        }
-        .products-table th {
-            background-color: #f2f2f2;
-            font-weight: bold;
-        }
-        .products-table .number {
-            text-align: center;
-            width: 50px;
-        }
-        .products-table .quantity {
-            text-align: center;
-            width: 80px;
-        }
-        .products-table .price {
-            text-align: right;
-            width: 120px;
-        }
-        .products-table .subtotal {
-            text-align: right;
-            width: 120px;
-        }
-        .total-section {
-            text-align: right;
-            margin-bottom: 20px;
-        }
-        .total-amount {
-            font-size: 16px;
-            font-weight: bold;
-            border: 2px solid #333;
-            padding: 10px;
-            display: inline-block;
-        }
-        .status-section {
-            margin-bottom: 20px;
-        }
-        .status {
-            font-weight: bold;
-            padding: 5px 10px;
-            background-color: #e7f3ff;
-            border: 1px solid #b3d9ff;
-            display: inline-block;
-        }
-        .observations {
-            margin-top: 20px;
-            padding: 10px;
-            background-color: #f0f0f0;
-            border-left: 4px solid #333;
-        }
-        .footer {
-            margin-top: 30px;
-            text-align: center;
-            font-size: 10px;
-            color: #666;
+            margin: 12px 0;
         }
     </style>
+    @php
+        function money_format_local($value) { return '$ ' . number_format((float)$value, 2, ',', '.'); }
+        function fmt_date($d) { return $d ? \Carbon\Carbon::parse($d)->format('d/m/Y') : ''; }
+    @endphp
 </head>
 <body>
     <div class="header">
-        <div class="title">ORDEN DE COMPRA</div>
+        <h1>ORDEN DE COMPRA</h1>
+        <div class="muted">N.º {{ $purchaseOrder->number }}</div>
     </div>
 
-    <div class="order-info">
-        <div class="order-number">N.º {{ $purchaseOrder->number }}</div>
-        <div><strong>Fecha:</strong> {{ $purchaseOrder->date->format('d/m/Y') }}</div>
+    <div class="box">
+        <div><strong>Fecha:</strong> {{ fmt_date($purchaseOrder->date) }}</div>
+        <div><strong>Estado:</strong> {{ $purchaseOrder->status }}</div>
     </div>
 
-    <div class="supplier-info">
-        <h3>Proveedor: {{ $purchaseOrder->supplier->company_name }}</h3>
-        <div class="supplier-details"><strong>CUIT:</strong> {{ $purchaseOrder->supplier->cuit }}</div>
+    <div class="box">
+        <div><strong>Proveedor:</strong> {{ $purchaseOrder->supplier->company_name }}</div>
+        <div><strong>CUIT:</strong> {{ $purchaseOrder->supplier->cuit }}</div>
         @if($purchaseOrder->supplier->address)
-        <div class="supplier-details"><strong>Dirección:</strong> {{ $purchaseOrder->supplier->address }}</div>
+        <div><strong>Dirección:</strong> {{ $purchaseOrder->supplier->address }}</div>
         @endif
-        <div class="supplier-details"><strong>Condiciones de pago:</strong> 30 días fecha factura</div>
-        <div class="supplier-details"><strong>Entrega estimada:</strong> {{ $purchaseOrder->date->copy()->addDays(8)->format('d/m/Y') }}</div>
     </div>
 
-    <h3>Detalle de productos/servicios</h3>
-    <table class="products-table">
+    <div class="box">
+        <div><strong>Condiciones de pago:</strong> 30 días fecha factura</div>
+        <div><strong>Entrega estimada:</strong> {{ $purchaseOrder->date->copy()->addDays(8)->format('d/m/Y') }}</div>
+    </div>
+
+    <div class="mb-4"><strong>Detalle de productos/servicios</strong></div>
+    <table>
         <thead>
             <tr>
-                <th class="number">Ítem</th>
+                <th class="center">Ítem</th>
                 <th>Descripción</th>
-                <th class="quantity">Cantidad</th>
-                <th class="price">Precio Unitario</th>
-                <th class="subtotal">Subtotal</th>
+                <th class="center">Cantidad</th>
+                <th class="right">Precio Unitario</th>
+                <th class="right">Subtotal</th>
             </tr>
         </thead>
         <tbody>
             @foreach($purchaseOrder->details as $index => $detail)
             <tr>
-                <td class="number">{{ $index + 1 }}</td>
+                <td class="center">{{ $index + 1 }}</td>
                 <td>{{ $detail->input->name ?? 'Producto' }}</td>
-                <td class="quantity">{{ $detail->quantity }}</td>
-                <td class="price">$ {{ number_format($detail->unit_price, 2, ',', '.') }}</td>
-                <td class="subtotal">$ {{ number_format($detail->subtotal, 2, ',', '.') }}</td>
+                <td class="center">{{ $detail->quantity }}</td>
+                <td class="right">{{ money_format_local($detail->unit_price) }}</td>
+                <td class="right">{{ money_format_local($detail->subtotal) }}</td>
             </tr>
             @endforeach
         </tbody>
     </table>
 
-    <div class="total-section">
-        <div class="total-amount">
-            Total de la Orden de Compra: $ {{ number_format($purchaseOrder->total, 2, ',', '.') }}
+    <div class="total-box">
+        Total de la Orden de Compra: {{ money_format_local($purchaseOrder->total) }}
+    </div>
+
+    <div class="box">
+        <div><strong>Observaciones:</strong> Entrega en área de Sistemas, 2.º piso.</div>
+        <div class="muted" style="margin-top: 8px; font-size: 10px;">
+            Documento generado el {{ now()->format('d/m/Y H:i') }}
         </div>
-    </div>
-
-    <div class="status-section">
-        <strong>Estado:</strong> <span class="status">{{ $purchaseOrder->status }}</span>
-    </div>
-
-    <div class="observations">
-        <strong>Observaciones:</strong> Entrega en área de Sistemas, 2.º piso.
-    </div>
-
-    <div class="footer">
-        <p>Documento generado el {{ now()->format('d/m/Y H:i') }}</p>
     </div>
 </body>
 </html>
