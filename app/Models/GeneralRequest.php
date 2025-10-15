@@ -41,6 +41,14 @@ class GeneralRequest extends Model
         return $this->hasMany(PurchaseRequest::class, 'converted_from_general_request_id');
     }
 
+    /**
+     * Get the details for this general request.
+     */
+    public function details()
+    {
+        return $this->hasMany(GeneralRequestDetail::class);
+    }
+
     public static function generateNextNumber(): string
     {
         $year = now()->year;

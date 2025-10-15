@@ -66,7 +66,7 @@ class PaymentOrderCrudController extends CrudController
         ]);
         
         // Add PDF button
-        CRUD::addButton('line', 'pdf', 'view', 'crud::buttons.pdf', 'end');
+        CRUD::addButton('line', 'pdf', 'view', 'crud::buttons.payment_order_pdf', 'end');
         /**
          * Columns can be defined using the fluent syntax:
          * - CRUD::column('price')->type('number');

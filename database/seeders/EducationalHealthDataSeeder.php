@@ -1115,6 +1115,24 @@ class EducationalHealthDataSeeder extends Seeder
         foreach ($requests as $request) {
             \App\Models\PurchaseRequest::create($request);
         }
+        
+        // Crear algunas solicitudes de compra desde solicitudes generales convertidas
+        $convertedGeneralRequests = \App\Models\GeneralRequest::where('status', 'convertida_a_compra')->take(2)->get();
+        
+        foreach ($convertedGeneralRequests as $generalRequest) {
+            $purchaseRequest = \App\Models\PurchaseRequest::create([
+                'request_number' => \App\Models\PurchaseRequest::generateNextNumber(),
+                'request_date' => Carbon::now()->subDays(2),
+                'status' => 'Pendiente',
+                'priority' => $generalRequest->priority,
+                'justification' => $generalRequest->description,
+                'observations' => 'Convertida desde solicitud general: ' . $generalRequest->number,
+                'responsibility_area_id' => $generalRequest->area_id,
+                'requesting_user_id' => $generalRequest->created_by,
+                'total_amount' => rand(5000, 20000),
+                'converted_from_general_request_id' => $generalRequest->id,
+            ]);
+        }
 
         // Crear detalles de solicitudes
         $this->createPurchaseRequestDetails();

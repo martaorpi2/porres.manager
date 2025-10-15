@@ -43,6 +43,7 @@ Route::group([
     Route::post('purchase-request/{id}/select-market-rate/{marketRateId}', 'PurchaseRequestCrudController@storeMarketRateSelection')->name('purchase-request.store-market-rate-selection');
     Route::post('purchase-request/{id}/generate-purchase-order', 'PurchaseRequestCrudController@generatePurchaseOrder')->name('purchase-request.generate-purchase-order');
     Route::crud('general-request', 'GeneralRequestCrudController');
+    Route::get('general-request-converted', 'GeneralRequestCrudController@showConverted')->name('general-request.converted');
 }); // this should be the absolute last line of this file
 
 /**

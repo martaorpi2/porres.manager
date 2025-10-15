@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use Backpack\CRUD\app\Http\Controllers\CrudController;
 use Backpack\CRUD\app\Library\CrudPanel\CrudPanelFacade as CRUD;
+use App\Http\Requests\PurchaseRequestRequest;
 
 /**
  * Class PurchaseRequestCrudController
@@ -28,6 +29,9 @@ class PurchaseRequestCrudController extends CrudController
         CRUD::setModel(\App\Models\PurchaseRequest::class);
         CRUD::setRoute(config('backpack.base.route_prefix') . '/purchase-request');
         CRUD::setEntityNameStrings('solicitud de compra', 'solicitudes de compra');
+        
+        // Usar FormRequest personalizado
+        CRUD::setValidation(PurchaseRequestRequest::class);
     }
 
     /**
@@ -75,57 +79,59 @@ class PurchaseRequestCrudController extends CrudController
             $generalRequest = \App\Models\GeneralRequest::find($convertedFrom);
         }
 
-        CRUD::field('request_number')->label('Número de Solicitud')->default(function() {
-            return \App\Models\PurchaseRequest::generateNextNumber();
-        })->attributes(['readonly' => 'readonly']);
+        // Setup common fields
+        $this->setupCreateFields();
         
-        CRUD::field('request_date')->label('Fecha de Solicitud')->type('date')->default(now());
-        
-        CRUD::field('responsibility_area_id')->label('Área de Responsabilidad')
-            ->type('select')
-            ->model('App\Models\ResponsibilityArea')
-            ->attribute('name')
-            ->default($generalRequest ? $generalRequest->area_id : null)
-            ->validationRules('required|exists:responsibility_areas,id');
+        // Override defaults if converting from general request
+        if ($generalRequest) {
+            CRUD::modifyField('responsibility_area_id', ['default' => $generalRequest->area_id]);
+            CRUD::modifyField('requesting_user_id', ['default' => $generalRequest->created_by]);
+            CRUD::modifyField('priority', ['default' => $generalRequest->priority]);
+            CRUD::modifyField('justification', ['default' => $generalRequest->description]);
             
-        CRUD::field('requesting_user_id')->label('Usuario Solicitante')
-            ->type('select')
-            ->model('App\Models\User')
-            ->attribute('name')
-            ->default($generalRequest ? $generalRequest->created_by : auth()->id())
-            ->validationRules('required|exists:users,id');
-            
-        CRUD::field('priority')->label('Prioridad')
-            ->type('select_from_array')
-            ->options([
-                'Baja' => 'Baja',
-                'Media' => 'Media',
-                'Alta' => 'Alta',
-                'Urgente' => 'Urgente'
-            ])
-            ->default($generalRequest ? $generalRequest->priority : 'Media');
-            
-        CRUD::field('justification')->label('Justificación')->type('textarea')
-            ->default($generalRequest ? $generalRequest->description : null);
-        CRUD::field('observations')->label('Observaciones')->type('textarea');
+            // Asegurar que los valores por defecto se establezcan correctamente
+            if ($generalRequest->area_id) {
+                CRUD::modifyField('responsibility_area_id', ['value' => $generalRequest->area_id]);
+            }
+            if ($generalRequest->created_by) {
+                CRUD::modifyField('requesting_user_id', ['value' => $generalRequest->created_by]);
+            }
+        }
         
         // Campo oculto para la conversión
         if ($convertedFrom) {
-            CRUD::field('converted_from_general_request_id')->type('hidden')->value($convertedFrom);
+            // Agregar el campo oculto con el ID de la solicitud general
+            CRUD::field('converted_from_general_request_id')
+                ->type('hidden')
+                ->value($convertedFrom)
+                ->attributes(['name' => 'converted_from_general_request_id']);
             
             // Mostrar información de la solicitud general
+            $generalRequestInfo = '';
+            if ($convertedFrom) {
+                $generalRequest = \App\Models\GeneralRequest::find($convertedFrom);
+                if ($generalRequest) {
+                    $generalRequestInfo = '<div class="alert alert-info">
+                        <h5><i class="la la-info-circle"></i> Conversión desde Solicitud General</h5>
+                        <p><strong>Número:</strong> ' . e($generalRequest->number) . '</p>
+                        <p><strong>Título:</strong> ' . e($generalRequest->title) . '</p>
+                        <p><strong>Descripción:</strong> ' . e($generalRequest->description) . '</p>
+                    </div>';
+                }
+            }
+            
             CRUD::field('general_request_info')->label('Información de Solicitud General')->type('custom_html')
-                ->value(function() use ($generalRequest) {
-                    if ($generalRequest) {
-                        return '<div class="alert alert-info">
-                            <h5><i class="la la-info-circle"></i> Conversión desde Solicitud General</h5>
-                            <p><strong>Número:</strong> ' . e($generalRequest->number) . '</p>
-                            <p><strong>Título:</strong> ' . e($generalRequest->title) . '</p>
-                            <p><strong>Descripción:</strong> ' . e($generalRequest->description) . '</p>
-                        </div>';
-                    }
-                    return '';
+                ->value($generalRequestInfo . '
+                <script>
+                document.addEventListener("DOMContentLoaded", function() {
+                    // Asegurar que el campo oculto se envíe con el formulario
+                    var hiddenField = document.createElement("input");
+                    hiddenField.type = "hidden";
+                    hiddenField.name = "converted_from_general_request_id";
+                    hiddenField.value = "' . $convertedFrom . '";
+                    document.querySelector("form").appendChild(hiddenField);
                 });
+                </script>');
         }
     }
 
@@ -137,7 +143,7 @@ class PurchaseRequestCrudController extends CrudController
      */
     protected function setupUpdateOperation()
     {
-        $this->setupCreateOperation();
+        $this->setupCreateFields();
         
         // Agregar campos adicionales para actualización
         CRUD::field('status')->label('Estado')
@@ -159,6 +165,244 @@ class PurchaseRequestCrudController extends CrudController
     }
 
     /**
+     * Setup common fields for create and update operations
+     */
+    private function setupCreateFields()
+    {
+        CRUD::field('request_number')->label('Número de Solicitud')->default(\App\Models\PurchaseRequest::generateNextNumber())->attributes(['readonly' => 'readonly']);
+        
+        CRUD::field('request_date')->label('Fecha de Solicitud')->type('date')->default(now()->format('Y-m-d'));
+        
+        CRUD::field('responsibility_area_id')->label('Área de Responsabilidad')
+            ->type('select')
+            ->model('App\Models\ResponsibilityArea')
+            ->attribute('name')
+            ->validationRules('required|exists:responsibility_areas,id');
+            
+        CRUD::field('requesting_user_id')->label('Usuario Solicitante')
+            ->type('select')
+            ->model('App\Models\User')
+            ->attribute('name')
+            ->default(auth()->id() ?? 1)
+            ->validationRules('required|exists:users,id');
+            
+        CRUD::field('priority')->label('Prioridad')
+            ->type('select_from_array')
+            ->options([
+                'Baja' => 'Baja',
+                'Media' => 'Media',
+                'Alta' => 'Alta',
+                'Urgente' => 'Urgente'
+            ])
+            ->default('Media');
+            
+        CRUD::field('justification')->label('Justificación')->type('textarea');
+        CRUD::field('observations')->label('Observaciones')->type('textarea');
+        
+        // Campos ocultos con valores por defecto
+        CRUD::field('status')->type('hidden')->default('Pendiente');
+        CRUD::field('total_amount')->type('hidden')->default(0);
+        
+        // Campo para seleccionar productos
+        CRUD::field('products_selection')->label('Productos Solicitados')->type('custom_html')
+            ->value('
+            <div id="products-container">
+                <div class="row mb-3">
+                    <div class="col-md-6">
+                        <label for="product-select" class="form-label">Seleccionar Producto</label>
+                        <select id="product-select" class="form-control">
+                            <option value="">Seleccionar un producto...</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label for="product-quantity" class="form-label">Cantidad</label>
+                        <input type="number" id="product-quantity" class="form-control" min="1" value="1">
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">&nbsp;</label>
+                        <button type="button" id="add-product-btn" class="btn btn-primary btn-block">
+                            <i class="la la-plus"></i> Agregar
+                        </button>
+                    </div>
+                </div>
+                <div class="row mb-3">
+                    <div class="col-12">
+                        <button type="button" id="add-new-product-btn" class="btn btn-success">
+                            <i class="la la-plus-circle"></i> Agregar Nuevo Producto
+                        </button>
+                    </div>
+                </div>
+                <div id="selected-products-list"></div>
+            </div>
+            
+            <script>
+            document.addEventListener("DOMContentLoaded", function() {
+                // Cargar productos existentes
+                loadProducts();
+                
+                // Event listeners
+                document.getElementById("add-product-btn").addEventListener("click", addProduct);
+                document.getElementById("add-new-product-btn").addEventListener("click", showNewProductModal);
+                
+                // Función para cargar productos
+                function loadProducts() {
+                    fetch("' . backpack_url('api/productos') . '")
+                        .then(response => response.json())
+                        .then(data => {
+                            const select = document.getElementById("product-select");
+                            select.innerHTML = \'<option value="">Seleccionar un producto...</option>\';
+                            data.forEach(product => {
+                                const option = document.createElement("option");
+                                option.value = product.id;
+                                option.textContent = product.name + " (" + product.unit_measurement + ")";
+                                option.setAttribute("data-unit", product.unit_measurement);
+                                option.setAttribute("data-description", product.description || "");
+                                select.appendChild(option);
+                            });
+                        })
+                        .catch(error => console.error("Error loading products:", error));
+                }
+                
+                // Función para agregar producto
+                function addProduct() {
+                    const select = document.getElementById("product-select");
+                    const quantity = document.getElementById("product-quantity");
+                    
+                    if (!select.value) {
+                        alert("Por favor seleccione un producto");
+                        return;
+                    }
+                    
+                    if (!quantity.value || quantity.value < 1) {
+                        alert("Por favor ingrese una cantidad válida");
+                        return;
+                    }
+                    
+                    const selectedOption = select.options[select.selectedIndex];
+                    const productId = select.value;
+                    const productName = selectedOption.textContent;
+                    const unit = selectedOption.getAttribute("data-unit");
+                    const description = selectedOption.getAttribute("data-description");
+                    
+                    addProductToList(productId, productName, unit, description, quantity.value);
+                    
+                    // Limpiar campos
+                    select.value = "";
+                    quantity.value = 1;
+                }
+                
+                // Función para agregar producto a la lista
+                function addProductToList(productId, productName, unit, description, quantity) {
+                    const container = document.getElementById("selected-products-list");
+                    const productDiv = document.createElement("div");
+                    productDiv.className = "selected-product-item border p-3 mb-2";
+                    productDiv.setAttribute("data-product-id", productId);
+                    
+                    productDiv.innerHTML = `
+                        <div class="row">
+                            <div class="col-md-4">
+                                <strong>${productName}</strong>
+                                ${description ? `<br><small class="text-muted">${description}</small>` : ""}
+                            </div>
+                            <div class="col-md-2">
+                                <label>Cantidad:</label>
+                                <input type="number" class="form-control product-quantity" value="${quantity}" min="1">
+                            </div>
+                            <div class="col-md-2">
+                                <label>Precio Unit. Est.:</label>
+                                <input type="number" class="form-control product-price" step="0.01" min="0">
+                            </div>
+                            <div class="col-md-3">
+                                <label>Especificaciones:</label>
+                                <textarea class="form-control product-specs" rows="2"></textarea>
+                            </div>
+                            <div class="col-md-1">
+                                <button type="button" class="btn btn-danger btn-sm remove-product">
+                                    <i class="la la-trash"></i>
+                                </button>
+                            </div>
+                        </div>
+                    `;
+                    
+                    container.appendChild(productDiv);
+                    
+                    // Event listener para remover producto
+                    productDiv.querySelector(".remove-product").addEventListener("click", function() {
+                        productDiv.remove();
+                        updateHiddenFields();
+                    });
+                    
+                    // Event listeners para actualizar totales
+                    productDiv.querySelector(".product-quantity").addEventListener("input", updateTotals);
+                    productDiv.querySelector(".product-price").addEventListener("input", updateTotals);
+                    
+                    updateHiddenFields();
+                }
+                
+                // Función para actualizar campos ocultos
+                function updateHiddenFields() {
+                    const products = [];
+                    document.querySelectorAll(".selected-product-item").forEach(item => {
+                        const productId = item.getAttribute("data-product-id");
+                        const quantity = item.querySelector(".product-quantity").value;
+                        const price = item.querySelector(".product-price").value;
+                        const specs = item.querySelector(".product-specs").value;
+                        
+                        products.push({
+                            product_id: productId,
+                            quantity: quantity,
+                            price: price,
+                            specifications: specs
+                        });
+                    });
+                    
+                    // Crear o actualizar campo oculto
+                    let hiddenField = document.querySelector("input[name=\'selected_products\']");
+                    if (!hiddenField) {
+                        hiddenField = document.createElement("input");
+                        hiddenField.type = "hidden";
+                        hiddenField.name = "selected_products";
+                        document.querySelector("form").appendChild(hiddenField);
+                    }
+                    hiddenField.value = JSON.stringify(products);
+                }
+                
+                // Función para actualizar totales
+                function updateTotals() {
+                    updateHiddenFields();
+                }
+                
+                // Función para mostrar modal de nuevo producto
+                function showNewProductModal() {
+                    const productName = prompt("Nombre del nuevo producto:");
+                    if (!productName) return;
+                    
+                    const productUnit = prompt("Unidad del producto (ej: kg, litros, unidades):");
+                    if (!productUnit) return;
+                    
+                    const productDescription = prompt("Descripción del producto (opcional):") || "";
+                    
+                    // Agregar como producto temporal con ID negativo
+                    const tempId = "new_" + Date.now();
+                    const productData = {
+                        product_id: tempId,
+                        name: productName,
+                        unit: productUnit,
+                        description: productDescription,
+                        quantity: 1,
+                        price: 0,
+                        specifications: ""
+                    };
+                    
+                    // Agregar a la lista de productos seleccionados
+                    addProductToList(tempId, productName, productUnit, productDescription, 1);
+                }
+            });
+            </script>
+            ');
+    }
+
+    /**
      * Store a newly created resource in storage.
      */
     public function store()
@@ -171,25 +415,125 @@ class PurchaseRequestCrudController extends CrudController
         // register any Model Events defined on fields
         $this->crud->registerFieldEvents();
 
-        // insert item in the db
-        $item = $this->crud->create($this->crud->getStrippedSaveRequest($request));
-        $this->data['entry'] = $this->crud->entry = $item;
-
-        // show a success message
-        \Alert::success(trans('backpack::crud.insert_success'))->flash();
-
-        // save the redirect choice for next time
-        $this->crud->setSaveAction();
-
-        // Si viene de una solicitud general, actualizar su estado
-        if ($item->converted_from_general_request_id) {
-            $generalRequest = \App\Models\GeneralRequest::find($item->converted_from_general_request_id);
-            if ($generalRequest) {
-                $generalRequest->update(['status' => 'convertida_a_compra']);
-            }
+        // Obtener datos para guardar
+        $dataToSave = $this->crud->getStrippedSaveRequest($request);
+        
+        // Verificar si viene de una solicitud general desde el parámetro URL
+        $convertedFrom = request()->get('converted_from');
+        \Log::info('Parámetro converted_from desde URL:', ['converted_from' => $convertedFrom]);
+        \Log::info('Campo converted_from_general_request_id en datos:', ['field' => $dataToSave['converted_from_general_request_id'] ?? 'no existe']);
+        
+        if ($convertedFrom && !isset($dataToSave['converted_from_general_request_id'])) {
+            $dataToSave['converted_from_general_request_id'] = $convertedFrom;
+            \Log::info('Agregado converted_from_general_request_id a datos:', ['id' => $convertedFrom]);
         }
 
-        return $this->crud->performSaveAction($item->getKey());
+        // Asegurar que los campos requeridos tengan valores por defecto
+        if (!isset($dataToSave['status'])) {
+            $dataToSave['status'] = 'Pendiente';
+        }
+        if (!isset($dataToSave['priority'])) {
+            $dataToSave['priority'] = 'Media';
+        }
+        if (!isset($dataToSave['total_amount'])) {
+            $dataToSave['total_amount'] = 0;
+        }
+
+        // Debug: Log los datos que se van a guardar
+        \Log::info('Datos a guardar en PurchaseRequest:', $dataToSave);
+
+        try {
+            // insert item in the db
+            $item = $this->crud->create($dataToSave);
+            $this->data['entry'] = $this->crud->entry = $item;
+
+            // Procesar productos seleccionados
+            $this->processSelectedProducts($item, $request);
+
+            // show a success message
+            \Alert::success(trans('backpack::crud.insert_success'))->flash();
+
+            // save the redirect choice for next time
+            $this->crud->setSaveAction();
+
+            // Actualizar estado de la solicitud general si viene de una conversión
+            if ($item->converted_from_general_request_id) {
+                \Log::info('Intentando actualizar solicitud general:', ['id' => $item->converted_from_general_request_id]);
+                $generalRequest = \App\Models\GeneralRequest::find($item->converted_from_general_request_id);
+                if ($generalRequest) {
+                    $generalRequest->update(['status' => 'convertida_a_compra']);
+                    \Log::info('Solicitud general actualizada exitosamente:', ['id' => $generalRequest->id, 'status' => $generalRequest->status]);
+                    \Alert::info('La solicitud general ' . $generalRequest->number . ' ha sido marcada como convertida a compra.')->flash();
+                } else {
+                    \Log::error('No se encontró la solicitud general con ID:', ['id' => $item->converted_from_general_request_id]);
+                }
+            } else {
+                \Log::info('No hay converted_from_general_request_id en el item guardado');
+            }
+
+            return $this->crud->performSaveAction($item->getKey());
+        } catch (\Exception $e) {
+            \Log::error('Error al guardar PurchaseRequest: ' . $e->getMessage());
+            \Alert::error('Error al guardar la solicitud de compra: ' . $e->getMessage())->flash();
+            return redirect()->back()->withInput();
+        }
+    }
+
+    /**
+     * Process selected products and create purchase request details
+     */
+    private function processSelectedProducts($purchaseRequest, $request)
+    {
+        $selectedProducts = $request->input('selected_products');
+        
+        if (!$selectedProducts) {
+            \Log::info('No hay productos seleccionados');
+            return;
+        }
+        
+        $products = json_decode($selectedProducts, true);
+        \Log::info('Productos seleccionados:', $products);
+        
+        $totalAmount = 0;
+        
+        foreach ($products as $productData) {
+            $productId = $productData['product_id'];
+            $quantity = $productData['quantity'];
+            $price = $productData['price'] ?? 0;
+            $specifications = $productData['specifications'] ?? '';
+            
+            // Si es un producto nuevo (ID que empieza con "new_")
+            if (strpos($productId, 'new_') === 0) {
+                // Crear el nuevo producto
+                $newProduct = \App\Models\Product::create([
+                    'name' => $productData['name'] ?? 'Producto Nuevo',
+                    'description' => $productData['description'] ?? '',
+                    'unit_measurement' => $productData['unit'] ?? 'unidad',
+                    'category_id' => 1, // Categoría por defecto
+                    'minimum_stock' => 0
+                ]);
+                $productId = $newProduct->id;
+                \Log::info('Nuevo producto creado:', ['id' => $newProduct->id, 'name' => $newProduct->name]);
+            }
+            
+            // Crear el detalle de la solicitud de compra
+            $detail = \App\Models\PurchaseRequestDetail::create([
+                'purchase_request_id' => $purchaseRequest->id,
+                'product_id' => $productId,
+                'requested_quantity' => $quantity,
+                'specifications' => $specifications,
+                'estimated_unit_price' => $price,
+                'estimated_total' => $price * $quantity,
+                'status' => 'Pendiente'
+            ]);
+            
+            $totalAmount += $price * $quantity;
+            \Log::info('Detalle creado:', ['detail_id' => $detail->id, 'product_id' => $productId]);
+        }
+        
+        // Actualizar el monto total de la solicitud
+        $purchaseRequest->update(['total_amount' => $totalAmount]);
+        \Log::info('Monto total actualizado:', ['total' => $totalAmount]);
     }
 
     /**
