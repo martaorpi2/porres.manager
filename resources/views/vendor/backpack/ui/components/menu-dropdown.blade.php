@@ -4,7 +4,7 @@
                                 'href' => $link ?? '#',
                                 'data-bs-toggle' => 'dropdown',
                                 'role' => 'button',
-                                'aria-expanded' => 'true'
+                                'aria-expanded' => 'false'
                             ]) }}>
         @if($icon)<i class="nav-icon {{ $icon }} d-block d-lg-none d-xl-block"></i>@endif
         @if($title)<span>{{ $title }}</span>@endif

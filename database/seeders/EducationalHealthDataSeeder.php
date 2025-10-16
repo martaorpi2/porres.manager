@@ -20,6 +20,7 @@ use App\Models\QuoteDetail;
 use App\Models\Reception;
 use App\Models\Devolution;
 use App\Models\InventoryMovement;
+use App\Models\GeneralRequestDetail;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
@@ -100,6 +101,9 @@ class EducationalHealthDataSeeder extends Seeder
         
         // 23. Crear solicitudes generales
         $this->createGeneralRequests();
+        
+        // 24. Crear detalles de solicitudes generales
+        $this->createGeneralRequestDetails();
         
         $this->command->info('Datos educativos y de salud generados exitosamente.');
     }
@@ -1245,6 +1249,108 @@ class EducationalHealthDataSeeder extends Seeder
         foreach ($requests as $request) {
             $request['number'] = \App\Models\GeneralRequest::generateNextNumber();
             \App\Models\GeneralRequest::create($request);
+        }
+    }
+
+    private function createGeneralRequestDetails()
+    {
+        $generalRequests = \App\Models\GeneralRequest::all();
+        $products = Product::all();
+        
+        $details = [
+            // Detalles para la primera solicitud general (Reactivos para Laboratorio)
+            [
+                'general_request_id' => 1,
+                'product_id' => 4, // Reactivo para Glucosa
+                'requested_quantity' => 15,
+                'specifications' => 'Reactivos de alta pureza para análisis clínicos',
+                'justification' => 'Necesarios para las prácticas de laboratorio clínico de los estudiantes',
+                'estimated_unit_price' => 850.00,
+                'estimated_total' => 12750.00,
+                'status' => 'Pendiente',
+            ],
+            [
+                'general_request_id' => 1,
+                'product_id' => 5, // Reactivo para Hemoglobina
+                'requested_quantity' => 10,
+                'specifications' => 'Reactivos para determinación de hemoglobina',
+                'justification' => 'Para completar el panel de análisis hematológicos',
+                'estimated_unit_price' => 650.00,
+                'estimated_total' => 6500.00,
+                'status' => 'Pendiente',
+            ],
+            
+            // Detalles para la segunda solicitud general (Guantes de Protección)
+            [
+                'general_request_id' => 2,
+                'product_id' => 7, // Guantes de Látex Talla M
+                'requested_quantity' => 20,
+                'specifications' => 'Guantes de nitrilo estériles talla M',
+                'justification' => 'Reposición de stock para prácticas de anatomía y laboratorio',
+                'estimated_unit_price' => 25.50,
+                'estimated_total' => 510.00,
+                'status' => 'Aprobada',
+            ],
+            [
+                'general_request_id' => 2,
+                'product_id' => 6, // Jeringas Descartables 5ml
+                'requested_quantity' => 8,
+                'specifications' => 'Jeringas estériles de 5ml',
+                'justification' => 'Para extracción de muestras en prácticas',
+                'estimated_unit_price' => 45.00,
+                'estimated_total' => 360.00,
+                'status' => 'Aprobada',
+            ],
+            
+            // Detalles para la tercera solicitud general (Equipos de Computación)
+            [
+                'general_request_id' => 3,
+                'product_id' => 1, // Microscopio (como ejemplo de equipo)
+                'requested_quantity' => 5,
+                'specifications' => 'Equipos con garantía extendida y soporte técnico',
+                'justification' => 'Para renovar el aula de informática médica',
+                'estimated_unit_price' => 7500.00,
+                'estimated_total' => 37500.00,
+                'status' => 'En Cotización',
+            ],
+            
+            // Detalles para la cuarta solicitud general (Material de Limpieza)
+            [
+                'general_request_id' => 4,
+                'product_id' => 5, // Solución Salina Fisiológica
+                'requested_quantity' => 25,
+                'specifications' => 'Productos de limpieza especializados para equipos de laboratorio',
+                'justification' => 'Para mantenimiento y limpieza de equipos especializados',
+                'estimated_unit_price' => 15.00,
+                'estimated_total' => 375.00,
+                'status' => 'Rechazada',
+            ],
+            
+            // Detalles para la quinta solicitud general (Microscopios para Histología)
+            [
+                'general_request_id' => 5,
+                'product_id' => 1, // Microscopio Óptico Binocular
+                'requested_quantity' => 3,
+                'specifications' => 'Microscopios ópticos con aumento 40x-1000x',
+                'justification' => 'Para las prácticas de histología y citología de los estudiantes',
+                'estimated_unit_price' => 7500.00,
+                'estimated_total' => 22500.00,
+                'status' => 'Comprada',
+            ],
+            [
+                'general_request_id' => 5,
+                'product_id' => 2, // Centrífuga de Laboratorio
+                'requested_quantity' => 1,
+                'specifications' => 'Centrífuga con capacidad para 12 tubos',
+                'justification' => 'Para complementar el laboratorio de histología',
+                'estimated_unit_price' => 12000.00,
+                'estimated_total' => 12000.00,
+                'status' => 'Comprada',
+            ],
+        ];
+
+        foreach ($details as $detail) {
+            \App\Models\GeneralRequestDetail::create($detail);
         }
     }
 }
