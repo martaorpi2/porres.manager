@@ -123,6 +123,44 @@
               </form>
             </div>
           </div>
+        @elseif($crud->route == 'admin/category')
+          <!-- Filtro personalizado para categorías -->
+          <div class="card mb-3">
+            <div class="card-header bg-primary text-white">
+              <h6 class="card-title mb-0">
+                <i class="fas fa-filter"></i> Filtros
+              </h6>
+            </div>
+            <div class="card-body py-2">
+              <form method="GET" action="{{ url($crud->route) }}">
+                <div class="row">
+                  <div class="col-md-4">
+                    <label for="nombre" class="form-label">Nombre:</label>
+                    <input type="text" name="nombre" id="nombre" class="form-control" placeholder="Buscar por nombre..." value="{{ request('nombre') }}">
+                  </div>
+                </div>
+              </form>
+            </div>
+          </div>
+        @elseif($crud->route == 'admin/location')
+          <!-- Filtro personalizado para ubicaciones -->
+          <div class="card mb-3">
+            <div class="card-header bg-primary text-white">
+              <h6 class="card-title mb-0">
+                <i class="fas fa-filter"></i> Filtros
+              </h6>
+            </div>
+            <div class="card-body py-2">
+              <form method="GET" action="{{ url($crud->route) }}">
+                <div class="row">
+                  <div class="col-md-4">
+                    <label for="nombre" class="form-label">Nombre:</label>
+                    <input type="text" name="nombre" id="nombre" class="form-control" placeholder="Buscar por nombre..." value="{{ request('nombre') }}">
+                  </div>
+                </div>
+              </form>
+            </div>
+          </div>
         @endif
 
         <div class="table-responsive">

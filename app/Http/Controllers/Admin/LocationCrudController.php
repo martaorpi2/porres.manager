@@ -43,6 +43,15 @@ class LocationCrudController extends CrudController
 
         CRUD::column('name')->label('Nombre');
         CRUD::column('description')->label('Descripción');
+
+        // Filtro personalizado por nombre usando parámetros de URL
+        if (request()->has('nombre')) {
+            $nombre = request()->get('nombre');
+            if ($nombre) {
+                CRUD::addClause('where', 'name', 'like', '%' . $nombre . '%');
+            }
+        }
+
         /**
          * Columns can be defined using the fluent syntax:
          * - CRUD::column('price')->type('number');
