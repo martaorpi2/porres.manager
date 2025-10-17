@@ -20,7 +20,6 @@ class StockLevel extends Model
     ];
 
     protected $casts = [
-        'quantity' => 'decimal:2',
         'last_cost' => 'decimal:2',
     ];
 

@@ -23,7 +23,7 @@ class GeneralRequestCrudController extends CrudController
 
     protected function setupListOperation()
     {
-        CRUD::addClause('with', ['createdBy', 'area']);
+        CRUD::addClause('with', ['createdBy', 'area', 'details']);
         
         // Filtrar solicitudes que no estén convertidas a compra
         CRUD::addClause('where', 'status', '!=', 'convertida_a_compra');
@@ -34,6 +34,14 @@ class GeneralRequestCrudController extends CrudController
         CRUD::column('area.name')->label('Área');
         CRUD::column('priority')->label('Prioridad');
         CRUD::column('status')->label('Estado');
+        
+        // Agregar columna personalizada para mostrar cantidad de productos
+        CRUD::column('details_count')->label('Productos')->type('custom_html')
+            ->value(function($entry) {
+                $count = $entry->details->count();
+                return '<span class="badge bg-info">' . $count . ' productos</span>';
+            });
+            
         CRUD::column('created_at')->label('Fecha de Creación');
 
         // Botón para convertir a solicitud de compra (solo para solicitudes no convertidas)
@@ -83,206 +91,309 @@ class GeneralRequestCrudController extends CrudController
             
         // Campo para seleccionar productos
         CRUD::field('products_selection')->label('Productos Solicitados')->type('custom_html')
-            ->value('
-            <div id="products-container">
-                <div class="row mb-3">
-                    <div class="col-md-6">
-                        <label for="product-select" class="form-label">Seleccionar Producto</label>
-                        <select id="product-select" class="form-control">
-                            <option value="">Seleccionar un producto...</option>
-                        </select>
-                    </div>
-                    <div class="col-md-3">
-                        <label for="product-quantity" class="form-label">Cantidad</label>
-                        <input type="number" id="product-quantity" class="form-control" min="1" value="1">
-                    </div>
-                    <div class="col-md-3">
-                        <label class="form-label">&nbsp;</label>
-                        <button type="button" id="add-product-btn" class="btn btn-primary btn-block">
-                            <i class="la la-plus"></i> Agregar
-                        </button>
-                    </div>
-                </div>
-                <div class="row mb-3">
-                    <div class="col-12">
-                        <button type="button" id="add-new-product-btn" class="btn btn-success">
-                            <i class="la la-plus-circle"></i> Agregar Nuevo Producto
-                        </button>
-                    </div>
-                </div>
-                <div id="selected-products-list"></div>
-            </div>
-            
-            <script>
-            document.addEventListener("DOMContentLoaded", function() {
-                // Cargar productos existentes
-                loadProducts();
-                
-                // Event listeners
-                document.getElementById("add-product-btn").addEventListener("click", addProduct);
-                document.getElementById("add-new-product-btn").addEventListener("click", showNewProductModal);
-                
-                // Función para cargar productos
-                function loadProducts() {
-                    fetch("' . backpack_url('api/productos') . '")
-                        .then(response => response.json())
-                        .then(data => {
-                            const select = document.getElementById("product-select");
-                            select.innerHTML = \'<option value="">Seleccionar un producto...</option>\';
-                            data.forEach(product => {
-                                const option = document.createElement("option");
-                                option.value = product.id;
-                                option.textContent = product.name + " (" + product.unit_measurement + ")";
-                                option.setAttribute("data-unit", product.unit_measurement);
-                                option.setAttribute("data-description", product.description || "");
-                                select.appendChild(option);
-                            });
-                        })
-                        .catch(error => console.error("Error loading products:", error));
-                }
-                
-                // Función para agregar producto
-                function addProduct() {
-                    const select = document.getElementById("product-select");
-                    const quantity = document.getElementById("product-quantity");
-                    
-                    if (!select.value) {
-                        alert("Por favor seleccione un producto");
-                        return;
-                    }
-                    
-                    if (!quantity.value || quantity.value < 1) {
-                        alert("Por favor ingrese una cantidad válida");
-                        return;
-                    }
-                    
-                    const selectedOption = select.options[select.selectedIndex];
-                    const productId = select.value;
-                    const productName = selectedOption.textContent;
-                    const unit = selectedOption.getAttribute("data-unit");
-                    const description = selectedOption.getAttribute("data-description");
-                    
-                    addProductToList(productId, productName, unit, description, quantity.value);
-                    
-                    // Limpiar campos
-                    select.value = "";
-                    quantity.value = 1;
-                }
-                
-                // Función para agregar producto a la lista
-                function addProductToList(productId, productName, unit, description, quantity) {
-                    const container = document.getElementById("selected-products-list");
-                    const productDiv = document.createElement("div");
-                    productDiv.className = "selected-product-item border p-3 mb-2";
-                    productDiv.setAttribute("data-product-id", productId);
-                    
-                    productDiv.innerHTML = `
-                        <div class="row">
-                            <div class="col-md-4">
-                                <strong>${productName}</strong>
-                                ${description ? `<br><small class="text-muted">${description}</small>` : ""}
-                            </div>
-                            <div class="col-md-2">
-                                <label>Cantidad:</label>
-                                <input type="number" class="form-control product-quantity" value="${quantity}" min="1">
-                            </div>
-                            <div class="col-md-2">
-                                <label>Precio Unit. Est.:</label>
-                                <input type="number" class="form-control product-price" step="0.01" min="0">
-                            </div>
-                            <div class="col-md-3">
-                                <label>Especificaciones:</label>
-                                <textarea class="form-control product-specs" rows="2"></textarea>
-                            </div>
-                            <div class="col-md-1">
-                                <button type="button" class="btn btn-danger btn-sm remove-product">
-                                    <i class="la la-trash"></i>
-                                </button>
-                            </div>
-                        </div>
-                    `;
-                    
-                    container.appendChild(productDiv);
-                    
-                    // Event listener para remover producto
-                    productDiv.querySelector(".remove-product").addEventListener("click", function() {
-                        productDiv.remove();
-                        updateHiddenFields();
-                    });
-                    
-                    // Event listeners para actualizar totales
-                    productDiv.querySelector(".product-quantity").addEventListener("input", updateTotals);
-                    productDiv.querySelector(".product-price").addEventListener("input", updateTotals);
-                    
-                    updateHiddenFields();
-                }
-                
-                // Función para actualizar campos ocultos
-                function updateHiddenFields() {
-                    const products = [];
-                    document.querySelectorAll(".selected-product-item").forEach(item => {
-                        const productId = item.getAttribute("data-product-id");
-                        const quantity = item.querySelector(".product-quantity").value;
-                        const price = item.querySelector(".product-price").value;
-                        const specs = item.querySelector(".product-specs").value;
-                        
-                        products.push({
-                            product_id: productId,
-                            quantity: quantity,
-                            price: price,
-                            specifications: specs
-                        });
-                    });
-                    
-                    // Crear o actualizar campo oculto
-                    let hiddenField = document.querySelector("input[name=\'selected_products\']");
-                    if (!hiddenField) {
-                        hiddenField = document.createElement("input");
-                        hiddenField.type = "hidden";
-                        hiddenField.name = "selected_products";
-                        document.querySelector("form").appendChild(hiddenField);
-                    }
-                    hiddenField.value = JSON.stringify(products);
-                }
-                
-                // Función para actualizar totales
-                function updateTotals() {
-                    updateHiddenFields();
-                }
-                
-                // Función para mostrar modal de nuevo producto
-                function showNewProductModal() {
-                    const productName = prompt("Nombre del nuevo producto:");
-                    if (!productName) return;
-                    
-                    const productUnit = prompt("Unidad del producto (ej: kg, litros, unidades):");
-                    if (!productUnit) return;
-                    
-                    const productDescription = prompt("Descripción del producto (opcional):") || "";
-                    
-                    // Agregar como producto temporal con ID negativo
-                    const tempId = "new_" + Date.now();
-                    const productData = {
-                        product_id: tempId,
-                        name: productName,
-                        unit: productUnit,
-                        description: productDescription,
-                        quantity: 1,
-                        price: 0,
-                        specifications: ""
-                    };
-                    
-                    // Agregar a la lista de productos seleccionados
-                    addProductToList(tempId, productName, productUnit, productDescription, 1);
-                }
-            });
-            </script>
-            ');
+            ->value($this->getProductsSelectionHtml());
     }
 
     protected function setupUpdateOperation()
     {
+        // Usar los mismos campos que en create
         $this->setupCreateOperation();
+        
+        // Cargar productos existentes para edición
+        $entry = $this->crud->getCurrentEntry();
+        if ($entry) {
+            // Cargar la relación con productos
+            $entry->load('details.product');
+            
+            if ($entry->details) {
+                $existingProducts = $entry->details->map(function($detail) {
+                    return [
+                        'product_id' => $detail->product_id,
+                        'product_name' => $detail->product->name,
+                        'unit' => $detail->product->unit_measurement,
+                        'description' => $detail->product->description,
+                        'quantity' => $detail->requested_quantity,
+                        'price' => $detail->estimated_unit_price,
+                        'specifications' => $detail->specifications
+                    ];
+                })->toArray();
+                
+                // Modificar el campo de productos para incluir los existentes
+                CRUD::modifyField('products_selection', [
+                    'value' => $this->getProductsSelectionHtml($existingProducts)
+                ]);
+            }
+        }
+    }
+
+    /**
+     * Generate HTML for products selection with existing products
+     */
+    private function getProductsSelectionHtml($existingProducts = [])
+    {
+        $existingProductsJson = json_encode($existingProducts);
+        
+        return '
+        <div id="products-container">
+            <div class="row mb-3">
+                <div class="col-md-6">
+                    <label for="product-select" class="form-label">Seleccionar Producto</label>
+                    <select id="product-select" class="form-control">
+                        <option value="">Seleccionar un producto...</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label for="product-quantity" class="form-label">Cantidad</label>
+                    <input type="number" id="product-quantity" class="form-control" min="1" value="1">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">&nbsp;</label>
+                    <button type="button" id="add-product-btn" class="btn btn-primary btn-block">
+                        <i class="la la-plus"></i> Agregar
+                    </button>
+                </div>
+            </div>
+            <div class="row mb-3">
+                <div class="col-12">
+                    <button type="button" id="add-new-product-btn" class="btn btn-success">
+                        <i class="la la-plus-circle"></i> Agregar Nuevo Producto
+                    </button>
+                </div>
+            </div>
+            <div id="selected-products-list"></div>
+        </div>
+        
+        <script>
+        document.addEventListener("DOMContentLoaded", function() {
+            const existingProducts = ' . $existingProductsJson . ';
+            
+            // Cargar productos existentes
+            loadProducts();
+            
+            // Cargar productos existentes en la lista
+            if (existingProducts && existingProducts.length > 0) {
+                existingProducts.forEach(product => {
+                    addProductToList(
+                        product.product_id, 
+                        product.product_name + " (" + product.unit + ")", 
+                        product.unit, 
+                        product.description, 
+                        product.quantity,
+                        product.price,
+                        product.specifications
+                    );
+                });
+            }
+            
+            // Event listeners
+            document.getElementById("add-product-btn").addEventListener("click", addProduct);
+            document.getElementById("add-new-product-btn").addEventListener("click", showNewProductModal);
+            
+            // Función para cargar productos
+            function loadProducts() {
+                fetch("' . backpack_url('api/productos') . '")
+                    .then(response => response.json())
+                    .then(data => {
+                        const select = document.getElementById("product-select");
+                        select.innerHTML = \'<option value="">Seleccionar un producto...</option>\';
+                        data.forEach(product => {
+                            const option = document.createElement("option");
+                            option.value = product.id;
+                            option.textContent = product.name + " (" + product.unit_measurement + ")";
+                            option.setAttribute("data-unit", product.unit_measurement);
+                            option.setAttribute("data-description", product.description || "");
+                            select.appendChild(option);
+                        });
+                    })
+                    .catch(error => console.error("Error loading products:", error));
+            }
+            
+            // Función para agregar producto
+            function addProduct() {
+                const select = document.getElementById("product-select");
+                const quantity = document.getElementById("product-quantity");
+                
+                if (!select.value) {
+                    alert("Por favor seleccione un producto");
+                    return;
+                }
+                
+                if (!quantity.value || quantity.value < 1) {
+                    alert("Por favor ingrese una cantidad válida");
+                    return;
+                }
+                
+                const selectedOption = select.options[select.selectedIndex];
+                const productId = select.value;
+                const productName = selectedOption.textContent;
+                const unit = selectedOption.getAttribute("data-unit");
+                const description = selectedOption.getAttribute("data-description");
+                
+                console.log("Agregando producto:", {productId, productName, unit, description, quantity: quantity.value});
+                
+                addProductToList(productId, productName, unit, description, quantity.value);
+                
+                // Limpiar campos
+                select.value = "";
+                quantity.value = 1;
+            }
+            
+            // Función para agregar producto a la lista
+            function addProductToList(productId, productName, unit, description, quantity, price = 0, specifications = "") {
+                const container = document.getElementById("selected-products-list");
+                const productDiv = document.createElement("div");
+                productDiv.className = "selected-product-item border p-3 mb-2";
+                productDiv.setAttribute("data-product-id", productId);
+                
+                productDiv.innerHTML = `
+                    <div class="row">
+                        <div class="col-md-4">
+                            <strong>${productName}</strong>
+                            ${description ? `<br><small class="text-muted">${description}</small>` : ""}
+                        </div>
+                        <div class="col-md-2">
+                            <label>Cantidad:</label>
+                            <input type="number" class="form-control product-quantity" value="${quantity}" min="1">
+                        </div>
+                        <div class="col-md-2">
+                            <label>Precio Unit. Est.:</label>
+                            <input type="number" class="form-control product-price" step="0.01" min="0" value="${price}">
+                        </div>
+                        <div class="col-md-3">
+                            <label>Especificaciones:</label>
+                            <textarea class="form-control product-specs" rows="2">${specifications}</textarea>
+                        </div>
+                        <div class="col-md-1">
+                            <button type="button" class="btn btn-danger btn-sm remove-product">
+                                <i class="la la-trash"></i>
+                            </button>
+                        </div>
+                    </div>
+                `;
+                
+                container.appendChild(productDiv);
+                
+                // Event listener para remover producto
+                productDiv.querySelector(".remove-product").addEventListener("click", function() {
+                    productDiv.remove();
+                    updateHiddenFields();
+                });
+                
+                // Event listeners para actualizar totales
+                productDiv.querySelector(".product-quantity").addEventListener("input", updateTotals);
+                productDiv.querySelector(".product-price").addEventListener("input", updateTotals);
+                
+                updateHiddenFields();
+            }
+            
+            // Función para actualizar campos ocultos
+            function updateHiddenFields() {
+                const products = [];
+                document.querySelectorAll(".selected-product-item").forEach(item => {
+                    const productId = item.getAttribute("data-product-id");
+                    const quantity = item.querySelector(".product-quantity").value;
+                    const price = item.querySelector(".product-price").value;
+                    const specs = item.querySelector(".product-specs").value;
+                    
+                    products.push({
+                        product_id: productId,
+                        quantity: quantity,
+                        price: price,
+                        specifications: specs
+                    });
+                });
+                
+                // Crear o actualizar campo oculto
+                let hiddenField = document.querySelector("input[name=\'selected_products\']");
+                if (!hiddenField) {
+                    hiddenField = document.createElement("input");
+                    hiddenField.type = "hidden";
+                    hiddenField.name = "selected_products";
+                    document.querySelector("form").appendChild(hiddenField);
+                }
+                hiddenField.value = JSON.stringify(products);
+                
+                // Debug: Log para verificar que se está enviando
+                console.log("Productos seleccionados:", products);
+                console.log("Campo oculto value:", hiddenField.value);
+            }
+            
+            // Función para actualizar totales
+            function updateTotals() {
+                updateHiddenFields();
+            }
+            
+            // Función para mostrar modal de nuevo producto
+            function showNewProductModal() {
+                const productName = prompt("Nombre del nuevo producto:");
+                if (!productName) return;
+                
+                const productUnit = prompt("Unidad del producto (ej: kg, litros, unidades):");
+                if (!productUnit) return;
+                
+                const productDescription = prompt("Descripción del producto (opcional):") || "";
+                
+                // Agregar como producto temporal con ID negativo
+                const tempId = "new_" + Date.now();
+                const productData = {
+                    product_id: tempId,
+                    name: productName,
+                    unit: productUnit,
+                    description: productDescription,
+                    quantity: 1,
+                    price: 0,
+                    specifications: ""
+                };
+                
+                // Agregar a la lista de productos seleccionados
+                addProductToList(tempId, productName, productUnit, productDescription, 1);
+            }
+        });
+        </script>
+        ';
+    }
+
+    /**
+     * Update the specified resource in storage.
+     */
+    public function update()
+    {
+        $this->crud->hasAccessOrFail('update');
+
+        // execute the FormRequest authorization and validation, if one is required
+        $request = $this->crud->validateRequest();
+
+        // register any Model Events defined on fields
+        $this->crud->registerFieldEvents();
+
+        // Obtener datos para guardar
+        $dataToSave = $this->crud->getStrippedSaveRequest($request);
+
+        // Debug: Log todos los datos del request
+        \Log::info('Datos del request completo (UPDATE):', $request->all());
+        \Log::info('selected_products (UPDATE):', ['value' => $request->input('selected_products')]);
+
+        try {
+            // update item in the db
+            $item = $this->crud->update($this->crud->getCurrentEntryId(), $dataToSave);
+            $this->data['entry'] = $this->crud->entry = $item;
+
+            // Eliminar productos existentes y procesar los nuevos
+            $this->processSelectedProducts($item, $request, true);
+
+            // show a success message
+            \Alert::success(trans('backpack::crud.update_success'))->flash();
+
+            // save the redirect choice for next time
+            $this->crud->setSaveAction();
+
+            return $this->crud->performSaveAction($item->getKey());
+        } catch (\Exception $e) {
+            \Log::error('Error al actualizar GeneralRequest: ' . $e->getMessage());
+            \Log::error('Stack trace: ' . $e->getTraceAsString());
+            \Alert::error('Error al actualizar la solicitud general: ' . $e->getMessage())->flash();
+            return redirect()->back()->withInput();
+        }
     }
 
     /**
@@ -301,9 +412,13 @@ class GeneralRequestCrudController extends CrudController
         // Obtener datos para guardar
         $dataToSave = $this->crud->getStrippedSaveRequest($request);
 
+        // Debug: Log todos los datos del request
+        \Log::info('Datos del request completo:', $request->all());
+        \Log::info('selected_products:', ['value' => $request->input('selected_products')]);
+
         try {
-            // insert item in the db
-            $item = $this->crud->create($dataToSave);
+            // update item in the db
+            $item = $this->crud->update($this->crud->getCurrentEntryId(), $dataToSave);
             $this->data['entry'] = $this->crud->entry = $item;
 
             // Procesar productos seleccionados
@@ -318,6 +433,7 @@ class GeneralRequestCrudController extends CrudController
             return $this->crud->performSaveAction($item->getKey());
         } catch (\Exception $e) {
             \Log::error('Error al guardar GeneralRequest: ' . $e->getMessage());
+            \Log::error('Stack trace: ' . $e->getTraceAsString());
             \Alert::error('Error al guardar la solicitud general: ' . $e->getMessage())->flash();
             return redirect()->back()->withInput();
         }
@@ -326,8 +442,14 @@ class GeneralRequestCrudController extends CrudController
     /**
      * Process selected products and create general request details
      */
-    private function processSelectedProducts($generalRequest, $request)
+    private function processSelectedProducts($generalRequest, $request, $isUpdate = false)
     {
+        // Si es una actualización, eliminar productos existentes
+        if ($isUpdate) {
+            \Log::info('Eliminando productos existentes de solicitud general:', ['id' => $generalRequest->id]);
+            $generalRequest->details()->delete();
+        }
+        
         $selectedProducts = $request->input('selected_products');
         
         if (!$selectedProducts) {

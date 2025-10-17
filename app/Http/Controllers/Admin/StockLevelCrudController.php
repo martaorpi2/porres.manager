@@ -28,7 +28,7 @@ class StockLevelCrudController extends CrudController
     {
         CRUD::setModel(\App\Models\StockLevel::class);
         CRUD::setRoute(config('backpack.base.route_prefix') . '/stock-level');
-        CRUD::setEntityNameStrings('stock level', 'stock levels');
+        CRUD::setEntityNameStrings('stock', 'stock');
     }
 
     /**
@@ -39,8 +39,29 @@ class StockLevelCrudController extends CrudController
      */
     protected function setupListOperation()
     {
-        CRUD::setFromDb(); // set columns from db columns.
-
+        CRUD::removeButton('show');
+        
+        CRUD::column('product')->label('Producto');
+        CRUD::column('location')->label('Ubicación');
+        CRUD::addColumn([
+            'name' => 'quantity',
+            'label' => 'Cantidad',
+            'type' => 'number',
+        ]);
+        CRUD::column('last_cost')->label('Precio');
+        CRUD::addColumn([
+            'name' => 'last_updated_by',
+            'label' => 'Actualizado por',
+            'type' => 'select',
+            'entity' => 'lastUpdatedBy',
+            'attribute' => 'name',
+            'model' => 'App\Models\User',
+            'searchLogic' => function ($query, $column, $searchTerm) {
+                $query->orWhereHas('lastUpdatedBy', function ($q) use ($searchTerm) {
+                    $q->where('name', 'like', '%'.$searchTerm.'%');
+                });
+            },
+        ]);
         /**
          * Columns can be defined using the fluent syntax:
          * - CRUD::column('price')->type('number');
@@ -56,8 +77,31 @@ class StockLevelCrudController extends CrudController
     protected function setupCreateOperation()
     {
         CRUD::setValidation(StockLevelRequest::class);
-        CRUD::setFromDb(); // set fields from db columns.
-
+        CRUD::field('product')->label('Producto');
+        CRUD::field('location')->label('Ubicación');
+        CRUD::addField([
+            'name' => 'quantity',
+            'label' => 'Cantidad',
+            'type' => 'number',
+            'attributes' => [
+                'step' => 1,
+                'min' => 0,
+            ],
+        ]);
+        CRUD::field('last_cost')->label('Precio');
+        CRUD::addField([
+            'name' => 'last_updated_by',
+            'label' => 'Actualizado por',
+            'type' => 'select',
+            'entity' => 'lastUpdatedBy',
+            'attribute' => 'name',
+            'model' => 'App\Models\User',
+            'searchLogic' => function ($query, $column, $searchTerm) {
+                $query->orWhereHas('lastUpdatedBy', function ($q) use ($searchTerm) {
+                    $q->where('name', 'like', '%'.$searchTerm.'%');
+                });
+            },
+        ]);
         /**
          * Fields can be defined using the fluent syntax:
          * - CRUD::field('price')->type('number');

@@ -19,6 +19,7 @@
 <x-backpack::menu-dropdown title="Solicitudes" icon="la la-file-alt" trigger="click">
     <x-backpack::menu-dropdown-item title="Solicitudes Generales" :link="backpack_url('general-request')" />
     <x-backpack::menu-dropdown-item title="Solicitudes de Compra" :link="backpack_url('purchase-request')" />
+    <x-backpack::menu-item title="Asignación de Productos" :link="backpack_url('product-assignment')" />
     <x-backpack::menu-dropdown-item title="Áreas de Responsabilidad" :link="backpack_url('responsibility-area')" />
 </x-backpack::menu-dropdown>
 

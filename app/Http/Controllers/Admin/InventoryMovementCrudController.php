@@ -28,7 +28,7 @@ class InventoryMovementCrudController extends CrudController
     {
         CRUD::setModel(\App\Models\InventoryMovement::class);
         CRUD::setRoute(config('backpack.base.route_prefix') . '/inventory-movement');
-        CRUD::setEntityNameStrings('inventory movement', 'inventory movements');
+        CRUD::setEntityNameStrings('movimiento de inventario', 'movimientos de inventario');
     }
 
     /**
@@ -39,7 +39,40 @@ class InventoryMovementCrudController extends CrudController
      */
     protected function setupListOperation()
     {
-        CRUD::setFromDb(); // set columns from db columns.
+        CRUD::removeButton('show');
+
+        CRUD::column('product')->label('Producto');
+        CRUD::column('location')->label('Ubicación');
+        CRUD::addColumn([
+            'name' => 'quantity',
+            'label' => 'Cantidad',
+            'type' => 'number',
+        ]);
+        CRUD::addColumn([
+            'name' => 'type',
+            'label' => 'Tipo',
+            'type' => 'enum',
+        ]);
+        CRUD::column('reference')->label('Referencia');
+        CRUD::addColumn([
+            'name' => 'user',
+            'label' => 'Usuario',
+            'type' => 'select',
+            'entity' => 'user',
+            'attribute' => 'name',
+            'model' => 'App\Models\User',
+            'searchLogic' => function ($query, $column, $searchTerm) {
+                $query->orWhereHas('user', function ($q) use ($searchTerm) {
+                    $q->where('name', 'like', '%'.$searchTerm.'%');
+                });
+            },
+        ]);
+        CRUD::column('notes')->label('Observaciones');
+        // Override the type column to show the human-readable labels
+        /*CRUD::modifyColumn('type', [
+            'type' => 'select_from_array',
+            'options' => \App\Models\InventoryMovement::getTypes(),
+        ]);*/
 
         /**
          * Columns can be defined using the fluent syntax:
@@ -56,8 +89,34 @@ class InventoryMovementCrudController extends CrudController
     protected function setupCreateOperation()
     {
         CRUD::setValidation(InventoryMovementRequest::class);
-        CRUD::setFromDb(); // set fields from db columns.
-
+        
+        CRUD::field('product')->label('Producto');
+        CRUD::field('location')->label('Ubicación');
+        CRUD::addField([
+            'name' => 'quantity',
+            'label' => 'Cantidad',
+            'type' => 'number',
+        ]);
+        CRUD::addField([
+            'name' => 'type',
+            'label' => 'Tipo',
+            'type' => 'enum',
+        ]);
+        CRUD::field('reference')->label('Referencia');
+        CRUD::addField([
+            'name' => 'user',
+            'label' => 'Usuario',
+            'type' => 'select',
+            'entity' => 'user',
+            'attribute' => 'name',
+            'model' => 'App\Models\User',
+            'searchLogic' => function ($query, $column, $searchTerm) {
+                $query->orWhereHas('user', function ($q) use ($searchTerm) {
+                    $q->where('name', 'like', '%'.$searchTerm.'%');
+                });
+            },
+        ]);
+        CRUD::field('notes')->label('Observaciones');
         /**
          * Fields can be defined using the fluent syntax:
          * - CRUD::field('price')->type('number');

@@ -40,6 +40,10 @@ class ProductCrudController extends CrudController
     protected function setupListOperation()
     {
         CRUD::removeButton('show');
+        
+        // Agregar botón personalizado de exportación
+        CRUD::addButton('top', 'export_excel', 'view', 'crud::buttons.export_excel', 'end');
+        CRUD::addButton('top', 'export_pdf', 'view', 'crud::buttons.export_pdf', 'end');
         CRUD::addColumn([
             'name' => 'category_id',
             'label' => 'Categoría',
@@ -60,6 +64,31 @@ class ProductCrudController extends CrudController
         CRUD::column('expiration_date')->label('Fecha Vencimiento');
         CRUD::column('location')->label('Ubicación');
         CRUD::column('utilization_percentage')->label('% Utilización');
+
+        // Filtro personalizado por categoría usando parámetros de URL
+        if (request()->has('categoria')) {
+            $categoriaId = request()->get('categoria');
+            if ($categoriaId) {
+                CRUD::addClause('where', 'category_id', $categoriaId);
+            }
+        }
+
+        // Filtro personalizado por nombre usando parámetros de URL
+        if (request()->has('nombre')) {
+            $nombre = request()->get('nombre');
+            if ($nombre) {
+                CRUD::addClause('where', 'name', 'like', '%' . $nombre . '%');
+            }
+        }
+
+        // Filtro personalizado por fecha de vencimiento usando parámetros de URL
+        if (request()->has('fecha_vencimiento')) {
+            $fechaVencimiento = request()->get('fecha_vencimiento');
+            if ($fechaVencimiento) {
+                CRUD::addClause('where', 'expiration_date', '<=', $fechaVencimiento);
+            }
+        }
+
         /**
          * Columns can be defined using the fluent syntax:
          * - CRUD::column('price')->type('number');
@@ -105,5 +134,110 @@ class ProductCrudController extends CrudController
     protected function setupUpdateOperation()
     {
         $this->setupCreateOperation();
+    }
+
+    /**
+     * Export products to Excel
+     */
+    public function exportExcel()
+    {
+        $query = \App\Models\Product::with('category');
+        
+        // Aplicar los mismos filtros que en el listado
+        if (request()->has('categoria')) {
+            $categoriaId = request()->get('categoria');
+            if ($categoriaId) {
+                $query->where('category_id', $categoriaId);
+            }
+        }
+
+        if (request()->has('nombre')) {
+            $nombre = request()->get('nombre');
+            if ($nombre) {
+                $query->where('name', 'like', '%' . $nombre . '%');
+            }
+        }
+
+        if (request()->has('fecha_vencimiento')) {
+            $fechaVencimiento = request()->get('fecha_vencimiento');
+            if ($fechaVencimiento) {
+                $query->where('expiration_date', '<=', $fechaVencimiento);
+            }
+        }
+
+        $products = $query->get();
+
+        $filename = 'productos_' . date('Y-m-d_H-i-s') . '.xlsx';
+        
+        return response()->streamDownload(function() use ($products) {
+            $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
+            $sheet = $spreadsheet->getActiveSheet();
+            
+            // Headers
+            $sheet->setCellValue('A1', 'Categoría');
+            $sheet->setCellValue('B1', 'Nombre');
+            $sheet->setCellValue('C1', 'Descripción');
+            $sheet->setCellValue('D1', 'Unidad Med.');
+            $sheet->setCellValue('E1', 'Stock Mín.');
+            $sheet->setCellValue('F1', 'Fecha Vencimiento');
+            $sheet->setCellValue('G1', 'Ubicación');
+            $sheet->setCellValue('H1', '% Utilización');
+            
+            // Data
+            $row = 2;
+            foreach ($products as $product) {
+                $sheet->setCellValue('A' . $row, $product->category->name ?? '');
+                $sheet->setCellValue('B' . $row, $product->name);
+                $sheet->setCellValue('C' . $row, $product->description);
+                $sheet->setCellValue('D' . $row, $product->unit_measurement);
+                $sheet->setCellValue('E' . $row, $product->minimum_stock);
+                $sheet->setCellValue('F' . $row, $product->expiration_date ? $product->expiration_date->format('d/m/Y') : '');
+                $sheet->setCellValue('G' . $row, $product->location);
+                $sheet->setCellValue('H' . $row, $product->utilization_percentage);
+                $row++;
+            }
+            
+            $writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
+            $writer->save('php://output');
+        }, $filename, [
+            'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        ]);
+    }
+
+    /**
+     * Export products to PDF
+     */
+    public function exportPdf()
+    {
+        $query = \App\Models\Product::with('category');
+        
+        // Aplicar los mismos filtros que en el listado
+        if (request()->has('categoria')) {
+            $categoriaId = request()->get('categoria');
+            if ($categoriaId) {
+                $query->where('category_id', $categoriaId);
+            }
+        }
+
+        if (request()->has('nombre')) {
+            $nombre = request()->get('nombre');
+            if ($nombre) {
+                $query->where('name', 'like', '%' . $nombre . '%');
+            }
+        }
+
+        if (request()->has('fecha_vencimiento')) {
+            $fechaVencimiento = request()->get('fecha_vencimiento');
+            if ($fechaVencimiento) {
+                $query->where('expiration_date', '<=', $fechaVencimiento);
+            }
+        }
+
+        $products = $query->get();
+
+        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('product-pdf', compact('products'));
+        $filename = 'productos_' . date('Y-m-d_H-i-s') . '.pdf';
+        
+        return $pdf->download($filename);
     }
 }

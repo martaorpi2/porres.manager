@@ -22,8 +22,21 @@ class InventoryMovement extends Model
     ];
 
     protected $casts = [
-        'quantity' => 'decimal:2',
+        // quantity is now an integer, no casting needed
     ];
+
+    /**
+     * Get the available types for inventory movements.
+     */
+    public static function getTypes()
+    {
+        return [
+            'uso' => 'Uso',
+            'compra' => 'Compra',
+            'desuso' => 'Desuso',
+            'baja' => 'Baja',
+        ];
+    }
 
     /**
      * Get the product that owns the inventory movement.

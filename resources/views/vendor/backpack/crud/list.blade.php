@@ -89,6 +89,40 @@
               </form>
             </div>
           </div>
+        @elseif($crud->route == 'admin/product')
+          <!-- Filtro personalizado para productos -->
+          <div class="card mb-3">
+            <div class="card-header bg-primary text-white">
+              <h6 class="card-title mb-0">
+                <i class="fas fa-filter"></i> Filtros
+              </h6>
+            </div>
+            <div class="card-body py-2">
+              <form method="GET" action="{{ url($crud->route) }}">
+                <div class="row">
+                  <div class="col-md-4">
+                    <label for="nombre" class="form-label">Nombre:</label>
+                    <input type="text" name="nombre" id="nombre" class="form-control" placeholder="Buscar por nombre..." value="{{ request('nombre') }}">
+                  </div>
+                  <div class="col-md-4">
+                    <label for="categoria" class="form-label">Categoría:</label>
+                    <select name="categoria" id="categoria" class="form-control select2" onchange="this.form.submit()">
+                      <option value="">Todas las categorías</option>
+                      @foreach(\App\Models\Category::all() as $categoria)
+                        <option value="{{ $categoria->id }}" {{ request('categoria') == $categoria->id ? 'selected' : '' }}>
+                          {{ $categoria->name }}
+                        </option>
+                      @endforeach
+                    </select>
+                  </div>
+                  <div class="col-md-4">
+                    <label for="fecha_vencimiento" class="form-label">Vence antes de:</label>
+                    <input type="date" name="fecha_vencimiento" id="fecha_vencimiento" class="form-control" value="{{ request('fecha_vencimiento') }}" onchange="this.form.submit()">
+                  </div>
+                </div>
+              </form>
+            </div>
+          </div>
         @endif
 
         <div class="table-responsive">

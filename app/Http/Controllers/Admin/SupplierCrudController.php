@@ -40,6 +40,10 @@ class SupplierCrudController extends CrudController
     protected function setupListOperation()
     {
         CRUD::removeButton('show');
+        
+        // Agregar botón personalizado de exportación
+        CRUD::addButton('top', 'export_excel', 'view', 'crud::buttons.export_excel', 'end');
+        CRUD::addButton('top', 'export_pdf', 'view', 'crud::buttons.export_pdf', 'end');
         //CRUD::setFromDb(); // set columns from db columns.
         CRUD::column('company_name')->label('Nombre');
         CRUD::column('cuit')->label('Cuit');
@@ -149,5 +153,108 @@ class SupplierCrudController extends CrudController
     protected function setupUpdateOperation()
     {
         $this->setupCreateOperation();
+    }
+
+    /**
+     * Export suppliers to Excel
+     */
+    public function exportExcel()
+    {
+        $query = \App\Models\Supplier::with(['heading', 'sectors']);
+        
+        // Aplicar los mismos filtros que en el listado
+        if (request()->has('rubro')) {
+            $rubroId = request()->get('rubro');
+            if ($rubroId) {
+                $query->where('supplier_heading_id', $rubroId);
+            }
+        }
+
+        if (request()->has('sector')) {
+            $sectorId = request()->get('sector');
+            if ($sectorId) {
+                $query->whereHas('sectors', function($q) use ($sectorId) {
+                    $q->where('sector_id', $sectorId);
+                });
+            }
+        }
+
+        if (request()->has('nombre')) {
+            $nombre = request()->get('nombre');
+            if ($nombre) {
+                $query->where('company_name', 'like', '%' . $nombre . '%');
+            }
+        }
+
+        $suppliers = $query->get();
+
+        $filename = 'proveedores_' . date('Y-m-d_H-i-s') . '.xlsx';
+        
+        return response()->streamDownload(function() use ($suppliers) {
+            $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
+            $sheet = $spreadsheet->getActiveSheet();
+            
+            // Headers
+            $sheet->setCellValue('A1', 'Nombre');
+            $sheet->setCellValue('B1', 'CUIT');
+            $sheet->setCellValue('C1', 'Dirección');
+            $sheet->setCellValue('D1', 'Rubro');
+            $sheet->setCellValue('E1', 'Sectores');
+            
+            // Data
+            $row = 2;
+            foreach ($suppliers as $supplier) {
+                $sheet->setCellValue('A' . $row, $supplier->company_name);
+                $sheet->setCellValue('B' . $row, $supplier->cuit);
+                $sheet->setCellValue('C' . $row, $supplier->address);
+                $sheet->setCellValue('D' . $row, $supplier->heading->name ?? '');
+                $sheet->setCellValue('E' . $row, $supplier->sectors->pluck('name')->join(', '));
+                $row++;
+            }
+            
+            $writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
+            $writer->save('php://output');
+        }, $filename, [
+            'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        ]);
+    }
+
+    /**
+     * Export suppliers to PDF
+     */
+    public function exportPdf()
+    {
+        $query = \App\Models\Supplier::with(['heading', 'sectors']);
+        
+        // Aplicar los mismos filtros que en el listado
+        if (request()->has('rubro')) {
+            $rubroId = request()->get('rubro');
+            if ($rubroId) {
+                $query->where('supplier_heading_id', $rubroId);
+            }
+        }
+
+        if (request()->has('sector')) {
+            $sectorId = request()->get('sector');
+            if ($sectorId) {
+                $query->whereHas('sectors', function($q) use ($sectorId) {
+                    $q->where('sector_id', $sectorId);
+                });
+            }
+        }
+
+        if (request()->has('nombre')) {
+            $nombre = request()->get('nombre');
+            if ($nombre) {
+                $query->where('company_name', 'like', '%' . $nombre . '%');
+            }
+        }
+
+        $suppliers = $query->get();
+
+        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('supplier-pdf', compact('suppliers'));
+        $filename = 'proveedores_' . date('Y-m-d_H-i-s') . '.pdf';
+        
+        return $pdf->download($filename);
     }
 }

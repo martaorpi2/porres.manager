@@ -69,4 +69,12 @@ class GeneralRequest extends Model
 
         return $prefix . str_pad((string) $nextSequence, 4, '0', STR_PAD_LEFT);
     }
+
+    /**
+     * Get the count of details for this general request.
+     */
+    public function getDetailsCountAttribute()
+    {
+        return $this->details()->count() . ' productos';
+    }
 }
