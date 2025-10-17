@@ -245,6 +245,24 @@ a:hover {
       color: white !important;
   }
 
+  /* Override green colors specifically */
+  .btn-success,
+  .btn[class*="success"],
+  .btn[style*="background-color: green"],
+  .btn[style*="background-color: #28a745"],
+  .btn[style*="background-color: #198754"],
+  .btn[style*="background: green"],
+  .btn[style*="background: #28a745"],
+  .btn[style*="background: #198754"],
+  .navbar-nav .btn-success,
+  .navbar-nav .btn[class*="success"],
+  .navbar-nav .dropdown-toggle.btn-success,
+  .navbar-nav .dropdown-toggle.btn[class*="success"] {
+      background-color: #871f1f !important;
+      border-color: #871f1f !important;
+      color: white !important;
+  }
+
   .btn-account:hover,
   .btn-profile:hover,
   .btn[class*="account"]:hover,
@@ -555,6 +573,9 @@ a:hover {
 * {
     --primary-color: #871f1f !important;
     --primary: #871f1f !important;
+    --success-color: #871f1f !important;
+    --success: #871f1f !important;
+    --green: #871f1f !important;
 }
 
 /* Override any purple/violet colors specifically */

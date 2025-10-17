@@ -219,6 +219,77 @@
       color: white !important;
   }
 
+  /* Account/Profile menu button styling */
+  .btn-account,
+  .btn-profile,
+  .btn[class*="account"],
+  .btn[class*="profile"],
+  .btn[class*="user"],
+  .btn[data-action="account"],
+  .btn[data-action="profile"],
+  .btn[title*="account"],
+  .btn[title*="Account"],
+  .btn[title*="profile"],
+  .btn[title*="Profile"],
+  .btn[title*="mi cuenta"],
+  .btn[title*="Mi cuenta"],
+  .btn[aria-label*="account"],
+  .btn[aria-label*="Account"],
+  .btn[aria-label*="profile"],
+  .btn[aria-label*="Profile"],
+  .btn[aria-label*="mi cuenta"],
+  .btn[aria-label*="Mi cuenta"],
+  .dropdown-toggle[data-toggle="dropdown"],
+  .navbar-nav .dropdown-toggle {
+      background-color: #871f1f !important;
+      border-color: #871f1f !important;
+      color: white !important;
+  }
+
+  /* Override green colors specifically */
+  .btn-success,
+  .btn[class*="success"],
+  .btn[style*="background-color: green"],
+  .btn[style*="background-color: #28a745"],
+  .btn[style*="background-color: #198754"],
+  .btn[style*="background: green"],
+  .btn[style*="background: #28a745"],
+  .btn[style*="background: #198754"],
+  .navbar-nav .btn-success,
+  .navbar-nav .btn[class*="success"],
+  .navbar-nav .dropdown-toggle.btn-success,
+  .navbar-nav .dropdown-toggle.btn[class*="success"] {
+      background-color: #871f1f !important;
+      border-color: #871f1f !important;
+      color: white !important;
+  }
+
+  .btn-account:hover,
+  .btn-profile:hover,
+  .btn[class*="account"]:hover,
+  .btn[class*="profile"]:hover,
+  .btn[class*="user"]:hover,
+  .btn[data-action="account"]:hover,
+  .btn[data-action="profile"]:hover,
+  .btn[title*="account"]:hover,
+  .btn[title*="Account"]:hover,
+  .btn[title*="profile"]:hover,
+  .btn[title*="Profile"]:hover,
+  .btn[title*="mi cuenta"]:hover,
+  .btn[title*="Mi cuenta"]:hover,
+  .btn[aria-label*="account"]:hover,
+  .btn[aria-label*="Account"]:hover,
+  .btn[aria-label*="profile"]:hover,
+  .btn[aria-label*="Profile"]:hover,
+  .btn[aria-label*="mi cuenta"]:hover,
+  .btn[aria-label*="Mi cuenta"]:hover,
+  .dropdown-toggle[data-toggle="dropdown"]:hover,
+  .navbar-nav .dropdown-toggle:hover {
+      background-color: #a02a2a !important;
+      border-color: #a02a2a !important;
+      color: white !important;
+  }
+
   /* Sidebar */
   .sidebar .nav-link.active {
       background-color: #871f1f !important;
@@ -503,6 +574,9 @@
 * {
     --primary-color: #871f1f !important;
     --primary: #871f1f !important;
+    --success-color: #871f1f !important;
+    --success: #871f1f !important;
+    --green: #871f1f !important;
 }
 
 /* Override any purple/violet colors specifically */
