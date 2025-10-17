@@ -68,6 +68,33 @@ class InventoryMovementCrudController extends CrudController
             },
         ]);
         CRUD::column('notes')->label('Observaciones');
+
+        // Filtro personalizado por ubicación usando parámetros de URL
+        if (request()->has('ubicacion')) {
+            $ubicacionId = request()->get('ubicacion');
+            if ($ubicacionId) {
+                CRUD::addClause('where', 'location_id', $ubicacionId);
+            }
+        }
+
+        // Filtro personalizado por tipo de movimiento usando parámetros de URL
+        if (request()->has('tipo')) {
+            $tipo = request()->get('tipo');
+            if ($tipo) {
+                CRUD::addClause('where', 'type', $tipo);
+            }
+        }
+
+        // Filtro personalizado por nombre de producto usando parámetros de URL
+        if (request()->has('producto')) {
+            $producto = request()->get('producto');
+            if ($producto) {
+                CRUD::addClause('whereHas', 'product', function($query) use ($producto) {
+                    $query->where('name', 'like', '%' . $producto . '%');
+                });
+            }
+        }
+
         // Override the type column to show the human-readable labels
         /*CRUD::modifyColumn('type', [
             'type' => 'select_from_array',

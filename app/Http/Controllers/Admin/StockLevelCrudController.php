@@ -42,13 +42,12 @@ class StockLevelCrudController extends CrudController
         CRUD::removeButton('show');
         
         CRUD::column('product')->label('Producto');
-        CRUD::column('location')->label('Ubicación');
+        CRUD::column('location')->label('Depósito');
         CRUD::addColumn([
             'name' => 'quantity',
             'label' => 'Cantidad',
             'type' => 'number',
         ]);
-        CRUD::column('last_cost')->label('Precio');
         CRUD::addColumn([
             'name' => 'last_updated_by',
             'label' => 'Actualizado por',
@@ -62,6 +61,25 @@ class StockLevelCrudController extends CrudController
                 });
             },
         ]);
+
+        // Filtro personalizado por depósito usando parámetros de URL
+        if (request()->has('deposito')) {
+            $depositoId = request()->get('deposito');
+            if ($depositoId) {
+                CRUD::addClause('where', 'location_id', $depositoId);
+            }
+        }
+
+        // Filtro personalizado por nombre de producto usando parámetros de URL
+        if (request()->has('producto')) {
+            $producto = request()->get('producto');
+            if ($producto) {
+                CRUD::addClause('whereHas', 'product', function($query) use ($producto) {
+                    $query->where('name', 'like', '%' . $producto . '%');
+                });
+            }
+        }
+
         /**
          * Columns can be defined using the fluent syntax:
          * - CRUD::column('price')->type('number');
@@ -78,7 +96,26 @@ class StockLevelCrudController extends CrudController
     {
         CRUD::setValidation(StockLevelRequest::class);
         CRUD::field('product')->label('Producto');
-        CRUD::field('location')->label('Ubicación');
+        
+        // Solo mostrar las 4 ubicaciones que corresponden a áreas de responsabilidad
+        CRUD::addField([
+            'name' => 'location_id',
+            'label' => 'Depósito',
+            'type' => 'select',
+            'entity' => 'location',
+            'model' => 'App\Models\Location',
+            'attribute' => 'name',
+            'options' => function ($query) {
+                // Filtrar solo las ubicaciones que corresponden a áreas de responsabilidad
+                return $query->whereIn('name', [
+                    'Insumos Generales',
+                    'Mantenimiento',
+                    'Insumos de Salud',
+                    'Informática'
+                ]);
+            },
+        ]);
+        
         CRUD::addField([
             'name' => 'quantity',
             'label' => 'Cantidad',
@@ -88,7 +125,7 @@ class StockLevelCrudController extends CrudController
                 'min' => 0,
             ],
         ]);
-        CRUD::field('last_cost')->label('Precio');
+        
         CRUD::addField([
             'name' => 'last_updated_by',
             'label' => 'Actualizado por',

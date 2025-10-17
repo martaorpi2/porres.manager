@@ -161,6 +161,76 @@
               </form>
             </div>
           </div>
+        @elseif($crud->route == 'admin/stock-level')
+          <!-- Filtro personalizado para stock levels -->
+          <div class="card mb-3">
+            <div class="card-header bg-primary text-white">
+              <h6 class="card-title mb-0">
+                <i class="fas fa-filter"></i> Filtros
+              </h6>
+            </div>
+            <div class="card-body py-2">
+              <form method="GET" action="{{ url($crud->route) }}">
+                <div class="row">
+                  <div class="col-md-4">
+                    <label for="producto" class="form-label">Producto:</label>
+                    <input type="text" name="producto" id="producto" class="form-control" placeholder="Buscar por producto..." value="{{ request('producto') }}">
+                  </div>
+                  <div class="col-md-4">
+                    <label for="deposito" class="form-label">Depósito:</label>
+                    <select name="deposito" id="deposito" class="form-control select2" onchange="this.form.submit()">
+                      <option value="">Todos los depósitos</option>
+                      @foreach(\App\Models\Location::whereIn('name', ['Insumos Generales', 'Mantenimiento', 'Insumos de Salud', 'Informática'])->get() as $deposito)
+                        <option value="{{ $deposito->id }}" {{ request('deposito') == $deposito->id ? 'selected' : '' }}>
+                          {{ $deposito->name }}
+                        </option>
+                      @endforeach
+                    </select>
+                  </div>
+                </div>
+              </form>
+            </div>
+          </div>
+        @elseif($crud->route == 'admin/inventory-movement')
+          <!-- Filtro personalizado para movimientos de inventario -->
+          <div class="card mb-3">
+            <div class="card-header bg-primary text-white">
+              <h6 class="card-title mb-0">
+                <i class="fas fa-filter"></i> Filtros
+              </h6>
+            </div>
+            <div class="card-body py-2">
+              <form method="GET" action="{{ url($crud->route) }}">
+                <div class="row">
+                  <div class="col-md-3">
+                    <label for="producto" class="form-label">Producto:</label>
+                    <input type="text" name="producto" id="producto" class="form-control" placeholder="Buscar por producto..." value="{{ request('producto') }}">
+                  </div>
+                  <div class="col-md-3">
+                    <label for="ubicacion" class="form-label">Ubicación:</label>
+                    <select name="ubicacion" id="ubicacion" class="form-control select2" onchange="this.form.submit()">
+                      <option value="">Todas las ubicaciones</option>
+                      @foreach(\App\Models\Location::all() as $ubicacion)
+                        <option value="{{ $ubicacion->id }}" {{ request('ubicacion') == $ubicacion->id ? 'selected' : '' }}>
+                          {{ $ubicacion->name }}
+                        </option>
+                      @endforeach
+                    </select>
+                  </div>
+                  <div class="col-md-3">
+                    <label for="tipo" class="form-label">Tipo:</label>
+                    <select name="tipo" id="tipo" class="form-control select2" onchange="this.form.submit()">
+                      <option value="">Todos los tipos</option>
+                      <option value="uso" {{ request('tipo') == 'uso' ? 'selected' : '' }}>Uso</option>
+                      <option value="compra" {{ request('tipo') == 'compra' ? 'selected' : '' }}>Compra</option>
+                      <option value="desuso" {{ request('tipo') == 'desuso' ? 'selected' : '' }}>Desuso</option>
+                      <option value="baja" {{ request('tipo') == 'baja' ? 'selected' : '' }}>Baja</option>
+                    </select>
+                  </div>
+                </div>
+              </form>
+            </div>
+          </div>
         @endif
 
         <div class="table-responsive">
