@@ -51,6 +51,11 @@ class SupplierCrudController extends CrudController
             'entity' => 'heading',
             'attribute' => 'name',
             'model' => 'App\Models\SuppliersHeading',
+            'searchLogic' => function ($query, $column, $searchTerm) {
+                $query->orWhereHas('heading', function ($q) use ($searchTerm) {
+                    $q->where('name', 'like', '%'.$searchTerm.'%');
+                });
+            },
         ]);
         CRUD::addColumn([
             'name'  => 'sectors',
@@ -66,6 +71,32 @@ class SupplierCrudController extends CrudController
             },
             'escaped' => false, // permitimos HTML para mostrar las badges
         ]);
+
+        // Filtro personalizado por rubro usando parámetros de URL
+        if (request()->has('rubro')) {
+            $rubroId = request()->get('rubro');
+            if ($rubroId) {
+                CRUD::addClause('where', 'supplier_heading_id', $rubroId);
+            }
+        }
+
+        // Filtro personalizado por sector usando parámetros de URL
+        if (request()->has('sector')) {
+            $sectorId = request()->get('sector');
+            if ($sectorId) {
+                CRUD::addClause('whereHas', 'sectors', function($query) use ($sectorId) {
+                    $query->where('sector_id', $sectorId);
+                });
+            }
+        }
+
+        // Filtro personalizado por nombre usando parámetros de URL
+        if (request()->has('nombre')) {
+            $nombre = request()->get('nombre');
+            if ($nombre) {
+                CRUD::addClause('where', 'company_name', 'like', '%' . $nombre . '%');
+            }
+        }
 
         /**
          * Columns can be defined using the fluent syntax:

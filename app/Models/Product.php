@@ -32,7 +32,7 @@ class Product extends Model
      */
     public function category()
     {
-        return $this->belongsTo(Category::class);
+        return $this->belongsTo(\App\Models\Category::class);
     }
 
     /**
@@ -40,7 +40,7 @@ class Product extends Model
      */
     public function stockLevels()
     {
-        return $this->hasMany(StockLevel::class);
+        return $this->hasMany(\App\Models\StockLevel::class);
     }
 
     /**

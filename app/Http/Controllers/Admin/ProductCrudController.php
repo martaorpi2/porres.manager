@@ -28,7 +28,7 @@ class ProductCrudController extends CrudController
     {
         CRUD::setModel(\App\Models\Product::class);
         CRUD::setRoute(config('backpack.base.route_prefix') . '/product');
-        CRUD::setEntityNameStrings('product', 'products');
+        CRUD::setEntityNameStrings('producto', 'productos');
     }
 
     /**
@@ -39,8 +39,27 @@ class ProductCrudController extends CrudController
      */
     protected function setupListOperation()
     {
-        CRUD::setFromDb(); // set columns from db columns.
-
+        CRUD::removeButton('show');
+        CRUD::addColumn([
+            'name' => 'category_id',
+            'label' => 'Categoría',
+            'type' => 'select',
+            'entity' => 'category',
+            'attribute' => 'name',
+            'model' => 'App\Models\Category',
+            'searchLogic' => function ($query, $column, $searchTerm) {
+                $query->orWhereHas('category', function ($q) use ($searchTerm) {
+                    $q->where('name', 'like', '%'.$searchTerm.'%');
+                });
+            },
+        ]);
+        CRUD::column('name')->label('Nombre');
+        CRUD::column('description')->label('Descripción');
+        CRUD::column('unit_measurement')->label('Unidad Med.');
+        CRUD::column('minimum_stock')->label('Stock Mín.');
+        CRUD::column('expiration_date')->label('Fecha Vencimiento');
+        CRUD::column('location')->label('Ubicación');
+        CRUD::column('utilization_percentage')->label('% Utilización');
         /**
          * Columns can be defined using the fluent syntax:
          * - CRUD::column('price')->type('number');
@@ -56,8 +75,21 @@ class ProductCrudController extends CrudController
     protected function setupCreateOperation()
     {
         CRUD::setValidation(ProductRequest::class);
-        CRUD::setFromDb(); // set fields from db columns.
-
+        CRUD::addField([
+            'name' => 'category_id',
+            'label' => 'Categoría',
+            'type' => 'select',
+            'entity' => 'category',
+            'model' => 'App\Models\Category',
+            'attribute' => 'name',
+        ]);
+        CRUD::field('name')->label('Nombre');
+        CRUD::field('description')->label('Descripción');
+        CRUD::field('unit_measurement')->label('Unidad Med.');
+        CRUD::field('minimum_stock')->label('Stock Mín.');
+        CRUD::field('expiration_date')->label('Fecha Vencimiento');
+        CRUD::field('location')->label('Ubicación');
+        CRUD::field('utilization_percentage')->label('% Utilización');
         /**
          * Fields can be defined using the fluent syntax:
          * - CRUD::field('price')->type('number');
