@@ -10,8 +10,8 @@
 
 /* Override any existing primary color definitions */
 .bg-primary {
-    background-color: #871f1f !important;
-    color: white !important;
+    background-color: #6c757d !important;
+    color: #871f1f !important;
 }
 
 .text-primary {

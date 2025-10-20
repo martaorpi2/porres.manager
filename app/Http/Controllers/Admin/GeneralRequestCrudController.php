@@ -39,7 +39,7 @@ class GeneralRequestCrudController extends CrudController
         CRUD::column('details_count')->label('Productos')->type('custom_html')
             ->value(function($entry) {
                 $count = $entry->details->count();
-                return '<span class="badge bg-info">' . $count . ' productos</span>';
+                return '<span class="badge" style="background-color: #adb5bd; color: #871f1f;">' . $count . ' productos</span>';
             });
             
         CRUD::column('created_at')->label('Fecha de Creación');
@@ -560,10 +560,16 @@ class GeneralRequestCrudController extends CrudController
     {
         CRUD::addClause('with', ['createdBy', 'area', 'purchaseRequests', 'details.product']);
         
-        CRUD::setFromDb();
+        CRUD::column('number')->label('Número');
+        CRUD::column('createdBy.name')->label('Solicitante');
+        CRUD::column('area.name')->label('Área');
+        CRUD::column('title')->label('Título');
+        CRUD::column('Description')->label('Descripción');
+        CRUD::column('priority')->label('Prioridad');
+        CRUD::column('status')->label('Estado');
         
         // Mostrar productos solicitados
-        CRUD::field('products_table')->label('Productos Solicitados')->type('custom_html')
+        CRUD::column('products_table')->label('Productos Solicitados')->type('custom_html')
             ->value(function($entry) {
                 $details = $entry->details;
                 
@@ -573,7 +579,6 @@ class GeneralRequestCrudController extends CrudController
                     </div>';
                 }
                 
-                $totalAmount = 0;
                 $html = '<div class="card">';
                 $html .= '<div class="card-header">';
                 $html .= '<h5 class="card-title mb-0">';
@@ -585,12 +590,10 @@ class GeneralRequestCrudController extends CrudController
                 $html .= '<table class="table table-striped table-bordered mb-0">';
                 $html .= '<thead class="thead-dark">';
                 $html .= '<tr>';
-                $html .= '<th width="25%">Producto</th>';
-                $html .= '<th width="10%" class="text-center">Cantidad</th>';
-                $html .= '<th width="25%">Especificaciones</th>';
-                $html .= '<th width="12%" class="text-end">Precio Unit. Est.</th>';
-                $html .= '<th width="12%" class="text-end">Total Estimado</th>';
-                $html .= '<th width="16%" class="text-center">Estado</th>';
+                $html .= '<th width="40%">Producto</th>';
+                $html .= '<th width="15%" class="text-center">Cantidad</th>';
+                $html .= '<th width="30%">Especificaciones</th>';
+                $html .= '<th width="15%" class="text-center">Estado</th>';
                 $html .= '</tr>';
                 $html .= '</thead>';
                 $html .= '<tbody>';
@@ -598,9 +601,6 @@ class GeneralRequestCrudController extends CrudController
                 foreach ($details as $detail) {
                     $productName = $detail->product->name ?? 'Producto no encontrado';
                     $productDescription = $detail->product->description ?? '';
-                    $unitPrice = $detail->estimated_unit_price ?? 0;
-                    $totalPrice = $detail->estimated_total ?? 0;
-                    $totalAmount += $totalPrice;
                     
                     // Determinar color del badge según el estado
                     $statusColor = 'secondary';
@@ -641,20 +641,6 @@ class GeneralRequestCrudController extends CrudController
                         $html .= '<small class="text-muted">Sin especificaciones</small>';
                     }
                     $html .= '</td>';
-                    $html .= '<td class="text-end">';
-                    if ($unitPrice > 0) {
-                        $html .= '<strong>$' . number_format($unitPrice, 2) . '</strong>';
-                    } else {
-                        $html .= '<small class="text-muted">No definido</small>';
-                    }
-                    $html .= '</td>';
-                    $html .= '<td class="text-end">';
-                    if ($totalPrice > 0) {
-                        $html .= '<strong class="text-success">$' . number_format($totalPrice, 2) . '</strong>';
-                    } else {
-                        $html .= '<small class="text-muted">No definido</small>';
-                    }
-                    $html .= '</td>';
                     $html .= '<td class="text-center">';
                     $html .= '<span class="badge bg-' . $statusColor . '">' . e($detail->status) . '</span>';
                     $html .= '</td>';
@@ -662,15 +648,6 @@ class GeneralRequestCrudController extends CrudController
                 }
                 
                 $html .= '</tbody>';
-                $html .= '<tfoot class="table-dark">';
-                $html .= '<tr>';
-                $html .= '<th colspan="4" class="text-end">Total Estimado:</th>';
-                $html .= '<th class="text-end">';
-                $html .= '<strong class="text-white">$' . number_format($totalAmount, 2) . '</strong>';
-                $html .= '</th>';
-                $html .= '<th></th>';
-                $html .= '</tr>';
-                $html .= '</tfoot>';
                 $html .= '</table>';
                 $html .= '</div>';
                 $html .= '</div>';
@@ -679,122 +656,8 @@ class GeneralRequestCrudController extends CrudController
                 return $html;
             });
         
-        // Mostrar resumen estadístico de productos
-        CRUD::field('products_summary')->label('Resumen de Productos')->type('custom_html')
-            ->value(function($entry) {
-                $details = $entry->details;
-                
-                if ($details->isEmpty()) {
-                    return '';
-                }
-                
-                $totalProducts = $details->count();
-                $totalQuantity = $details->sum('requested_quantity');
-                $totalAmount = $details->sum('estimated_total');
-                $statusCounts = $details->groupBy('status')->map->count();
-                
-                $html = '<div class="row">';
-                
-                // Tarjeta de productos totales
-                $html .= '<div class="col-md-3">';
-                $html .= '<div class="card bg-primary text-white">';
-                $html .= '<div class="card-body text-center">';
-                $html .= '<h4 class="card-title">' . $totalProducts . '</h4>';
-                $html .= '<p class="card-text">Productos Solicitados</p>';
-                $html .= '</div>';
-                $html .= '</div>';
-                $html .= '</div>';
-                
-                // Tarjeta de cantidad total
-                $html .= '<div class="col-md-3">';
-                $html .= '<div class="card bg-info text-white">';
-                $html .= '<div class="card-body text-center">';
-                $html .= '<h4 class="card-title">' . number_format($totalQuantity) . '</h4>';
-                $html .= '<p class="card-text">Cantidad Total</p>';
-                $html .= '</div>';
-                $html .= '</div>';
-                $html .= '</div>';
-                
-                // Tarjeta de monto total
-                $html .= '<div class="col-md-3">';
-                $html .= '<div class="card bg-success text-white">';
-                $html .= '<div class="card-body text-center">';
-                $html .= '<h4 class="card-title">$' . number_format($totalAmount, 2) . '</h4>';
-                $html .= '<p class="card-text">Monto Total Estimado</p>';
-                $html .= '</div>';
-                $html .= '</div>';
-                $html .= '</div>';
-                
-                // Tarjeta de estados
-                $html .= '<div class="col-md-3">';
-                $html .= '<div class="card bg-secondary text-white">';
-                $html .= '<div class="card-body text-center">';
-                $html .= '<h4 class="card-title">' . $statusCounts->count() . '</h4>';
-                $html .= '<p class="card-text">Estados Diferentes</p>';
-                $html .= '</div>';
-                $html .= '</div>';
-                $html .= '</div>';
-                
-                $html .= '</div>';
-                
-                // Desglose por estados
-                if ($statusCounts->count() > 1) {
-                    $html .= '<div class="row mt-3">';
-                    $html .= '<div class="col-12">';
-                    $html .= '<div class="card">';
-                    $html .= '<div class="card-header">';
-                    $html .= '<h6 class="card-title mb-0"><i class="la la-chart-pie"></i> Desglose por Estados</h6>';
-                    $html .= '</div>';
-                    $html .= '<div class="card-body">';
-                    
-                    foreach ($statusCounts as $status => $count) {
-                        $percentage = round(($count / $totalProducts) * 100, 1);
-                        $statusColor = 'secondary';
-                        switch ($status) {
-                            case 'Aprobada':
-                                $statusColor = 'success';
-                                break;
-                            case 'Rechazada':
-                                $statusColor = 'danger';
-                                break;
-                            case 'En Cotización':
-                                $statusColor = 'info';
-                                break;
-                            case 'Comprada':
-                                $statusColor = 'primary';
-                                break;
-                            default:
-                                $statusColor = 'warning';
-                        }
-                        
-                        $html .= '<div class="row align-items-center mb-2">';
-                        $html .= '<div class="col-md-2">';
-                        $html .= '<span class="badge bg-' . $statusColor . '">' . e($status) . '</span>';
-                        $html .= '</div>';
-                        $html .= '<div class="col-md-8">';
-                        $html .= '<div class="progress" style="height: 20px;">';
-                        $html .= '<div class="progress-bar bg-' . $statusColor . '" role="progressbar" style="width: ' . $percentage . '%" aria-valuenow="' . $percentage . '" aria-valuemin="0" aria-valuemax="100">';
-                        $html .= $percentage . '%';
-                        $html .= '</div>';
-                        $html .= '</div>';
-                        $html .= '</div>';
-                        $html .= '<div class="col-md-2 text-end">';
-                        $html .= '<strong>' . $count . ' productos</strong>';
-                        $html .= '</div>';
-                        $html .= '</div>';
-                    }
-                    
-                    $html .= '</div>';
-                    $html .= '</div>';
-                    $html .= '</div>';
-                    $html .= '</div>';
-                }
-                
-                return $html;
-            });
-        
         // Mostrar información de conversión si existe
-        CRUD::field('conversion_info')->label('Información de Conversión')->type('custom_html')
+        CRUD::column('conversion_info')->label('Información de Conversión')->type('custom_html')
             ->value(function($entry) {
                 if ($entry->status == 'convertida_a_compra' && $entry->purchaseRequests->isNotEmpty()) {
                     $html = '<div class="alert alert-success">';
