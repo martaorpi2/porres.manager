@@ -112,7 +112,7 @@ class StockLevelCrudController extends CrudController
                     'Mantenimiento',
                     'Insumos de Salud',
                     'Informática'
-                ]);
+                ])->get();
             },
         ]);
         

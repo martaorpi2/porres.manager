@@ -30,7 +30,7 @@ class GeneralRequestCrudController extends CrudController
 
         CRUD::column('number')->label('Número');
         CRUD::column('title')->label('Título');
-        CRUD::column('createdBy.name')->label('Creado por');
+        CRUD::column('createdBy.name')->label('Solicitante');
         CRUD::column('area.name')->label('Área');
         CRUD::column('priority')->label('Prioridad');
         CRUD::column('status')->label('Estado');
@@ -44,8 +44,50 @@ class GeneralRequestCrudController extends CrudController
             
         CRUD::column('created_at')->label('Fecha de Creación');
 
-        // Botón para convertir a solicitud de compra (solo para solicitudes no convertidas)
+        // Botón para convertir a solicitud de compra (solo para solicitudes no convertidas y con productos)
         CRUD::addButton('line', 'convert_to_purchase', 'view', 'crud::buttons.convert_to_purchase', 'end');
+
+        // Filtro personalizado por número usando parámetros de URL
+        if (request()->has('numero')) {
+            $numero = request()->get('numero');
+            if ($numero) {
+                CRUD::addClause('where', 'number', 'like', '%' . $numero . '%');
+            }
+        }
+
+        // Filtro personalizado por creado por usando parámetros de URL
+        if (request()->has('creado_por')) {
+            $creadoPor = request()->get('creado_por');
+            if ($creadoPor) {
+                CRUD::addClause('where', 'created_by', $creadoPor);
+            }
+        }
+
+        // Filtro personalizado por área usando parámetros de URL
+        if (request()->has('area')) {
+            $area = request()->get('area');
+            if ($area) {
+                CRUD::addClause('whereHas', 'area', function($query) use ($area) {
+                    $query->where('name', $area);
+                });
+            }
+        }
+
+        // Filtro personalizado por prioridad usando parámetros de URL
+        if (request()->has('prioridad')) {
+            $prioridad = request()->get('prioridad');
+            if ($prioridad) {
+                CRUD::addClause('where', 'priority', $prioridad);
+            }
+        }
+
+        // Filtro personalizado por estado usando parámetros de URL
+        if (request()->has('estado')) {
+            $estado = request()->get('estado');
+            if ($estado) {
+                CRUD::addClause('where', 'status', $estado);
+            }
+        }
     }
 
     protected function setupCreateOperation()
@@ -63,10 +105,8 @@ class GeneralRequestCrudController extends CrudController
             ->validationRules('nullable|exists:responsibility_areas,id');
 
         CRUD::field('created_by')->label('Creado por')
-            ->type('select')
-            ->model('App\Models\User')
-            ->attribute('name')
-            ->default(auth()->id() ?? 1)
+            ->type('hidden')
+            ->default(backpack_auth()->id() ?? 1)
             ->validationRules('required|exists:users,id');
 
         CRUD::field('priority')->label('Prioridad')
@@ -80,14 +120,8 @@ class GeneralRequestCrudController extends CrudController
             ->default('Media');
 
         CRUD::field('status')->label('Estado')
-            ->type('select_from_array')
-            ->options([
-                'creada' => 'Creada',
-                'revisada_area' => 'Revisada por Área',
-                'archivada' => 'Archivada',
-                'convertida_a_compra' => 'Convertida a Compra'
-            ])
-            ->default('creada');
+            ->type('hidden')
+            ->default('Creada');
             
         // Campo para seleccionar productos
         CRUD::field('products_selection')->label('Productos Solicitados')->type('custom_html')
@@ -136,15 +170,21 @@ class GeneralRequestCrudController extends CrudController
         return '
         <div id="products-container">
             <div class="row mb-3">
-                <div class="col-md-6">
+                <div class="col-md-5">
                     <label for="product-select" class="form-label">Seleccionar Producto</label>
                     <select id="product-select" class="form-control">
                         <option value="">Seleccionar un producto...</option>
                     </select>
                 </div>
-                <div class="col-md-3">
+                <div class="col-md-2">
                     <label for="product-quantity" class="form-label">Cantidad</label>
                     <input type="number" id="product-quantity" class="form-control" min="1" value="1">
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">Stock Disponible</label>
+                    <div id="stock-info" class="form-control-plaintext">
+                        <span class="badge bg-secondary">Seleccione un producto</span>
+                    </div>
                 </div>
                 <div class="col-md-3">
                     <label class="form-label">&nbsp;</label>
@@ -188,6 +228,7 @@ class GeneralRequestCrudController extends CrudController
             // Event listeners
             document.getElementById("add-product-btn").addEventListener("click", addProduct);
             document.getElementById("add-new-product-btn").addEventListener("click", showNewProductModal);
+            document.getElementById("product-select").addEventListener("change", updateStockInfo);
             
             // Función para cargar productos
             function loadProducts() {
@@ -202,10 +243,34 @@ class GeneralRequestCrudController extends CrudController
                             option.textContent = product.name + " (" + product.unit_measurement + ")";
                             option.setAttribute("data-unit", product.unit_measurement);
                             option.setAttribute("data-description", product.description || "");
+                            option.setAttribute("data-stock", product.stock_total || 0);
+                            option.setAttribute("data-minimum-stock", product.minimum_stock || 0);
                             select.appendChild(option);
                         });
                     })
                     .catch(error => console.error("Error loading products:", error));
+            }
+            
+            // Función para actualizar información de stock
+            function updateStockInfo() {
+                const select = document.getElementById("product-select");
+                const stockInfo = document.getElementById("stock-info");
+                const selectedOption = select.options[select.selectedIndex];
+                
+                if (select.value && selectedOption) {
+                    const stock = parseInt(selectedOption.getAttribute("data-stock")) || 0;
+                    const minimumStock = parseInt(selectedOption.getAttribute("data-minimum-stock")) || 0;
+                    
+                    if (stock > minimumStock) {
+                        stockInfo.innerHTML = `<span class="badge bg-success">${stock} unidades</span>`;
+                    } else if (stock > 0) {
+                        stockInfo.innerHTML = `<span class="badge bg-warning">${stock} unidades (Stock bajo)</span>`;
+                    } else {
+                        stockInfo.innerHTML = `<span class="badge bg-danger">Sin stock</span>`;
+                    }
+                } else {
+                    stockInfo.innerHTML = `<span class="badge bg-secondary">Seleccione un producto</span>`;
+                }
             }
             
             // Función para agregar producto
@@ -254,10 +319,6 @@ class GeneralRequestCrudController extends CrudController
                         <div class="col-md-2">
                             <label>Cantidad:</label>
                             <input type="number" class="form-control product-quantity" value="${quantity}" min="1">
-                        </div>
-                        <div class="col-md-2">
-                            <label>Precio Unit. Est.:</label>
-                            <input type="number" class="form-control product-price" step="0.01" min="0" value="${price}">
                         </div>
                         <div class="col-md-3">
                             <label>Especificaciones:</label>

@@ -59,6 +59,21 @@ class PurchaseRequestCrudController extends CrudController
                 return '<span class="badge bg-info">' . $count . ' productos</span>';
             });
 
+        // Agregar columna personalizada para mostrar cantidad de cotizaciones
+        CRUD::column('quotations_count')->label('Cotizaciones')->type('custom_html')
+            ->value(function($entry) {
+                $productIds = $entry->details->pluck('product_id')->toArray();
+                $quotationsCount = \App\Models\MarketRate::whereHas('quoteDetails', function($query) use ($productIds) {
+                    $query->whereIn('product_id', $productIds);
+                })->count();
+                
+                if ($quotationsCount > 0) {
+                    return '<span class="badge bg-success">' . $quotationsCount . ' cotizaciones</span>';
+                } else {
+                    return '<span class="badge bg-warning">Sin cotizaciones</span>';
+                }
+            });
+
         // Botón para generar planilla comparativa
         CRUD::addButton('line', 'comparative_excel', 'view', 'crud::buttons.comparative_excel', 'end');
     }
@@ -113,9 +128,9 @@ class PurchaseRequestCrudController extends CrudController
                 if ($generalRequest) {
                     $generalRequestInfo = '<div class="alert alert-info">
                         <h5><i class="la la-info-circle"></i> Conversión desde Solicitud General</h5>
-                        <p><strong>Número:</strong> ' . e($generalRequest->number) . '</p>
-                        <p><strong>Título:</strong> ' . e($generalRequest->title) . '</p>
-                        <p><strong>Descripción:</strong> ' . e($generalRequest->description) . '</p>
+                        <p><strong>Número:</strong> ' . ($generalRequest->number ?? 'N/A') . '</p>
+                        <p><strong>Título:</strong> ' . ($generalRequest->title ?? 'N/A') . '</p>
+                        <p><strong>Descripción:</strong> ' . ($generalRequest->description ?? 'N/A') . '</p>
                     </div>';
                 }
             }
@@ -562,6 +577,12 @@ class PurchaseRequestCrudController extends CrudController
         $filename = 'Planilla_Comparativa_' . $purchaseRequest->request_number . '_' . date('Y-m-d') . '.xlsx';
         $filePath = 'comparative_sheets/' . $filename;
         
+        // Ensure directory exists
+        $fullPath = storage_path('app/public/comparative_sheets');
+        if (!file_exists($fullPath)) {
+            mkdir($fullPath, 0755, true);
+        }
+        
         $this->generateExcelFile($purchaseRequest, $suppliers, $filePath);
         
         // Update purchase request with attachment
@@ -897,6 +918,7 @@ class PurchaseRequestCrudController extends CrudController
         return redirect()->route('purchase-order.show', $purchaseOrder->id);
     }
 
+
     /**
      * Define what happens when the Show operation is loaded.
      * 
@@ -905,12 +927,51 @@ class PurchaseRequestCrudController extends CrudController
      */
     protected function setupShowOperation()
     {
-        CRUD::addClause('with', ['responsibilityArea', 'requestingUser', 'approvedBy', 'details.product']);
+        CRUD::addClause('with', ['responsibilityArea', 'requestingUser', 'approvedBy', 'details.product', 'selectedMarketRate.supplier', 'selectedBy', 'convertedFromGeneralRequest']);
         
-        CRUD::setFromDb();
+        CRUD::column('request_number')->label('Número de Solicitud');
+        CRUD::column('request_date')->label('Fecha');
+        CRUD::column('status')->label('Estado');
+        CRUD::column('priority')->label('Prioridad');
+        CRUD::column('justification')->label('Motivo');
+        CRUD::column('observations')->label('Observaciones');
+        CRUD::column('responsibilityArea.name')->label('Área');
+        CRUD::column('requestingUser.name')->label('Solicitante');
+        CRUD::column('approvedBy.name')->label('Aprobada por');
+        CRUD::column('approved_date')->label('Fecha Aprobación');
+        CRUD::column('total_amount')->label('Monto total');
+
+        CRUD::column('total_amount')->label('Monto Total')->type('number')->decimals(2)->prefix('$');
+        
+        // Remover el campo attachments problemático
+        CRUD::removeColumn('attachments');
+        
+        // Agregar el campo attachments con manejo correcto de arrays
+        CRUD::column('attachments')->label('Adjuntos')->type('custom_html')
+            ->value(function($entry) {
+                try {
+                    if (!$entry->attachments || empty($entry->attachments)) {
+                        return '<span class="text-muted">Sin adjuntos</span>';
+                    }
+                    
+                    if (is_array($entry->attachments)) {
+                        $html = '<ul class="list-unstyled">';
+                        foreach ($entry->attachments as $attachment) {
+                            $attachmentText = is_array($attachment) ? 'Archivo adjunto' : (string) $attachment;
+                            $html .= '<li><i class="la la-file"></i> ' . $attachmentText . '</li>';
+                        }
+                        $html .= '</ul>';
+                        return $html;
+                    }
+                    
+                    return '<span class="text-muted">Sin adjuntos</span>';
+                } catch (\Exception $e) {
+                    return '<span class="text-muted">Error al cargar adjuntos</span>';
+                }
+            });
 
         // Agregar campo personalizado para mostrar detalles de productos
-        CRUD::field('details_table')->label('Detalles de Productos')->type('custom_html')
+        CRUD::column('details_table')->label('Detalles de Productos')->type('custom_html')
             ->value(function($entry) {
                 $details = $entry->details;
                 
@@ -918,44 +979,63 @@ class PurchaseRequestCrudController extends CrudController
                     return '<div class="alert alert-info">No hay productos solicitados.</div>';
                 }
                 
-                $html = '<div class="table-responsive">';
-                $html .= '<table class="table table-striped table-bordered">';
-                $html .= '<thead class="thead-dark">';
+                $html = '<div class="card border-primary">';
+                $html .= '<div class="card-header bg-primary text-white">';
+                $html .= '<h6 class="mb-0"><i class="la la-shopping-cart"></i> Productos Solicitados</h6>';
+                $html .= '</div>';
+                $html .= '<div class="card-body p-0">';
+                $html .= '<div class="table-responsive">';
+                $html .= '<table class="table table-sm table-bordered mb-0">';
+                $html .= '<thead class="table-light">';
                 $html .= '<tr>';
-                $html .= '<th>Producto</th>';
-                $html .= '<th>Cantidad</th>';
-                $html .= '<th>Especificaciones</th>';
-                $html .= '<th>Precio Estimado</th>';
-                $html .= '<th>Total Estimado</th>';
-                $html .= '<th>Estado</th>';
+                $html .= '<th style="width: 40%;">Producto</th>';
+                $html .= '<th style="width: 20%;">Cantidad</th>';
+                $html .= '<th style="width: 30%;">Especificaciones</th>';
+                $html .= '<th style="width: 10%;">Estado</th>';
                 $html .= '</tr>';
                 $html .= '</thead>';
                 $html .= '<tbody>';
                 
                 foreach ($details as $detail) {
                     $html .= '<tr>';
-                    $html .= '<td><strong>' . e($detail->product->name ?? 'Producto no encontrado') . '</strong>';
-                    if ($detail->product && $detail->product->description) {
-                        $html .= '<br><small class="text-muted">' . e($detail->product->description) . '</small>';
+                    $productName = $detail->product->name ?? 'Producto no encontrado';
+                    if (is_array($productName)) {
+                        $productName = 'Producto no encontrado';
+                    }
+                    $html .= '<td><strong>' . $productName . '</strong>';
+                    if ($detail->product && $detail->product->description && !is_array($detail->product->description)) {
+                        $html .= '<br><small class="text-muted">' . $detail->product->description . '</small>';
                     }
                     $html .= '</td>';
-                    $html .= '<td><span class="badge bg-primary">' . $detail->requested_quantity . '</span></td>';
-                    $html .= '<td>' . e($detail->specifications ?? 'Sin especificaciones') . '</td>';
-                    $html .= '<td class="text-end">' . ($detail->estimated_unit_price ? '$' . number_format($detail->estimated_unit_price, 2) : 'No definido') . '</td>';
-                    $html .= '<td class="text-end">' . ($detail->estimated_total ? '$' . number_format($detail->estimated_total, 2) : 'No definido') . '</td>';
-                    $html .= '<td><span class="badge bg-' . ($detail->status == 'Aprobada' ? 'success' : ($detail->status == 'Rechazada' ? 'danger' : 'warning')) . '">' . $detail->status . '</span></td>';
+                    $html .= '<td><span class="badge bg-info">' . $detail->requested_quantity . '</span>';
+                    if ($detail->product && $detail->product->unit_measurement && !is_array($detail->product->unit_measurement)) {
+                        $html .= '<br><small class="text-muted">' . $detail->product->unit_measurement . '</small>';
+                    }
+                    $html .= '</td>';
+                    $specifications = $detail->specifications ?? 'Sin especificaciones';
+                    if (is_array($specifications)) {
+                        $specifications = 'Sin especificaciones';
+                    }
+                    $html .= '<td><small>' . $specifications . '</small></td>';
+                    $status = $detail->status ?? 'Pendiente';
+                    if (is_array($status)) {
+                        $status = 'Pendiente';
+                    }
+                    $html .= '<td><span class="badge bg-' . ($detail->status == 'Aprobada' ? 'success' : ($detail->status == 'Rechazada' ? 'danger' : 'warning')) . '">' . $status . '</span></td>';
                     $html .= '</tr>';
                 }
                 
                 $html .= '</tbody>';
                 $html .= '</table>';
                 $html .= '</div>';
+                $html .= '</div>';
+                $html .= '</div>';
                 
                 return $html;
             });
 
         // Agregar campo para mostrar cotizaciones disponibles
-        CRUD::field('market_rates_table')->label('Cotizaciones Disponibles')->type('custom_html')
+        CRUD::column('market_rates_table')->label('Cotizaciones Disponibles')->type('custom_html')
             ->value(function($entry) {
                 $productIds = $entry->details->pluck('product_id')->toArray();
                 $marketRates = \App\Models\MarketRate::with([
@@ -988,8 +1068,16 @@ class PurchaseRequestCrudController extends CrudController
                     $rowClass = $isSelected ? 'table-success' : '';
                     
                     $html .= '<tr class="' . $rowClass . '">';
-                    $html .= '<td><strong>' . e($marketRate->supplier->company_name) . '</strong></td>';
-                    $html .= '<td>' . $marketRate->date->format('d/m/Y') . '</td>';
+                    $supplierName = $marketRate->supplier->company_name ?? 'Proveedor no encontrado';
+                    if (is_array($supplierName)) {
+                        $supplierName = 'Proveedor no encontrado';
+                    }
+                    $html .= '<td><strong>' . $supplierName . '</strong></td>';
+                    $date = $marketRate->date;
+                    if (is_string($date)) {
+                        $date = \Carbon\Carbon::parse($date);
+                    }
+                    $html .= '<td>' . ($date ? $date->format('d/m/Y') : 'N/A') . '</td>';
                     $html .= '<td class="text-end"><strong>$' . number_format($marketRate->total_amount, 2) . '</strong></td>';
                     $html .= '<td><span class="badge bg-info">' . $marketRate->quoteDetails->count() . ' productos</span></td>';
                     $html .= '<td>';
@@ -1037,14 +1125,36 @@ class PurchaseRequestCrudController extends CrudController
                     return '';
                 }
                 
+                // Verificar que las relaciones estén cargadas
+                if (!$entry->selectedMarketRate || !$entry->selectedMarketRate->supplier) {
+                    return '<div class="alert alert-warning">Información de cotización seleccionada no disponible.</div>';
+                }
+                
                 $html = '<div class="alert alert-success">';
                 $html .= '<h5><i class="la la-check-circle"></i> Cotización Seleccionada</h5>';
-                $html .= '<p><strong>Proveedor:</strong> ' . e($entry->selectedMarketRate->supplier->company_name) . '</p>';
-                $html .= '<p><strong>Total:</strong> $' . number_format($entry->selectedMarketRate->total_amount, 2) . '</p>';
-                $html .= '<p><strong>Seleccionado por:</strong> ' . e($entry->selectedBy->name ?? 'Usuario no encontrado') . '</p>';
-                $html .= '<p><strong>Fecha de selección:</strong> ' . $entry->selected_at->format('d/m/Y H:i') . '</p>';
-                if ($entry->selection_justification) {
-                    $html .= '<p><strong>Justificación:</strong> ' . e($entry->selection_justification) . '</p>';
+                $supplierName = $entry->selectedMarketRate->supplier->company_name ?? 'Proveedor no encontrado';
+                if (is_array($supplierName)) {
+                    $supplierName = 'Proveedor no encontrado';
+                }
+                $html .= '<p><strong>Proveedor:</strong> ' . $supplierName . '</p>';
+                $html .= '<p><strong>Total:</strong> $' . number_format($entry->selectedMarketRate->total_amount ?? 0, 2) . '</p>';
+                $selectedByName = $entry->selectedBy->name ?? 'Usuario no encontrado';
+                if (is_array($selectedByName)) {
+                    $selectedByName = 'Usuario no encontrado';
+                }
+                $html .= '<p><strong>Seleccionado por:</strong> ' . $selectedByName . '</p>';
+                $selectedAt = $entry->selected_at;
+                if ($selectedAt) {
+                    if (is_string($selectedAt)) {
+                        $selectedAt = \Carbon\Carbon::parse($selectedAt);
+                    }
+                    $selectedAtFormatted = $selectedAt ? $selectedAt->format('d/m/Y H:i') : 'No disponible';
+                } else {
+                    $selectedAtFormatted = 'No disponible';
+                }
+                $html .= '<p><strong>Fecha de selección:</strong> ' . $selectedAtFormatted . '</p>';
+                if ($entry->selection_justification && !is_array($entry->selection_justification)) {
+                    $html .= '<p><strong>Justificación:</strong> ' . $entry->selection_justification . '</p>';
                 }
                 $html .= '</div>';
                 return $html;

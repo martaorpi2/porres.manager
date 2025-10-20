@@ -19,7 +19,7 @@ class StockLevel extends Model
     ];
 
     protected $casts = [
-        'quantity' => 'decimal:2',
+        'quantity' => 'integer',
     ];
 
     /**

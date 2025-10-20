@@ -537,6 +537,51 @@ a:hover {
       color: white !important;
   }
 
+  /* Specific rules for dropdown items active state */
+  .sidebar .dropdown-item.active {
+      background-color: #871f1f !important;
+      color: white !important;
+  }
+
+  .sidebar .dropdown-item.active i {
+      color: white !important;
+  }
+
+  /* Ensure only the current dropdown item is active */
+  .sidebar .dropdown-item:not(.active) {
+      background-color: transparent !important;
+      color: black !important;
+  }
+
+  .sidebar .dropdown-item:not(.active) i {
+      color: black !important;
+  }
+
+  /* Force override for any conflicting active states */
+  .sidebar .dropdown-item.active[href*="supplier"]:not([href*="suppliers-heading"]) {
+      background-color: transparent !important;
+      color: black !important;
+  }
+
+  .sidebar .dropdown-item.active[href*="suppliers-heading"] {
+      background-color: #871f1f !important;
+      color: white !important;
+  }
+
+  .sidebar .dropdown-item.active[href*="suppliers-heading"] i {
+      color: white !important;
+  }
+
+  /* Specific override for supplier list when suppliers-heading is active */
+  .sidebar .dropdown-item[href*="supplier"]:not([href*="suppliers-heading"]) {
+      background-color: transparent !important;
+      color: black !important;
+  }
+
+  .sidebar .dropdown-item[href*="supplier"]:not([href*="suppliers-heading"]) i {
+      color: black !important;
+  }
+
   /* Override any dark text in sidebar - only for specific cases */
   .sidebar .text-dark {
       color: black !important;
@@ -774,6 +819,88 @@ a:hover {
           </div>
         @elseif($crud->route == 'admin/category')
           <!-- Filtro personalizado para categorías -->
+          <div class="card mb-3">
+            <div class="card-header bg-primary text-white">
+              <h6 class="card-title mb-0">
+                <i class="fas fa-filter"></i> Filtros
+              </h6>
+            </div>
+            <div class="card-body py-2">
+              <form method="GET" action="{{ url($crud->route) }}">
+                <div class="row">
+                  <div class="col-md-4">
+                    <label for="nombre" class="form-label">Nombre:</label>
+                    <input type="text" name="nombre" id="nombre" class="form-control" placeholder="Buscar por nombre..." value="{{ request('nombre') }}">
+                  </div>
+                </div>
+              </form>
+            </div>
+          </div>
+        @elseif($crud->route == 'admin/general-request')
+          <!-- Filtro personalizado para solicitudes generales -->
+          <div class="card mb-3">
+            <div class="card-header bg-primary text-white">
+              <h6 class="card-title mb-0">
+                <i class="fas fa-filter"></i> Filtros
+              </h6>
+            </div>
+            <div class="card-body py-2">
+              <form method="GET" action="{{ url($crud->route) }}">
+                <div class="row">
+                  <div class="col-md-3">
+                    <label for="numero" class="form-label">Número:</label>
+                    <input type="text" name="numero" id="numero" class="form-control" placeholder="Buscar por número..." value="{{ request('numero') }}" onchange="this.form.submit()">
+                  </div>
+                  <div class="col-md-3">
+                    <label for="creado_por" class="form-label">Solicitante:</label>
+                    <select name="creado_por" id="creado_por" class="form-control select2" onchange="this.form.submit()">
+                      <option value="">Todos los solicitantes</option>
+                      @foreach(\App\Models\User::all() as $usuario)
+                        <option value="{{ $usuario->id }}" {{ request('creado_por') == $usuario->id ? 'selected' : '' }}>
+                          {{ $usuario->name }}
+                        </option>
+                      @endforeach
+                    </select>
+                  </div>
+                  <div class="col-md-3">
+                    <label for="area" class="form-label">Área:</label>
+                    <select name="area" id="area" class="form-control select2" onchange="this.form.submit()">
+                      <option value="">Todas las áreas</option>
+                      <option value="Insumos Generales" {{ request('area') == 'Insumos Generales' ? 'selected' : '' }}>Insumos Generales</option>
+                      <option value="Mantenimiento" {{ request('area') == 'Mantenimiento' ? 'selected' : '' }}>Mantenimiento</option>
+                      <option value="Insumos de Salud" {{ request('area') == 'Insumos de Salud' ? 'selected' : '' }}>Insumos de Salud</option>
+                      <option value="Informática" {{ request('area') == 'Informática' ? 'selected' : '' }}>Informática</option>
+                    </select>
+                  </div>
+                  <div class="col-md-3">
+                    <label for="prioridad" class="form-label">Prioridad:</label>
+                    <select name="prioridad" id="prioridad" class="form-control select2" onchange="this.form.submit()">
+                      <option value="">Todas las prioridades</option>
+                      <option value="Baja" {{ request('prioridad') == 'Baja' ? 'selected' : '' }}>Baja</option>
+                      <option value="Media" {{ request('prioridad') == 'Media' ? 'selected' : '' }}>Media</option>
+                      <option value="Alta" {{ request('prioridad') == 'Alta' ? 'selected' : '' }}>Alta</option>
+                      <option value="Urgente" {{ request('prioridad') == 'Urgente' ? 'selected' : '' }}>Urgente</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="row mt-2">
+                  <div class="col-md-3">
+                    <label for="estado" class="form-label">Estado:</label>
+                    <select name="estado" id="estado" class="form-control select2" onchange="this.form.submit()">
+                      <option value="">Todos los estados</option>
+                      <option value="Creada" {{ request('estado') == 'Creada' ? 'selected' : '' }}>Creada</option>
+                      <option value="En Revisión" {{ request('estado') == 'En Revisión' ? 'selected' : '' }}>En Revisión</option>
+                      <option value="Aprobada" {{ request('estado') == 'Aprobada' ? 'selected' : '' }}>Aprobada</option>
+                      <option value="Rechazada" {{ request('estado') == 'Rechazada' ? 'selected' : '' }}>Rechazada</option>
+                      <option value="Convertida a Compra" {{ request('estado') == 'Convertida a Compra' ? 'selected' : '' }}>Convertida a Compra</option>
+                    </select>
+                  </div>
+                </div>
+              </form>
+            </div>
+          </div>
+        @elseif($crud->route == 'admin/suppliers-heading')
+          <!-- Filtro personalizado para rubros de proveedores -->
           <div class="card mb-3">
             <div class="card-header bg-primary text-white">
               <h6 class="card-title mb-0">

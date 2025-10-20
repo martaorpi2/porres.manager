@@ -100,8 +100,8 @@ class MarketRateCrudController extends CrudController
         
         CRUD::setFromDb(); // set fields from db columns.
 
-        // Agregar campo personalizado para mostrar detalles de cotización
-        CRUD::field('quote_details_table')->label('Detalles de Cotización')->type('custom_html')
+        // Agregar campo personalizado para mostrar detalles de cotización (con estilo de PurchaseRequest)
+        CRUD::column('quote_details_table')->label('Detalles de Cotización')->type('custom_html')
             ->value(function($entry) {
                 $quoteDetails = $entry->quoteDetails;
                 
@@ -109,14 +109,20 @@ class MarketRateCrudController extends CrudController
                     return '<div class="alert alert-info">No hay detalles de cotización disponibles.</div>';
                 }
                 
-                $html = '<div class="table-responsive">';
-                $html .= '<table class="table table-striped table-bordered">';
-                $html .= '<thead class="thead-dark">';
+                $html = '<div class="card border-primary">';
+                $html .= '<div class="card-header bg-primary text-white">';
+                $html .= '<h6 class="mb-0"><i class="la la-shopping-cart"></i> Productos Cotizados</h6>';
+                $html .= '</div>';
+                $html .= '<div class="card-body p-0">';
+                $html .= '<div class="table-responsive">';
+                $html .= '<table class="table table-sm table-bordered mb-0">';
+                $html .= '<thead class="table-light">';
                 $html .= '<tr>';
-                $html .= '<th>Producto</th>';
-                $html .= '<th>Cantidad</th>';
-                $html .= '<th>Precio Unitario</th>';
-                $html .= '<th>Subtotal</th>';
+                $html .= '<th style="width: 35%;">Producto</th>';
+                $html .= '<th style="width: 15%;">Cantidad</th>';
+                $html .= '<th style="width: 20%;">Precio Unitario</th>';
+                $html .= '<th style="width: 20%;">Subtotal</th>';
+                $html .= '<th style="width: 10%;">Estado</th>';
                 $html .= '</tr>';
                 $html .= '</thead>';
                 $html .= '<tbody>';
@@ -127,25 +133,37 @@ class MarketRateCrudController extends CrudController
                     $total += $subtotal;
                     
                     $html .= '<tr>';
-                    $html .= '<td><strong>' . e($detail->product->name ?? 'Producto no encontrado') . '</strong>';
-                    if ($detail->product && $detail->product->description) {
-                        $html .= '<br><small class="text-muted">' . e($detail->product->description) . '</small>';
+                    $productName = $detail->product->name ?? 'Producto no encontrado';
+                    if (is_array($productName)) {
+                        $productName = 'Producto no encontrado';
+                    }
+                    $html .= '<td><strong>' . $productName . '</strong>';
+                    if ($detail->product && $detail->product->description && !is_array($detail->product->description)) {
+                        $html .= '<br><small class="text-muted">' . $detail->product->description . '</small>';
                     }
                     $html .= '</td>';
-                    $html .= '<td><span class="badge bg-primary">' . $detail->quantity . '</span></td>';
+                    $html .= '<td><span class="badge bg-info">' . $detail->quantity . '</span>';
+                    if ($detail->product && $detail->product->unit_measurement && !is_array($detail->product->unit_measurement)) {
+                        $html .= '<br><small class="text-muted">' . $detail->product->unit_measurement . '</small>';
+                    }
+                    $html .= '</td>';
                     $html .= '<td class="text-end"><strong>$' . number_format($detail->unit_price, 2) . '</strong></td>';
                     $html .= '<td class="text-end"><span class="badge bg-success">$' . number_format($subtotal, 2) . '</span></td>';
+                    $html .= '<td><span class="badge bg-success">Cotizado</span></td>';
                     $html .= '</tr>';
                 }
                 
                 $html .= '</tbody>';
-                $html .= '<tfoot>';
-                $html .= '<tr class="table-info">';
+                $html .= '<tfoot class="table-light">';
+                $html .= '<tr>';
                 $html .= '<th colspan="3" class="text-end">Total:</th>';
-                $html .= '<th class="text-end">$' . number_format($total, 2) . '</th>';
+                $html .= '<th class="text-end"><span class="badge bg-primary fs-6">$' . number_format($total, 2) . '</span></th>';
+                $html .= '<th></th>';
                 $html .= '</tr>';
                 $html .= '</tfoot>';
                 $html .= '</table>';
+                $html .= '</div>';
+                $html .= '</div>';
                 $html .= '</div>';
                 
                 return $html;

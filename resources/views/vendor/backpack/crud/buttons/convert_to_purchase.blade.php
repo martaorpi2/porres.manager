@@ -1,4 +1,4 @@
-@if ($crud->hasAccess('show', $entry) && $entry->status != 'convertida_a_compra')
+@if ($crud->hasAccess('show', $entry) && $entry->status != 'convertida_a_compra' && $entry->details->count() > 0)
     <a href="{{ backpack_url('purchase-request/create?converted_from=' . $entry->getKey()) }}" 
        class="btn btn-sm btn-success" 
        data-toggle="tooltip" 

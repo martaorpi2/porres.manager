@@ -571,6 +571,51 @@ a:hover {
     color: white !important;
 }
 
+/* Specific rules for dropdown items active state */
+.sidebar .dropdown-item.active {
+    background-color: #871f1f !important;
+    color: white !important;
+}
+
+.sidebar .dropdown-item.active i {
+    color: white !important;
+}
+
+/* Ensure only the current dropdown item is active */
+.sidebar .dropdown-item:not(.active) {
+    background-color: transparent !important;
+    color: black !important;
+}
+
+.sidebar .dropdown-item:not(.active) i {
+    color: black !important;
+}
+
+/* Force override for any conflicting active states */
+.sidebar .dropdown-item.active[href*="supplier"]:not([href*="suppliers-heading"]) {
+    background-color: transparent !important;
+    color: black !important;
+}
+
+.sidebar .dropdown-item.active[href*="suppliers-heading"] {
+    background-color: #871f1f !important;
+    color: white !important;
+}
+
+.sidebar .dropdown-item.active[href*="suppliers-heading"] i {
+    color: white !important;
+}
+
+/* Specific override for supplier list when suppliers-heading is active */
+.sidebar .dropdown-item[href*="supplier"]:not([href*="suppliers-heading"]) {
+    background-color: transparent !important;
+    color: black !important;
+}
+
+.sidebar .dropdown-item[href*="supplier"]:not([href*="suppliers-heading"]) i {
+    color: black !important;
+}
+
 /* Override any dark text in sidebar - only for specific cases */
 .sidebar .text-dark {
     color: black !important;

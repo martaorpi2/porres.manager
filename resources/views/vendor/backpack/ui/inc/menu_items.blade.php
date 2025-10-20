@@ -85,6 +85,46 @@ $(document).ready(function() {
         // No prevenir el comportamiento - permitir navegación normal
         console.log('Navegando a:', $(this).attr('href'));
     });
+
+    // Manejar la activación correcta de elementos dropdown
+    $('.dropdown-item').on('click', function(e) {
+        // Remover clase active de todos los elementos dropdown en el mismo dropdown
+        const $currentDropdown = $(this).closest('.dropdown-menu');
+        $currentDropdown.find('.dropdown-item').removeClass('active');
+        
+        // Agregar clase active solo al elemento clickeado
+        $(this).addClass('active');
+        
+        console.log('Elemento dropdown activado:', $(this).text());
+    });
+
+    // Función para verificar y corregir estados activos al cargar la página
+    function fixDropdownActiveStates() {
+        // Obtener la URL actual
+        const currentUrl = window.location.pathname;
+        
+        // Remover active de todos los dropdown items
+        $('.dropdown-item').removeClass('active');
+        
+        // Encontrar y activar el elemento que coincide con la URL actual
+        $('.dropdown-item').each(function() {
+            const $item = $(this);
+            const itemHref = $item.attr('href');
+            
+            if (itemHref && currentUrl.includes(itemHref.replace('/admin/', ''))) {
+                $item.addClass('active');
+                console.log('Activando elemento:', $item.text(), 'para URL:', currentUrl);
+            }
+        });
+    }
+
+    // Ejecutar al cargar la página
+    fixDropdownActiveStates();
+    
+    // Ejecutar también cuando cambie la URL (para navegación SPA)
+    $(window).on('popstate', function() {
+        setTimeout(fixDropdownActiveStates, 100);
+    });
 });
 </script>
 @endpush
