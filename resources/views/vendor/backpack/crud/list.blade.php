@@ -899,6 +899,73 @@ a:hover {
               </form>
             </div>
           </div>
+        @elseif($crud->route == 'admin/purchase-request')
+          <!-- Filtro personalizado para solicitudes de compra -->
+          <div class="card mb-3">
+            <div class="card-header bg-primary text-white">
+              <h6 class="card-title mb-0">
+                <i class="fas fa-filter"></i> Filtros
+              </h6>
+            </div>
+            <div class="card-body py-2">
+              <form method="GET" action="{{ url($crud->route) }}">
+                <div class="row">
+                  <div class="col-md-3">
+                    <label for="numero" class="form-label">Número:</label>
+                    <input type="text" name="numero" id="numero" class="form-control" placeholder="Buscar por número..." value="{{ request('numero') }}" onchange="this.form.submit()">
+                  </div>
+                  <div class="col-md-3">
+                    <label for="fecha" class="form-label">Fecha:</label>
+                    <input type="date" name="fecha" id="fecha" class="form-control" value="{{ request('fecha') }}" onchange="this.form.submit()">
+                  </div>
+                  <div class="col-md-3">
+                    <label for="area" class="form-label">Área:</label>
+                    <select name="area" id="area" class="form-control select2" onchange="this.form.submit()">
+                      <option value="">Todas las áreas</option>
+                      <option value="Insumos Generales" {{ request('area') == 'Insumos Generales' ? 'selected' : '' }}>Insumos Generales</option>
+                      <option value="Mantenimiento" {{ request('area') == 'Mantenimiento' ? 'selected' : '' }}>Mantenimiento</option>
+                      <option value="Insumos de Salud" {{ request('area') == 'Insumos de Salud' ? 'selected' : '' }}>Insumos de Salud</option>
+                      <option value="Informática" {{ request('area') == 'Informática' ? 'selected' : '' }}>Informática</option>
+                    </select>
+                  </div>
+                  <div class="col-md-3">
+                    <label for="solicitante" class="form-label">Solicitante:</label>
+                    <select name="solicitante" id="solicitante" class="form-control select2" onchange="this.form.submit()">
+                      <option value="">Todos los solicitantes</option>
+                      @foreach(\App\Models\User::all() as $usuario)
+                        <option value="{{ $usuario->id }}" {{ request('solicitante') == $usuario->id ? 'selected' : '' }}>
+                          {{ $usuario->name }}
+                        </option>
+                      @endforeach
+                    </select>
+                  </div>
+                </div>
+                <div class="row mt-2">
+                  <div class="col-md-3">
+                    <label for="estado" class="form-label">Estado:</label>
+                    <select name="estado" id="estado" class="form-control select2" onchange="this.form.submit()">
+                      <option value="">Todos los estados</option>
+                      <option value="Pendiente" {{ request('estado') == 'Pendiente' ? 'selected' : '' }}>Pendiente</option>
+                      <option value="En Revisión" {{ request('estado') == 'En Revisión' ? 'selected' : '' }}>En Revisión</option>
+                      <option value="Aprobada" {{ request('estado') == 'Aprobada' ? 'selected' : '' }}>Aprobada</option>
+                      <option value="Rechazada" {{ request('estado') == 'Rechazada' ? 'selected' : '' }}>Rechazada</option>
+                      <option value="Completada" {{ request('estado') == 'Completada' ? 'selected' : '' }}>Completada</option>
+                    </select>
+                  </div>
+                  <div class="col-md-3">
+                    <label for="prioridad" class="form-label">Prioridad:</label>
+                    <select name="prioridad" id="prioridad" class="form-control select2" onchange="this.form.submit()">
+                      <option value="">Todas las prioridades</option>
+                      <option value="Baja" {{ request('prioridad') == 'Baja' ? 'selected' : '' }}>Baja</option>
+                      <option value="Media" {{ request('prioridad') == 'Media' ? 'selected' : '' }}>Media</option>
+                      <option value="Alta" {{ request('prioridad') == 'Alta' ? 'selected' : '' }}>Alta</option>
+                      <option value="Urgente" {{ request('prioridad') == 'Urgente' ? 'selected' : '' }}>Urgente</option>
+                    </select>
+                  </div>
+                </div>
+              </form>
+            </div>
+          </div>
         @elseif($crud->route == 'admin/suppliers-heading')
           <!-- Filtro personalizado para rubros de proveedores -->
           <div class="card mb-3">

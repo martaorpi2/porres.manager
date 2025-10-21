@@ -641,29 +641,29 @@ class PurchaseRequestCrudController extends CrudController
     }
 
     /**
-     * Generate Excel file with PhpSpreadsheet
+     * Define what happens when the Show operation is loaded.
+     * 
+     * @see https://backpackforlaravel.com/docs/crud-operation-show
+     * @return void
      */
-    private function generateExcelFile($purchaseRequest, $suppliers, $filePath)
+    protected function setupShowOperation()
     {
-        $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
-        $sheet = $spreadsheet->getActiveSheet();
+        CRUD::addClause('with', ['responsibilityArea', 'requestingUser', 'approvedBy', 'details.product', 'selectedMarketRate.supplier', 'selectedBy', 'convertedFromGeneralRequest']);
         
-        // Set title
-        $sheet->setTitle('Planilla Comparativa');
+        CRUD::column('request_number')->label('Número de Solicitud');
+        CRUD::column('request_date')->label('Fecha');
+        CRUD::column('responsibilityArea.name')->label('Área');
+        CRUD::column('requestingUser.name')->label('Solicitante');
+        CRUD::column('status')->label('Estado');
+        CRUD::column('priority')->label('Prioridad');
+        CRUD::column('justification')->label('Motivo'); // Corrected column name
+        CRUD::column('observations')->label('Observaciones'); // Corrected column name
+        CRUD::column('approvedBy.name')->label('Aprobada por');
+        CRUD::column('approved_date')->label('Fecha Aprobación');
+        CRUD::column('total_amount')->label('Monto Total')->type('number')->decimals(2)->prefix('$');
         
-        // Header information
-        $sheet->setCellValue('A1', 'PLANILLA COMPARATIVA DE COTIZACIONES');
-        $sheet->setCellValue('A2', 'Solicitud de Compra: ' . $purchaseRequest->request_number);
-        $sheet->setCellValue('A3', 'Área: ' . $purchaseRequest->responsibilityArea->name);
-        $sheet->setCellValue('A4', 'Fecha: ' . date('d/m/Y'));
-        
-        // Merge title cells
-        $sheet->mergeCells('A1:Z1');
-        $sheet->getStyle('A1')->getFont()->setBold(true)->setSize(16);
-        $sheet->getStyle('A1')->getAlignment()->setHorizontal(\PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER);
-        
-        // Start data from row 6
-        $currentRow = 6;
+        // Eliminar completamente la sección de adjuntos
+        CRUD::removeColumn('attachments');
         
         // Create header row
         $header = ['Producto', 'Cantidad', 'Unidad'];
