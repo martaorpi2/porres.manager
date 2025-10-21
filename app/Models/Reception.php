@@ -35,7 +35,14 @@ class Reception extends Model
     | RELATIONS
     |--------------------------------------------------------------------------
     */
-
+    public function purchase_order()
+    {
+        return $this->belongsTo(\App\Models\PurchaseOrder::class, 'purchase_order_id');
+    }
+    public function user()
+    {
+        return $this->belongsTo(\App\Models\User::class, 'area_manager_id');
+    }
     /*
     |--------------------------------------------------------------------------
     | SCOPES

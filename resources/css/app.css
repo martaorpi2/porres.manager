@@ -174,3 +174,217 @@ a:hover {
     --primary-color: #871f1f !important;
     --primary: #871f1f !important;
 }
+
+/* Custom header background color - Multiple selectors to ensure it applies */
+.app-header,
+header.app-header,
+.navbar.app-header,
+header.navbar.app-header,
+.app-header.navbar,
+header[class*="app-header"],
+.navbar[class*="app-header"] {
+    background-color: #646466 !important;
+}
+
+/* Additional specific selectors for the main header */
+header[class*="app-header"] {
+    background-color: #646466 !important;
+}
+
+/* Override any existing background colors on the header */
+header {
+    background-color: #646466 !important;
+}
+
+/* Maximum specificity override - should be at the end */
+body header.app-header.navbar,
+body header.navbar.app-header,
+html body header.app-header.navbar,
+html body header.navbar.app-header {
+    background-color: #646466 !important;
+}
+
+/* Project logo styling - white color with bordo hover - Maximum specificity */
+.navbar-brand,
+.navbar-brand b,
+.navbar-brand strong,
+.project_logo,
+.project-logo,
+header .navbar-brand,
+header .navbar-brand b,
+header .navbar-brand strong,
+.app-header .navbar-brand,
+.app-header .navbar-brand b,
+.app-header .navbar-brand strong,
+body header .navbar-brand,
+body header .navbar-brand b,
+body header .navbar-brand strong {
+    color: #ffffff !important;
+    opacity: 1 !important;
+}
+
+.navbar-brand:hover,
+.navbar-brand:hover b,
+.navbar-brand:hover strong,
+.project_logo:hover,
+.project-logo:hover,
+header .navbar-brand:hover,
+header .navbar-brand:hover b,
+header .navbar-brand:hover strong,
+.app-header .navbar-brand:hover,
+.app-header .navbar-brand:hover b,
+.app-header .navbar-brand:hover strong,
+body header .navbar-brand:hover,
+body header .navbar-brand:hover b,
+body header .navbar-brand:hover strong {
+    color: #871f1f !important;
+}
+
+/* Ultimate override for navbar brand - should be at the very end */
+html body header.app-header.navbar .navbar-brand,
+html body header.app-header.navbar .navbar-brand b,
+html body header.app-header.navbar .navbar-brand strong {
+    color: #ffffff !important;
+}
+
+html body header.app-header.navbar .navbar-brand:hover,
+html body header.app-header.navbar .navbar-brand:hover b,
+html body header.app-header.navbar .navbar-brand:hover strong {
+    color: #871f1f !important;
+}
+
+/* Additional styling to ensure pure white color */
+.navbar-brand,
+.navbar-brand b,
+.navbar-brand strong {
+    color: #ffffff !important;
+    opacity: 1 !important;
+    text-shadow: none !important;
+}
+
+/* Force opacity on all navbar brand elements */
+*[class*="navbar-brand"],
+*[class*="navbar-brand"] * {
+    opacity: 1 !important;
+}
+
+/* Avatar styling - change from success green to bordo */
+.backpack-avatar-menu-container,
+.img-avatar,
+.avatar,
+[class*="avatar"] {
+    background-color: #871f1f !important;
+    color: #ffffff !important;
+}
+
+/* Specific styling for avatar text content */
+.backpack-avatar-menu-container,
+.backpack-avatar-menu-container *,
+.backpack-avatar-menu-container span,
+.backpack-avatar-menu-container div,
+.nav-item .backpack-avatar-menu-container,
+.nav-item .backpack-avatar-menu-container * {
+    color: #ffffff !important;
+    background-color: #871f1f !important;
+}
+
+/* Maximum specificity override for avatar text */
+html body header .nav-item .backpack-avatar-menu-container,
+html body header .nav-item .backpack-avatar-menu-container *,
+html body .navbar .nav-item .backpack-avatar-menu-container,
+html body .navbar .nav-item .backpack-avatar-menu-container * {
+    color: #ffffff !important;
+    background-color: #871f1f !important;
+}
+
+/* Force white color on any text inside avatar */
+li.nav-item .backpack-avatar-menu-container,
+li.nav-item .backpack-avatar-menu-container *,
+li.nav-item .backpack-avatar-menu-container span,
+li.nav-item .backpack-avatar-menu-container div {
+    color: #ffffff !important;
+    background-color: #871f1f !important;
+}
+
+/* Ultimate override with JavaScript-like specificity */
+.backpack-avatar-menu-container[style*="color"] {
+    color: #ffffff !important;
+}
+
+/* Force white color with maximum specificity */
+html body header .navbar .nav-item .backpack-avatar-menu-container[style*="color"] {
+    color: #ffffff !important;
+}
+
+/* Additional override using attribute selector */
+span[class*="backpack-avatar-menu-container"] {
+    color: #ffffff !important;
+}
+
+/* Force white color on the span element itself */
+span.backpack-avatar-menu-container {
+    color: #ffffff !important;
+}
+
+/* Nuclear option - force white color with maximum specificity */
+html body header .navbar .nav-item .nav-link .backpack-avatar-menu-container,
+html body header .navbar .nav-item .nav-link .backpack-avatar-menu-container *,
+html body header .navbar .nav-item .nav-link .backpack-avatar-menu-container span,
+html body header .navbar .nav-item .nav-link .backpack-avatar-menu-container div {
+    color: white !important;
+    background-color: #871f1f !important;
+}
+
+/* Additional nuclear option using different color values */
+.backpack-avatar-menu-container {
+    color: white !important;
+    background-color: #871f1f !important;
+}
+
+.backpack-avatar-menu-container * {
+    color: white !important;
+}
+
+/* Final attempt - use all possible white color values */
+.backpack-avatar-menu-container,
+.backpack-avatar-menu-container *,
+.backpack-avatar-menu-container span,
+.backpack-avatar-menu-container div {
+    color: white !important;
+    color: #ffffff !important;
+    color: rgb(255, 255, 255) !important;
+}
+
+/* Ultimate CSS override - should be at the very end */
+html body header .navbar .nav-item .nav-link .backpack-avatar-menu-container {
+    color: white !important;
+    background-color: #871f1f !important;
+}
+
+html body header .navbar .nav-item .nav-link .backpack-avatar-menu-container * {
+    color: white !important;
+}
+
+/* Force white color using CSS custom properties */
+:root {
+    --avatar-text-color: white;
+}
+
+.backpack-avatar-menu-container {
+    color: var(--avatar-text-color) !important;
+}
+
+.backpack-avatar-menu-container * {
+    color: var(--avatar-text-color) !important;
+}
+
+/* Fix z-index issues */
+.img-avatar {
+    z-index: 0 !important;
+}
+
+.backpack-avatar-menu-container {
+    z-index: 2 !important;
+    color: white !important;
+    background-color: #871f1f !important;
+}

@@ -28,7 +28,7 @@ class ReceptionCrudController extends CrudController
     {
         CRUD::setModel(\App\Models\Reception::class);
         CRUD::setRoute(config('backpack.base.route_prefix') . '/reception');
-        CRUD::setEntityNameStrings('reception', 'receptions');
+        CRUD::setEntityNameStrings('recepción', 'recepciones');
     }
 
     /**
@@ -39,8 +39,36 @@ class ReceptionCrudController extends CrudController
      */
     protected function setupListOperation()
     {
-        CRUD::setFromDb(); // set columns from db columns.
+        CRUD::removeButton('show');
 
+        CRUD::addColumn([
+            'name' => 'purchase_order_id',
+            'label' => 'Orden de Compra',
+            'type' => 'select',
+            'entity' => 'purchase_order',
+            'attribute' => 'number',
+            'model' => 'App\Models\PurchaseOrder',
+            'searchLogic' => function ($query, $column, $searchTerm) {
+                $query->orWhereHas('purchase_order', function ($q) use ($searchTerm) {
+                    $q->where('number', 'like', '%'.$searchTerm.'%');
+                });
+            },
+        ]);
+        CRUD::column('date')->label('Fecha');
+        CRUD::column('according')->label('Conforme');
+        CRUD::addColumn([
+            'name' => 'area_manager_id',
+            'label' => 'Responsable',
+            'type' => 'select',
+            'entity' => 'user',
+            'attribute' => 'name',
+            'model' => 'App\Models\User',
+            'searchLogic' => function ($query, $column, $searchTerm) {
+                $query->orWhereHas('purchase_order', function ($q) use ($searchTerm) {
+                    $q->where('name', 'like', '%'.$searchTerm.'%');
+                });
+            },
+        ]);
         /**
          * Columns can be defined using the fluent syntax:
          * - CRUD::column('price')->type('number');
@@ -56,8 +84,34 @@ class ReceptionCrudController extends CrudController
     protected function setupCreateOperation()
     {
         CRUD::setValidation(ReceptionRequest::class);
-        CRUD::setFromDb(); // set fields from db columns.
-
+        CRUD::addField([
+            'name' => 'purchase_order_id',
+            'label' => 'Orden de Compra',
+            'type' => 'select',
+            'entity' => 'purchase_order',
+            'attribute' => 'number',
+            'model' => 'App\Models\PurchaseOrder',
+            'searchLogic' => function ($query, $column, $searchTerm) {
+                $query->orWhereHas('purchase_order', function ($q) use ($searchTerm) {
+                    $q->where('number', 'like', '%'.$searchTerm.'%');
+                });
+            },
+        ]);
+        CRUD::field('date')->label('Fecha');
+        CRUD::field('according')->label('Conforme');
+        CRUD::addField([
+            'name' => 'area_manager_id',
+            'label' => 'Responsable',
+            'type' => 'select',
+            'entity' => 'user',
+            'attribute' => 'name',
+            'model' => 'App\Models\User',
+            'searchLogic' => function ($query, $column, $searchTerm) {
+                $query->orWhereHas('purchase_order', function ($q) use ($searchTerm) {
+                    $q->where('name', 'like', '%'.$searchTerm.'%');
+                });
+            },
+        ]);
         /**
          * Fields can be defined using the fluent syntax:
          * - CRUD::field('price')->type('number');

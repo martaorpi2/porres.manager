@@ -725,4 +725,132 @@ a:hover {
 .footer.bg-primary a:hover {
     color: rgba(255, 255, 255, 0.8) !important;
 }
+
+/* Custom header background color override */
+.app-header,
+header.app-header,
+.navbar.app-header,
+header.navbar.app-header,
+.app-header.navbar,
+header[class*="app-header"],
+.navbar[class*="app-header"],
+body header.app-header.navbar,
+body header.navbar.app-header,
+html body header.app-header.navbar,
+html body header.navbar.app-header {
+    background-color: #646466 !important;
+}
+
+/* Project logo styling - white color with bordo hover - Maximum specificity */
+.navbar-brand,
+.navbar-brand b,
+.navbar-brand strong,
+.project_logo,
+.project-logo,
+header .navbar-brand,
+header .navbar-brand b,
+header .navbar-brand strong,
+.app-header .navbar-brand,
+.app-header .navbar-brand b,
+.app-header .navbar-brand strong,
+body header .navbar-brand,
+body header .navbar-brand b,
+body header .navbar-brand strong {
+    color: #ffffff !important;
+    opacity: 1 !important;
+}
+
+.navbar-brand:hover,
+.navbar-brand:hover b,
+.navbar-brand:hover strong,
+.project_logo:hover,
+.project-logo:hover,
+header .navbar-brand:hover,
+header .navbar-brand:hover b,
+header .navbar-brand:hover strong,
+.app-header .navbar-brand:hover,
+.app-header .navbar-brand:hover b,
+.app-header .navbar-brand:hover strong,
+body header .navbar-brand:hover,
+body header .navbar-brand:hover b,
+body header .navbar-brand:hover strong {
+    color: #871f1f !important;
+}
+
+/* Avatar styling - change from success green to bordo */
+.backpack-avatar-menu-container,
+.img-avatar,
+.avatar,
+[class*="avatar"] {
+    background-color: #871f1f !important;
+    color: #ffffff !important;
+}
+
+/* Specific styling for avatar text content */
+.backpack-avatar-menu-container,
+.backpack-avatar-menu-container *,
+.backpack-avatar-menu-container span,
+.backpack-avatar-menu-container div,
+.nav-item .backpack-avatar-menu-container,
+.nav-item .backpack-avatar-menu-container * {
+    color: #ffffff !important;
+    background-color: #871f1f !important;
+}
+
+/* Ultimate override for avatar text color */
+.backpack-avatar-menu-container,
+.backpack-avatar-menu-container *,
+.backpack-avatar-menu-container span,
+.backpack-avatar-menu-container div,
+.backpack-avatar-menu-container[style*="color"] {
+    color: #ffffff !important;
+}
+
+/* Nuclear option - force white color with maximum specificity */
+html body header .navbar .nav-item .nav-link .backpack-avatar-menu-container,
+html body header .navbar .nav-item .nav-link .backpack-avatar-menu-container *,
+html body header .navbar .nav-item .nav-link .backpack-avatar-menu-container span,
+html body header .navbar .nav-item .nav-link .backpack-avatar-menu-container div {
+    color: white !important;
+    background-color: #871f1f !important;
+}
+
+/* Additional nuclear option using different color values */
+.backpack-avatar-menu-container {
+    color: white !important;
+    background-color: #871f1f !important;
+}
+
+.backpack-avatar-menu-container * {
+    color: white !important;
+}
 </style>
+
+<script>
+// Force white color on avatar text using JavaScript
+document.addEventListener('DOMContentLoaded', function() {
+    const avatarContainers = document.querySelectorAll('.backpack-avatar-menu-container');
+    avatarContainers.forEach(function(container) {
+        container.style.color = 'white';
+        container.style.backgroundColor = '#871f1f';
+        // Also set color on any child elements
+        const children = container.querySelectorAll('*');
+        children.forEach(function(child) {
+            child.style.color = 'white';
+        });
+    });
+});
+
+// Also run after a short delay to catch any dynamically loaded content
+setTimeout(function() {
+    const avatarContainers = document.querySelectorAll('.backpack-avatar-menu-container');
+    avatarContainers.forEach(function(container) {
+        container.style.color = 'white';
+        container.style.backgroundColor = '#871f1f';
+        const children = container.querySelectorAll('*');
+        children.forEach(function(child) {
+            child.style.color = 'white';
+        });
+    });
+}, 100);
+</script>
