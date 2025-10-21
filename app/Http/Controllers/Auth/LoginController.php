@@ -23,7 +23,7 @@ class LoginController extends Controller
         if (Auth::attempt($credentials)) {
             $request->session()->regenerate();
 
-            return redirect()->intended('/home'); // o donde quieras redirigir
+            return redirect()->intended('/admin'); // Redirigir al panel de administración
         }
 
         return back()->withErrors([
