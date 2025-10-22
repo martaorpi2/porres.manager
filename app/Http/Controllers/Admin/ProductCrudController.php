@@ -41,6 +41,9 @@ class ProductCrudController extends CrudController
     {
         CRUD::removeButton('show');
         
+        // Habilitar tabla responsiva
+        CRUD::enableResponsiveTable();
+        
         // Agregar botón personalizado de exportación
         CRUD::addButton('top', 'export_excel', 'view', 'crud::buttons.export_excel', 'end');
         CRUD::addButton('top', 'export_pdf', 'view', 'crud::buttons.export_pdf', 'end');

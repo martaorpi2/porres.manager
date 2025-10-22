@@ -39,6 +39,9 @@ class MarketRateCrudController extends CrudController
      */
     protected function setupListOperation()
     {
+        // Habilitar tabla responsiva
+        CRUD::enableResponsiveTable();
+        
         // Cargar relaciones necesarias
         CRUD::addClause('with', ['supplier', 'quoteDetails']);
         

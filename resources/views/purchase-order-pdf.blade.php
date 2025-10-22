@@ -83,7 +83,7 @@
     </div>
 
     <div class="box">
-        <div><strong>Observaciones:</strong> Entrega en área de Sistemas, 2.º piso.</div>
+        <div><strong>Observaciones:</strong> {{ $purchaseOrder->observations ?? 'Sin observaciones' }}</div>
         <div class="muted" style="margin-top: 8px; font-size: 10px;">
             Documento generado el {{ now()->format('d/m/Y H:i') }}
         </div>

@@ -42,6 +42,9 @@ class PurchaseRequestCrudController extends CrudController
      */
     protected function setupListOperation()
     {
+        // Habilitar tabla responsiva
+        CRUD::enableResponsiveTable();
+        
         CRUD::addClause('with', ['responsibilityArea', 'requestingUser', 'details']);
         
         CRUD::column('request_number')->label('Número de Solicitud');

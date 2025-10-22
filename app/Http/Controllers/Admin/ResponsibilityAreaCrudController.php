@@ -38,6 +38,9 @@ class ResponsibilityAreaCrudController extends CrudController
      */
     protected function setupListOperation()
     {
+        // Habilitar tabla responsiva
+        CRUD::enableResponsiveTable();
+        
         CRUD::column('name')->label('Nombre');
         CRUD::column('description')->label('Descripción');
         CRUD::column('responsibleUser.name')->label('Responsable');

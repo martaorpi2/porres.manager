@@ -41,6 +41,9 @@ class StockLevelCrudController extends CrudController
     {
         CRUD::removeButton('show');
         
+        // Habilitar tabla responsiva
+        CRUD::enableResponsiveTable();
+        
         CRUD::column('product')->label('Producto');
         CRUD::column('location')->label('Depósito');
         CRUD::addColumn([

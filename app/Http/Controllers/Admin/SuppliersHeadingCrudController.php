@@ -40,7 +40,10 @@ class SuppliersHeadingCrudController extends CrudController
     protected function setupListOperation()
     {
         CRUD::removeButton('show');
-
+        
+        // Habilitar tabla responsiva
+        CRUD::enableResponsiveTable();
+        
         CRUD::column('name')->label('Nombre');
         CRUD::column('description')->label('Descripción');
 

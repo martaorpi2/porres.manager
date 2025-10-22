@@ -60,8 +60,10 @@ class DevolutionCrudController extends CrudController
     protected function setupCreateOperation()
     {
         CRUD::setValidation(DevolutionRequest::class);
-        CRUD::setFromDb(); // set fields from db columns.
-
+        CRUD::field('reception_id')->label('Recepción');
+        CRUD::field('reason')->label('Motivo');
+        CRUD::field('amount_returned')->label('Monto');
+        CRUD::field('date')->label('Fecha');
         /**
          * Fields can be defined using the fluent syntax:
          * - CRUD::field('price')->type('number');

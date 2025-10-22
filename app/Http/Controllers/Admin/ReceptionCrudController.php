@@ -40,12 +40,74 @@ class ReceptionCrudController extends CrudController
     protected function setupListOperation()
     {
         CRUD::removeButton('show');
+        
+        // Habilitar tabla responsiva
+        CRUD::enableResponsiveTable();
+        
+        // Cargar relaciones para evitar N+1 queries
+        CRUD::addClause('with', ['purchase_order', 'user']);
 
         // Columnas básicas para evitar errores
-        CRUD::column('id')->label('ID');
+        CRUD::addColumn([
+            'name' => 'purchase_order_id',
+            'label' => 'Orden de Compra',
+            'type' => 'select',
+            'entity' => 'purchase_order',
+            'attribute' => 'number',
+            'model' => 'App\Models\PurchaseOrder',
+            'searchLogic' => function ($query, $column, $searchTerm) {
+                $query->orWhereHas('purchase_order', function ($q) use ($searchTerm) {
+                    $q->where('number', 'like', '%'.$searchTerm.'%');
+                });
+            },
+        ]);
         CRUD::column('date')->label('Fecha');
         CRUD::column('according')->label('Conforme');
+        CRUD::addColumn([
+            'name' => 'area_manager_id',
+            'label' => 'Responsable',
+            'type' => 'select',
+            'entity' => 'user',
+            'attribute' => 'name',
+            'model' => 'App\Models\User',
+            'searchLogic' => function ($query, $column, $searchTerm) {
+                $query->orWhereHas('user', function ($q) use ($searchTerm) {
+                    $q->where('name', 'like', '%'.$searchTerm.'%');
+                });
+            },
+        ]);
 
+        // Filtro personalizado por orden de compra usando parámetros de URL
+        if (request()->has('orden_compra')) {
+            $ordenCompraId = request()->get('orden_compra');
+            if ($ordenCompraId) {
+                CRUD::addClause('where', 'purchase_order_id', $ordenCompraId);
+            }
+        }
+
+        // Filtro personalizado por fecha usando parámetros de URL
+        if (request()->has('fecha')) {
+            $fecha = request()->get('fecha');
+            if ($fecha) {
+                CRUD::addClause('whereDate', 'date', $fecha);
+            }
+        }
+
+        // Filtro personalizado por conformidad usando parámetros de URL
+        if (request()->has('conformidad')) {
+            $conformidad = request()->get('conformidad');
+            if ($conformidad) {
+                CRUD::addClause('where', 'according', $conformidad);
+            }
+        }
+
+        // Filtro personalizado por responsable usando parámetros de URL
+        if (request()->has('responsable')) {
+            $responsableId = request()->get('responsable');
+            if ($responsableId) {
+                CRUD::addClause('where', 'area_manager_id', $responsableId);
+            }
+        }
 
         /**
          * Columns can be defined using the fluent syntax:

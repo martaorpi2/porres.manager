@@ -8,6 +8,35 @@
     --bs-primary-rgb: 135, 31, 31 !important;
 }
 
+/* Responsive table controls styling */
+.dtr-control {
+    cursor: pointer !important;
+    color: #871f1f !important;
+    font-weight: bold !important;
+}
+
+.dtr-control:hover {
+    color: #a02a2a !important;
+}
+
+.dtr-control:before {
+    content: "⋮" !important;
+    font-size: 18px !important;
+    line-height: 1 !important;
+}
+
+/* Ensure responsive controls are visible on mobile */
+@media (max-width: 768px) {
+    .dtr-control {
+        display: inline-block !important;
+        visibility: visible !important;
+    }
+    
+    .has-hidden-columns .dtr-control {
+        display: inline-block !important;
+    }
+}
+
 /* Override any existing primary color definitions */
 .bg-primary {
     background-color: #6c757d !important;
@@ -928,38 +957,53 @@ a:hover {
                       <option value="Informática" {{ request('area') == 'Informática' ? 'selected' : '' }}>Informática</option>
                     </select>
                   </div>
+                </div>
+              </form>
+            </div>
+          </div>
+        @elseif($crud->route == 'admin/reception')
+          <!-- Filtro personalizado para recepciones -->
+          <div class="card mb-3">
+            <div class="card-header bg-primary text-white">
+              <h6 class="card-title mb-0">
+                <i class="fas fa-filter"></i> Filtros
+              </h6>
+            </div>
+            <div class="card-body py-2">
+              <form method="GET" action="{{ url($crud->route) }}">
+                <div class="row">
                   <div class="col-md-3">
-                    <label for="solicitante" class="form-label">Solicitante:</label>
-                    <select name="solicitante" id="solicitante" class="form-control select2" onchange="this.form.submit()">
-                      <option value="">Todos los solicitantes</option>
-                      @foreach(\App\Models\User::all() as $usuario)
-                        <option value="{{ $usuario->id }}" {{ request('solicitante') == $usuario->id ? 'selected' : '' }}>
-                          {{ $usuario->name }}
+                    <label for="orden_compra" class="form-label">Orden de Compra:</label>
+                    <select name="orden_compra" id="orden_compra" class="form-control select2" onchange="this.form.submit()">
+                      <option value="">Todas las órdenes</option>
+                      @foreach(\App\Models\PurchaseOrder::all() as $orden)
+                        <option value="{{ $orden->id }}" {{ request('orden_compra') == $orden->id ? 'selected' : '' }}>
+                          {{ $orden->number }} - {{ $orden->supplier->company_name ?? 'Sin proveedor' }}
                         </option>
                       @endforeach
                     </select>
                   </div>
-                </div>
-                <div class="row mt-2">
                   <div class="col-md-3">
-                    <label for="estado" class="form-label">Estado:</label>
-                    <select name="estado" id="estado" class="form-control select2" onchange="this.form.submit()">
-                      <option value="">Todos los estados</option>
-                      <option value="Pendiente" {{ request('estado') == 'Pendiente' ? 'selected' : '' }}>Pendiente</option>
-                      <option value="En Revisión" {{ request('estado') == 'En Revisión' ? 'selected' : '' }}>En Revisión</option>
-                      <option value="Aprobada" {{ request('estado') == 'Aprobada' ? 'selected' : '' }}>Aprobada</option>
-                      <option value="Rechazada" {{ request('estado') == 'Rechazada' ? 'selected' : '' }}>Rechazada</option>
-                      <option value="Completada" {{ request('estado') == 'Completada' ? 'selected' : '' }}>Completada</option>
+                    <label for="fecha" class="form-label">Fecha:</label>
+                    <input type="date" name="fecha" id="fecha" class="form-control" value="{{ request('fecha') }}" onchange="this.form.submit()">
+                  </div>
+                  <div class="col-md-3">
+                    <label for="conformidad" class="form-label">Conformidad:</label>
+                    <select name="conformidad" id="conformidad" class="form-control" onchange="this.form.submit()">
+                      <option value="">Todas</option>
+                      <option value="Si" {{ request('conformidad') == 'Si' ? 'selected' : '' }}>Sí</option>
+                      <option value="No" {{ request('conformidad') == 'No' ? 'selected' : '' }}>No</option>
                     </select>
                   </div>
                   <div class="col-md-3">
-                    <label for="prioridad" class="form-label">Prioridad:</label>
-                    <select name="prioridad" id="prioridad" class="form-control select2" onchange="this.form.submit()">
-                      <option value="">Todas las prioridades</option>
-                      <option value="Baja" {{ request('prioridad') == 'Baja' ? 'selected' : '' }}>Baja</option>
-                      <option value="Media" {{ request('prioridad') == 'Media' ? 'selected' : '' }}>Media</option>
-                      <option value="Alta" {{ request('prioridad') == 'Alta' ? 'selected' : '' }}>Alta</option>
-                      <option value="Urgente" {{ request('prioridad') == 'Urgente' ? 'selected' : '' }}>Urgente</option>
+                    <label for="responsable" class="form-label">Responsable:</label>
+                    <select name="responsable" id="responsable" class="form-control select2" onchange="this.form.submit()">
+                      <option value="">Todos los responsables</option>
+                      @foreach(\App\Models\User::all() as $usuario)
+                        <option value="{{ $usuario->id }}" {{ request('responsable') == $usuario->id ? 'selected' : '' }}>
+                          {{ $usuario->name }}
+                        </option>
+                      @endforeach
                     </select>
                   </div>
                 </div>

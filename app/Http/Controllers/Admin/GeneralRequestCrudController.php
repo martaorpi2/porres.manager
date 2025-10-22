@@ -23,6 +23,9 @@ class GeneralRequestCrudController extends CrudController
 
     protected function setupListOperation()
     {
+        // Habilitar tabla responsiva
+        CRUD::enableResponsiveTable();
+        
         CRUD::addClause('with', ['createdBy', 'area', 'details']);
         
         // Filtrar solicitudes que no estén convertidas a compra

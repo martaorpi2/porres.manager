@@ -40,6 +40,9 @@ class InventoryMovementCrudController extends CrudController
     protected function setupListOperation()
     {
         CRUD::removeButton('show');
+        
+        // Habilitar tabla responsiva
+        CRUD::enableResponsiveTable();
 
         CRUD::column('product')->label('Producto');
         CRUD::column('location')->label('Ubicación');

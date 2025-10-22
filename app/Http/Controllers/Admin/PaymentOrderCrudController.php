@@ -41,6 +41,9 @@ class PaymentOrderCrudController extends CrudController
      */
     protected function setupListOperation()
     {
+        // Habilitar tabla responsiva
+        CRUD::enableResponsiveTable();
+        
         // Habilitar el botón show para ver detalles
         // CRUD::removeButton('show');
         
@@ -63,6 +66,12 @@ class PaymentOrderCrudController extends CrudController
             'entity' => 'user',
             'attribute' => 'name',
             'model' => 'App\Models\User',
+        ]);
+        CRUD::addColumn([
+            'name' => 'observations',
+            'label' => 'Observaciones',
+            'type' => 'text',
+            'limit' => 50,
         ]);
         
         // Add PDF button
@@ -115,6 +124,15 @@ class PaymentOrderCrudController extends CrudController
             'entity' => 'user',
             'attribute' => 'name',
             'model' => 'App\Models\User',
+        ]);
+        CRUD::addField([
+            'name' => 'observations',
+            'label' => 'Observaciones',
+            'type' => 'textarea',
+            'attributes' => [
+                'rows' => 3,
+                'placeholder' => 'Ingrese observaciones adicionales...'
+            ],
         ]);
         /**
          * Fields can be defined using the fluent syntax:

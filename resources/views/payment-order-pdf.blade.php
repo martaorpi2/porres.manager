@@ -49,7 +49,7 @@
     <div class="box">
         <div><strong>Forma de pago:</strong> —</div>
         <div><strong>Banco:</strong> —</div>
-        <div><strong>Fecha de pago efectivo:</strong> —</div>
+        <div><strong>Fecha de pago:</strong> —</div>
     </div>
 
     <div class="mb-4"><strong>Aplicación a Órdenes de Compra</strong></div>

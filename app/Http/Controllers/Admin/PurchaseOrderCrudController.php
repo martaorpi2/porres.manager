@@ -41,11 +41,16 @@ class PurchaseOrderCrudController extends CrudController
      */
     protected function setupListOperation()
     {
+        // Habilitar tabla responsiva
+        CRUD::enableResponsiveTable();
+        
         // Habilitar el botón show para ver detalles
         // CRUD::removeButton('show');
 
         CRUD::column('number')->label('Numero');
         CRUD::column('date')->label('Fecha');
+        CRUD::column('issue_date')->label('Fecha de Emisión');
+        //CRUD::column('estimated_delivery_date')->label('Fecha Estimada de Entrega');
         CRUD::column('status')->label('Estado');
         CRUD::addColumn([
             'name' => 'supplier_id',
@@ -63,6 +68,12 @@ class PurchaseOrderCrudController extends CrudController
             'attribute' => 'name',
             'model' => 'App\Models\User',
         ]);
+        /*CRUD::addColumn([
+            'name' => 'observations',
+            'label' => 'Observaciones',
+            'type' => 'text',
+            'limit' => 50,
+        ]);*/
 
         // Add PDF button
         CRUD::addButton('line', 'pdf', 'view', 'crud::buttons.purchase_order_pdf', 'end');
@@ -94,6 +105,8 @@ class PurchaseOrderCrudController extends CrudController
             ],
         ]);
         CRUD::field('date')->label('Fecha');
+        CRUD::field('issue_date')->label('Fecha de Emisión');
+        CRUD::field('estimated_delivery_date')->label('Fecha Estimada de Entrega');
         CRUD::addField([
             'name' => 'status',
             'label' => 'Estado',
@@ -115,6 +128,15 @@ class PurchaseOrderCrudController extends CrudController
             'entity' => 'user',
             'attribute' => 'name',
             'model' => 'App\Models\User',
+        ]);
+        CRUD::addField([
+            'name' => 'observations',
+            'label' => 'Observaciones',
+            'type' => 'textarea',
+            'attributes' => [
+                'rows' => 3,
+                'placeholder' => 'Ingrese observaciones adicionales...'
+            ],
         ]);
         /**
          * Fields can be defined using the fluent syntax:
