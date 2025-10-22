@@ -67,12 +67,12 @@ class PaymentOrderCrudController extends CrudController
             'attribute' => 'name',
             'model' => 'App\Models\User',
         ]);
-        CRUD::addColumn([
+        /*CRUD::addColumn([
             'name' => 'observations',
             'label' => 'Observaciones',
             'type' => 'text',
             'limit' => 50,
-        ]);
+        ]);*/
         
         // Add PDF button
         CRUD::addButton('line', 'pdf', 'view', 'crud::buttons.payment_order_pdf', 'end');
