@@ -41,10 +41,41 @@ class DevolutionCrudController extends CrudController
     {
         CRUD::removeButton('show');
 
-        CRUD::column('reception_id')->label('Recepción');
+        // Cargar relaciones para evitar N+1 queries
+        CRUD::addClause('with', ['reception.purchase_order']);
+
+        CRUD::addColumn([
+            'name' => 'reception_id',
+            'label' => 'Recepción',
+            'type' => 'closure',
+            'function' => function($entry) {
+                if ($entry->reception && $entry->reception->purchase_order) {
+                    return 'REC-' . $entry->reception->id . ' | OC-' . $entry->reception->purchase_order->number;
+                }
+                return 'REC-' . $entry->reception_id;
+            },
+            'escaped' => false,
+        ]);
         CRUD::column('reason')->label('Motivo');
         CRUD::column('amount_returned')->label('Monto');
         CRUD::column('date')->label('Fecha');
+
+        // Filtro personalizado por recepción usando parámetros de URL
+        if (request()->has('recepcion')) {
+            $recepcionId = request()->get('recepcion');
+            if ($recepcionId) {
+                CRUD::addClause('where', 'reception_id', $recepcionId);
+            }
+        }
+
+        // Filtro personalizado por fecha usando parámetros de URL
+        if (request()->has('fecha')) {
+            $fecha = request()->get('fecha');
+            if ($fecha) {
+                CRUD::addClause('whereDate', 'date', $fecha);
+            }
+        }
+
         /**
          * Columns can be defined using the fluent syntax:
          * - CRUD::column('price')->type('number');

@@ -77,6 +77,38 @@ class PurchaseOrderCrudController extends CrudController
 
         // Add PDF button
         CRUD::addButton('line', 'pdf', 'view', 'crud::buttons.purchase_order_pdf', 'end');
+
+        // Filtro personalizado por número usando parámetros de URL
+        if (request()->has('numero')) {
+            $numero = request()->get('numero');
+            if ($numero) {
+                CRUD::addClause('where', 'number', 'like', '%' . $numero . '%');
+            }
+        }
+
+        // Filtro personalizado por fecha usando parámetros de URL
+        if (request()->has('fecha')) {
+            $fecha = request()->get('fecha');
+            if ($fecha) {
+                CRUD::addClause('whereDate', 'date', $fecha);
+            }
+        }
+
+        // Filtro personalizado por estado usando parámetros de URL
+        if (request()->has('estado')) {
+            $estado = request()->get('estado');
+            if ($estado) {
+                CRUD::addClause('where', 'status', $estado);
+            }
+        }
+
+        // Filtro personalizado por proveedor usando parámetros de URL
+        if (request()->has('proveedor')) {
+            $proveedorId = request()->get('proveedor');
+            if ($proveedorId) {
+                CRUD::addClause('where', 'supplier_id', $proveedorId);
+            }
+        }
         
         /**
          * Columns can be defined using the fluent syntax:

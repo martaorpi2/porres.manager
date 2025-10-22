@@ -812,6 +812,29 @@ a:hover {
               </form>
             </div>
           </div>
+        @elseif($crud->route == 'admin/devolution')
+          <!-- Filtro personalizado para devoluciones -->
+          <div class="card mb-3">
+            <div class="card-header bg-primary text-white">
+              <h6 class="card-title mb-0">
+                <i class="fas fa-filter"></i> Filtros
+              </h6>
+            </div>
+            <div class="card-body py-2">
+              <form method="GET" action="{{ url($crud->route) }}">
+                <div class="row">
+                  <div class="col-md-6">
+                    <label for="recepcion" class="form-label">Recepción:</label>
+                    <input type="text" name="recepcion" id="recepcion" class="form-control" placeholder="ID de recepción..." value="{{ request('recepcion') }}">
+                  </div>
+                  <div class="col-md-6">
+                    <label for="fecha" class="form-label">Fecha:</label>
+                    <input type="date" name="fecha" id="fecha" class="form-control" value="{{ request('fecha') }}" onchange="this.form.submit()">
+                  </div>
+                </div>
+              </form>
+            </div>
+          </div>
         @elseif($crud->route == 'admin/product')
           <!-- Filtro personalizado para productos -->
           <div class="card mb-3">
@@ -922,6 +945,96 @@ a:hover {
                       <option value="Aprobada" {{ request('estado') == 'Aprobada' ? 'selected' : '' }}>Aprobada</option>
                       <option value="Rechazada" {{ request('estado') == 'Rechazada' ? 'selected' : '' }}>Rechazada</option>
                       <option value="Convertida a Compra" {{ request('estado') == 'Convertida a Compra' ? 'selected' : '' }}>Convertida a Compra</option>
+                    </select>
+                  </div>
+                </div>
+              </form>
+            </div>
+          </div>
+        @elseif($crud->route == 'admin/purchase-order')
+          <!-- Filtro personalizado para órdenes de compra -->
+          <div class="card mb-3">
+            <div class="card-header bg-primary text-white">
+              <h6 class="card-title mb-0">
+                <i class="fas fa-filter"></i> Filtros
+              </h6>
+            </div>
+            <div class="card-body py-2">
+              <form method="GET" action="{{ url($crud->route) }}">
+                <div class="row">
+                  <div class="col-md-3">
+                    <label for="numero" class="form-label">Número:</label>
+                    <input type="text" name="numero" id="numero" class="form-control" placeholder="Buscar por número..." value="{{ request('numero') }}">
+                  </div>
+                  <div class="col-md-3">
+                    <label for="fecha" class="form-label">Fecha:</label>
+                    <input type="date" name="fecha" id="fecha" class="form-control" value="{{ request('fecha') }}" onchange="this.form.submit()">
+                  </div>
+                  <div class="col-md-3">
+                    <label for="estado" class="form-label">Estado:</label>
+                    <select name="estado" id="estado" class="form-control select2" onchange="this.form.submit()">
+                      <option value="">Todos los estados</option>
+                      <option value="pendiente" {{ request('estado') == 'pendiente' ? 'selected' : '' }}>Pendiente</option>
+                      <option value="aprobada" {{ request('estado') == 'aprobada' ? 'selected' : '' }}>Aprobada</option>
+                      <option value="rechazada" {{ request('estado') == 'rechazada' ? 'selected' : '' }}>Rechazada</option>
+                      <option value="enviada" {{ request('estado') == 'enviada' ? 'selected' : '' }}>Enviada</option>
+                      <option value="recibida" {{ request('estado') == 'recibida' ? 'selected' : '' }}>Recibida</option>
+                    </select>
+                  </div>
+                  <div class="col-md-3">
+                    <label for="proveedor" class="form-label">Proveedor:</label>
+                    <select name="proveedor" id="proveedor" class="form-control select2" onchange="this.form.submit()">
+                      <option value="">Todos los proveedores</option>
+                      @foreach(\App\Models\Supplier::all() as $proveedor)
+                        <option value="{{ $proveedor->id }}" {{ request('proveedor') == $proveedor->id ? 'selected' : '' }}>
+                          {{ $proveedor->company_name }}
+                        </option>
+                      @endforeach
+                    </select>
+                  </div>
+                </div>
+              </form>
+            </div>
+          </div>
+        @elseif($crud->route == 'admin/payment-order')
+          <!-- Filtro personalizado para órdenes de pago -->
+          <div class="card mb-3">
+            <div class="card-header bg-primary text-white">
+              <h6 class="card-title mb-0">
+                <i class="fas fa-filter"></i> Filtros
+              </h6>
+            </div>
+            <div class="card-body py-2">
+              <form method="GET" action="{{ url($crud->route) }}">
+                <div class="row">
+                  <div class="col-md-3">
+                    <label for="numero" class="form-label">Número:</label>
+                    <input type="text" name="numero" id="numero" class="form-control" placeholder="Buscar por número..." value="{{ request('numero') }}">
+                  </div>
+                  <div class="col-md-3">
+                    <label for="fecha" class="form-label">Fecha:</label>
+                    <input type="date" name="fecha" id="fecha" class="form-control" value="{{ request('fecha') }}" onchange="this.form.submit()">
+                  </div>
+                  <div class="col-md-3">
+                    <label for="estado" class="form-label">Estado:</label>
+                    <select name="estado" id="estado" class="form-control select2" onchange="this.form.submit()">
+                      <option value="">Todos los estados</option>
+                      <option value="pendiente" {{ request('estado') == 'pendiente' ? 'selected' : '' }}>Pendiente</option>
+                      <option value="aprobada" {{ request('estado') == 'aprobada' ? 'selected' : '' }}>Aprobada</option>
+                      <option value="rechazada" {{ request('estado') == 'rechazada' ? 'selected' : '' }}>Rechazada</option>
+                      <option value="pagada" {{ request('estado') == 'pagada' ? 'selected' : '' }}>Pagada</option>
+                      <option value="cancelada" {{ request('estado') == 'cancelada' ? 'selected' : '' }}>Cancelada</option>
+                    </select>
+                  </div>
+                  <div class="col-md-3">
+                    <label for="orden_compra" class="form-label">Orden de Compra:</label>
+                    <select name="orden_compra" id="orden_compra" class="form-control select2" onchange="this.form.submit()">
+                      <option value="">Todas las órdenes</option>
+                      @foreach(\App\Models\PurchaseOrder::all() as $orden)
+                        <option value="{{ $orden->id }}" {{ request('orden_compra') == $orden->id ? 'selected' : '' }}>
+                          {{ $orden->number }} - {{ $orden->supplier->company_name ?? 'Sin proveedor' }}
+                        </option>
+                      @endforeach
                     </select>
                   </div>
                 </div>

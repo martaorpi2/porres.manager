@@ -35,6 +35,10 @@ class Devolution extends Model
     | RELATIONS
     |--------------------------------------------------------------------------
     */
+    public function reception()
+    {
+        return $this->belongsTo(\App\Models\Reception::class, 'reception_id');
+    }
 
     /*
     |--------------------------------------------------------------------------
