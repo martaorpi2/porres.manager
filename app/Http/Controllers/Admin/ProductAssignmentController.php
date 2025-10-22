@@ -34,6 +34,7 @@ class ProductAssignmentController extends CrudController
      */
     protected function setupListOperation()
     {
+        CRUD::enableResponsiveTable();
         // Filter only requests available for assignment
         CRUD::addClause('whereIn', 'status', ['creada', 'revisada_area']);
         

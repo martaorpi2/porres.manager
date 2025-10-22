@@ -40,7 +40,7 @@ class DevolutionCrudController extends CrudController
     protected function setupListOperation()
     {
         CRUD::removeButton('show');
-
+        CRUD::enableResponsiveTable();
         // Cargar relaciones para evitar N+1 queries
         CRUD::addClause('with', ['reception.purchase_order']);
 

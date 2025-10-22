@@ -39,6 +39,7 @@ class QuoteDetailCrudController extends CrudController
      */
     protected function setupListOperation()
     {
+        CRUD::enableResponsiveTable();
         CRUD::setFromDb(); // set columns from db columns.
 
         /**

@@ -40,7 +40,7 @@ class ApplicationCrudController extends CrudController
     protected function setupListOperation()
     {
         //CRUD::setFromDb(); // set columns from db columns.
-        
+        CRUD::enableResponsiveTable();
         CRUD::addColumn([
             'name' => 'user_id',
             'label' => 'Solicitante',
