@@ -28,7 +28,7 @@ class DevolutionCrudController extends CrudController
     {
         CRUD::setModel(\App\Models\Devolution::class);
         CRUD::setRoute(config('backpack.base.route_prefix') . '/devolution');
-        CRUD::setEntityNameStrings('devolution', 'devolutions');
+        CRUD::setEntityNameStrings('devolución', 'devoluciones');
     }
 
     /**
@@ -39,8 +39,12 @@ class DevolutionCrudController extends CrudController
      */
     protected function setupListOperation()
     {
-        CRUD::setFromDb(); // set columns from db columns.
+        CRUD::removeButton('show');
 
+        CRUD::column('reception_id')->label('Recepción');
+        CRUD::column('reason')->label('Motivo');
+        CRUD::column('amount_returned')->label('Monto');
+        CRUD::column('date')->label('Fecha');
         /**
          * Columns can be defined using the fluent syntax:
          * - CRUD::column('price')->type('number');

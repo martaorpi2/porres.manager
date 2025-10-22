@@ -41,34 +41,12 @@ class ReceptionCrudController extends CrudController
     {
         CRUD::removeButton('show');
 
-        CRUD::addColumn([
-            'name' => 'purchase_order_id',
-            'label' => 'Orden de Compra',
-            'type' => 'select',
-            'entity' => 'purchase_order',
-            'attribute' => 'number',
-            'model' => 'App\Models\PurchaseOrder',
-            'searchLogic' => function ($query, $column, $searchTerm) {
-                $query->orWhereHas('purchase_order', function ($q) use ($searchTerm) {
-                    $q->where('number', 'like', '%'.$searchTerm.'%');
-                });
-            },
-        ]);
+        // Columnas básicas para evitar errores
+        CRUD::column('id')->label('ID');
         CRUD::column('date')->label('Fecha');
         CRUD::column('according')->label('Conforme');
-        CRUD::addColumn([
-            'name' => 'area_manager_id',
-            'label' => 'Responsable',
-            'type' => 'select',
-            'entity' => 'user',
-            'attribute' => 'name',
-            'model' => 'App\Models\User',
-            'searchLogic' => function ($query, $column, $searchTerm) {
-                $query->orWhereHas('purchase_order', function ($q) use ($searchTerm) {
-                    $q->where('name', 'like', '%'.$searchTerm.'%');
-                });
-            },
-        ]);
+
+
         /**
          * Columns can be defined using the fluent syntax:
          * - CRUD::column('price')->type('number');
@@ -107,7 +85,7 @@ class ReceptionCrudController extends CrudController
             'attribute' => 'name',
             'model' => 'App\Models\User',
             'searchLogic' => function ($query, $column, $searchTerm) {
-                $query->orWhereHas('purchase_order', function ($q) use ($searchTerm) {
+                $query->orWhereHas('user', function ($q) use ($searchTerm) {
                     $q->where('name', 'like', '%'.$searchTerm.'%');
                 });
             },
