@@ -25,7 +25,11 @@ class MarketRateRequest extends FormRequest
     public function rules()
     {
         return [
-            // 'name' => 'required|min:5|max:255'
+            'supplier_id' => 'required|exists:suppliers,id',
+            'purchase_request_id' => 'required|exists:purchase_requests,id',
+            'date' => 'required|date',
+            'total_amount' => 'required|numeric|min:0',
+            'is_selected' => 'boolean',
         ];
     }
 
@@ -37,7 +41,11 @@ class MarketRateRequest extends FormRequest
     public function attributes()
     {
         return [
-            //
+            'supplier_id' => 'proveedor',
+            'purchase_request_id' => 'solicitud de compra',
+            'date' => 'fecha',
+            'total_amount' => 'monto total',
+            'is_selected' => 'estado de selección',
         ];
     }
 
@@ -49,7 +57,16 @@ class MarketRateRequest extends FormRequest
     public function messages()
     {
         return [
-            //
+            'supplier_id.required' => 'El campo proveedor es obligatorio.',
+            'supplier_id.exists' => 'El proveedor seleccionado no existe.',
+            'purchase_request_id.required' => 'El campo solicitud de compra es obligatorio.',
+            'purchase_request_id.exists' => 'La solicitud de compra seleccionada no existe.',
+            'date.required' => 'El campo fecha es obligatorio.',
+            'date.date' => 'El campo fecha debe ser una fecha válida.',
+            'total_amount.required' => 'El campo monto total es obligatorio.',
+            'total_amount.numeric' => 'El campo monto total debe ser un número.',
+            'total_amount.min' => 'El campo monto total debe ser mayor o igual a 0.',
+            'is_selected.boolean' => 'El campo estado de selección debe ser verdadero o falso.',
         ];
     }
 }

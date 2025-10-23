@@ -80,6 +80,14 @@ class PurchaseRequest extends Model
     }
 
     /**
+     * Get all market rates for this purchase request.
+     */
+    public function marketRates()
+    {
+        return $this->hasMany(MarketRate::class);
+    }
+
+    /**
      * Get the selected market rate for this purchase request.
      */
     public function selectedMarketRate()

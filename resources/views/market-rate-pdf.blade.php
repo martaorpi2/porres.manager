@@ -61,7 +61,8 @@
     </div>
 
     <div class="box">
-        <div><strong>Aplicación:</strong> #{{ $marketRate->application_id }}</div>
+        <div><strong>Solicitud de Compra:</strong> {{ $marketRate->purchaseRequest->request_number ?? 'N/A' }}</div>
+        <div><strong>Estado de la Solicitud:</strong> {{ $marketRate->purchaseRequest->status ?? 'Sin estado' }}</div>
         <div><strong>Validez de la Cotización:</strong> 30 días desde la fecha de emisión</div>
     </div>
 

@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Requests\MarketRateRequest;
 use Backpack\CRUD\app\Http\Controllers\CrudController;
 use Backpack\CRUD\app\Library\CrudPanel\CrudPanelFacade as CRUD;
+use Illuminate\Support\Facades\Log;
 
 /**
  * Class MarketRateCrudController
@@ -43,11 +44,29 @@ class MarketRateCrudController extends CrudController
         CRUD::enableResponsiveTable();
         
         // Cargar relaciones necesarias
-        CRUD::addClause('with', ['supplier', 'quoteDetails']);
+        CRUD::addClause('with', ['supplier', 'quoteDetails', 'purchaseRequest']);
         
-        CRUD::column('id')->label('ID');
         CRUD::column('supplier.company_name')->label('Proveedor');
-        CRUD::column('application_id')->label('Aplicación');
+        CRUD::column('purchaseRequest.status')->label('Estado de la Solicitud')->type('custom_html')
+            ->value(function($entry) {
+                $status = $entry->purchaseRequest->status ?? 'Sin estado';
+                $badgeClass = match($status) {
+                    'Pendiente' => 'bg-warning',
+                    'Aprobada' => 'bg-success',
+                    'Rechazada' => 'bg-danger',
+                    'En Proceso' => 'bg-info',
+                    'Completada' => 'bg-primary',
+                    default => 'bg-secondary'
+                };
+                return '<span class="badge ' . $badgeClass . '">' . $status . '</span>';
+            });
+        CRUD::column('is_selected')->label('Estado de Selección')->type('custom_html')
+            ->value(function($entry) {
+                $status = $entry->is_selected ? 'Seleccionada' : 'No seleccionada';
+                $badgeClass = $entry->is_selected ? 'bg-success' : 'bg-secondary';
+                $icon = $entry->is_selected ? '✓' : '✗';
+                return '<span class="badge ' . $badgeClass . '">' . $icon . ' ' . $status . '</span>';
+            });
         CRUD::column('date')->label('Fecha');
         CRUD::column('total_amount')->label('Monto Total')->type('number')->decimals(2)->prefix('$');
         
@@ -71,8 +90,62 @@ class MarketRateCrudController extends CrudController
     protected function setupCreateOperation()
     {
         CRUD::setValidation(MarketRateRequest::class);
-        CRUD::setFromDb(); // set fields from db columns.
+        
+        // Campo para seleccionar proveedor
+        CRUD::field([
+            'name' => 'supplier_id',
+            'label' => 'Proveedor',
+            'type' => 'select',
+            'entity' => 'supplier',
+            'attribute' => 'company_name',
+            'model' => 'App\Models\Supplier',
+        ]);
+        
+        // Campo para seleccionar solicitud de compra
+        CRUD::field([
+            'name' => 'purchase_request_id',
+            'label' => 'Solicitud de Compra',
+            'type' => 'select',
+            'entity' => 'purchaseRequest',
+            'attribute' => 'request_number',
+            'model' => 'App\Models\PurchaseRequest',
+        ]);
+        
+        // Campo informativo para mostrar información sobre las cotizaciones
+        CRUD::field([
+            'name' => 'purchase_request_info',
+            'label' => 'Información',
+            'type' => 'custom_html',
+            'value' => '<div class="alert alert-info">
+                <i class="la la-info-circle"></i> 
+                <strong>Información:</strong> Las cotizaciones se asocian con solicitudes de compra específicas. 
+                Selecciona la solicitud de compra para la cual deseas crear la cotización.
+            </div>',
+        ]);
+        
+        CRUD::field('date')->label('Fecha')->type('date')->default(now()->format('Y-m-d'));
+        CRUD::field('total_amount')->label('Monto Total')->type('number')->decimals(2)->prefix('$')->default(0);
+        CRUD::field([
+            'name' => 'is_selected',
+            'label' => 'Estado de Selección',
+            'type' => 'boolean',
+            'default' => false,
+            'hint' => 'Indica si esta cotización ha sido seleccionada para la compra',
+        ]);
 
+        // Campo dinámico para agregar items de cotización
+        CRUD::field([
+            'name' => 'quote_items_selection',
+            'label' => 'Items de la Cotización',
+            'type' => 'custom_html',
+            'value' => $this->getQuoteItemsSelectionHtml(),
+        ]);
+        
+        // Campo oculto para almacenar los items seleccionados
+        CRUD::field([
+            'name' => 'selected_quote_items',
+            'type' => 'hidden',
+        ]);
         /**
          * Fields can be defined using the fluent syntax:
          * - CRUD::field('price')->type('number');
@@ -88,6 +161,23 @@ class MarketRateCrudController extends CrudController
     protected function setupUpdateOperation()
     {
         $this->setupCreateOperation();
+        
+        // Cargar los items existentes para edición
+        $entry = $this->crud->getCurrentEntry();
+        if ($entry) {
+            $existingItems = $entry->quoteDetails->map(function($detail) {
+                return [
+                    'product_id' => $detail->product_id,
+                    'product_name' => $detail->product->name ?? 'Producto no encontrado',
+                    'quantity' => $detail->quantity,
+                    'unit_price' => $detail->unit_price,
+                ];
+            })->toArray();
+            
+            CRUD::modifyField('quote_items_selection', [
+                'value' => $this->getQuoteItemsSelectionHtml($existingItems),
+            ]);
+        }
     }
 
     /**
@@ -99,9 +189,43 @@ class MarketRateCrudController extends CrudController
     protected function setupShowOperation()
     {
         // Cargar relaciones necesarias para la vista
-        CRUD::addClause('with', ['supplier', 'quoteDetails.product']);
+        CRUD::addClause('with', ['supplier', 'quoteDetails.product', 'purchaseRequest']);
         
         CRUD::setFromDb(); // set fields from db columns.
+        
+        // Mostrar el estado de la solicitud de compra
+        CRUD::modifyColumn('purchase_request_id', [
+            'label' => 'Estado de la Solicitud de Compra',
+            'type' => 'custom_html',
+            'value' => function($entry) {
+                $status = $entry->purchaseRequest->status ?? 'Sin estado';
+                $requestNumber = $entry->purchaseRequest->request_number ?? 'N/A';
+                $badgeClass = match($status) {
+                    'Pendiente' => 'bg-warning',
+                    'Aprobada' => 'bg-success',
+                    'Rechazada' => 'bg-danger',
+                    'En Proceso' => 'bg-info',
+                    'Completada' => 'bg-primary',
+                    default => 'bg-secondary'
+                };
+                return '<div>
+                    <strong>Solicitud:</strong> ' . $requestNumber . '<br>
+                    <span class="badge ' . $badgeClass . ' fs-6">' . $status . '</span>
+                </div>';
+            }
+        ]);
+
+        // Mostrar el estado de selección
+        CRUD::modifyColumn('is_selected', [
+            'label' => 'Estado de Selección',
+            'type' => 'custom_html',
+            'value' => function($entry) {
+                $status = $entry->is_selected ? 'Seleccionada' : 'No seleccionada';
+                $badgeClass = $entry->is_selected ? 'bg-success' : 'bg-secondary';
+                $icon = $entry->is_selected ? '✓' : '✗';
+                return '<span class="badge ' . $badgeClass . ' fs-6">' . $icon . ' ' . $status . '</span>';
+            }
+        ]);
 
         // Agregar campo personalizado para mostrar detalles de cotización (con estilo de PurchaseRequest)
         CRUD::column('quote_details_table')->label('Detalles de Cotización')->type('custom_html')
@@ -174,14 +298,389 @@ class MarketRateCrudController extends CrudController
     }
 
     /**
+     * Store a newly created resource in storage.
+     */
+    public function store()
+    {
+        $this->crud->hasAccessOrFail('create');
+
+        // execute the FormRequest authorization and validation, if one is required
+        $request = $this->crud->validateRequest();
+
+        // register any Model Events defined on fields
+        $this->crud->registerFieldEvents();
+
+        // Obtener datos para guardar
+        $dataToSave = $this->crud->getStrippedSaveRequest($request);
+        
+        // Si no se seleccionó una solicitud de compra, buscar una pendiente por defecto
+        if (!isset($dataToSave['purchase_request_id']) || empty($dataToSave['purchase_request_id'])) {
+            $pendingRequest = \App\Models\PurchaseRequest::where('status', 'Pendiente')->first();
+            if ($pendingRequest) {
+                $dataToSave['purchase_request_id'] = $pendingRequest->id;
+            }
+        }
+
+        // insert item in the db
+        $item = $this->crud->create($dataToSave);
+        $this->data['entry'] = $this->crud->entry = $item;
+
+        // Procesar los items de cotización seleccionados
+        $this->processSelectedQuoteItems($item, $request);
+
+        // show a success message
+        \Backpack\CRUD\app\Library\CrudPanel\CrudPanelFacade::addNotification('success', trans('backpack::crud.insert_success'));
+
+        // save the redirect choice for next time
+        $this->crud->setSaveAction();
+
+        return $this->crud->performSaveAction($item->getKey());
+    }
+
+    /**
+     * Update the specified resource in storage.
+     */
+    public function update()
+    {
+        $this->crud->hasAccessOrFail('update');
+
+        // execute the FormRequest authorization and validation, if one is required
+        $request = $this->crud->validateRequest();
+
+        // register any Model Events defined on fields
+        $this->crud->registerFieldEvents();
+
+        // Obtener datos para guardar
+        $dataToSave = $this->crud->getStrippedSaveRequest($request);
+
+        // update item in the db
+        $item = $this->crud->update($this->crud->getCurrentEntry()->getKey(), $dataToSave);
+        $this->data['entry'] = $this->crud->entry = $item;
+
+        // Procesar los items de cotización (eliminar existentes y crear nuevos)
+        $this->processSelectedQuoteItems($item, $request, true);
+
+        // show a success message
+        \Backpack\CRUD\app\Library\CrudPanel\CrudPanelFacade::addNotification('success', trans('backpack::crud.update_success'));
+
+        // save the redirect choice for next time
+        $this->crud->setSaveAction();
+
+        return $this->crud->performSaveAction($item->getKey());
+    }
+
+    /**
      * Generate PDF for a market rate (cotización)
      */
     public function generatePdf($id)
     {
-        $marketRate = \App\Models\MarketRate::with(['supplier', 'quoteDetails.product'])->findOrFail($id);
+        $marketRate = \App\Models\MarketRate::with(['supplier', 'quoteDetails.product', 'purchaseRequest'])->findOrFail($id);
         
         $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('market-rate-pdf', compact('marketRate'));
         
         return $pdf->stream('cotizacion-' . str_pad($marketRate->id, 4, '0', STR_PAD_LEFT) . '.pdf');
+    }
+
+    /**
+     * Generate HTML for quote items selection (similar to products in general requests)
+     */
+    private function getQuoteItemsSelectionHtml($existingItems = [])
+    {
+        $existingItemsJson = json_encode($existingItems);
+        
+        return '
+        <div id="quote-items-container">
+            <div class="row mb-3">
+                <div class="col-md-4">
+                    <label for="product-select" class="form-label">Seleccionar Producto</label>
+                    <select id="product-select" class="form-control">
+                        <option value="">Seleccionar un producto...</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label for="item-quantity" class="form-label">Cantidad</label>
+                    <input type="number" id="item-quantity" class="form-control" min="1" value="1">
+                </div>
+                <div class="col-md-2">
+                    <label for="item-price" class="form-label">Precio Unitario</label>
+                    <input type="number" id="item-price" class="form-control" min="0" step="0.01" value="0">
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">Subtotal</label>
+                    <div id="subtotal-info" class="form-control-plaintext">
+                        <span class="badge bg-secondary">$0.00</span>
+                    </div>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">&nbsp;</label>
+                    <button type="button" id="add-item-btn" class="btn btn-primary btn-block">
+                        <i class="la la-plus"></i> Agregar
+                    </button>
+                </div>
+            </div>
+            <div id="selected-items-list"></div>
+            <div class="row mt-3">
+                <div class="col-12">
+                    <div class="alert alert-info">
+                        <strong>Total de la Cotización:</strong> <span id="total-amount-display">$0.00</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <script>
+        document.addEventListener("DOMContentLoaded", function() {
+            // Cargar productos existentes
+            fetchProducts();
+            
+            // Event listeners
+            document.getElementById("add-item-btn").addEventListener("click", addQuoteItem);
+            document.getElementById("product-select").addEventListener("change", updateProductInfo);
+            document.getElementById("item-quantity").addEventListener("input", calculateSubtotal);
+            document.getElementById("item-price").addEventListener("input", calculateSubtotal);
+            
+            // Cargar items existentes si hay
+            const existingItems = ' . $existingItemsJson . ';
+            if (existingItems && existingItems.length > 0) {
+                existingItems.forEach(item => {
+                    addItemToList(item.product_id, item.product_name, item.quantity, item.unit_price);
+                });
+            }
+            
+            function fetchProducts() {
+                fetch("/admin/api/products")
+                    .then(response => response.json())
+                    .then(products => {
+                        const select = document.getElementById("product-select");
+                        select.innerHTML = "<option value=\"\">Seleccionar un producto...</option>";
+                        
+                        products.forEach(product => {
+                            const option = document.createElement("option");
+                            option.value = product.id;
+                            option.textContent = product.name;
+                            option.setAttribute("data-unit", product.unit_measurement || "unidad");
+                            option.setAttribute("data-description", product.description || "");
+                            select.appendChild(option);
+                        });
+                    })
+                    .catch(error => {
+                        console.error("Error cargando productos:", error);
+                    });
+            }
+            
+            function updateProductInfo() {
+                const select = document.getElementById("product-select");
+                const selectedOption = select.options[select.selectedIndex];
+                
+                if (selectedOption.value) {
+                    const unit = selectedOption.getAttribute("data-unit");
+                    const description = selectedOption.getAttribute("data-description");
+                    
+                    // Aquí podrías mostrar información adicional del producto si es necesario
+                    calculateSubtotal();
+                }
+            }
+            
+            function calculateSubtotal() {
+                const quantity = parseFloat(document.getElementById("item-quantity").value) || 0;
+                const price = parseFloat(document.getElementById("item-price").value) || 0;
+                const subtotal = quantity * price;
+                
+                document.getElementById("subtotal-info").innerHTML = 
+                    `<span class="badge bg-info">$${subtotal.toFixed(2)}</span>`;
+            }
+            
+            function addQuoteItem() {
+                const select = document.getElementById("product-select");
+                const quantity = document.getElementById("item-quantity");
+                const price = document.getElementById("item-price");
+                
+                if (!select.value) {
+                    alert("Por favor seleccione un producto");
+                    return;
+                }
+                
+                if (!quantity.value || quantity.value < 1) {
+                    alert("Por favor ingrese una cantidad válida");
+                    return;
+                }
+                
+                if (!price.value || price.value < 0) {
+                    alert("Por favor ingrese un precio válido");
+                    return;
+                }
+                
+                const selectedOption = select.options[select.selectedIndex];
+                const productId = select.value;
+                const productName = selectedOption.textContent;
+                const unit = selectedOption.getAttribute("data-unit");
+                const description = selectedOption.getAttribute("data-description");
+                
+                addItemToList(productId, productName, quantity.value, price.value, unit, description);
+                
+                // Limpiar campos
+                select.value = "";
+                quantity.value = 1;
+                price.value = 0;
+                calculateSubtotal();
+            }
+            
+            function addItemToList(productId, productName, quantity, unitPrice, unit = "unidad", description = "") {
+                const container = document.getElementById("selected-items-list");
+                const itemDiv = document.createElement("div");
+                itemDiv.className = "selected-item-item border p-3 mb-2";
+                itemDiv.setAttribute("data-product-id", productId);
+                
+                const subtotal = quantity * unitPrice;
+                
+                itemDiv.innerHTML = `
+                    <div class="row">
+                        <div class="col-md-3">
+                            <strong>${productName}</strong>
+                            ${description ? `<br><small class="text-muted">${description}</small>` : ""}
+                            <br><small class="text-muted">Unidad: ${unit}</small>
+                        </div>
+                        <div class="col-md-2">
+                            <label>Cantidad:</label>
+                            <input type="number" class="form-control item-quantity" value="${quantity}" min="1">
+                        </div>
+                        <div class="col-md-2">
+                            <label>Precio Unitario:</label>
+                            <input type="number" class="form-control item-price" value="${unitPrice}" min="0" step="0.01">
+                        </div>
+                        <div class="col-md-2">
+                            <label>Subtotal:</label>
+                            <div class="form-control-plaintext">
+                                <span class="badge bg-success item-subtotal">$${subtotal.toFixed(2)}</span>
+                            </div>
+                        </div>
+                        <div class="col-md-1">
+                            <button type="button" class="btn btn-danger btn-sm remove-item">
+                                <i class="la la-trash"></i>
+                            </button>
+                        </div>
+                    </div>
+                `;
+                
+                container.appendChild(itemDiv);
+                
+                // Event listener para remover item
+                itemDiv.querySelector(".remove-item").addEventListener("click", function() {
+                    itemDiv.remove();
+                    updateHiddenFields();
+                    updateTotalAmount();
+                });
+                
+                // Event listeners para actualizar cantidades y precios
+                itemDiv.querySelector(".item-quantity").addEventListener("input", function() {
+                    updateItemSubtotal(itemDiv);
+                    updateHiddenFields();
+                    updateTotalAmount();
+                });
+                
+                itemDiv.querySelector(".item-price").addEventListener("input", function() {
+                    updateItemSubtotal(itemDiv);
+                    updateHiddenFields();
+                    updateTotalAmount();
+                });
+                
+                updateHiddenFields();
+                updateTotalAmount();
+            }
+            
+            function updateItemSubtotal(itemDiv) {
+                const quantity = parseFloat(itemDiv.querySelector(".item-quantity").value) || 0;
+                const price = parseFloat(itemDiv.querySelector(".item-price").value) || 0;
+                const subtotal = quantity * price;
+                
+                itemDiv.querySelector(".item-subtotal").textContent = `$${subtotal.toFixed(2)}`;
+            }
+            
+            function updateHiddenFields() {
+                const items = [];
+                const itemDivs = document.querySelectorAll(".selected-item-item");
+                
+                itemDivs.forEach(itemDiv => {
+                    const productId = itemDiv.getAttribute("data-product-id");
+                    const quantity = itemDiv.querySelector(".item-quantity").value;
+                    const unitPrice = itemDiv.querySelector(".item-price").value;
+                    const productName = itemDiv.querySelector("strong").textContent;
+                    
+                    items.push({
+                        product_id: productId,
+                        product_name: productName,
+                        quantity: quantity,
+                        unit_price: unitPrice
+                    });
+                });
+                
+                document.querySelector("input[name=\'selected_quote_items\']").value = JSON.stringify(items);
+            }
+            
+            function updateTotalAmount() {
+                let total = 0;
+                const itemDivs = document.querySelectorAll(".selected-item-item");
+                
+                itemDivs.forEach(itemDiv => {
+                    const quantity = parseFloat(itemDiv.querySelector(".item-quantity").value) || 0;
+                    const price = parseFloat(itemDiv.querySelector(".item-price").value) || 0;
+                    total += quantity * price;
+                });
+                
+                document.getElementById("total-amount-display").textContent = `$${total.toFixed(2)}`;
+                
+                // Actualizar también el campo de monto total del formulario
+                const totalAmountField = document.querySelector("input[name=\'total_amount\']");
+                if (totalAmountField) {
+                    totalAmountField.value = total.toFixed(2);
+                }
+            }
+        });
+        </script>';
+    }
+
+    /**
+     * Process selected quote items and create quote details
+     */
+    private function processSelectedQuoteItems($marketRate, $request, $isUpdate = false)
+    {
+        // Si es una actualización, eliminar items existentes
+        if ($isUpdate) {
+            Log::info('Eliminando items existentes de cotización:', ['id' => $marketRate->id]);
+            $marketRate->quoteDetails()->delete();
+        }
+        
+        $selectedItems = $request->input('selected_quote_items');
+        
+        if (!$selectedItems) {
+            Log::info('No hay items de cotización seleccionados');
+            return;
+        }
+        
+        $items = json_decode($selectedItems, true);
+        Log::info('Items de cotización seleccionados:', $items);
+        
+        $totalAmount = 0;
+        
+        foreach ($items as $itemData) {
+            $productId = $itemData['product_id'];
+            $quantity = $itemData['quantity'];
+            $unitPrice = $itemData['unit_price'];
+            
+            // Crear el detalle de la cotización
+            $detail = \App\Models\QuoteDetail::create([
+                'market_rate_id' => $marketRate->id,
+                'product_id' => $productId,
+                'quantity' => $quantity,
+                'unit_price' => $unitPrice,
+            ]);
+            
+            $totalAmount += $quantity * $unitPrice;
+            Log::info('Detalle de cotización creado:', ['id' => $detail->id, 'product_id' => $productId, 'quantity' => $quantity, 'unit_price' => $unitPrice]);
+        }
+        
+        // Actualizar el monto total de la cotización
+        $marketRate->update(['total_amount' => $totalAmount]);
+        Log::info('Monto total actualizado:', ['market_rate_id' => $marketRate->id, 'total_amount' => $totalAmount]);
     }
 }

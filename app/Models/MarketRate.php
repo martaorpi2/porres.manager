@@ -21,7 +21,18 @@ class MarketRate extends Model
     // protected $primaryKey = 'id';
     // public $timestamps = false;
     protected $guarded = ['id'];
-    // protected $fillable = [];
+    protected $fillable = [
+        'supplier_id',
+        'purchase_request_id',
+        'date',
+        'total_amount',
+        'is_selected',
+    ];
+    protected $casts = [
+        'date' => 'date',
+        'total_amount' => 'decimal:2',
+        'is_selected' => 'boolean',
+    ];
     // protected $hidden = [];
 
     /*
@@ -41,9 +52,9 @@ class MarketRate extends Model
         return $this->belongsTo(Supplier::class);
     }
     
-    public function application()
+    public function purchaseRequest()
     {
-        return $this->belongsTo(Application::class);
+        return $this->belongsTo(PurchaseRequest::class);
     }
     
     public function quoteDetails()
@@ -62,6 +73,16 @@ class MarketRate extends Model
     | ACCESSORS
     |--------------------------------------------------------------------------
     */
+    
+    public function getSelectionStatusAttribute()
+    {
+        return $this->is_selected ? 'Seleccionada' : 'No seleccionada';
+    }
+    
+    public function getSelectionBadgeClassAttribute()
+    {
+        return $this->is_selected ? 'bg-success' : 'bg-secondary';
+    }
 
     /*
     |--------------------------------------------------------------------------

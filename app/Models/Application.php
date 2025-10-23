@@ -55,6 +55,11 @@ class Application extends Model
     | ACCESSORS
     |--------------------------------------------------------------------------
     */
+    
+    public function getDisplayNameAttribute()
+    {
+        return "Solicitud #{$this->id} - Estado: {$this->status}";
+    }
 
     /*
     |--------------------------------------------------------------------------
