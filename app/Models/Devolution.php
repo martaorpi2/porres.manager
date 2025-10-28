@@ -40,6 +40,11 @@ class Devolution extends Model
         return $this->belongsTo(\App\Models\Reception::class, 'reception_id');
     }
 
+    public function user()
+    {
+        return $this->belongsTo(\App\Models\User::class, 'user_id');
+    }
+
     /*
     |--------------------------------------------------------------------------
     | SCOPES

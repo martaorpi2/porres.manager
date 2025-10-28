@@ -42,7 +42,7 @@ class DevolutionCrudController extends CrudController
         CRUD::removeButton('show');
         CRUD::enableResponsiveTable();
         // Cargar relaciones para evitar N+1 queries
-        CRUD::addClause('with', ['reception.purchase_order']);
+        CRUD::addClause('with', ['reception.purchase_order', 'user']);
 
         CRUD::addColumn([
             'name' => 'reception_id',
@@ -58,6 +58,14 @@ class DevolutionCrudController extends CrudController
         ]);
         CRUD::column('reason')->label('Motivo');
         CRUD::column('amount_returned')->label('Monto');
+        CRUD::addColumn([
+            'name' => 'user',
+            'label' => 'Usuario que devolvió',
+            'type' => 'select',
+            'entity' => 'user',
+            'attribute' => 'name',
+            'model' => 'App\Models\User',
+        ]);
         CRUD::column('date')->label('Fecha');
 
         // Filtro personalizado por recepción usando parámetros de URL
@@ -91,14 +99,21 @@ class DevolutionCrudController extends CrudController
     protected function setupCreateOperation()
     {
         CRUD::setValidation(DevolutionRequest::class);
-        CRUD::field('reception_id')->label('Recepción');
+        
+        CRUD::addField([
+            'name' => 'reception_id',
+            'label' => 'Recepción',
+            'type' => 'select',
+            'entity' => 'reception',
+            'attribute' => 'number',
+            'model' => 'App\Models\Reception',
+        ]);
         CRUD::field('reason')->label('Motivo');
         CRUD::field('amount_returned')->label('Monto');
         CRUD::field('date')->label('Fecha');
-        /**
-         * Fields can be defined using the fluent syntax:
-         * - CRUD::field('price')->type('number');
-         */
+        
+        // Asignar automáticamente el usuario actual
+        CRUD::addClause('with', ['user']);
     }
 
     /**
@@ -110,5 +125,17 @@ class DevolutionCrudController extends CrudController
     protected function setupUpdateOperation()
     {
         $this->setupCreateOperation();
+    }
+
+    /**
+     * Store the resource in the database.
+     */
+    public function store()
+    {
+        // Asignar automáticamente el usuario actual antes de guardar
+        $user = backpack_user();
+        request()->merge(['user_id' => $user?->id]);
+        
+        return parent::store();
     }
 }

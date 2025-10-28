@@ -54,6 +54,10 @@ class Reception extends Model
     | ACCESSORS
     |--------------------------------------------------------------------------
     */
+    public function getNumberAttribute()
+    {
+        return 'REC-' . $this->id;
+    }
 
     /*
     |--------------------------------------------------------------------------
