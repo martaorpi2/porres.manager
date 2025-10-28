@@ -33,6 +33,7 @@ class UserCrudController extends CrudController
         CRUD::setModel(User::class);
         CRUD::setRoute(config('backpack.base.route_prefix') . '/user');
         CRUD::setEntityNameStrings('usuario', 'usuarios');
+        $this->crud->addClause('with', ['roles', 'permissions']);
     }
 
     /**
@@ -73,6 +74,7 @@ class UserCrudController extends CrudController
         CRUD::field('name')->label('Nombre')->type('text');
         CRUD::field('email')->label('Email')->type('email');
         CRUD::field('password')->label('Contraseña')->type('password');
+        CRUD::field('password_confirmation')->label('Confirmar Contraseña')->type('password');
         
         // Campo para roles (multiselect)
         CRUD::field([
@@ -81,7 +83,7 @@ class UserCrudController extends CrudController
             'type' => 'checklist',
             'entity' => 'roles',
             'attribute' => 'name',
-            'model' => 'App\Models\Role',
+            'model' => Role::class,
             'pivot' => true,
         ]);
         
@@ -100,7 +102,7 @@ class UserCrudController extends CrudController
             'type' => 'checklist',
             'entity' => 'permissions',
             'attribute' => 'name',
-            'model' => 'App\Models\Permission',
+            'model' => Permission::class,
             'pivot' => true,
             'hint' => 'Estos permisos se agregarán además de los que vienen de los roles',
         ])->after('permissions_info');
@@ -118,7 +120,8 @@ class UserCrudController extends CrudController
         
         CRUD::field('name')->label('Nombre')->type('text');
         CRUD::field('email')->label('Email')->type('email');
-        CRUD::field('password')->label('Contraseña')->type('password')->hint('Dejar en blanco si no desea cambiar la contraseña');
+        CRUD::field('password')->label('Nueva Contraseña')->type('password')->hint('Opcional: dejar en blanco para mantener la actual');
+        CRUD::field('password_confirmation')->label('Confirmar Nueva Contraseña')->type('password');
         
         // Campo para roles (multiselect)
         CRUD::field([
@@ -127,7 +130,7 @@ class UserCrudController extends CrudController
             'type' => 'checklist',
             'entity' => 'roles',
             'attribute' => 'name',
-            'model' => 'App\Models\Role',
+            'model' => Role::class,
             'pivot' => true,
         ]);
         
@@ -146,7 +149,7 @@ class UserCrudController extends CrudController
             'type' => 'checklist',
             'entity' => 'permissions',
             'attribute' => 'name',
-            'model' => 'App\Models\Permission',
+            'model' => Permission::class,
             'pivot' => true,
             'hint' => 'Estos permisos se agregarán además de los que vienen de los roles',
         ])->after('permissions_info');
@@ -160,63 +163,78 @@ class UserCrudController extends CrudController
     public function store()
     {
         $this->crud->hasAccessOrFail('create');
-
-        // Execute the FormRequest authorization and validation, if one is required
         $request = $this->crud->validateRequest();
 
-        // Encrypt password
         $data = $request->only(['name', 'email']);
-        if ($request->has('password') && !empty($request->password)) {
+        if ($request->password) {
             $data['password'] = Hash::make($request->password);
         }
 
-        // Insert item in the db
         $item = User::create($data);
         $this->data['entry'] = $this->crud->entry = $item;
 
-        // Sync roles - obtener de múltiples maneras posibles
-        $roles = [];
+        // Procesar roles
+        $roles = $request->input('roles', []);
+        $roleIds = [];
         
-        // Intentar obtener de request directo
-        if ($request->has('roles')) {
-            $roles = $request->input('roles', []);
-        }
-        
-        // Intentar obtener de getStrippedSaveRequest
-        $strippedRequest = $this->crud->getStrippedSaveRequest();
-        if (isset($strippedRequest['roles'])) {
-            $roles = $strippedRequest['roles'];
-        }
-        
-        \Log::info('Todos los datos del request:', $request->all());
-        
-        if (is_array($roles) && !empty($roles)) {
-            $roles = array_filter(array_map('intval', $roles));
-            \Log::info('Guardando roles:', $roles);
-            $item->syncRoles($roles);
-        } else {
-            \Log::info('No se encontraron roles');
-        }
-        
-        // Sync permissions (permisos adicionales) - manejar como array
-        if ($request->has('permissions')) {
-            $permissions = $request->permissions;
-            if (!is_array($permissions)) {
-                $permissions = $permissions ? [$permissions] : [];
+        if (is_array($roles)) {
+            foreach ($roles as $role) {
+                if (is_string($role) && $role !== '[]' && $role !== '') {
+                    $decoded = json_decode($role, true);
+                    if (is_array($decoded)) {
+                        $roleIds = array_merge($roleIds, $decoded);
+                    } else {
+                        $roleIds[] = $role;
+                    }
+                } elseif (is_numeric($role)) {
+                    $roleIds[] = intval($role);
+                }
             }
-            // Asegurar que todos los valores sean enteros válidos
-            $permissions = array_filter(array_map('intval', $permissions));
-            if (!empty($permissions)) {
-                $item->syncPermissions($permissions);
+            $roleIds = array_filter(array_unique($roleIds));
+            
+            // Obtener los modelos de roles por ID
+            $roleModels = [];
+            foreach ($roleIds as $roleId) {
+                $role = Role::find($roleId);
+                if ($role) {
+                    $roleModels[] = $role;
+                }
             }
+            $item->syncRoles($roleModels);
+        }
+        
+        // Procesar permisos
+        $permissions = $request->input('permissions', []);
+        $permissionIds = [];
+        
+        if (is_array($permissions)) {
+            foreach ($permissions as $permission) {
+                if (is_string($permission) && $permission !== '[]' && $permission !== '') {
+                    $decoded = json_decode($permission, true);
+                    if (is_array($decoded)) {
+                        $permissionIds = array_merge($permissionIds, $decoded);
+                    } else {
+                        $permissionIds[] = $permission;
+                    }
+                } elseif (is_numeric($permission)) {
+                    $permissionIds[] = intval($permission);
+                }
+            }
+            $permissionIds = array_filter(array_unique($permissionIds));
+            
+            // Obtener los modelos de permisos por ID
+            $permissionModels = [];
+            foreach ($permissionIds as $permissionId) {
+                $permission = Permission::find($permissionId);
+                if ($permission) {
+                    $permissionModels[] = $permission;
+                }
+            }
+            $item->syncPermissions($permissionModels);
         }
 
-        // show a success message
         \Alert::success(trans('backpack::crud.insert_success'))->flash();
-
-        // save the redirect choice for next time
         $this->crud->setSaveAction();
-
         return $this->crud->performSaveAction($item->id);
     }
 
@@ -228,64 +246,84 @@ class UserCrudController extends CrudController
     public function update()
     {
         $this->crud->hasAccessOrFail('update');
-
-        // Execute the FormRequest authorization and validation, if one is required
         $request = $this->crud->validateRequest();
 
-        // Get the user ID
-        $id = $request->get('id');
-        $item = User::findOrFail($id);
-
-        // Encrypt password if provided
+        $item = User::findOrFail($request->id);
         $data = $request->only(['name', 'email']);
-        if ($request->has('password') && !empty($request->password)) {
+        
+        if ($request->password) {
             $data['password'] = Hash::make($request->password);
         }
 
-        // Update item in the db
         $item->update($data);
         $this->data['entry'] = $this->crud->entry = $item;
 
-        // Sync roles - manejar como array
-        if ($request->filled('roles')) {
-            $roles = $request->roles;
-            if (!is_array($roles)) {
-                $roles = $roles ? [$roles] : [];
+        // Procesar roles
+        $roles = $request->input('roles', []);
+        $roleIds = [];
+        
+        if (is_array($roles)) {
+            foreach ($roles as $role) {
+                // Los roles pueden venir como string JSON o como número
+                if (is_string($role) && $role !== '[]' && $role !== '') {
+                    // Si viene como JSON string, decodificar
+                    $decoded = json_decode($role, true);
+                    if (is_array($decoded)) {
+                        $roleIds = array_merge($roleIds, $decoded);
+                    } else {
+                        $roleIds[] = $role;
+                    }
+                } elseif (is_numeric($role)) {
+                    $roleIds[] = intval($role);
+                }
             }
-            // Asegurar que todos los valores sean enteros válidos
-            $roles = array_filter(array_map('intval', $roles));
-            \Log::info('Guardando roles:', $roles);
-            if (!empty($roles)) {
-                $item->syncRoles($roles);
-            } else {
-                $item->syncRoles([]);
+            $roleIds = array_filter(array_unique($roleIds));
+            \Log::info('Syncing roles:', ['roles' => $roleIds]);
+            
+            // Obtener los modelos de roles por ID
+            $roleModels = [];
+            foreach ($roleIds as $roleId) {
+                $role = Role::find($roleId);
+                if ($role) {
+                    $roleModels[] = $role;
+                }
             }
-        } else {
-            \Log::info('No se recibieron roles en el request');
+            $item->syncRoles($roleModels);
         }
         
-        // Sync permissions (permisos adicionales) - manejar como array
-        if ($request->has('permissions')) {
-            $permissions = $request->permissions;
-            if (!is_array($permissions)) {
-                $permissions = $permissions ? [$permissions] : [];
+        // Procesar permisos
+        $permissions = $request->input('permissions', []);
+        $permissionIds = [];
+        
+        if (is_array($permissions)) {
+            foreach ($permissions as $permission) {
+                if (is_string($permission) && $permission !== '[]' && $permission !== '') {
+                    $decoded = json_decode($permission, true);
+                    if (is_array($decoded)) {
+                        $permissionIds = array_merge($permissionIds, $decoded);
+                    } else {
+                        $permissionIds[] = $permission;
+                    }
+                } elseif (is_numeric($permission)) {
+                    $permissionIds[] = intval($permission);
+                }
             }
-            // Asegurar que todos los valores sean enteros válidos
-            $permissions = array_filter(array_map('intval', $permissions));
-            if (!empty($permissions)) {
-                $item->syncPermissions($permissions);
+            $permissionIds = array_filter(array_unique($permissionIds));
+            \Log::info('Syncing permissions:', ['permissions' => $permissionIds]);
+            
+            // Obtener los modelos de permisos por ID
+            $permissionModels = [];
+            foreach ($permissionIds as $permissionId) {
+                $permission = Permission::find($permissionId);
+                if ($permission) {
+                    $permissionModels[] = $permission;
+                }
             }
-        } else {
-            // Si no se enviaron permisos, eliminar todos los permisos directos
-            $item->syncPermissions([]);
+            $item->syncPermissions($permissionModels);
         }
 
-        // show a success message
         \Alert::success(trans('backpack::crud.update_success'))->flash();
-
-        // save the redirect choice for next time
         $this->crud->setSaveAction();
-
         return $this->crud->performSaveAction($item->id);
     }
 }
