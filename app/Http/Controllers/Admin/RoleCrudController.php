@@ -41,8 +41,10 @@ class RoleCrudController extends CrudController
      */
     protected function setupListOperation()
     {
+        CRUD::removeButton('show');
+
         CRUD::column('name')->label('Nombre del Rol');
-        CRUD::column('guard_name')->label('Guard');
+        //CRUD::column('guard_name')->label('Guard');
         
         // Mostrar permisos del rol
         CRUD::column([
@@ -54,8 +56,6 @@ class RoleCrudController extends CrudController
             'model' => 'App\Models\Permission',
         ]);
 
-        CRUD::column('created_at')->label('Creado');
-        CRUD::column('updated_at')->label('Actualizado');
     }
 
     /**
@@ -69,7 +69,7 @@ class RoleCrudController extends CrudController
         CRUD::setValidation(RoleRequest::class);
         
         CRUD::field('name')->label('Nombre del Rol')->type('text');
-        CRUD::field('guard_name')->label('Guard')->type('text')->default('web');
+        //CRUD::field('guard_name')->label('Guard')->type('text')->default('web');
         
         // Campo para permisos (multiselect)
         CRUD::field([

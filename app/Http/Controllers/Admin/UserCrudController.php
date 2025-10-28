@@ -180,6 +180,35 @@ class UserCrudController extends CrudController
         ])->after('permissions');
     }
 
+    protected function setupShowOperation()
+    {
+        CRUD::column('name')->label('Nombre');
+        CRUD::column('email')->label('Email');
+        
+        // Mostrar roles del usuario
+        CRUD::column([
+            'name' => 'roles',
+            'label' => 'Roles',
+            'type' => 'select_multiple',
+            'entity' => 'roles',
+            'attribute' => 'name',
+            'model' => 'App\Models\Role',
+        ]);
+        
+        // Mostrar permisos del usuario
+        CRUD::column([
+            'name' => 'permissions',
+            'label' => 'Permisos',
+            'type' => 'select_multiple',
+            'entity' => 'permissions',
+            'attribute' => 'name',
+            'model' => 'App\Models\Permission',
+        ]);
+
+        CRUD::column('created_at')->label('Creado');
+        CRUD::column('updated_at')->label('Actualizado');
+    }
+
     /**
      * Store a newly created resource in storage.
      *

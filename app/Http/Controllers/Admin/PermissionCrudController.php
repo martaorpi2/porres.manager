@@ -40,8 +40,10 @@ class PermissionCrudController extends CrudController
      */
     protected function setupListOperation()
     {
+        CRUD::removeButton('show');
+
         CRUD::column('name')->label('Nombre del Permiso');
-        CRUD::column('guard_name')->label('Guard');
+        //CRUD::column('guard_name')->label('Guard');
         
         // Mostrar roles que tienen este permiso
         CRUD::column([
@@ -53,8 +55,6 @@ class PermissionCrudController extends CrudController
             'model' => 'App\Models\Role',
         ]);
 
-        CRUD::column('created_at')->label('Creado');
-        CRUD::column('updated_at')->label('Actualizado');
     }
 
     /**
@@ -69,7 +69,7 @@ class PermissionCrudController extends CrudController
         
         CRUD::field('name')->label('Nombre del Permiso')->type('text')
             ->hint('Formato sugerido: modulo.accion (ej: solicitud.crear, compra.aprobar)');
-        CRUD::field('guard_name')->label('Guard')->type('text')->default('web');
+        //CRUD::field('guard_name')->label('Guard')->type('text')->default('web');
         
         // Campo para roles (multiselect)
         CRUD::field([
