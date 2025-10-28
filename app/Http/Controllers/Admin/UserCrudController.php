@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Models\Role;
 use App\Models\Permission;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
 
 /**
  * Class UserCrudController
@@ -33,6 +34,8 @@ class UserCrudController extends CrudController
         CRUD::setModel(User::class);
         CRUD::setRoute(config('backpack.base.route_prefix') . '/user');
         CRUD::setEntityNameStrings('usuario', 'usuarios');
+        
+        // Always load relations
         $this->crud->addClause('with', ['roles', 'permissions']);
     }
 
@@ -87,25 +90,17 @@ class UserCrudController extends CrudController
             'pivot' => true,
         ]);
         
-        // Info sobre permisos derivados de roles
-        CRUD::field([
-            'name' => 'permissions_info',
-            'label' => 'Permisos de Roles',
-            'type' => 'custom_html',
-            'value' => view('admin.user-permissions-info', ['roles' => Role::with('permissions')->get()]),
-        ])->after('roles');
-        
         // Campo para permisos individuales adicionales
         CRUD::field([
             'name' => 'permissions',
-            'label' => 'Permisos Adicionales',
+            'label' => 'Permisos',
             'type' => 'checklist',
             'entity' => 'permissions',
             'attribute' => 'name',
             'model' => Permission::class,
             'pivot' => true,
-            'hint' => 'Estos permisos se agregarán además de los que vienen de los roles',
-        ])->after('permissions_info');
+            'hint' => 'Los permisos de los roles se seleccionan automáticamente. Aquí puedes agregar permisos adicionales.',
+        ])->after('roles');
     }
 
     /**
@@ -118,10 +113,32 @@ class UserCrudController extends CrudController
     {
         CRUD::setValidation(UserRequest::class);
         
+        // Ensure entry is loaded with relations
+        $entry = $this->crud->getCurrentEntry();
+        if ($entry) {
+            if (!$entry->relationLoaded('roles')) {
+                $entry->load('roles');
+            }
+            if (!$entry->relationLoaded('permissions')) {
+                $entry->load('permissions');
+            }
+        }
+        
         CRUD::field('name')->label('Nombre')->type('text');
         CRUD::field('email')->label('Email')->type('email');
         CRUD::field('password')->label('Nueva Contraseña')->type('password')->hint('Opcional: dejar en blanco para mantener la actual');
         CRUD::field('password_confirmation')->label('Confirmar Nueva Contraseña')->type('password');
+        
+        // Obtener valores actuales para pasar al campo
+        $rolesValue = [];
+        $permissionsValue = [];
+        
+        if ($entry && $entry->relationLoaded('roles')) {
+            $rolesValue = $entry->roles->pluck('id')->toArray();
+        }
+        if ($entry && $entry->relationLoaded('permissions')) {
+            $permissionsValue = $entry->permissions->pluck('id')->toArray();
+        }
         
         // Campo para roles (multiselect)
         CRUD::field([
@@ -132,27 +149,35 @@ class UserCrudController extends CrudController
             'attribute' => 'name',
             'model' => Role::class,
             'pivot' => true,
+            'value' => $rolesValue,
+            'hint' => 'Seleccione los roles del usuario',
         ]);
-        
-        // Info sobre permisos derivados de roles
-        CRUD::field([
-            'name' => 'permissions_info',
-            'label' => 'Permisos de Roles',
-            'type' => 'custom_html',
-            'value' => view('admin.user-permissions-info', ['roles' => Role::with('permissions')->get()]),
-        ])->after('roles');
         
         // Campo para permisos individuales adicionales
         CRUD::field([
             'name' => 'permissions',
-            'label' => 'Permisos Adicionales',
+            'label' => 'Permisos',
             'type' => 'checklist',
             'entity' => 'permissions',
             'attribute' => 'name',
             'model' => Permission::class,
             'pivot' => true,
-            'hint' => 'Estos permisos se agregarán además de los que vienen de los roles',
-        ])->after('permissions_info');
+            'value' => $permissionsValue,
+            'hint' => 'Los permisos de los roles se seleccionan automáticamente. Aquí puedes agregar permisos adicionales.',
+        ])->after('roles');
+        
+        // JavaScript para marcar automáticamente permisos al seleccionar roles
+        $rolesWithPermissions = Role::with('permissions')->get()->toArray();
+        $rolePermissionsMap = [];
+        foreach ($rolesWithPermissions as $role) {
+            $rolePermissionsMap[$role['id']] = array_column($role['permissions'], 'id');
+        }
+        
+        CRUD::field([
+            'name' => 'auto_permissions_script',
+            'type' => 'custom_html',
+            'value' => view('admin.auto-select-permissions', ['rolePermissionsMap' => $rolePermissionsMap]),
+        ])->after('permissions');
     }
 
     /**
