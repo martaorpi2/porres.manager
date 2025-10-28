@@ -7,6 +7,7 @@ use App\Models\User;
 use Illuminate\Database\Seeder;
 use Database\Seeders\CleanDatabaseSeeder;
 use Database\Seeders\EducationalHealthDataSeeder;
+use Database\Seeders\RolesAndPermissionsSeeder;
 
 class DatabaseSeeder extends Seeder
 {
@@ -15,6 +16,9 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
+        // Crear roles y permisos
+        $this->call(RolesAndPermissionsSeeder::class);
+        
         // Limpiar base de datos (excepto users)
         $this->call(CleanDatabaseSeeder::class);
         

@@ -54,6 +54,15 @@ Route::group([
     Route::get('product-assignment/{generalRequest}/assign', 'ProductAssignmentController@showAssignment')->name('product-assignment.show-assignment');
     Route::post('product-assignment/{generalRequest}/assign', 'ProductAssignmentController@assign')->name('product-assignment.assign');
     Route::get('product-assignment/get-stock', 'ProductAssignmentController@getStock')->name('product-assignment.get-stock');
+    
+    // User Management
+    Route::crud('user', 'UserCrudController');
+    
+    // Role Management
+    Route::crud('role', 'RoleCrudController');
+    
+    // Permission Management
+    Route::crud('permission', 'PermissionCrudController');
 }); // this should be the absolute last line of this file
 
 /**

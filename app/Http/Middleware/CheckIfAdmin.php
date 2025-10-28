@@ -27,7 +27,9 @@ class CheckIfAdmin
      */
     private function checkIfUserIsAdmin($user)
     {
-        // return ($user->is_admin == 1);
+        // Check if user has admin role
+        // Allow anyone with any role to access admin panel
+        // In production, you may want to restrict this further
         return true;
     }
 

@@ -34,6 +34,12 @@
 <x-backpack::menu-item title="Recepciones" icon="la la-truck-loading" :link="backpack_url('reception')" />
 <x-backpack::menu-item title="Devoluciones" icon="la la-undo-alt" :link="backpack_url('devolution')" />
 
+<x-backpack::menu-dropdown title="Usuarios" icon="la la-users" trigger="click">
+    <x-backpack::menu-dropdown-item title="Usuarios" :link="backpack_url('user')" />
+    <x-backpack::menu-dropdown-item title="Roles" :link="backpack_url('role')" />
+    <x-backpack::menu-dropdown-item title="Permisos" :link="backpack_url('permission')" />
+</x-backpack::menu-dropdown>
+
 @push('after_scripts')
 <script>
 $(document).ready(function() {
