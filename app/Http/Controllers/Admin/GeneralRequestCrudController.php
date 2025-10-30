@@ -677,12 +677,12 @@ class GeneralRequestCrudController extends CrudController
                 $html .= '<div class="card-body p-0">';
                 $html .= '<div class="table-responsive">';
                 $html .= '<table class="table table-striped table-bordered mb-0">';
-                $html .= '<thead class="thead-dark">';
+                $html .= '<thead style="background-color: #871f1f; color: white;">';
                 $html .= '<tr>';
-                $html .= '<th width="40%">Producto</th>';
-                $html .= '<th width="15%" class="text-center">Cantidad</th>';
-                $html .= '<th width="30%">Especificaciones</th>';
-                $html .= '<th width="15%" class="text-center">Estado</th>';
+                $html .= '<th width="40%" style="background-color: #871f1f; color: white;">Producto</th>';
+                $html .= '<th width="15%" class="text-center" style="background-color: #871f1f; color: white;">Cantidad</th>';
+                $html .= '<th width="30%" style="background-color: #871f1f; color: white;">Especificaciones</th>';
+                $html .= '<th width="15%" class="text-center" style="background-color: #871f1f; color: white;">Estado</th>';
                 $html .= '</tr>';
                 $html .= '</thead>';
                 $html .= '<tbody>';
