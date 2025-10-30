@@ -205,7 +205,6 @@ class AdditionalTestDataSeeder extends Seeder
             [
                 'reception_id' => 2, // Recepción que no estuvo conforme
                 'reason' => 'Productos recibidos en mal estado. Algunos artículos presentaban daños en el empaque y otros estaban vencidos.',
-                'amount_returned' => 240.00,
                 'date' => now()->subDays(1),
                 'created_at' => now()->subDays(1),
                 'updated_at' => now()->subDays(1)
@@ -213,7 +212,6 @@ class AdditionalTestDataSeeder extends Seeder
             [
                 'reception_id' => 1,
                 'reason' => 'Cantidad incorrecta recibida. Se solicitó 10 unidades pero solo se recibieron 8.',
-                'amount_returned' => 91.00,
                 'date' => now()->subDays(2),
                 'created_at' => now()->subDays(2),
                 'updated_at' => now()->subDays(2)

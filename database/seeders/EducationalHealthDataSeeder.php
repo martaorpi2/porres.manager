@@ -911,19 +911,16 @@ class EducationalHealthDataSeeder extends Seeder
             [
                 'reception_id' => 1,
                 'reason' => 'Producto vencido al momento de la recepción',
-                'amount_returned' => 1700.00,
                 'date' => Carbon::now()->subDays(5),
             ],
             [
                 'reception_id' => 2,
                 'reason' => 'Defecto de fabricación detectado en inspección',
-                'amount_returned' => 225.00,
                 'date' => Carbon::now()->subDays(2),
             ],
             [
                 'reception_id' => 3,
                 'reason' => 'Producto no conforme con especificaciones técnicas',
-                'amount_returned' => 45000.00,
                 'date' => Carbon::now()->subDays(1),
             ],
         ];

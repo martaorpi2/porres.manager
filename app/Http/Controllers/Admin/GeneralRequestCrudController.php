@@ -126,6 +126,13 @@ class GeneralRequestCrudController extends CrudController
             ->type('hidden')
             ->default('Creada');
             
+        // Campo hidden para almacenar los productos seleccionados
+        CRUD::addField([
+            'name' => 'selected_products',
+            'type' => 'hidden',
+            'value' => '[]',
+        ]);
+        
         // Campo para seleccionar productos
         CRUD::field('products_selection')->label('Productos Solicitados')->type('custom_html')
             ->value($this->getProductsSelectionHtml());
@@ -343,9 +350,16 @@ class GeneralRequestCrudController extends CrudController
                     updateHiddenFields();
                 });
                 
-                // Event listeners para actualizar totales
-                productDiv.querySelector(".product-quantity").addEventListener("input", updateTotals);
-                productDiv.querySelector(".product-price").addEventListener("input", updateTotals);
+                // Event listeners para actualizar campos ocultos
+                productDiv.querySelector(".product-quantity").addEventListener("input", function() {
+                    updateHiddenFields();
+                });
+                
+                if (productDiv.querySelector(".product-specs")) {
+                    productDiv.querySelector(".product-specs").addEventListener("input", function() {
+                        updateHiddenFields();
+                    });
+                }
                 
                 updateHiddenFields();
             }
@@ -355,31 +369,49 @@ class GeneralRequestCrudController extends CrudController
                 const products = [];
                 document.querySelectorAll(".selected-product-item").forEach(item => {
                     const productId = item.getAttribute("data-product-id");
-                    const quantity = item.querySelector(".product-quantity").value;
-                    const price = item.querySelector(".product-price").value;
-                    const specs = item.querySelector(".product-specs").value;
+                    const quantityInput = item.querySelector(".product-quantity");
+                    const specsInput = item.querySelector(".product-specs");
+                    const priceInput = item.querySelector(".product-price");
                     
-                    products.push({
-                        product_id: productId,
-                        quantity: quantity,
-                        price: price,
-                        specifications: specs
-                    });
+                    if (productId && quantityInput) {
+                        products.push({
+                            product_id: productId,
+                            quantity: quantityInput.value || 1,
+                            price: priceInput ? (priceInput.value || 0) : 0,
+                            specifications: specsInput ? (specsInput.value || "") : ""
+                        });
+                    }
                 });
                 
-                // Crear o actualizar campo oculto
+                // Buscar o actualizar campo oculto existente
                 let hiddenField = document.querySelector("input[name=\'selected_products\']");
                 if (!hiddenField) {
-                    hiddenField = document.createElement("input");
-                    hiddenField.type = "hidden";
-                    hiddenField.name = "selected_products";
-                    document.querySelector("form").appendChild(hiddenField);
+                    console.error("No se encontró el campo hidden selected_products en el formulario");
+                    // Intentar crearlo como último recurso
+                    const form = document.querySelector("form");
+                    if (form) {
+                        hiddenField = document.createElement("input");
+                        hiddenField.type = "hidden";
+                        hiddenField.name = "selected_products";
+                        form.appendChild(hiddenField);
+                    } else {
+                        console.error("No se encontró el formulario");
+                        return;
+                    }
                 }
                 hiddenField.value = JSON.stringify(products);
                 
                 // Debug: Log para verificar que se está enviando
                 console.log("Productos seleccionados:", products);
                 console.log("Campo oculto value:", hiddenField.value);
+            }
+            
+            // Asegurar que el campo se actualice antes de enviar el formulario
+            const form = document.querySelector("form");
+            if (form) {
+                form.addEventListener("submit", function(e) {
+                    updateHiddenFields();
+                });
             }
             
             // Función para actualizar totales
@@ -473,6 +505,12 @@ class GeneralRequestCrudController extends CrudController
         // register any Model Events defined on fields
         $this->crud->registerFieldEvents();
 
+        // Asegurar que created_by esté asignado
+        $user = backpack_user();
+        if ($user && !$request->has('created_by')) {
+            $request->merge(['created_by' => $user->id]);
+        }
+
         // Obtener datos para guardar
         $dataToSave = $this->crud->getStrippedSaveRequest($request);
 
@@ -481,8 +519,8 @@ class GeneralRequestCrudController extends CrudController
         \Log::info('selected_products:', ['value' => $request->input('selected_products')]);
 
         try {
-            // update item in the db
-            $item = $this->crud->update($this->crud->getCurrentEntryId(), $dataToSave);
+            // insert item in the db
+            $item = $this->crud->create($dataToSave);
             $this->data['entry'] = $this->crud->entry = $item;
 
             // Procesar productos seleccionados
@@ -516,46 +554,94 @@ class GeneralRequestCrudController extends CrudController
         
         $selectedProducts = $request->input('selected_products');
         
-        if (!$selectedProducts) {
-            \Log::info('No hay productos seleccionados en solicitud general');
+        \Log::info('Valor de selected_products recibido:', ['value' => $selectedProducts, 'type' => gettype($selectedProducts)]);
+        
+        if (!$selectedProducts || $selectedProducts === '[]' || $selectedProducts === '') {
+            \Log::warning('No hay productos seleccionados en solicitud general o el campo está vacío');
             return;
         }
         
-        $products = json_decode($selectedProducts, true);
-        \Log::info('Productos seleccionados en solicitud general:', $products);
-        
-        foreach ($products as $productData) {
-            $productId = $productData['product_id'];
-            $quantity = $productData['quantity'];
-            $price = $productData['price'] ?? 0;
-            $specifications = $productData['specifications'] ?? '';
-            
-            // Si es un producto nuevo (ID que empieza con "new_")
-            if (strpos($productId, 'new_') === 0) {
-                // Crear el nuevo producto
-                $newProduct = \App\Models\Product::create([
-                    'name' => $productData['name'] ?? 'Producto Nuevo',
-                    'description' => $productData['description'] ?? '',
-                    'unit_measurement' => $productData['unit'] ?? 'unidad',
-                    'category_id' => 1, // Categoría por defecto
-                    'minimum_stock' => 0
+        // Si ya es un array, usarlo directamente, sino decodificar JSON
+        if (is_array($selectedProducts)) {
+            $products = $selectedProducts;
+        } else {
+            $products = json_decode($selectedProducts, true);
+            if (json_last_error() !== JSON_ERROR_NONE) {
+                \Log::error('Error al decodificar JSON de productos:', [
+                    'json_error' => json_last_error_msg(),
+                    'raw_value' => $selectedProducts
                 ]);
-                $productId = $newProduct->id;
-                \Log::info('Nuevo producto creado desde solicitud general:', ['id' => $newProduct->id, 'name' => $newProduct->name]);
+                return;
             }
-            
-            // Crear el detalle de la solicitud general
-            $detail = \App\Models\GeneralRequestDetail::create([
-                'general_request_id' => $generalRequest->id,
-                'product_id' => $productId,
-                'requested_quantity' => $quantity,
-                'specifications' => $specifications,
-                'estimated_unit_price' => $price,
-                'estimated_total' => $price * $quantity,
-                'status' => 'Pendiente'
-            ]);
-            
-            \Log::info('Detalle de solicitud general creado:', ['detail_id' => $detail->id, 'product_id' => $productId]);
+        }
+        
+        if (!$products || !is_array($products) || empty($products)) {
+            \Log::warning('Productos seleccionados está vacío o no es un array válido');
+            return;
+        }
+        
+        \Log::info('Productos a procesar:', ['count' => count($products), 'products' => $products]);
+        
+        foreach ($products as $index => $productData) {
+            try {
+                if (!isset($productData['product_id'])) {
+                    \Log::warning('Producto sin product_id en índice ' . $index, ['data' => $productData]);
+                    continue;
+                }
+                
+                $productId = $productData['product_id'];
+                $quantity = isset($productData['quantity']) ? (int)$productData['quantity'] : 1;
+                $price = isset($productData['price']) ? (float)$productData['price'] : 0;
+                $specifications = $productData['specifications'] ?? '';
+                
+                // Si es un producto nuevo (ID que empieza con "new_")
+                if (strpos($productId, 'new_') === 0) {
+                    // Crear el nuevo producto
+                    $newProduct = \App\Models\Product::create([
+                        'name' => $productData['name'] ?? 'Producto Nuevo',
+                        'description' => $productData['description'] ?? '',
+                        'unit_measurement' => $productData['unit'] ?? 'unidad',
+                        'category_id' => 1, // Categoría por defecto
+                        'minimum_stock' => 0
+                    ]);
+                    $productId = $newProduct->id;
+                    \Log::info('Nuevo producto creado desde solicitud general:', ['id' => $newProduct->id, 'name' => $newProduct->name]);
+                } else {
+                    // Validar que el producto existe
+                    $productId = (int)$productId;
+                    $product = \App\Models\Product::find($productId);
+                    if (!$product) {
+                        \Log::warning('Producto no encontrado:', ['product_id' => $productId]);
+                        continue;
+                    }
+                }
+                
+                // Crear el detalle de la solicitud general
+                $detail = \App\Models\GeneralRequestDetail::create([
+                    'general_request_id' => $generalRequest->id,
+                    'product_id' => $productId,
+                    'requested_quantity' => $quantity,
+                    'specifications' => $specifications,
+                    'estimated_unit_price' => $price,
+                    'estimated_total' => $price * $quantity,
+                    'status' => 'Pendiente'
+                ]);
+                
+                \Log::info('Detalle de solicitud general creado exitosamente:', [
+                    'detail_id' => $detail->id,
+                    'product_id' => $productId,
+                    'quantity' => $quantity
+                ]);
+            } catch (\Exception $e) {
+                \Log::error('Error al crear detalle de producto en solicitud general:', [
+                    'index' => $index,
+                    'product_data' => $productData,
+                    'error' => $e->getMessage(),
+                    'trace' => $e->getTraceAsString()
+                ]);
+                // Continuar con el siguiente producto en lugar de fallar todo
+                continue;
+            }
         }
     }
 

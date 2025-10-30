@@ -14,7 +14,7 @@ use Backpack\CRUD\app\Library\CrudPanel\CrudPanelFacade as CRUD;
 class DevolutionCrudController extends CrudController
 {
     use \Backpack\CRUD\app\Http\Controllers\Operations\ListOperation;
-    use \Backpack\CRUD\app\Http\Controllers\Operations\CreateOperation;
+    use \Backpack\CRUD\app\Http\Controllers\Operations\CreateOperation { store as traitStore; }
     use \Backpack\CRUD\app\Http\Controllers\Operations\UpdateOperation;
     use \Backpack\CRUD\app\Http\Controllers\Operations\DeleteOperation;
     use \Backpack\CRUD\app\Http\Controllers\Operations\ShowOperation;
@@ -57,7 +57,6 @@ class DevolutionCrudController extends CrudController
             'escaped' => false,
         ]);
         CRUD::column('reason')->label('Motivo');
-        CRUD::column('amount_returned')->label('Monto');
         CRUD::addColumn([
             'name' => 'user',
             'label' => 'Usuario que devolvió',
@@ -109,8 +108,17 @@ class DevolutionCrudController extends CrudController
             'model' => 'App\Models\Reception',
         ]);
         CRUD::field('reason')->label('Motivo');
-        CRUD::field('amount_returned')->label('Monto');
         CRUD::field('date')->label('Fecha');
+        
+        // Campo hidden para asignar automáticamente el usuario actual
+        $user = backpack_user();
+        if ($user) {
+            CRUD::addField([
+                'name' => 'user_id',
+                'type' => 'hidden',
+                'value' => $user->id,
+            ]);
+        }
         
         // Asignar automáticamente el usuario actual
         CRUD::addClause('with', ['user']);
@@ -132,10 +140,12 @@ class DevolutionCrudController extends CrudController
      */
     public function store()
     {
-        // Asignar automáticamente el usuario actual antes de guardar
+        // Asegurar que el user_id esté asignado antes de guardar
         $user = backpack_user();
-        request()->merge(['user_id' => $user?->id]);
+        if ($user && !request()->has('user_id')) {
+            request()->merge(['user_id' => $user->id]);
+        }
         
-        return parent::store();
+        return $this->traitStore();
     }
 }

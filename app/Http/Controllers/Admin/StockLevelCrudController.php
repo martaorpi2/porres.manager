@@ -14,7 +14,7 @@ use Backpack\CRUD\app\Library\CrudPanel\CrudPanelFacade as CRUD;
 class StockLevelCrudController extends CrudController
 {
     use \Backpack\CRUD\app\Http\Controllers\Operations\ListOperation;
-    use \Backpack\CRUD\app\Http\Controllers\Operations\CreateOperation;
+    use \Backpack\CRUD\app\Http\Controllers\Operations\CreateOperation { store as traitStore; }
     use \Backpack\CRUD\app\Http\Controllers\Operations\UpdateOperation;
     use \Backpack\CRUD\app\Http\Controllers\Operations\DeleteOperation;
     use \Backpack\CRUD\app\Http\Controllers\Operations\ShowOperation;
@@ -129,19 +129,15 @@ class StockLevelCrudController extends CrudController
             ],
         ]);
         
-        CRUD::addField([
-            'name' => 'last_updated_by',
-            'label' => 'Actualizado por',
-            'type' => 'select',
-            'entity' => 'lastUpdatedBy',
-            'attribute' => 'name',
-            'model' => 'App\Models\User',
-            'searchLogic' => function ($query, $column, $searchTerm) {
-                $query->orWhereHas('lastUpdatedBy', function ($q) use ($searchTerm) {
-                    $q->where('name', 'like', '%'.$searchTerm.'%');
-                });
-            },
-        ]);
+        // Campo hidden para asignar automáticamente el usuario actual
+        $user = backpack_user();
+        if ($user) {
+            CRUD::addField([
+                'name' => 'last_updated_by',
+                'type' => 'hidden',
+                'value' => $user->id,
+            ]);
+        }
         /**
          * Fields can be defined using the fluent syntax:
          * - CRUD::field('price')->type('number');
@@ -157,5 +153,41 @@ class StockLevelCrudController extends CrudController
     protected function setupUpdateOperation()
     {
         $this->setupCreateOperation();
+        
+        // En actualización, también asignar automáticamente el usuario actual
+        $user = backpack_user();
+        if ($user) {
+            CRUD::modifyField('last_updated_by', [
+                'value' => $user->id,
+            ]);
+        }
+    }
+
+    /**
+     * Store the resource in the database.
+     */
+    public function store()
+    {
+        // Asegurar que el last_updated_by esté asignado antes de guardar
+        $user = backpack_user();
+        if ($user && !request()->has('last_updated_by')) {
+            request()->merge(['last_updated_by' => $user->id]);
+        }
+        
+        return $this->traitStore();
+    }
+
+    /**
+     * Update the specified resource in storage.
+     */
+    public function update()
+    {
+        // Asegurar que el last_updated_by esté asignado antes de actualizar
+        $user = backpack_user();
+        if ($user) {
+            request()->merge(['last_updated_by' => $user->id]);
+        }
+        
+        return parent::update();
     }
 }

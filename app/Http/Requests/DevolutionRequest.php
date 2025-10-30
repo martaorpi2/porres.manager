@@ -25,7 +25,9 @@ class DevolutionRequest extends FormRequest
     public function rules()
     {
         return [
-            // 'name' => 'required|min:5|max:255'
+            'reception_id' => 'required|integer|exists:receptions,id',
+            'reason' => 'required|string|max:1000',
+            'date' => 'required|date',
         ];
     }
 

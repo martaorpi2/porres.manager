@@ -120,7 +120,14 @@ class ProductCrudController extends CrudController
         CRUD::field('unit_measurement')->label('Unidad Med.');
         CRUD::field('minimum_stock')->label('Stock Mín.');
         CRUD::field('expiration_date')->label('Fecha Vencimiento');
-        CRUD::field('location')->label('Ubicación');
+        CRUD::addField([
+            'name' => 'location',
+            'label' => 'Ubicación',
+            'type' => 'select_from_array',
+            'options' => \App\Models\Location::pluck('name', 'name')->toArray(),
+            'allows_null' => true,
+            'default' => null,
+        ]);
         CRUD::field('utilization_percentage')->label('% Utilización');
         /**
          * Fields can be defined using the fluent syntax:

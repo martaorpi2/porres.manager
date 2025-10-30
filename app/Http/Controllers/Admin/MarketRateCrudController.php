@@ -329,7 +329,7 @@ class MarketRateCrudController extends CrudController
         $this->processSelectedQuoteItems($item, $request);
 
         // show a success message
-        \Backpack\CRUD\app\Library\CrudPanel\CrudPanelFacade::addNotification('success', trans('backpack::crud.insert_success'));
+        \Alert::success(trans('backpack::crud.insert_success'))->flash();
 
         // save the redirect choice for next time
         $this->crud->setSaveAction();
@@ -361,7 +361,7 @@ class MarketRateCrudController extends CrudController
         $this->processSelectedQuoteItems($item, $request, true);
 
         // show a success message
-        \Backpack\CRUD\app\Library\CrudPanel\CrudPanelFacade::addNotification('success', trans('backpack::crud.update_success'));
+        \Alert::success(trans('backpack::crud.update_success'))->flash();
 
         // save the redirect choice for next time
         $this->crud->setSaveAction();

@@ -44,6 +44,12 @@
 				$.ajax({
 			      url: route,
 			      type: 'DELETE',
+			      beforeSend: function(xhr) {
+			          var tokenMeta = document.querySelector('meta[name="csrf-token"]');
+			          if (tokenMeta && tokenMeta.content) {
+			              xhr.setRequestHeader('X-CSRF-TOKEN', tokenMeta.content);
+			          }
+			      },
 			      success: function(result) {
 			          if (result == 1) {
 						  // Redraw the table
