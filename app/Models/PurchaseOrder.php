@@ -54,6 +54,11 @@ class PurchaseOrder extends Model
     {
         return $this->hasMany(\App\Models\PurchaseOrderDetail::class, 'purchase_order_id');
     }
+
+    public function receptions()
+    {
+        return $this->hasMany(\App\Models\Reception::class, 'purchase_order_id');
+    }
     /*
     |--------------------------------------------------------------------------
     | MODEL EVENTS

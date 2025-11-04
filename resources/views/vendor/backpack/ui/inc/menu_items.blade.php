@@ -23,10 +23,11 @@
     <x-backpack::menu-dropdown-item title="Áreas de Responsabilidad" :link="backpack_url('responsibility-area')" />
 </x-backpack::menu-dropdown>
 
-<x-backpack::menu-dropdown title="Cotizaciones" icon="la la-calculator" trigger="click">
+{{--<x-backpack::menu-dropdown title="Cotizaciones" icon="la la-calculator" trigger="click">
     <x-backpack::menu-item title="Listado" :link="backpack_url('market-rate')" />
     <x-backpack::menu-item title="Detalle" :link="backpack_url('quote-detail')" />
-</x-backpack::menu-dropdown>
+</x-backpack::menu-dropdown>--}}
+<x-backpack::menu-item title="Cotizaciones" icon="la la-calculator" :link="backpack_url('market-rate')" />
 
 <x-backpack::menu-item title="Ordenes de Compra" icon="la la-shopping-cart" :link="backpack_url('purchase-order')" />
 <x-backpack::menu-item title="Ordenes de Pago" icon="la la-money-bill-wave" :link="backpack_url('payment-order')" />

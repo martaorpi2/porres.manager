@@ -15,7 +15,6 @@ return new class extends Migration
             $table->id();
             $table->foreignId('reception_id')->constrained('receptions')->onDelete('cascade');
             $table->text('reason');
-            $table->decimal('amount_returned', 12, 2);
             $table->date('date');
             $table->timestamps();
         });
