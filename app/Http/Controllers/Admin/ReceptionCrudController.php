@@ -149,20 +149,27 @@ class ReceptionCrudController extends CrudController
             },
         ]);
         CRUD::field('date')->label('Fecha');
-        CRUD::field('according')->label('Conforme');
         CRUD::addField([
-            'name' => 'area_manager_id',
-            'label' => 'Responsable',
-            'type' => 'select',
-            'entity' => 'user',
-            'attribute' => 'name',
-            'model' => 'App\Models\User',
-            'searchLogic' => function ($query, $column, $searchTerm) {
-                $query->orWhereHas('user', function ($q) use ($searchTerm) {
-                    $q->where('name', 'like', '%'.$searchTerm.'%');
-                });
-            },
+            'name' => 'according',
+            'label' => 'Conforme',
+            'type' => 'select_from_array',
+            'options' => [
+                'Si' => 'Si',
+                'No' => 'No'
+            ],
+            'default' => 'Si',
+            'allows_null' => false,
         ]);
+        
+        // Campo oculto para asignar automáticamente el usuario actual
+        $user = backpack_user();
+        if ($user) {
+            CRUD::addField([
+                'name' => 'area_manager_id',
+                'type' => 'hidden',
+                'value' => $user->id,
+            ]);
+        }
         /**
          * Fields can be defined using the fluent syntax:
          * - CRUD::field('price')->type('number');
@@ -218,6 +225,12 @@ class ReceptionCrudController extends CrudController
         // Execute the FormRequest authorization and validation
         $request = $this->crud->validateRequest();
         
+        // Asegurar que el area_manager_id esté asignado automáticamente al usuario logueado
+        $user = backpack_user();
+        if ($user && !$request->has('area_manager_id')) {
+            $request->merge(['area_manager_id' => $user->id]);
+        }
+        
         // Verificar si ya existe una recepción para esta orden de compra (validación adicional)
         $purchaseOrderId = $request->input('purchase_order_id');
         if ($purchaseOrderId) {
@@ -255,6 +268,12 @@ class ReceptionCrudController extends CrudController
         
         // Execute the FormRequest authorization and validation
         $request = $this->crud->validateRequest();
+        
+        // Asegurar que el area_manager_id esté asignado automáticamente al usuario logueado
+        $user = backpack_user();
+        if ($user && !$request->has('area_manager_id')) {
+            $request->merge(['area_manager_id' => $user->id]);
+        }
         
         // Verificar si se está cambiando a una orden de compra que ya tiene recepción (validación adicional)
         $purchaseOrderId = $request->input('purchase_order_id');

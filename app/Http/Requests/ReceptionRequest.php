@@ -46,7 +46,7 @@ class ReceptionRequest extends FormRequest
             ],
             'date' => 'required|date',
             'according' => 'required|in:Si,No',
-            'area_manager_id' => 'required|exists:users,id',
+            'area_manager_id' => 'nullable|exists:users,id', // Se asigna automáticamente si no viene
         ];
     }
 
@@ -76,7 +76,6 @@ class ReceptionRequest extends FormRequest
             'date.date' => 'La fecha debe ser una fecha válida.',
             'according.required' => 'El campo conforme es obligatorio.',
             'according.in' => 'El campo conforme debe ser Si o No.',
-            'area_manager_id.required' => 'El responsable es obligatorio.',
             'area_manager_id.exists' => 'El responsable seleccionado no existe.',
         ];
     }
