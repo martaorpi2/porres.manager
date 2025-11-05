@@ -151,6 +151,44 @@
       margin-top: 5px;
   }
 
+  .supplier-rating-card {
+      transition: transform 0.2s, box-shadow 0.2s;
+      border-left: 4px solid #871f1f;
+  }
+
+  .supplier-rating-card:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+      border-left-width: 6px;
+  }
+
+  .supplier-rating-stars {
+      font-size: 18px;
+      margin-bottom: 8px;
+  }
+
+  .supplier-rating-stars .la-star,
+  .supplier-rating-stars .la-star-half-alt {
+      margin-right: 2px;
+  }
+
+  .rating-score {
+      font-weight: bold;
+      color: #871f1f;
+      font-size: 16px;
+  }
+
+  .supplier-rating-btn {
+      border-color: #871f1f;
+      color: #871f1f;
+  }
+
+  .supplier-rating-btn:hover {
+      background-color: #871f1f;
+      border-color: #871f1f;
+      color: white;
+  }
+
   .flow-timeline {
       position: relative;
       padding: 20px 0;
@@ -963,6 +1001,64 @@
             </div>
         </div>
     </div>
+
+    <!-- Proveedores con Calificaciones -->
+    @if(isset($suppliersWithRatings) && $suppliersWithRatings->count() > 0)
+    <div class="row mb-4">
+        <div class="col-md-12">
+            <h3 class="section-title">
+                <i class="la la-truck"></i> Top Proveedores Mejor Calificados
+            </h3>
+        </div>
+    </div>
+
+    <div class="row mb-4">
+        @foreach($suppliersWithRatings as $supplier)
+        <div class="col-md-3 mb-3">
+            <div class="card h-100 supplier-rating-card">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-start mb-2">
+                        <h5 class="card-title mb-0">{{ $supplier->company_name }}</h5>
+                        <span class="badge bg-secondary">{{ $supplier->total_ratings }} evaluación(es)</span>
+                    </div>
+                    <div class="mb-2">
+                        @php
+                            $avg = $supplier->average_rating;
+                            $fullStars = floor($avg);
+                            $hasHalfStar = ($avg - $fullStars) >= 0.5;
+                        @endphp
+                        <div class="supplier-rating-stars">
+                            @for($i = 1; $i <= 5; $i++)
+                                @if($i <= $fullStars)
+                                    <i class="la la-star text-warning"></i>
+                                @elseif($i == $fullStars + 1 && $hasHalfStar)
+                                    <i class="la la-star-half-alt text-warning"></i>
+                                @else
+                                    <i class="la la-star text-secondary"></i>
+                                @endif
+                            @endfor
+                            <span class="ms-2 rating-score">{{ number_format($avg, 1) }}/5.0</span>
+                        </div>
+                    </div>
+                    <div class="text-muted small">
+                        <i class="la la-calendar"></i> Última evaluación: 
+                        @if($supplier->ratings->isNotEmpty())
+                            {{ $supplier->ratings->sortByDesc('evaluation_date')->first()->evaluation_date->format('d/m/Y') }}
+                        @else
+                            N/A
+                        @endif
+                    </div>
+                    <div class="mt-2">
+                        <a href="{{ backpack_url('supplier-rating?proveedor=' . $supplier->id) }}" class="btn btn-sm btn-outline-primary supplier-rating-btn">
+                            Ver Calificaciones
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+        @endforeach
+    </div>
+    @endif
 
     <!-- Flujo del Proceso Visual -->
     <div class="row mb-4">

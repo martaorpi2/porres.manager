@@ -9,6 +9,7 @@ use App\Models\PurchaseOrder;
 use App\Models\PaymentOrder;
 use App\Models\Reception;
 use App\Models\Devolution;
+use App\Models\Supplier;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -71,6 +72,20 @@ class DashboardController extends Controller
         // Obtener el flujo completo de procesos (trazabilidad completa)
         $processFlows = $this->getProcessFlows();
 
+        // Obtener 8 proveedores con sus calificaciones promedio
+        $suppliersWithRatings = Supplier::with('ratings')
+            ->get()
+            ->filter(function($supplier) {
+                return $supplier->ratings->count() > 0;
+            })
+            ->map(function($supplier) {
+                $supplier->average_rating = $supplier->average_rating;
+                $supplier->total_ratings = $supplier->total_ratings;
+                return $supplier;
+            })
+            ->sortByDesc('average_rating')
+            ->take(8);
+
         return view('vendor.backpack.ui.dashboard', compact(
             'stats',
             'generalRequests',
@@ -79,7 +94,8 @@ class DashboardController extends Controller
             'paymentOrders',
             'receptions',
             'devolutions',
-            'processFlows'
+            'processFlows',
+            'suppliersWithRatings'
         ));
     }
 
