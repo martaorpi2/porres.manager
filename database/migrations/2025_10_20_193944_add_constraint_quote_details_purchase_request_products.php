@@ -12,6 +12,13 @@ return new class extends Migration
      */
     public function up(): void
     {
+        // Eliminar la vista si existe antes de crearla
+        DB::statement("DROP VIEW IF EXISTS quote_details_validation");
+        
+        // Eliminar triggers si existen antes de crearlos
+        DB::statement("DROP TRIGGER IF EXISTS validate_quote_detail_product");
+        DB::statement("DROP TRIGGER IF EXISTS validate_quote_detail_product_update");
+        
         // Crear una vista que valide que los productos en quote_details 
         // solo sean aquellos que están en purchase_request_details
         DB::statement("

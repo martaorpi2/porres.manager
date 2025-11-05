@@ -43,6 +43,11 @@ class Reception extends Model
     {
         return $this->belongsTo(\App\Models\User::class, 'area_manager_id');
     }
+
+    public function devolutions()
+    {
+        return $this->hasMany(\App\Models\Devolution::class, 'reception_id');
+    }
     /*
     |--------------------------------------------------------------------------
     | SCOPES

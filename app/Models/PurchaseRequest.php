@@ -104,6 +104,14 @@ class PurchaseRequest extends Model
     }
 
     /**
+     * Get the purchase orders generated from this purchase request.
+     */
+    public function purchaseOrders()
+    {
+        return $this->hasMany(PurchaseOrder::class, 'purchase_request_id');
+    }
+
+    /**
      * Generate the next request number.
      */
     public static function generateNextNumber(): string

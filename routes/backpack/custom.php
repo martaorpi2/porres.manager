@@ -63,6 +63,9 @@ Route::group([
     
     // Permission Management
     Route::crud('permission', 'PermissionCrudController');
+    
+    // Dashboard custom route
+    Route::get('dashboard', 'DashboardController@index')->name('dashboard');
 }); // this should be the absolute last line of this file
 
 /**

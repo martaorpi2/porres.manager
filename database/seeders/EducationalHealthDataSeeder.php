@@ -33,6 +33,9 @@ class EducationalHealthDataSeeder extends Seeder
      */
     public function run(): void
     {
+        // 0. Crear usuarios básicos si no existen
+        $this->createBasicUsers();
+        
         // 1. Crear rubros de proveedores
         $this->createSuppliersHeadings();
         
@@ -57,10 +60,10 @@ class EducationalHealthDataSeeder extends Seeder
         // 8. Crear insumos
         $this->createInputs();
         
-        // 9. Crear órdenes de compra
-        $this->createPurchaseOrders();
+        // 9. Crear algunas órdenes de compra básicas (sin relación)
+        $this->createBasicPurchaseOrders();
         
-        // 10. Crear detalles de órdenes de compra
+        // 10. Crear detalles de órdenes de compra básicas
         $this->createPurchaseOrderDetails();
         
         // 11. Crear órdenes de pago
@@ -96,16 +99,49 @@ class EducationalHealthDataSeeder extends Seeder
         // 21. Crear áreas de responsabilidad
         $this->createResponsibilityAreas();
         
-        // 22. Crear solicitudes de compra
-        $this->createPurchaseRequests();
-        
-        // 23. Crear solicitudes generales
+        // 22. Crear solicitudes generales (DEBE SER ANTES de las solicitudes de compra)
         $this->createGeneralRequests();
         
-        // 24. Crear detalles de solicitudes generales
+        // 23. Crear detalles de solicitudes generales
         $this->createGeneralRequestDetails();
         
+        // 24. Crear solicitudes de compra (puede convertir solicitudes generales)
+        $this->createPurchaseRequests();
+        
+        // 25. Crear órdenes de compra relacionadas con solicitudes de compra
+        $this->createPurchaseOrders();
+        
+        // 26. Crear detalles adicionales de órdenes de compra relacionadas
+        $this->createRelatedPurchaseOrderDetails();
+        
         $this->command->info('Datos educativos y de salud generados exitosamente.');
+    }
+
+    private function createBasicUsers()
+    {
+        // Crear usuarios básicos si no existen
+        if (\App\Models\User::count() == 0) {
+            \App\Models\User::create([
+                'name' => 'Administrador',
+                'email' => 'admin@porres.com',
+                'password' => bcrypt('password'),
+                'email_verified_at' => now(),
+            ]);
+            
+            \App\Models\User::create([
+                'name' => 'Usuario Ejemplo',
+                'email' => 'usuario@porres.com',
+                'password' => bcrypt('password'),
+                'email_verified_at' => now(),
+            ]);
+            
+            \App\Models\User::create([
+                'name' => 'Responsable Compras',
+                'email' => 'compras@porres.com',
+                'password' => bcrypt('password'),
+                'email_verified_at' => now(),
+            ]);
+        }
     }
 
     private function createSuppliersHeadings()
@@ -425,6 +461,10 @@ class EducationalHealthDataSeeder extends Seeder
         $locations = Location::all();
         $users = \App\Models\User::all();
         
+        if ($products->isEmpty() || $locations->isEmpty() || $users->isEmpty()) {
+            return;
+        }
+        
         foreach ($products as $product) {
             $currentStock = rand($product->minimum_stock, $product->minimum_stock * 3);
             $location = $locations->random();
@@ -434,7 +474,6 @@ class EducationalHealthDataSeeder extends Seeder
                 'product_id' => $product->id,
                 'location_id' => $location->id,
                 'quantity' => $currentStock,
-                'last_cost' => rand(50, 5000) + (rand(0, 99) / 100),
                 'last_updated_by' => $user->id,
             ]);
         }
@@ -498,9 +537,13 @@ class EducationalHealthDataSeeder extends Seeder
         }
     }
 
-    private function createPurchaseOrders()
+    private function createBasicPurchaseOrders()
     {
         $users = \App\Models\User::all();
+        
+        if ($users->isEmpty()) {
+            return;
+        }
         
         $orders = [
             [
@@ -524,20 +567,6 @@ class EducationalHealthDataSeeder extends Seeder
                 'supplier_id' => 3,
                 'authorizing_user_id' => $users->random()->id,
             ],
-            [
-                'number' => 'OC-2024-004',
-                'date' => Carbon::now()->subDays(8),
-                'status' => 'Recibida',
-                'supplier_id' => 4,
-                'authorizing_user_id' => $users->random()->id,
-            ],
-            [
-                'number' => 'OC-2024-005',
-                'date' => Carbon::now()->subDays(3),
-                'status' => 'Pendiente',
-                'supplier_id' => 5,
-                'authorizing_user_id' => $users->random()->id,
-            ],
         ];
 
         foreach ($orders as $order) {
@@ -545,52 +574,164 @@ class EducationalHealthDataSeeder extends Seeder
         }
     }
 
+    private function createPurchaseOrders()
+    {
+        $users = \App\Models\User::all();
+        $purchaseRequests = \App\Models\PurchaseRequest::all();
+        $suppliers = \App\Models\Supplier::all();
+        
+        if ($purchaseRequests->isEmpty() || $suppliers->isEmpty() || $users->isEmpty()) {
+            return;
+        }
+        
+        // Crear órdenes de compra relacionadas con solicitudes de compra
+        $relatedCount = 0;
+        foreach ($purchaseRequests as $purchaseRequest) {
+            // Relacionar al menos 3-4 solicitudes de compra con órdenes de compra
+            if ($relatedCount < 4 && $purchaseRequest->status != 'Rechazada') {
+                // Usar el proveedor de la cotización seleccionada si existe, o uno aleatorio
+                $supplierId = null;
+                if ($purchaseRequest->selectedMarketRate && $purchaseRequest->selectedMarketRate->supplier_id) {
+                    $supplierId = $purchaseRequest->selectedMarketRate->supplier_id;
+                } else {
+                    $supplierId = $suppliers->random()->id;
+                }
+                
+                $lastOrder = PurchaseOrder::where('number', 'like', 'OC-' . Carbon::now()->year . '-%')
+                    ->orderByDesc('number')
+                    ->first();
+                
+                $nextSequence = 1;
+                if ($lastOrder && $lastOrder->number) {
+                    $parts = explode('-', $lastOrder->number);
+                    $suffix = end($parts);
+                    $seq = (int) ltrim($suffix, '0');
+                    $nextSequence = $seq + 1;
+                } else {
+                    // Contar órdenes básicas ya creadas
+                    $nextSequence = PurchaseOrder::where('number', 'like', 'OC-' . Carbon::now()->year . '-%')->count() + 1;
+                }
+                
+                $orderNumber = 'OC-' . Carbon::now()->year . '-' . str_pad(strval($nextSequence), 3, '0', STR_PAD_LEFT);
+                
+                $purchaseOrder = PurchaseOrder::create([
+                    'number' => $orderNumber,
+                    'date' => Carbon::now()->subDays(rand(1, 10)),
+                    'status' => ['Pendiente', 'Aprobada'][rand(0, 1)],
+                    'supplier_id' => $supplierId,
+                    'authorizing_user_id' => $users->random()->id,
+                    'purchase_request_id' => $purchaseRequest->id,
+                ]);
+                
+                // Actualizar el estado de la solicitud de compra
+                if ($purchaseRequest->status == 'Pendiente' || $purchaseRequest->status == 'En Proceso') {
+                    $purchaseRequest->update(['status' => 'Completada']);
+                }
+                
+                $relatedCount++;
+            }
+        }
+    }
+    
+    private function createRelatedPurchaseOrderDetails()
+    {
+        $inputs = Input::all();
+        $purchaseOrders = PurchaseOrder::whereNotNull('purchase_request_id')->get();
+        
+        if ($purchaseOrders->isEmpty() || $inputs->isEmpty()) {
+            return;
+        }
+        
+        foreach ($purchaseOrders as $purchaseOrder) {
+            $purchaseRequest = $purchaseOrder->purchaseRequest;
+            
+            if ($purchaseRequest && $purchaseRequest->details->isNotEmpty()) {
+                // Crear detalles basados en los productos de la solicitud de compra
+                foreach ($purchaseRequest->details as $requestDetail) {
+                    // Buscar un input que coincida con el producto o usar uno aleatorio
+                    $input = $inputs->where('name', 'like', '%' . ($requestDetail->product->name ?? '') . '%')->first();
+                    if (!$input) {
+                        $input = $inputs->random();
+                    }
+                    
+                    PurchaseOrderDetail::create([
+                        'purchase_order_id' => $purchaseOrder->id,
+                        'input_id' => $input->id,
+                        'quantity' => $requestDetail->requested_quantity,
+                        'unit_price' => $requestDetail->estimated_unit_price ?? $input->price,
+                    ]);
+                }
+            } else {
+                // Si no tiene detalles, crear algunos genéricos
+                $selectedInputs = $inputs->random(min(2, $inputs->count()));
+                foreach ($selectedInputs as $input) {
+                    PurchaseOrderDetail::create([
+                        'purchase_order_id' => $purchaseOrder->id,
+                        'input_id' => $input->id,
+                        'quantity' => rand(1, 10),
+                        'unit_price' => $input->price,
+                    ]);
+                }
+            }
+        }
+    }
+
     private function createPurchaseOrderDetails()
     {
         $inputs = Input::all();
-        $purchaseOrders = PurchaseOrder::all();
+        $purchaseOrders = PurchaseOrder::whereNull('purchase_request_id')->get(); // Solo órdenes básicas
+        
+        if ($purchaseOrders->isEmpty() || $inputs->isEmpty()) {
+            return;
+        }
+        
+        $orderIndex = 0;
+        $ordersArray = $purchaseOrders->toArray();
         
         $details = [
             [
-                'purchase_order_id' => 1,
-                'input_id' => 1, // Reactivo para Glucosa
+                'purchase_order_id' => $ordersArray[$orderIndex]['id'] ?? null,
+                'input_id' => $inputs->first()->id ?? 1, // Reactivo para Glucosa
                 'quantity' => 2,
                 'unit_price' => 850.00,
             ],
             [
-                'purchase_order_id' => 1,
-                'input_id' => 2, // Jeringas Descartables
+                'purchase_order_id' => $ordersArray[$orderIndex]['id'] ?? null,
+                'input_id' => $inputs->skip(1)->first()->id ?? 2, // Jeringas Descartables
                 'quantity' => 5,
                 'unit_price' => 45.00,
             ],
-            [
-                'purchase_order_id' => 2,
-                'input_id' => 6, // Microscopio
+        ];
+        
+        if (isset($ordersArray[1])) {
+            $orderIndex = 1;
+            $details[] = [
+                'purchase_order_id' => $ordersArray[$orderIndex]['id'],
+                'input_id' => $inputs->skip(5)->first()->id ?? $inputs->random()->id, // Microscopio o aleatorio
                 'quantity' => 1,
                 'unit_price' => 7500.00,
-            ],
-            [
-                'purchase_order_id' => 3,
-                'input_id' => 3, // Equipo de Rayos X
+            ];
+        }
+        
+        if (isset($ordersArray[2])) {
+            $orderIndex = 2;
+            $details[] = [
+                'purchase_order_id' => $ordersArray[$orderIndex]['id'],
+                'input_id' => $inputs->skip(2)->first()->id ?? $inputs->random()->id, // Equipo de Rayos X o aleatorio
                 'quantity' => 1,
                 'unit_price' => 45000.00,
-            ],
-            [
-                'purchase_order_id' => 4,
-                'input_id' => 4, // Guantes de Látex
-                'quantity' => 10,
-                'unit_price' => 25.50,
-            ],
-            [
-                'purchase_order_id' => 5,
-                'input_id' => 7, // Agujas para Flebotomía
-                'quantity' => 3,
-                'unit_price' => 35.00,
-            ],
-        ];
+            ];
+        }
 
         foreach ($details as $detail) {
-            DB::table('oc_details')->insert($detail);
+            if ($detail['purchase_order_id']) {
+                try {
+                    DB::table('oc_details')->insert($detail);
+                } catch (\Exception $e) {
+                    // Continuar si hay algún error
+                    continue;
+                }
+            }
         }
     }
 
@@ -599,43 +740,63 @@ class EducationalHealthDataSeeder extends Seeder
         $users = \App\Models\User::all();
         $purchaseOrders = PurchaseOrder::all();
         
-        $payments = [
-            [
+        if ($purchaseOrders->isEmpty() || $users->isEmpty()) {
+            return;
+        }
+        
+        $ordersArray = $purchaseOrders->take(4)->values()->toArray();
+        
+        $payments = [];
+        if (isset($ordersArray[0])) {
+            $payments[] = [
                 'payment_number' => 'OP-2024-001',
                 'date' => Carbon::now()->subDays(15),
                 'total_amount' => 15000.00,
                 'status' => 'Ejecutada',
-                'purchase_order_id' => 1,
+                'purchase_order_id' => $ordersArray[0]['id'],
                 'authorizing_user_id' => $users->random()->id,
-            ],
-            [
+            ];
+        }
+        
+        if (isset($ordersArray[1])) {
+            $payments[] = [
                 'payment_number' => 'OP-2024-002',
                 'date' => Carbon::now()->subDays(8),
                 'total_amount' => 8500.00,
                 'status' => 'Aprobada',
-                'purchase_order_id' => 2,
+                'purchase_order_id' => $ordersArray[1]['id'],
                 'authorizing_user_id' => $users->random()->id,
-            ],
-            [
+            ];
+        }
+        
+        if (isset($ordersArray[2])) {
+            $payments[] = [
                 'payment_number' => 'OP-2024-003',
                 'date' => Carbon::now()->subDays(3),
                 'total_amount' => 45000.00,
                 'status' => 'Pendiente',
-                'purchase_order_id' => 3,
+                'purchase_order_id' => $ordersArray[2]['id'],
                 'authorizing_user_id' => $users->random()->id,
-            ],
-            [
+            ];
+        }
+        
+        if (isset($ordersArray[3])) {
+            $payments[] = [
                 'payment_number' => 'OP-2024-004',
                 'date' => Carbon::now()->subDays(1),
                 'total_amount' => 1700.00,
                 'status' => 'Aprobada',
-                'purchase_order_id' => 4,
+                'purchase_order_id' => $ordersArray[3]['id'],
                 'authorizing_user_id' => $users->random()->id,
-            ],
-        ];
+            ];
+        }
 
         foreach ($payments as $payment) {
-            PaymentOrder::create($payment);
+            try {
+                PaymentOrder::create($payment);
+            } catch (\Exception $e) {
+                continue;
+            }
         }
     }
 
@@ -643,59 +804,84 @@ class EducationalHealthDataSeeder extends Seeder
     {
         $paymentOrders = PaymentOrder::all();
         
-        $details = [
-            [
-                'payment_order_id' => 1,
+        if ($paymentOrders->isEmpty()) {
+            return;
+        }
+        
+        $ordersArray = $paymentOrders->take(4)->values()->toArray();
+        
+        $details = [];
+        
+        // Detalles para la primera orden de pago
+        if (isset($ordersArray[0])) {
+            $details[] = [
+                'payment_order_id' => $ordersArray[0]['id'],
                 'concept' => 'advance',
                 'amount' => 5000.00,
                 'method_payment' => 'Transferencia Bancaria',
                 'expiration_date' => Carbon::now()->subDays(10),
                 'actual_payment_date' => Carbon::now()->subDays(10),
-            ],
-            [
-                'payment_order_id' => 1,
+            ];
+            $details[] = [
+                'payment_order_id' => $ordersArray[0]['id'],
                 'concept' => 'residue',
                 'amount' => 10000.00,
                 'method_payment' => 'Cheque',
                 'expiration_date' => Carbon::now()->subDays(5),
                 'actual_payment_date' => Carbon::now()->subDays(5),
-            ],
-            [
-                'payment_order_id' => 2,
+            ];
+        }
+        
+        // Detalles para la segunda orden de pago
+        if (isset($ordersArray[1])) {
+            $details[] = [
+                'payment_order_id' => $ordersArray[1]['id'],
                 'concept' => 'partiality',
                 'amount' => 8500.00,
                 'method_payment' => 'Transferencia Bancaria',
                 'expiration_date' => Carbon::now()->addDays(5),
                 'actual_payment_date' => null,
-            ],
-            [
-                'payment_order_id' => 3,
+            ];
+        }
+        
+        // Detalles para la tercera orden de pago
+        if (isset($ordersArray[2])) {
+            $details[] = [
+                'payment_order_id' => $ordersArray[2]['id'],
                 'concept' => 'advance',
                 'amount' => 15000.00,
                 'method_payment' => 'Efectivo',
                 'expiration_date' => Carbon::now()->addDays(10),
                 'actual_payment_date' => null,
-            ],
-            [
-                'payment_order_id' => 3,
+            ];
+            $details[] = [
+                'payment_order_id' => $ordersArray[2]['id'],
                 'concept' => 'residue',
                 'amount' => 30000.00,
                 'method_payment' => 'Transferencia Bancaria',
                 'expiration_date' => Carbon::now()->addDays(20),
                 'actual_payment_date' => null,
-            ],
-            [
-                'payment_order_id' => 4,
+            ];
+        }
+        
+        // Detalles para la cuarta orden de pago
+        if (isset($ordersArray[3])) {
+            $details[] = [
+                'payment_order_id' => $ordersArray[3]['id'],
                 'concept' => 'partiality',
                 'amount' => 1700.00,
                 'method_payment' => 'Cheque',
                 'expiration_date' => Carbon::now()->addDays(3),
                 'actual_payment_date' => null,
-            ],
-        ];
+            ];
+        }
 
         foreach ($details as $detail) {
-            DB::table('op_details')->insert($detail);
+            try {
+                DB::table('op_details')->insert($detail);
+            } catch (\Exception $e) {
+                continue;
+            }
         }
     }
 
@@ -819,50 +1005,49 @@ class EducationalHealthDataSeeder extends Seeder
 
     private function createQuoteDetails()
     {
-        $marketRates = MarketRate::all();
-        $products = Product::all();
+        // Solo crear quote_details para productos que existen en purchase_request_details
+        $purchaseRequestDetails = \App\Models\PurchaseRequestDetail::all();
         
-        $quotes = [
-            [
-                'market_rate_id' => 1,
-                'product_id' => 1, // Microscopio
-                'quantity' => 1,
-                'unit_price' => 7500.00,
-            ],
-            [
-                'market_rate_id' => 1,
-                'product_id' => 4, // Reactivo para Glucosa
-                'quantity' => 2,
-                'unit_price' => 850.00,
-            ],
-            [
-                'market_rate_id' => 2,
-                'product_id' => 6, // Jeringas Descartables
-                'quantity' => 5,
-                'unit_price' => 45.00,
-            ],
-            [
-                'market_rate_id' => 3,
-                'product_id' => 7, // Guantes de Látex
-                'quantity' => 8,
-                'unit_price' => 25.50,
-            ],
-            [
-                'market_rate_id' => 4,
-                'product_id' => 10, // Equipo de Rayos X
-                'quantity' => 1,
-                'unit_price' => 45000.00,
-            ],
-            [
-                'market_rate_id' => 5,
-                'product_id' => 13, // Aguja para Flebotomía
-                'quantity' => 3,
-                'unit_price' => 35.00,
-            ],
-        ];
+        if ($purchaseRequestDetails->isEmpty()) {
+            return;
+        }
+        
+        // Agrupar por product_id para obtener los productos únicos
+        $productIds = $purchaseRequestDetails->pluck('product_id')->unique();
+        
+        // Obtener market_rates disponibles
+        $marketRates = \App\Models\MarketRate::all();
+        
+        if ($marketRates->isEmpty()) {
+            return;
+        }
+        
+        $quotes = [];
+        $marketRateIndex = 0;
+        
+        foreach ($productIds as $productId) {
+            if ($marketRateIndex < $marketRates->count()) {
+                $marketRate = $marketRates->get($marketRateIndex);
+                $requestDetail = $purchaseRequestDetails->where('product_id', $productId)->first();
+                
+                if ($requestDetail && $marketRate) {
+                    $quotes[] = [
+                        'market_rate_id' => $marketRate->id,
+                        'product_id' => $productId,
+                        'quantity' => $requestDetail->requested_quantity,
+                        'unit_price' => $requestDetail->estimated_unit_price ?? rand(100, 1000),
+                    ];
+                    $marketRateIndex++;
+                }
+            }
+        }
 
         foreach ($quotes as $quote) {
-            QuoteDetail::create($quote);
+            try {
+                QuoteDetail::create($quote);
+            } catch (\Exception $e) {
+                continue;
+            }
         }
     }
 
@@ -871,62 +1056,94 @@ class EducationalHealthDataSeeder extends Seeder
         $users = \App\Models\User::all();
         $purchaseOrders = PurchaseOrder::all();
         
-        $receptions = [
-            [
-                'purchase_order_id' => 1,
+        if ($purchaseOrders->isEmpty() || $users->isEmpty()) {
+            return;
+        }
+        
+        $ordersArray = $purchaseOrders->take(4)->values()->toArray();
+        
+        $receptions = [];
+        if (isset($ordersArray[0])) {
+            $receptions[] = [
+                'purchase_order_id' => $ordersArray[0]['id'],
                 'date' => Carbon::now()->subDays(10),
                 'according' => 'Si',
                 'area_manager_id' => $users->random()->id,
-            ],
-            [
-                'purchase_order_id' => 2,
+            ];
+        }
+        
+        if (isset($ordersArray[1])) {
+            $receptions[] = [
+                'purchase_order_id' => $ordersArray[1]['id'],
                 'date' => Carbon::now()->subDays(3),
                 'according' => 'No',
                 'area_manager_id' => $users->random()->id,
-            ],
-            [
-                'purchase_order_id' => 3,
+            ];
+        }
+        
+        if (isset($ordersArray[2])) {
+            $receptions[] = [
+                'purchase_order_id' => $ordersArray[2]['id'],
                 'date' => Carbon::now()->subDays(1),
                 'according' => 'Si',
                 'area_manager_id' => $users->random()->id,
-            ],
-            [
-                'purchase_order_id' => 4,
+            ];
+        }
+        
+        if (isset($ordersArray[3])) {
+            $receptions[] = [
+                'purchase_order_id' => $ordersArray[3]['id'],
                 'date' => Carbon::now()->subDays(5),
                 'according' => 'Si',
                 'area_manager_id' => $users->random()->id,
-            ],
-        ];
+            ];
+        }
 
         foreach ($receptions as $reception) {
-            Reception::create($reception);
+            try {
+                Reception::create($reception);
+            } catch (\Exception $e) {
+                continue;
+            }
         }
     }
 
     private function createDevolutions()
     {
         $receptions = Reception::all();
+        $users = \App\Models\User::all();
         
-        $devolutions = [
-            [
-                'reception_id' => 1,
+        if ($receptions->isEmpty() || $users->isEmpty()) {
+            return;
+        }
+        
+        $receptionsArray = $receptions->take(2)->values()->toArray();
+        
+        $devolutions = [];
+        if (isset($receptionsArray[0])) {
+            $devolutions[] = [
+                'reception_id' => $receptionsArray[0]['id'],
                 'reason' => 'Producto vencido al momento de la recepción',
                 'date' => Carbon::now()->subDays(5),
-            ],
-            [
-                'reception_id' => 2,
+                'user_id' => $users->random()->id,
+            ];
+        }
+        
+        if (isset($receptionsArray[1])) {
+            $devolutions[] = [
+                'reception_id' => $receptionsArray[1]['id'],
                 'reason' => 'Defecto de fabricación detectado en inspección',
                 'date' => Carbon::now()->subDays(2),
-            ],
-            [
-                'reception_id' => 3,
-                'reason' => 'Producto no conforme con especificaciones técnicas',
-                'date' => Carbon::now()->subDays(1),
-            ],
-        ];
+                'user_id' => $users->random()->id,
+            ];
+        }
 
         foreach ($devolutions as $devolution) {
-            Devolution::create($devolution);
+            try {
+                Devolution::create($devolution);
+            } catch (\Exception $e) {
+                continue;
+            }
         }
     }
 
@@ -941,7 +1158,7 @@ class EducationalHealthDataSeeder extends Seeder
                 'product_id' => 4, // Reactivo para Glucosa
                 'location_id' => 1, // Laboratorio Principal
                 'quantity' => 10.00,
-                'type' => 'purchase',
+                'type' => 'compra',
                 'reference' => 'OC-2024-001',
                 'user_id' => $users->random()->id,
                 'notes' => 'Ingreso de reactivos nuevos',
@@ -950,7 +1167,7 @@ class EducationalHealthDataSeeder extends Seeder
                 'product_id' => 4, // Reactivo para Glucosa
                 'location_id' => 1, // Laboratorio Principal
                 'quantity' => -5.00,
-                'type' => 'usage',
+                'type' => 'uso',
                 'reference' => 'PRACT-001',
                 'user_id' => $users->random()->id,
                 'notes' => 'Uso en laboratorio',
@@ -959,7 +1176,7 @@ class EducationalHealthDataSeeder extends Seeder
                 'product_id' => 6, // Jeringas Descartables
                 'location_id' => 8, // Depósito Central
                 'quantity' => 5.00,
-                'type' => 'purchase',
+                'type' => 'compra',
                 'reference' => 'OC-2024-002',
                 'user_id' => $users->random()->id,
                 'notes' => 'Reposición de jeringas',
@@ -968,7 +1185,7 @@ class EducationalHealthDataSeeder extends Seeder
                 'product_id' => 6, // Jeringas Descartables
                 'location_id' => 7, // Aula de Prácticas
                 'quantity' => -2.00,
-                'type' => 'usage',
+                'type' => 'uso',
                 'reference' => 'PRACT-002',
                 'user_id' => $users->random()->id,
                 'notes' => 'Uso en prácticas',
@@ -977,7 +1194,7 @@ class EducationalHealthDataSeeder extends Seeder
                 'product_id' => 1, // Microscopio
                 'location_id' => 1, // Laboratorio Principal
                 'quantity' => 1.00,
-                'type' => 'purchase',
+                'type' => 'compra',
                 'reference' => 'OC-2024-003',
                 'user_id' => $users->random()->id,
                 'notes' => 'Nuevo microscopio adquirido',
@@ -986,7 +1203,7 @@ class EducationalHealthDataSeeder extends Seeder
                 'product_id' => 10, // Equipo de Rayos X
                 'location_id' => 3, // Sala de Radiología
                 'quantity' => 1.00,
-                'type' => 'purchase',
+                'type' => 'compra',
                 'reference' => 'OC-2024-004',
                 'user_id' => $users->random()->id,
                 'notes' => 'Equipo de radiología instalado',
@@ -1117,22 +1334,35 @@ class EducationalHealthDataSeeder extends Seeder
             \App\Models\PurchaseRequest::create($request);
         }
         
-        // Crear algunas solicitudes de compra desde solicitudes generales convertidas
-        $convertedGeneralRequests = \App\Models\GeneralRequest::where('status', 'convertida_a_compra')->take(2)->get();
+        // Crear solicitudes de compra desde solicitudes generales
+        // Obtener todas las solicitudes generales (no solo las convertidas)
+        $generalRequests = \App\Models\GeneralRequest::all();
         
-        foreach ($convertedGeneralRequests as $generalRequest) {
-            $purchaseRequest = \App\Models\PurchaseRequest::create([
-                'request_number' => \App\Models\PurchaseRequest::generateNextNumber(),
-                'request_date' => Carbon::now()->subDays(2),
-                'status' => 'Pendiente',
-                'priority' => $generalRequest->priority,
-                'justification' => $generalRequest->description,
-                'observations' => 'Convertida desde solicitud general: ' . $generalRequest->number,
-                'responsibility_area_id' => $generalRequest->area_id,
-                'requesting_user_id' => $generalRequest->created_by,
-                'total_amount' => rand(5000, 20000),
-                'converted_from_general_request_id' => $generalRequest->id,
-            ]);
+        // Asociar solicitudes de compra a varias solicitudes generales (al menos 3-4)
+        $convertedCount = 0;
+        foreach ($generalRequests as $generalRequest) {
+            // Convertir al menos 3-4 solicitudes generales en solicitudes de compra
+            if ($convertedCount < 4) {
+                $purchaseRequest = \App\Models\PurchaseRequest::create([
+                    'request_number' => \App\Models\PurchaseRequest::generateNextNumber(),
+                    'request_date' => Carbon::now()->subDays(rand(1, 5)),
+                    'status' => ['Pendiente', 'Aprobada', 'En Proceso'][rand(0, 2)],
+                    'priority' => $generalRequest->priority,
+                    'justification' => $generalRequest->description,
+                    'observations' => 'Convertida desde solicitud general: ' . $generalRequest->number,
+                    'responsibility_area_id' => $generalRequest->area_id,
+                    'requesting_user_id' => $generalRequest->created_by,
+                    'approved_by' => $users->random()->id,
+                    'approved_date' => Carbon::now()->subDays(rand(1, 3)),
+                    'total_amount' => rand(5000, 20000),
+                    'converted_from_general_request_id' => $generalRequest->id,
+                ]);
+                
+                // Actualizar el estado de la solicitud general
+                $generalRequest->update(['status' => 'convertida_a_compra']);
+                
+                $convertedCount++;
+            }
         }
 
         // Crear detalles de solicitudes
@@ -1144,54 +1374,121 @@ class EducationalHealthDataSeeder extends Seeder
         $requests = \App\Models\PurchaseRequest::all();
         $products = Product::all();
         
-        $details = [
-            // Detalles para SR-2024-0001 (Informática)
-            [
-                'purchase_request_id' => 1,
-                'product_id' => 1, // Microscopio (como ejemplo de equipo)
-                'requested_quantity' => 2,
-                'specifications' => 'Equipos con garantía extendida',
-                'justification' => 'Para prácticas de laboratorio',
-                'estimated_unit_price' => 7500.00,
-                'estimated_total' => 15000.00,
-                'status' => 'Aprobada',
-            ],
-            // Detalles para SR-2024-0002 (Insumos de Salud)
-            [
-                'purchase_request_id' => 2,
-                'product_id' => 4, // Reactivo para Glucosa
-                'requested_quantity' => 10,
-                'specifications' => 'Reactivos de alta pureza',
-                'justification' => 'Reposición de stock',
-                'estimated_unit_price' => 850.00,
-                'estimated_total' => 8500.00,
-                'status' => 'Pendiente',
-            ],
-            [
-                'purchase_request_id' => 2,
-                'product_id' => 6, // Jeringas Descartables
-                'requested_quantity' => 5,
-                'specifications' => 'Jeringas estériles 5ml',
-                'justification' => 'Uso en prácticas',
-                'estimated_unit_price' => 45.00,
-                'estimated_total' => 225.00,
-                'status' => 'Pendiente',
-            ],
-            // Detalles para SR-2024-0003 (Mantenimiento)
-            [
-                'purchase_request_id' => 3,
-                'product_id' => 7, // Guantes de Látex
-                'requested_quantity' => 8,
-                'specifications' => 'Guantes de protección industrial',
-                'justification' => 'Para trabajos de mantenimiento',
-                'estimated_unit_price' => 25.50,
-                'estimated_total' => 204.00,
-                'status' => 'En Cotización',
-            ],
-        ];
+        // Si no hay productos, retornar
+        if ($products->isEmpty()) {
+            return;
+        }
+        
+        $details = [];
+        $detailId = 1;
+        
+        // Crear detalles para todas las solicitudes de compra
+        foreach ($requests as $request) {
+            // Para solicitudes convertidas desde solicitudes generales, usar los productos de la solicitud general
+            if ($request->converted_from_general_request_id) {
+                $generalRequest = \App\Models\GeneralRequest::find($request->converted_from_general_request_id);
+                if ($generalRequest && $generalRequest->details->isNotEmpty()) {
+                    foreach ($generalRequest->details as $generalDetail) {
+                        $details[] = [
+                            'purchase_request_id' => $request->id,
+                            'product_id' => $generalDetail->product_id,
+                            'requested_quantity' => $generalDetail->requested_quantity,
+                            'specifications' => $generalDetail->specifications,
+                            'justification' => $generalDetail->justification,
+                            'estimated_unit_price' => $generalDetail->estimated_unit_price,
+                            'estimated_total' => $generalDetail->estimated_total,
+                            'status' => 'Pendiente',
+                        ];
+                    }
+                } else {
+                    // Si no tiene detalles, crear algunos genéricos
+                    $selectedProducts = $products->random(min(2, $products->count()));
+                    foreach ($selectedProducts as $product) {
+                        $quantity = rand(1, 10);
+                        $unitPrice = rand(100, 1000);
+                        $details[] = [
+                            'purchase_request_id' => $request->id,
+                            'product_id' => $product->id,
+                            'requested_quantity' => $quantity,
+                            'specifications' => 'Especificaciones según solicitud general',
+                            'justification' => 'Convertida desde solicitud general',
+                            'estimated_unit_price' => $unitPrice,
+                            'estimated_total' => $quantity * $unitPrice,
+                            'status' => 'Pendiente',
+                        ];
+                    }
+                }
+            } else {
+                // Para solicitudes independientes, usar detalles predefinidos por ID
+                if ($request->id == 1) {
+                    // Detalles para SR-2024-0001 (Informática)
+                    $details[] = [
+                        'purchase_request_id' => $request->id,
+                        'product_id' => $products->first()->id ?? 1,
+                        'requested_quantity' => 2,
+                        'specifications' => 'Equipos con garantía extendida',
+                        'justification' => 'Para prácticas de laboratorio',
+                        'estimated_unit_price' => 7500.00,
+                        'estimated_total' => 15000.00,
+                        'status' => 'Aprobada',
+                    ];
+                } elseif ($request->id == 2) {
+                    // Detalles para SR-2024-0002 (Insumos de Salud)
+                    $selectedProducts = $products->take(2);
+                    foreach ($selectedProducts as $idx => $product) {
+                        $quantity = $idx == 0 ? 10 : 5;
+                        $unitPrice = $idx == 0 ? 850.00 : 45.00;
+                        $details[] = [
+                            'purchase_request_id' => $request->id,
+                            'product_id' => $product->id,
+                            'requested_quantity' => $quantity,
+                            'specifications' => $idx == 0 ? 'Reactivos de alta pureza' : 'Jeringas estériles 5ml',
+                            'justification' => $idx == 0 ? 'Reposición de stock' : 'Uso en prácticas',
+                            'estimated_unit_price' => $unitPrice,
+                            'estimated_total' => $quantity * $unitPrice,
+                            'status' => 'Pendiente',
+                        ];
+                    }
+                } elseif ($request->id == 3) {
+                    // Detalles para SR-2024-0003 (Mantenimiento)
+                    $details[] = [
+                        'purchase_request_id' => $request->id,
+                        'product_id' => $products->last()->id ?? 7,
+                        'requested_quantity' => 8,
+                        'specifications' => 'Guantes de protección industrial',
+                        'justification' => 'Para trabajos de mantenimiento',
+                        'estimated_unit_price' => 25.50,
+                        'estimated_total' => 204.00,
+                        'status' => 'En Cotización',
+                    ];
+                } else {
+                    // Para otras solicitudes, crear detalles aleatorios
+                    $selectedProducts = $products->random(min(2, $products->count()));
+                    foreach ($selectedProducts as $product) {
+                        $quantity = rand(1, 10);
+                        $unitPrice = rand(100, 1000);
+                        $details[] = [
+                            'purchase_request_id' => $request->id,
+                            'product_id' => $product->id,
+                            'requested_quantity' => $quantity,
+                            'specifications' => 'Especificaciones estándar',
+                            'justification' => 'Para uso en el área',
+                            'estimated_unit_price' => $unitPrice,
+                            'estimated_total' => $quantity * $unitPrice,
+                            'status' => 'Pendiente',
+                        ];
+                    }
+                }
+            }
+        }
 
         foreach ($details as $detail) {
-            \App\Models\PurchaseRequestDetail::create($detail);
+            try {
+                \App\Models\PurchaseRequestDetail::create($detail);
+            } catch (\Exception $e) {
+                // Continuar si hay algún error
+                continue;
+            }
         }
     }
 

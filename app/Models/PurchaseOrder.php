@@ -59,6 +59,16 @@ class PurchaseOrder extends Model
     {
         return $this->hasMany(\App\Models\Reception::class, 'purchase_order_id');
     }
+
+    public function paymentOrders()
+    {
+        return $this->hasMany(\App\Models\PaymentOrder::class, 'purchase_order_id');
+    }
+
+    public function purchaseRequest()
+    {
+        return $this->belongsTo(\App\Models\PurchaseRequest::class, 'purchase_request_id');
+    }
     /*
     |--------------------------------------------------------------------------
     | MODEL EVENTS

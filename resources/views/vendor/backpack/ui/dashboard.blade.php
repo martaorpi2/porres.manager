@@ -9,6 +9,198 @@
       --bs-primary-rgb: 135, 31, 31 !important;
   }
 
+  /* Dashboard Process Flow Styles */
+  .process-flow-container {
+      background: #f8f9fa;
+      padding: 30px;
+      border-radius: 10px;
+      margin-bottom: 30px;
+  }
+
+  .process-step {
+      position: relative;
+      background: white;
+      border-radius: 8px;
+      padding: 20px;
+      margin-bottom: 20px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      transition: transform 0.2s, box-shadow 0.2s;
+  }
+
+  .process-step:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+  }
+
+  .process-step-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 15px;
+      padding-bottom: 10px;
+      border-bottom: 2px solid #871f1f;
+  }
+
+  .process-step-title {
+      font-size: 18px;
+      font-weight: bold;
+      color: #871f1f;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+  }
+
+  .process-step-icon {
+      font-size: 24px;
+  }
+
+  .process-step-count {
+      background: #871f1f;
+      color: white;
+      padding: 5px 12px;
+      border-radius: 20px;
+      font-weight: bold;
+  }
+
+  .process-step-content {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      gap: 15px;
+  }
+
+  .process-item-card {
+      background: #f8f9fa;
+      border-left: 4px solid #871f1f;
+      padding: 15px;
+      border-radius: 5px;
+      cursor: pointer;
+      transition: all 0.2s;
+  }
+
+  .process-item-card:hover {
+      background: #e9ecef;
+      border-left-width: 6px;
+  }
+
+  .process-item-title {
+      font-weight: bold;
+      color: #871f1f;
+      margin-bottom: 5px;
+  }
+
+  .process-item-meta {
+      font-size: 12px;
+      color: #6c757d;
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+  }
+
+  .process-item-status {
+      display: inline-block;
+      padding: 3px 8px;
+      border-radius: 3px;
+      font-size: 11px;
+      font-weight: bold;
+      text-transform: uppercase;
+  }
+
+  .status-pendiente { background: #ffc107; color: #000; }
+  .status-aprobada { background: #28a745; color: #fff; }
+  .status-en-proceso { background: #17a2b8; color: #fff; }
+  .status-completada { background: #28a745; color: #fff; }
+  .status-rechazada { background: #dc3545; color: #fff; }
+  .status-recibida { background: #28a745; color: #fff; }
+
+  .stat-card {
+      background: white;
+      border-radius: 8px;
+      padding: 20px;
+      text-align: center;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      transition: transform 0.2s;
+  }
+
+  .stat-card:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+  }
+
+  .stat-card-icon {
+      font-size: 40px;
+      color: #871f1f;
+      margin-bottom: 10px;
+  }
+
+  .stat-card-number {
+      font-size: 32px;
+      font-weight: bold;
+      color: #871f1f;
+      margin-bottom: 5px;
+  }
+
+  .stat-card-label {
+      color: #6c757d;
+      font-size: 14px;
+      text-transform: uppercase;
+  }
+
+  .stat-card-pending {
+      font-size: 14px;
+      color: #ffc107;
+      margin-top: 5px;
+  }
+
+  .flow-timeline {
+      position: relative;
+      padding: 20px 0;
+  }
+
+  .flow-timeline::before {
+      content: '';
+      position: absolute;
+      left: 30px;
+      top: 0;
+      bottom: 0;
+      width: 3px;
+      background: #871f1f;
+  }
+
+  .flow-timeline-item {
+      position: relative;
+      padding-left: 70px;
+      margin-bottom: 30px;
+  }
+
+  .flow-timeline-item::before {
+      content: '';
+      position: absolute;
+      left: 21px;
+      top: 5px;
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background: #871f1f;
+      border: 3px solid white;
+      box-shadow: 0 0 0 3px #871f1f;
+  }
+
+  .flow-timeline-content {
+      background: white;
+      padding: 15px;
+      border-radius: 5px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  }
+
+  .section-title {
+      font-size: 24px;
+      font-weight: bold;
+      color: #871f1f;
+      margin-bottom: 20px;
+      padding-bottom: 10px;
+      border-bottom: 3px solid #871f1f;
+  }
+
   /* Override any existing primary color definitions */
   .bg-primary {
       background-color: #871f1f !important;
@@ -701,11 +893,401 @@
 @endpush
 
 @section('content')
-<div class="card">
-  <div class="card-body">
-    <h3></h3>
-    
-  </div>
-</div>
+<div class="container-fluid">
+    <!-- Estadísticas Generales -->
+    <div class="row mb-4">
+        <div class="col-md-12">
+            <h2 class="section-title">Proceso de Solicitudes</h2>
+        </div>
+    </div>
 
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="stat-card">
+                <div class="stat-card-icon">
+                    <i class="la la-file-alt"></i>
+                </div>
+                <div class="stat-card-number">{{ $stats['general_requests'] }}</div>
+                <div class="stat-card-label">Solicitudes Generales</div>
+                <div class="stat-card-pending">{{ $stats['general_requests_pending'] }} Pendientes</div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="stat-card">
+                <div class="stat-card-icon">
+                    <i class="la la-shopping-cart"></i>
+                </div>
+                <div class="stat-card-number">{{ $stats['purchase_requests'] }}</div>
+                <div class="stat-card-label">Solicitudes de Compra</div>
+                <div class="stat-card-pending">{{ $stats['purchase_requests_pending'] }} Pendientes</div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="stat-card">
+                <div class="stat-card-icon">
+                    <i class="la la-clipboard-list"></i>
+                </div>
+                <div class="stat-card-number">{{ $stats['purchase_orders'] }}</div>
+                <div class="stat-card-label">Órdenes de Compra</div>
+                <div class="stat-card-pending">{{ $stats['purchase_orders_pending'] }} Pendientes</div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="stat-card">
+                <div class="stat-card-icon">
+                    <i class="la la-money-bill-wave"></i>
+                </div>
+                <div class="stat-card-number">{{ $stats['payment_orders'] }}</div>
+                <div class="stat-card-label">Órdenes de Pago</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row mb-4">
+        <div class="col-md-6">
+            <div class="stat-card">
+                <div class="stat-card-icon">
+                    <i class="la la-truck-loading"></i>
+                </div>
+                <div class="stat-card-number">{{ $stats['receptions'] }}</div>
+                <div class="stat-card-label">Recepciones</div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="stat-card">
+                <div class="stat-card-icon">
+                    <i class="la la-undo-alt"></i>
+                </div>
+                <div class="stat-card-number">{{ $stats['devolutions'] }}</div>
+                <div class="stat-card-label">Devoluciones</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Flujo del Proceso Visual -->
+    <div class="row mb-4">
+        <div class="col-md-12">
+            <h3 class="section-title">Flujo del Proceso Completo</h3>
+        </div>
+    </div>
+
+    <!-- Paso 1: Solicitudes Generales -->
+    <div class="process-step">
+        <div class="process-step-header">
+            <div class="process-step-title">
+                <i class="la la-file-alt process-step-icon"></i>
+                <span>1. Solicitudes Generales</span>
+            </div>
+            <span class="process-step-count">{{ $stats['general_requests'] }}</span>
+        </div>
+        <div class="process-step-content">
+            @forelse($generalRequests as $generalRequest)
+                <div class="process-item-card" onclick="window.location='{{ backpack_url('general-request/' . $generalRequest->id . '/show') }}'">
+                    <div class="process-item-title">{{ $generalRequest->number }}</div>
+                    <div class="process-item-meta">
+                        <span>{{ $generalRequest->title }}</span>
+                        <span class="process-item-status status-{{ strtolower(str_replace(' ', '-', $generalRequest->status)) }}">{{ $generalRequest->status }}</span>
+                    </div>
+                    <div class="process-item-meta">
+                        <span><i class="la la-user"></i> {{ $generalRequest->createdBy->name ?? 'N/A' }}</span>
+                        <span><i class="la la-calendar"></i> {{ $generalRequest->created_at->format('d/m/Y') }}</span>
+                    </div>
+                </div>
+            @empty
+                <div class="text-muted">No hay solicitudes generales recientes</div>
+            @endforelse
+        </div>
+    </div>
+
+    <!-- Paso 2: Solicitudes de Compra -->
+    <div class="process-step">
+        <div class="process-step-header">
+            <div class="process-step-title">
+                <i class="la la-shopping-cart process-step-icon"></i>
+                <span>2. Solicitudes de Compra</span>
+            </div>
+            <span class="process-step-count">{{ $stats['purchase_requests'] }}</span>
+        </div>
+        <div class="process-step-content">
+            @forelse($purchaseRequests as $purchaseRequest)
+                <div class="process-item-card" onclick="window.location='{{ backpack_url('purchase-request/' . $purchaseRequest->id . '/show') }}'">
+                    <div class="process-item-title">{{ $purchaseRequest->request_number }}</div>
+                    <div class="process-item-meta">
+                        <span>{{ $purchaseRequest->convertedFromGeneralRequest->number ?? 'N/A' }}</span>
+                        <span class="process-item-status status-{{ strtolower(str_replace(' ', '-', $purchaseRequest->status)) }}">{{ $purchaseRequest->status }}</span>
+                    </div>
+                    <div class="process-item-meta">
+                        <span><i class="la la-user"></i> {{ $purchaseRequest->requestingUser->name ?? 'N/A' }}</span>
+                        <span><i class="la la-calendar"></i> {{ $purchaseRequest->request_date->format('d/m/Y') ?? 'N/A' }}</span>
+                    </div>
+                </div>
+            @empty
+                <div class="text-muted">No hay solicitudes de compra recientes</div>
+            @endforelse
+        </div>
+    </div>
+
+    <!-- Paso 3: Órdenes de Compra -->
+    <div class="process-step">
+        <div class="process-step-header">
+            <div class="process-step-title">
+                <i class="la la-clipboard-list process-step-icon"></i>
+                <span>3. Órdenes de Compra</span>
+            </div>
+            <span class="process-step-count">{{ $stats['purchase_orders'] }}</span>
+        </div>
+        <div class="process-step-content">
+            @forelse($purchaseOrders as $purchaseOrder)
+                <div class="process-item-card" onclick="window.location='{{ backpack_url('purchase-order/' . $purchaseOrder->id . '/show') }}'">
+                    <div class="process-item-title">{{ $purchaseOrder->number ?? 'N/A' }}</div>
+                    <div class="process-item-meta">
+                        <span><i class="la la-truck"></i> {{ $purchaseOrder->supplier->name ?? 'N/A' }}</span>
+                        <span class="process-item-status status-{{ strtolower(str_replace(' ', '-', $purchaseOrder->status ?? 'Pendiente')) }}">{{ $purchaseOrder->status ?? 'Pendiente' }}</span>
+                    </div>
+                    <div class="process-item-meta">
+                        <span><i class="la la-calendar"></i> {{ $purchaseOrder->date->format('d/m/Y') ?? 'N/A' }}</span>
+                        <span><i class="la la-money-bill"></i> ${{ number_format($purchaseOrder->total ?? 0, 2) }}</span>
+                    </div>
+                </div>
+            @empty
+                <div class="text-muted">No hay órdenes de compra recientes</div>
+            @endforelse
+        </div>
+    </div>
+
+    <!-- Paso 4: Órdenes de Pago -->
+    <div class="process-step">
+        <div class="process-step-header">
+            <div class="process-step-title">
+                <i class="la la-money-bill-wave process-step-icon"></i>
+                <span>4. Órdenes de Pago</span>
+            </div>
+            <span class="process-step-count">{{ $stats['payment_orders'] }}</span>
+        </div>
+        <div class="process-step-content">
+            @forelse($paymentOrders as $paymentOrder)
+                <div class="process-item-card" onclick="window.location='{{ backpack_url('payment-order/' . $paymentOrder->id . '/show') }}'">
+                    <div class="process-item-title">{{ $paymentOrder->payment_number ?? 'N/A' }}</div>
+                    <div class="process-item-meta">
+                        <span><i class="la la-truck"></i> {{ $paymentOrder->purchase_order->supplier->name ?? 'N/A' }}</span>
+                        <span><i class="la la-clipboard-list"></i> {{ $paymentOrder->purchase_order->number ?? 'N/A' }}</span>
+                    </div>
+                    <div class="process-item-meta">
+                        <span><i class="la la-calendar"></i> {{ $paymentOrder->date ? $paymentOrder->date->format('d/m/Y') : 'N/A' }}</span>
+                        <span><i class="la la-money-bill"></i> ${{ number_format($paymentOrder->total_amount ?? 0, 2) }}</span>
+                    </div>
+                </div>
+            @empty
+                <div class="text-muted">No hay órdenes de pago recientes</div>
+            @endforelse
+        </div>
+    </div>
+
+    <!-- Paso 5: Recepciones -->
+    <div class="process-step">
+        <div class="process-step-header">
+            <div class="process-step-title">
+                <i class="la la-truck-loading process-step-icon"></i>
+                <span>5. Recepciones</span>
+            </div>
+            <span class="process-step-count">{{ $stats['receptions'] }}</span>
+        </div>
+        <div class="process-step-content">
+            @forelse($receptions as $reception)
+                <div class="process-item-card" onclick="window.location='{{ backpack_url('reception/' . $reception->id . '/show') }}'">
+                    <div class="process-item-title">{{ $reception->number ?? 'REC-' . $reception->id }}</div>
+                    <div class="process-item-meta">
+                        <span><i class="la la-clipboard-list"></i> {{ $reception->purchase_order->number ?? 'N/A' }}</span>
+                        <span><i class="la la-truck"></i> {{ $reception->purchase_order->supplier->name ?? 'N/A' }}</span>
+                    </div>
+                    <div class="process-item-meta">
+                        <span><i class="la la-calendar"></i> {{ $reception->created_at->format('d/m/Y') }}</span>
+                    </div>
+                </div>
+            @empty
+                <div class="text-muted">No hay recepciones recientes</div>
+            @endforelse
+        </div>
+    </div>
+
+    <!-- Paso 6: Devoluciones -->
+    <div class="process-step">
+        <div class="process-step-header">
+            <div class="process-step-title">
+                <i class="la la-undo-alt process-step-icon"></i>
+                <span>6. Devoluciones</span>
+            </div>
+            <span class="process-step-count">{{ $stats['devolutions'] }}</span>
+        </div>
+        <div class="process-step-content">
+            @forelse($devolutions as $devolution)
+                <div class="process-item-card" onclick="window.location='{{ backpack_url('devolution/' . $devolution->id . '/show') }}'">
+                    <div class="process-item-title">DEV-{{ $devolution->id }}</div>
+                    <div class="process-item-meta">
+                        <span><i class="la la-truck-loading"></i> {{ $devolution->reception->number ?? 'N/A' }}</span>
+                        <span><i class="la la-user"></i> {{ $devolution->user->name ?? 'N/A' }}</span>
+                    </div>
+                    <div class="process-item-meta">
+                        <span><i class="la la-calendar"></i> {{ $devolution->created_at->format('d/m/Y') }}</span>
+                    </div>
+                </div>
+            @empty
+                <div class="text-muted">No hay devoluciones recientes</div>
+            @endforelse
+        </div>
+    </div>
+
+    <!-- Flujos Completos de Procesos -->
+    @if(isset($processFlows) && count($processFlows) > 0)
+    <div class="row mb-4">
+        <div class="col-md-12">
+            <h3 class="section-title">Trazabilidad Completa de Procesos</h3>
+            <p class="text-muted">Muestra el flujo completo desde las solicitudes generales hasta las devoluciones (si aplica)</p>
+        </div>
+    </div>
+
+    @foreach($processFlows as $flow)
+        @if(isset($flow['general_request']) && $flow['general_request'])
+            <div class="card mb-4">
+                <div class="card-header bg-primary">
+                    <h5 class="mb-0">
+                        <i class="la la-file-alt"></i> 
+                        Solicitud General: {{ $flow['general_request']->number }}
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="flow-timeline">
+                        <div class="flow-timeline-item">
+                            <div class="flow-timeline-content">
+                                <strong>Solicitud General:</strong> {{ $flow['general_request']->title }}
+                                <br>
+                                <small class="text-muted">
+                                    Creada por: {{ $flow['general_request']->createdBy->name ?? 'N/A' }} 
+                                    | {{ $flow['general_request']->created_at->format('d/m/Y H:i') }}
+                                    | Estado: {{ $flow['general_request']->status ?? 'N/A' }}
+                                </small>
+                            </div>
+                        </div>
+
+                        @if(isset($flow['purchase_requests']) && count($flow['purchase_requests']) > 0)
+                            @foreach($flow['purchase_requests'] as $pr)
+                                <div class="flow-timeline-item">
+                                    <div class="flow-timeline-content">
+                                        <strong>Solicitud de Compra:</strong> {{ $pr->request_number }}
+                                        <br>
+                                        <small class="text-muted">
+                                            Estado: {{ $pr->status }} | 
+                                            Fecha: {{ $pr->request_date ? $pr->request_date->format('d/m/Y') : 'N/A' }}
+                                            @if($pr->selectedMarketRate)
+                                                | Cotización seleccionada: {{ $pr->selectedMarketRate->supplier->name ?? 'N/A' }}
+                                            @endif
+                                        </small>
+                                    </div>
+                                </div>
+                            @endforeach
+                        @else
+                            <div class="flow-timeline-item">
+                                <div class="flow-timeline-content">
+                                    <small class="text-muted">No hay solicitudes de compra generadas aún</small>
+                                </div>
+                            </div>
+                        @endif
+
+                        @if(isset($flow['purchase_orders']) && count($flow['purchase_orders']) > 0)
+                            @foreach($flow['purchase_orders'] as $po)
+                                <div class="flow-timeline-item">
+                                    <div class="flow-timeline-content">
+                                        <strong>Orden de Compra:</strong> {{ $po->number ?? 'N/A' }}
+                                        <br>
+                                        <small class="text-muted">
+                                            Proveedor: {{ $po->supplier->name ?? 'N/A' }} | 
+                                            Estado: {{ $po->status ?? 'N/A' }}
+                                            @if($po->date)
+                                                | Fecha: {{ $po->date->format('d/m/Y') }}
+                                            @endif
+                                        </small>
+                                    </div>
+                                </div>
+
+                                @if(isset($flow['payment_orders']) && count($flow['payment_orders']) > 0)
+                                    @foreach($flow['payment_orders'] as $paymentOrder)
+                                        @if($paymentOrder->purchase_order_id == $po->id)
+                                            <div class="flow-timeline-item">
+                                                <div class="flow-timeline-content">
+                                                    <strong>Orden de Pago:</strong> {{ $paymentOrder->payment_number ?? 'N/A' }}
+                                                    <br>
+                                                    <small class="text-muted">
+                                                        Fecha: {{ $paymentOrder->date ? $paymentOrder->date->format('d/m/Y') : 'N/A' }}
+                                                        | Monto: ${{ number_format($paymentOrder->total_amount ?? 0, 2) }}
+                                                        | Estado: {{ $paymentOrder->status ?? 'N/A' }}
+                                                    </small>
+                                                </div>
+                                            </div>
+                                        @endif
+                                    @endforeach
+                                @endif
+
+                                @if(isset($flow['receptions']) && count($flow['receptions']) > 0)
+                                    @foreach($flow['receptions'] as $reception)
+                                        @if($reception->purchase_order_id == $po->id)
+                                            <div class="flow-timeline-item">
+                                                <div class="flow-timeline-content">
+                                                    <strong>Recepción:</strong> {{ $reception->number ?? 'REC-' . $reception->id }}
+                                                    <br>
+                                                    <small class="text-muted">
+                                                        Fecha: {{ $reception->created_at->format('d/m/Y') }}
+                                                    </small>
+                                                </div>
+                                            </div>
+
+                                            @if(isset($flow['devolutions']) && count($flow['devolutions']) > 0)
+                                                @foreach($flow['devolutions'] as $devolution)
+                                                    @if($devolution->reception_id == $reception->id)
+                                                        <div class="flow-timeline-item">
+                                                            <div class="flow-timeline-content">
+                                                                <strong>Devolución:</strong> DEV-{{ $devolution->id }}
+                                                                <br>
+                                                                <small class="text-muted">
+                                                                    Fecha: {{ $devolution->created_at->format('d/m/Y') }}
+                                                                </small>
+                                                            </div>
+                                                        </div>
+                                                    @endif
+                                                @endforeach
+                                            @endif
+                                        @endif
+                                    @endforeach
+                                @else
+                                    @if(count($flow['purchase_orders']) > 0)
+                                        <div class="flow-timeline-item">
+                                            <div class="flow-timeline-content">
+                                                <small class="text-muted">No hay recepciones registradas aún</small>
+                                            </div>
+                                        </div>
+                                    @endif
+                                @endif
+                            @endforeach
+                        @else
+                            <div class="flow-timeline-item">
+                                <div class="flow-timeline-content">
+                                    <small class="text-muted">No hay órdenes de compra generadas aún</small>
+                                </div>
+                            </div>
+                        @endif
+                    </div>
+                </div>
+            </div>
+        @endif
+    @endforeach
+    @else
+    <div class="row mb-4">
+        <div class="col-md-12">
+            <div class="alert alert-info">
+                <i class="la la-info-circle"></i> 
+                No hay procesos completos para mostrar. La trazabilidad aparecerá cuando las solicitudes generales tengan solicitudes de compra asociadas.
+            </div>
+        </div>
+    </div>
+    @endif
+</div>
 @endsection
