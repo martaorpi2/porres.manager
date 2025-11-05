@@ -117,7 +117,7 @@ class PurchaseRequest extends Model
     public static function generateNextNumber(): string
     {
         $year = now()->year;
-        $prefix = 'SR-' . $year . '-';
+        $prefix = 'SC-' . $year . '-';
 
         $last = static::query()
             ->where('request_number', 'like', $prefix . '%')

@@ -57,7 +57,7 @@ class PurchaseRequestQuoteSeeder extends Seeder
         // Crear solicitudes de compra con estos productos
         for ($i = 1; $i <= 3; $i++) {
             $purchaseRequest = PurchaseRequest::create([
-                'request_number' => 'SR-2024-' . str_pad($i, 4, '0', STR_PAD_LEFT),
+                'request_number' => 'SC-2024-' . str_pad($i, 4, '0', STR_PAD_LEFT),
                 'request_date' => now()->subDays($i),
                 'status' => 'Pendiente',
                 'priority' => 'Media',

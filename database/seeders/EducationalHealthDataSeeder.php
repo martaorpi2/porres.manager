@@ -1292,7 +1292,7 @@ class EducationalHealthDataSeeder extends Seeder
         
         $requests = [
             [
-                'request_number' => 'SR-2024-0001',
+                'request_number' => 'SC-2024-0001',
                 'request_date' => Carbon::now()->subDays(10),
                 'status' => 'Aprobada',
                 'priority' => 'Alta',
@@ -1305,7 +1305,7 @@ class EducationalHealthDataSeeder extends Seeder
                 'total_amount' => 15000.00,
             ],
             [
-                'request_number' => 'SR-2024-0002',
+                'request_number' => 'SC-2024-0002',
                 'request_date' => Carbon::now()->subDays(5),
                 'status' => 'Pendiente',
                 'priority' => 'Media',
@@ -1316,7 +1316,7 @@ class EducationalHealthDataSeeder extends Seeder
                 'total_amount' => 8500.00,
             ],
             [
-                'request_number' => 'SR-2024-0003',
+                'request_number' => 'SC-2024-0003',
                 'request_date' => Carbon::now()->subDays(3),
                 'status' => 'En Proceso',
                 'priority' => 'Urgente',
@@ -1421,7 +1421,7 @@ class EducationalHealthDataSeeder extends Seeder
             } else {
                 // Para solicitudes independientes, usar detalles predefinidos por ID
                 if ($request->id == 1) {
-                    // Detalles para SR-2024-0001 (Informática)
+                    // Detalles para SC-2024-0001 (Informática)
                     $details[] = [
                         'purchase_request_id' => $request->id,
                         'product_id' => $products->first()->id ?? 1,
@@ -1433,7 +1433,7 @@ class EducationalHealthDataSeeder extends Seeder
                         'status' => 'Aprobada',
                     ];
                 } elseif ($request->id == 2) {
-                    // Detalles para SR-2024-0002 (Insumos de Salud)
+                    // Detalles para SC-2024-0002 (Insumos de Salud)
                     $selectedProducts = $products->take(2);
                     foreach ($selectedProducts as $idx => $product) {
                         $quantity = $idx == 0 ? 10 : 5;
@@ -1450,7 +1450,7 @@ class EducationalHealthDataSeeder extends Seeder
                         ];
                     }
                 } elseif ($request->id == 3) {
-                    // Detalles para SR-2024-0003 (Mantenimiento)
+                    // Detalles para SC-2024-0003 (Mantenimiento)
                     $details[] = [
                         'purchase_request_id' => $request->id,
                         'product_id' => $products->last()->id ?? 7,

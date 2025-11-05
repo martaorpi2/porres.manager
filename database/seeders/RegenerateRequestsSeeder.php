@@ -148,7 +148,7 @@ class RegenerateRequestsSeeder extends Seeder
         // Crear algunas solicitudes de compra independientes
         $requests = [
             [
-                'request_number' => 'SR-2024-0001',
+                'request_number' => 'SC-2024-0001',
                 'request_date' => now()->subDays(5),
                 'status' => 'Aprobada',
                 'priority' => 'Media',

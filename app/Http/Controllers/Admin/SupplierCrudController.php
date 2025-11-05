@@ -79,6 +79,32 @@ class SupplierCrudController extends CrudController
             'escaped' => false, // permitimos HTML para mostrar las badges
         ]);
 
+        CRUD::addColumn([
+            'name' => 'average_rating',
+            'label' => 'Calificación',
+            'type' => 'closure',
+            'function' => function($entry) {
+                $avg = $entry->average_rating;
+                $total = $entry->total_ratings;
+                
+                if ($total == 0) {
+                    return '<span class="text-muted">Sin calificaciones</span>';
+                }
+                
+                $stars = '';
+                for ($i = 1; $i <= 5; $i++) {
+                    if ($i <= round($avg)) {
+                        $stars .= '<i class="la la-star text-warning"></i>';
+                    } else {
+                        $stars .= '<i class="la la-star text-secondary"></i>';
+                    }
+                }
+                
+                return $stars . ' <small class="text-muted">(' . number_format($avg, 1) . '/5)</small> <br><small class="text-muted">' . $total . ' evaluación(es)</small>';
+            },
+            'escaped' => false,
+        ]);
+
         // Filtro personalizado por rubro usando parámetros de URL
         if (request()->has('rubro')) {
             $rubroId = request()->get('rubro');

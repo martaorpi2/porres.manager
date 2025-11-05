@@ -1231,6 +1231,40 @@ a:hover {
               </form>
             </div>
           </div>
+        @elseif($crud->route == 'admin/supplier-rating')
+          <!-- Filtro personalizado para calificaciones de proveedores -->
+          <div class="card mb-3">
+            <div class="card-header bg-primary text-white">
+              <h6 class="card-title mb-0">
+                <i class="fas fa-filter"></i> Filtros
+              </h6>
+            </div>
+            <div class="card-body py-2">
+              <form method="GET" action="{{ url($crud->route) }}">
+                <div class="row">
+                  <div class="col-md-4">
+                    <label for="proveedor" class="form-label">Proveedor:</label>
+                    <select name="proveedor" id="proveedor" class="form-control select2" onchange="this.form.submit()">
+                      <option value="">Todos los proveedores</option>
+                      @foreach(\App\Models\Supplier::all() as $supplier)
+                        <option value="{{ $supplier->id }}" {{ request('proveedor') == $supplier->id ? 'selected' : '' }}>
+                          {{ $supplier->company_name }}
+                        </option>
+                      @endforeach
+                    </select>
+                  </div>
+                  <div class="col-md-4">
+                    <label for="fecha_desde" class="form-label">Fecha de Evaluación Desde:</label>
+                    <input type="date" name="fecha_desde" id="fecha_desde" class="form-control" value="{{ request('fecha_desde') }}" onchange="this.form.submit()">
+                  </div>
+                  <div class="col-md-4">
+                    <label for="fecha_hasta" class="form-label">Fecha de Evaluación Hasta:</label>
+                    <input type="date" name="fecha_hasta" id="fecha_hasta" class="form-control" value="{{ request('fecha_hasta') }}" onchange="this.form.submit()">
+                  </div>
+                </div>
+              </form>
+            </div>
+          </div>
         @endif
 
         <div class="table-responsive">

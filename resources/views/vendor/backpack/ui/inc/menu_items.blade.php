@@ -4,6 +4,7 @@
 
 <x-backpack::menu-dropdown title="Proveedores" icon="la la-truck" trigger="click">
     <x-backpack::menu-dropdown-item title="Listado" :link="backpack_url('supplier')" />
+    <x-backpack::menu-dropdown-item title="Calificaciones" :link="backpack_url('supplier-rating')" />
     <x-backpack::menu-dropdown-item title="Rubros" :link="backpack_url('suppliers-heading')" />
     <x-backpack::menu-dropdown-item title="Sectores" :link="backpack_url('sector')" />
 </x-backpack::menu-dropdown>
