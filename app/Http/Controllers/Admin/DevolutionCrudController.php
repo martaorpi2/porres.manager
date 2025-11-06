@@ -135,6 +135,32 @@ class DevolutionCrudController extends CrudController
         $this->setupCreateOperation();
     }
 
+    protected function setupShowOperation()
+    {
+        CRUD::addColumn([
+            'name' => 'reception_id',
+            'label' => 'Recepción',
+            'type' => 'closure',
+            'function' => function($entry) {
+                if ($entry->reception && $entry->reception->purchase_order) {
+                    return 'REC-' . $entry->reception->id . ' | ' . $entry->reception->purchase_order->number;
+                }
+                return 'REC-' . $entry->reception_id;
+            },
+            'escaped' => false,
+        ]);
+        CRUD::column('reason')->label('Motivo');
+        CRUD::addColumn([
+            'name' => 'user',
+            'label' => 'Usuario que devolvió',
+            'type' => 'select',
+            'entity' => 'user',
+            'attribute' => 'name',
+            'model' => 'App\Models\User',
+        ]);
+        CRUD::column('date')->label('Fecha');
+    }
+
     /**
      * Store the resource in the database.
      */

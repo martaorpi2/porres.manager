@@ -10,6 +10,7 @@ use App\Models\StockLevel;
 use App\Models\Product;
 use App\Models\Location;
 use App\Models\Input;
+use App\Models\GeneralRequestDetail;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -213,6 +214,38 @@ class ReceptionCrudController extends CrudController
         ]);
     }
 
+    protected function setupShowOperation()
+    {
+        CRUD::addColumn([
+            'name' => 'purchase_order_id',
+            'label' => 'Orden de Compra',
+            'type' => 'select',
+            'entity' => 'purchase_order',
+            'attribute' => 'number',
+            'model' => 'App\Models\PurchaseOrder',
+            'searchLogic' => function ($query, $column, $searchTerm) {
+                $query->orWhereHas('purchase_order', function ($q) use ($searchTerm) {
+                    $q->where('number', 'like', '%'.$searchTerm.'%');
+                });
+            },
+        ]);
+        CRUD::column('date')->label('Fecha');
+        CRUD::column('according')->label('Conforme');
+        CRUD::addColumn([
+            'name' => 'area_manager_id',
+            'label' => 'Responsable',
+            'type' => 'select',
+            'entity' => 'user',
+            'attribute' => 'name',
+            'model' => 'App\Models\User',
+            'searchLogic' => function ($query, $column, $searchTerm) {
+                $query->orWhereHas('user', function ($q) use ($searchTerm) {
+                    $q->where('name', 'like', '%'.$searchTerm.'%');
+                });
+            },
+        ]);
+    }
+
     /**
      * Store a newly created resource in storage.
      *
@@ -247,6 +280,11 @@ class ReceptionCrudController extends CrudController
 
         // Process stock level deduction (es una recepción nueva)
         $this->processStockLevelDeduction($entry, true);
+
+        // Actualizar estado de detalles de solicitud general si la recepción está conforme
+        if ($entry->according === 'Si') {
+            $this->updateGeneralRequestDetailsStatus($entry);
+        }
 
         // Show a success message
         \Alert::success(trans('backpack::crud.insert_success'))->flash();
@@ -301,6 +339,11 @@ class ReceptionCrudController extends CrudController
         // Solo procesar si la recepción fue creada recientemente (mismo timestamp)
         $isNew = $entry->created_at->eq($entry->updated_at);
         $this->processStockLevelDeduction($entry, $isNew);
+
+        // Actualizar estado de detalles de solicitud general si la recepción está conforme
+        if ($entry->according === 'Si') {
+            $this->updateGeneralRequestDetailsStatus($entry);
+        }
 
         // Show a success message
         \Alert::success(trans('backpack::crud.update_success'))->flash();
@@ -483,6 +526,108 @@ class ReceptionCrudController extends CrudController
                 'error' => $e->getMessage()
             ]);
             return null;
+        }
+    }
+
+    /**
+     * Actualizar el estado de los detalles de solicitud general cuando se recepciona con conformidad
+     *
+     * @param Reception $reception
+     * @return void
+     */
+    protected function updateGeneralRequestDetailsStatus(Reception $reception)
+    {
+        try {
+            // Cargar la orden de compra con sus relaciones
+            $purchaseOrder = $reception->purchase_order()
+                ->with([
+                    'details.input',
+                    'purchaseRequest.convertedFromGeneralRequest.details.product'
+                ])
+                ->first();
+
+            if (!$purchaseOrder) {
+                Log::warning('Orden de compra no encontrada para actualizar detalles de solicitud general', [
+                    'reception_id' => $reception->id
+                ]);
+                return;
+            }
+
+            // Obtener la solicitud de compra relacionada
+            $purchaseRequest = $purchaseOrder->purchaseRequest;
+            if (!$purchaseRequest) {
+                Log::warning('Solicitud de compra no encontrada para actualizar detalles de solicitud general', [
+                    'reception_id' => $reception->id,
+                    'purchase_order_id' => $purchaseOrder->id
+                ]);
+                return;
+            }
+
+            // Obtener la solicitud general relacionada
+            $generalRequest = $purchaseRequest->convertedFromGeneralRequest;
+            if (!$generalRequest) {
+                Log::warning('Solicitud general no encontrada para actualizar detalles', [
+                    'reception_id' => $reception->id,
+                    'purchase_request_id' => $purchaseRequest->id
+                ]);
+                return;
+            }
+
+            // Procesar cada detalle de la orden de compra
+            foreach ($purchaseOrder->details as $orderDetail) {
+                $input = $orderDetail->input;
+                
+                if (!$input) {
+                    Log::warning('Input no encontrado para detalle de orden de compra', [
+                        'detail_id' => $orderDetail->id,
+                        'input_id' => $orderDetail->input_id
+                    ]);
+                    continue;
+                }
+
+                // Buscar o crear el producto correspondiente al input
+                $product = $this->findOrCreateProductFromInput($input);
+                
+                if (!$product) {
+                    Log::warning('No se pudo obtener o crear producto desde input', [
+                        'input_id' => $input->id,
+                        'input_name' => $input->name
+                    ]);
+                    continue;
+                }
+
+                // Buscar los detalles de la solicitud general que corresponden a este producto
+                $generalRequestDetails = GeneralRequestDetail::where('general_request_id', $generalRequest->id)
+                    ->where('product_id', $product->id)
+                    ->where('status', '!=', 'Comprada') // Solo actualizar los que aún no están marcados como comprados
+                    ->get();
+
+                // Actualizar el estado de cada detalle a 'Comprada'
+                foreach ($generalRequestDetails as $detail) {
+                    $detail->status = 'Comprada';
+                    $detail->save();
+
+                    Log::info('Estado de detalle de solicitud general actualizado a Comprada', [
+                        'reception_id' => $reception->id,
+                        'general_request_id' => $generalRequest->id,
+                        'general_request_detail_id' => $detail->id,
+                        'product_id' => $product->id,
+                        'product_name' => $product->name
+                    ]);
+                }
+            }
+
+            Log::info('Proceso de actualización de detalles de solicitud general completado', [
+                'reception_id' => $reception->id,
+                'general_request_id' => $generalRequest->id
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Error al actualizar estado de detalles de solicitud general', [
+                'reception_id' => $reception->id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
         }
     }
 }

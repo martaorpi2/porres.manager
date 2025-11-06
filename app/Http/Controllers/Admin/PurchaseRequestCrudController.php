@@ -465,8 +465,20 @@ class PurchaseRequestCrudController extends CrudController
             $item = $this->crud->create($dataToSave);
             $this->data['entry'] = $this->crud->entry = $item;
 
-            // Procesar productos seleccionados
-            $this->processSelectedProducts($item, $request);
+            // Verificar si el usuario seleccionó productos manualmente
+            $selectedProducts = $request->input('selected_products');
+            $hasManualProducts = !empty($selectedProducts);
+
+            // Si viene de una solicitud general y NO hay productos seleccionados manualmente,
+            // replicar automáticamente los productos de la solicitud general
+            if ($item->converted_from_general_request_id && !$hasManualProducts) {
+                $this->replicateProductsFromGeneralRequest($item);
+            }
+
+            // Procesar productos seleccionados manualmente (si el usuario los seleccionó)
+            if ($hasManualProducts) {
+                $this->processSelectedProducts($item, $request);
+            }
 
             // show a success message
             \Alert::success(trans('backpack::crud.insert_success'))->flash();
@@ -494,6 +506,91 @@ class PurchaseRequestCrudController extends CrudController
             \Log::error('Error al guardar PurchaseRequest: ' . $e->getMessage());
             \Alert::error('Error al guardar la solicitud de compra: ' . $e->getMessage())->flash();
             return redirect()->back()->withInput();
+        }
+    }
+
+    /**
+     * Replicar productos desde la solicitud general a la solicitud de compra
+     */
+    private function replicateProductsFromGeneralRequest($purchaseRequest)
+    {
+        try {
+            $generalRequest = \App\Models\GeneralRequest::with('details.product')
+                ->find($purchaseRequest->converted_from_general_request_id);
+
+            if (!$generalRequest) {
+                \Log::warning('Solicitud general no encontrada para replicar productos', [
+                    'general_request_id' => $purchaseRequest->converted_from_general_request_id
+                ]);
+                return;
+            }
+
+            // Verificar si ya hay detalles en la solicitud de compra
+            $existingDetailsCount = \App\Models\PurchaseRequestDetail::where('purchase_request_id', $purchaseRequest->id)->count();
+            
+            if ($existingDetailsCount > 0) {
+                \Log::info('La solicitud de compra ya tiene productos. No se replicarán automáticamente.', [
+                    'purchase_request_id' => $purchaseRequest->id,
+                    'existing_details_count' => $existingDetailsCount
+                ]);
+                return;
+            }
+
+            $totalAmount = 0;
+            $replicatedCount = 0;
+
+            // Replicar cada detalle de la solicitud general
+            foreach ($generalRequest->details as $generalDetail) {
+                if (!$generalDetail->product) {
+                    \Log::warning('Producto no encontrado en detalle de solicitud general', [
+                        'general_request_detail_id' => $generalDetail->id
+                    ]);
+                    continue;
+                }
+
+                // Crear el detalle en la solicitud de compra
+                $purchaseRequestDetail = \App\Models\PurchaseRequestDetail::create([
+                    'purchase_request_id' => $purchaseRequest->id,
+                    'product_id' => $generalDetail->product_id,
+                    'requested_quantity' => $generalDetail->requested_quantity,
+                    'specifications' => $generalDetail->specifications,
+                    'justification' => $generalDetail->justification,
+                    'estimated_unit_price' => $generalDetail->estimated_unit_price ?? 0,
+                    'estimated_total' => $generalDetail->estimated_total ?? ($generalDetail->estimated_unit_price * $generalDetail->requested_quantity ?? 0),
+                    'status' => 'Pendiente'
+                ]);
+
+                $totalAmount += $purchaseRequestDetail->estimated_total;
+                $replicatedCount++;
+
+                \Log::info('Producto replicado desde solicitud general', [
+                    'general_request_detail_id' => $generalDetail->id,
+                    'purchase_request_detail_id' => $purchaseRequestDetail->id,
+                    'product_id' => $generalDetail->product_id,
+                    'product_name' => $generalDetail->product->name ?? 'N/A'
+                ]);
+            }
+
+            // Actualizar el monto total de la solicitud de compra
+            if ($totalAmount > 0) {
+                $purchaseRequest->update(['total_amount' => $totalAmount]);
+            }
+
+            \Log::info('Productos replicados exitosamente desde solicitud general', [
+                'general_request_id' => $generalRequest->id,
+                'purchase_request_id' => $purchaseRequest->id,
+                'products_replicated' => $replicatedCount,
+                'total_amount' => $totalAmount
+            ]);
+
+            \Alert::info($replicatedCount . ' producto(s) replicado(s) desde la solicitud general ' . $generalRequest->number)->flash();
+
+        } catch (\Exception $e) {
+            \Log::error('Error al replicar productos desde solicitud general', [
+                'purchase_request_id' => $purchaseRequest->id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
         }
     }
 

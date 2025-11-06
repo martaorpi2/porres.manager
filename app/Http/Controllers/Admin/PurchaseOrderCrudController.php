@@ -7,6 +7,13 @@ use Backpack\CRUD\app\Http\Controllers\CrudController;
 use Backpack\CRUD\app\Library\CrudPanel\CrudPanelFacade as CRUD;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Response;
+use App\Models\PurchaseOrder;
+use App\Models\PurchaseOrderDetail;
+use App\Models\PurchaseRequest;
+use App\Models\PurchaseRequestDetail;
+use App\Models\Product;
+use App\Models\Input;
+use Illuminate\Support\Facades\Log;
 
 /**
  * Class PurchaseOrderCrudController
@@ -275,6 +282,162 @@ class PurchaseOrderCrudController extends CrudController
             },
             'escaped' => false
         ]);
+    }
+
+    /**
+     * Store a newly created resource in storage.
+     */
+    public function store()
+    {
+        $this->crud->hasAccessOrFail('create');
+
+        // Execute the FormRequest authorization and validation
+        $request = $this->crud->validateRequest();
+
+        // Register any Model Events defined on fields
+        $this->crud->registerFieldEvents();
+
+        // Insert the entry
+        $item = $this->crud->create($this->crud->getStrippedSaveRequest($request));
+        $this->data['entry'] = $this->crud->entry = $item;
+
+        // Si viene de una solicitud de compra, replicar automáticamente los productos
+        if ($item->purchase_request_id) {
+            $this->replicateProductsFromPurchaseRequest($item);
+        }
+
+        // Show a success message
+        \Alert::success(trans('backpack::crud.insert_success'))->flash();
+
+        // Save the redirect choice for next time
+        $this->crud->setSaveAction();
+
+        return $this->crud->performSaveAction($item->getKey());
+    }
+
+    /**
+     * Replicar productos desde la solicitud de compra a la orden de compra
+     */
+    protected function replicateProductsFromPurchaseRequest($purchaseOrder)
+    {
+        try {
+            $purchaseRequest = PurchaseRequest::with('details.product')
+                ->find($purchaseOrder->purchase_request_id);
+
+            if (!$purchaseRequest) {
+                Log::warning('Solicitud de compra no encontrada para replicar productos', [
+                    'purchase_request_id' => $purchaseOrder->purchase_request_id
+                ]);
+                return;
+            }
+
+            // Verificar si ya hay detalles en la orden de compra
+            $existingDetailsCount = PurchaseOrderDetail::where('purchase_order_id', $purchaseOrder->id)->count();
+            
+            if ($existingDetailsCount > 0) {
+                Log::info('La orden de compra ya tiene productos. No se replicarán automáticamente.', [
+                    'purchase_order_id' => $purchaseOrder->id,
+                    'existing_details_count' => $existingDetailsCount
+                ]);
+                return;
+            }
+
+            $replicatedCount = 0;
+
+            // Replicar cada detalle de la solicitud de compra
+            foreach ($purchaseRequest->details as $requestDetail) {
+                if (!$requestDetail->product) {
+                    Log::warning('Producto no encontrado en detalle de solicitud de compra', [
+                        'purchase_request_detail_id' => $requestDetail->id
+                    ]);
+                    continue;
+                }
+
+                // Buscar o crear el Input correspondiente al Product
+                $input = $this->findOrCreateInputFromProduct($requestDetail->product);
+                
+                if (!$input) {
+                    Log::warning('No se pudo obtener o crear input desde producto', [
+                        'product_id' => $requestDetail->product_id,
+                        'product_name' => $requestDetail->product->name
+                    ]);
+                    continue;
+                }
+
+                // Crear el detalle en la orden de compra
+                $orderDetail = PurchaseOrderDetail::create([
+                    'purchase_order_id' => $purchaseOrder->id,
+                    'input_id' => $input->id,
+                    'quantity' => $requestDetail->requested_quantity,
+                    'unit_price' => $requestDetail->estimated_unit_price ?? 0,
+                ]);
+
+                $replicatedCount++;
+
+                Log::info('Producto replicado desde solicitud de compra', [
+                    'purchase_request_detail_id' => $requestDetail->id,
+                    'purchase_order_detail_id' => $orderDetail->id,
+                    'product_id' => $requestDetail->product_id,
+                    'input_id' => $input->id,
+                    'product_name' => $requestDetail->product->name ?? 'N/A'
+                ]);
+            }
+
+            Log::info('Productos replicados exitosamente desde solicitud de compra', [
+                'purchase_request_id' => $purchaseRequest->id,
+                'purchase_order_id' => $purchaseOrder->id,
+                'products_replicated' => $replicatedCount
+            ]);
+
+            \Alert::info($replicatedCount . ' producto(s) replicado(s) desde la solicitud de compra ' . $purchaseRequest->request_number)->flash();
+
+        } catch (\Exception $e) {
+            Log::error('Error al replicar productos desde solicitud de compra', [
+                'purchase_order_id' => $purchaseOrder->id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+        }
+    }
+
+    /**
+     * Find or create input from product
+     *
+     * @param Product $product
+     * @return Input|null
+     */
+    protected function findOrCreateInputFromProduct(Product $product)
+    {
+        // Intentar encontrar un input con el mismo nombre
+        $input = Input::where('name', $product->name)->first();
+        
+        if ($input) {
+            return $input;
+        }
+
+        // Si no existe, crear uno nuevo
+        try {
+            $input = Input::create([
+                'name' => $product->name,
+                'description' => $product->description,
+                'unit' => $product->unit_measurement ?? 'unidad',
+                'price' => 0, // El precio se establecerá en el detalle de la orden
+            ]);
+
+            Log::info('Input creado desde Product', [
+                'product_id' => $product->id,
+                'input_id' => $input->id,
+                'name' => $input->name
+            ]);
+
+            return $input;
+        } catch (\Exception $e) {
+            Log::error('Error al crear input desde Product', [
+                'product_id' => $product->id,
+                'error' => $e->getMessage()
+            ]);
+            return null;
+        }
     }
 
     /**

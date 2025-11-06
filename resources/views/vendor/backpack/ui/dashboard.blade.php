@@ -1293,7 +1293,10 @@
                             @foreach($flow['purchase_orders'] as $po)
                                 <div class="flow-timeline-item">
                                     <div class="flow-timeline-content">
-                                        <strong>Orden de Compra:</strong> {{ $po->number ?? 'N/A' }}
+                                        <strong><i class="la la-clipboard-list"></i> Orden de Compra:</strong> 
+                                        <a href="{{ backpack_url('purchase-order/' . $po->id . '/show') }}" class="text-primary">
+                                            {{ $po->number ?? 'N/A' }}
+                                        </a>
                                         <br>
                                         <small class="text-muted">
                                             Proveedor: {{ $po->supplier->name ?? 'N/A' }} | 
@@ -1301,66 +1304,93 @@
                                             @if($po->date)
                                                 | Fecha: {{ $po->date->format('d/m/Y') }}
                                             @endif
+                                            @if($po->total)
+                                                | Total: ${{ number_format($po->total, 2) }}
+                                            @endif
                                         </small>
                                     </div>
                                 </div>
 
-                                @if(isset($flow['payment_orders']) && count($flow['payment_orders']) > 0)
-                                    @foreach($flow['payment_orders'] as $paymentOrder)
-                                        @if($paymentOrder->purchase_order_id == $po->id)
-                                            <div class="flow-timeline-item">
-                                                <div class="flow-timeline-content">
-                                                    <strong>Orden de Pago:</strong> {{ $paymentOrder->payment_number ?? 'N/A' }}
-                                                    <br>
-                                                    <small class="text-muted">
-                                                        Fecha: {{ $paymentOrder->date ? $paymentOrder->date->format('d/m/Y') : 'N/A' }}
-                                                        | Monto: ${{ number_format($paymentOrder->total_amount ?? 0, 2) }}
-                                                        | Estado: {{ $paymentOrder->status ?? 'N/A' }}
-                                                    </small>
-                                                </div>
+                                {{-- Mostrar órdenes de pago relacionadas con esta orden de compra --}}
+                                @if($po->paymentOrders && $po->paymentOrders->count() > 0)
+                                    @foreach($po->paymentOrders as $paymentOrder)
+                                        <div class="flow-timeline-item">
+                                            <div class="flow-timeline-content" style="margin-left: 20px; border-left: 3px solid #28a745;">
+                                                <strong><i class="la la-money-bill-wave"></i> Orden de Pago:</strong> 
+                                                <a href="{{ backpack_url('payment-order/' . $paymentOrder->id . '/show') }}" class="text-primary">
+                                                    {{ $paymentOrder->payment_number ?? 'N/A' }}
+                                                </a>
+                                                <br>
+                                                <small class="text-muted">
+                                                    Fecha: {{ $paymentOrder->date ? $paymentOrder->date->format('d/m/Y') : 'N/A' }}
+                                                    | Monto: ${{ number_format($paymentOrder->total_amount ?? 0, 2) }}
+                                                    @if($paymentOrder->status)
+                                                        | Estado: {{ $paymentOrder->status }}
+                                                    @endif
+                                                    @if($paymentOrder->user)
+                                                        | Autorizado por: {{ $paymentOrder->user->name }}
+                                                    @endif
+                                                </small>
                                             </div>
-                                        @endif
+                                        </div>
                                     @endforeach
+                                @else
+                                    <div class="flow-timeline-item">
+                                        <div class="flow-timeline-content" style="margin-left: 20px;">
+                                            <small class="text-muted"><i class="la la-info-circle"></i> No hay órdenes de pago registradas para esta orden de compra</small>
+                                        </div>
+                                    </div>
                                 @endif
 
-                                @if(isset($flow['receptions']) && count($flow['receptions']) > 0)
-                                    @foreach($flow['receptions'] as $reception)
-                                        @if($reception->purchase_order_id == $po->id)
-                                            <div class="flow-timeline-item">
-                                                <div class="flow-timeline-content">
-                                                    <strong>Recepción:</strong> {{ $reception->number ?? 'REC-' . $reception->id }}
-                                                    <br>
-                                                    <small class="text-muted">
-                                                        Fecha: {{ $reception->created_at->format('d/m/Y') }}
-                                                    </small>
-                                                </div>
-                                            </div>
-
-                                            @if(isset($flow['devolutions']) && count($flow['devolutions']) > 0)
-                                                @foreach($flow['devolutions'] as $devolution)
-                                                    @if($devolution->reception_id == $reception->id)
-                                                        <div class="flow-timeline-item">
-                                                            <div class="flow-timeline-content">
-                                                                <strong>Devolución:</strong> DEV-{{ $devolution->id }}
-                                                                <br>
-                                                                <small class="text-muted">
-                                                                    Fecha: {{ $devolution->created_at->format('d/m/Y') }}
-                                                                </small>
-                                                            </div>
-                                                        </div>
+                                {{-- Mostrar recepciones relacionadas con esta orden de compra --}}
+                                @if($po->receptions && $po->receptions->count() > 0)
+                                    @foreach($po->receptions as $reception)
+                                        <div class="flow-timeline-item">
+                                            <div class="flow-timeline-content" style="margin-left: 20px; border-left: 3px solid #17a2b8;">
+                                                <strong><i class="la la-truck-loading"></i> Recepción:</strong> 
+                                                <a href="{{ backpack_url('reception/' . $reception->id . '/show') }}" class="text-primary">
+                                                    {{ $reception->number ?? 'REC-' . $reception->id }}
+                                                </a>
+                                                <br>
+                                                <small class="text-muted">
+                                                    Fecha: {{ $reception->created_at->format('d/m/Y H:i') }}
+                                                    @if($reception->user)
+                                                        | Recibido por: {{ $reception->user->name }}
                                                     @endif
-                                                @endforeach
-                                            @endif
+                                                </small>
+                                            </div>
+                                        </div>
+
+                                        {{-- Mostrar devoluciones relacionadas con esta recepción --}}
+                                        @if($reception->devolutions && $reception->devolutions->count() > 0)
+                                            @foreach($reception->devolutions as $devolution)
+                                                <div class="flow-timeline-item">
+                                                    <div class="flow-timeline-content" style="margin-left: 40px; border-left: 3px solid #dc3545;">
+                                                        <strong><i class="la la-undo-alt"></i> Devolución:</strong> 
+                                                        <a href="{{ backpack_url('devolution/' . $devolution->id . '/show') }}" class="text-primary">
+                                                            DEV-{{ $devolution->id }}
+                                                        </a>
+                                                        <br>
+                                                        <small class="text-muted">
+                                                            Fecha: {{ $devolution->created_at->format('d/m/Y H:i') }}
+                                                            @if($devolution->user)
+                                                                | Realizada por: {{ $devolution->user->name }}
+                                                            @endif
+                                                            @if($devolution->reason)
+                                                                | Motivo: {{ $devolution->reason }}
+                                                            @endif
+                                                        </small>
+                                                    </div>
+                                                </div>
+                                            @endforeach
                                         @endif
                                     @endforeach
                                 @else
-                                    @if(count($flow['purchase_orders']) > 0)
-                                        <div class="flow-timeline-item">
-                                            <div class="flow-timeline-content">
-                                                <small class="text-muted">No hay recepciones registradas aún</small>
-                                            </div>
+                                    <div class="flow-timeline-item">
+                                        <div class="flow-timeline-content" style="margin-left: 20px;">
+                                            <small class="text-muted"><i class="la la-info-circle"></i> No hay recepciones registradas para esta orden de compra</small>
                                         </div>
-                                    @endif
+                                    </div>
                                 @endif
                             @endforeach
                         @else

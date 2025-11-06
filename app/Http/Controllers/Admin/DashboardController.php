@@ -120,63 +120,48 @@ class DashboardController extends Controller
         ])->orderBy('created_at', 'desc')->limit(20)->get();
 
         foreach ($generalRequests as $generalRequest) {
-            // Solo mostrar flujos que tienen al menos una solicitud de compra
-            if ($generalRequest->purchaseRequests->isEmpty()) {
-                continue;
-            }
-
             $flow = [
                 'general_request' => $generalRequest,
                 'purchase_requests' => [],
                 'purchase_orders' => [],
-                'payment_orders' => [],
-                'receptions' => [],
-                'devolutions' => [],
             ];
 
-            // Obtener solicitudes de compra relacionadas
+            // Obtener solicitudes de compra relacionadas (puede estar vacío)
             foreach ($generalRequest->purchaseRequests as $purchaseRequest) {
                 $flow['purchase_requests'][] = $purchaseRequest;
 
                 // Obtener órdenes de compra relacionadas directamente por la relación
+                // Cargar todas las relaciones necesarias: paymentOrders, receptions con devolutions
                 $purchaseOrders = PurchaseOrder::where('purchase_request_id', $purchaseRequest->id)
-                    ->with(['supplier', 'details', 'paymentOrders', 'receptions.devolutions'])
+                    ->with([
+                        'supplier', 
+                        'details', 
+                        'paymentOrders' => function($query) {
+                            $query->with('user')->orderBy('created_at', 'desc');
+                        },
+                        'receptions' => function($query) {
+                            $query->with([
+                                'user',
+                                'devolutions' => function($q) {
+                                    $q->with('user')->orderBy('created_at', 'desc');
+                                }
+                            ])->orderBy('created_at', 'desc');
+                        }
+                    ])
                     ->get();
                 
                 foreach ($purchaseOrders as $purchaseOrder) {
                     // Evitar duplicados
                     if (!in_array($purchaseOrder->id, array_column($flow['purchase_orders'], 'id'))) {
+                        // Guardar la orden de compra con todas sus relaciones cargadas
                         $flow['purchase_orders'][] = $purchaseOrder;
-                        
-                        // Obtener órdenes de pago directamente de la relación
-                        foreach ($purchaseOrder->paymentOrders as $paymentOrder) {
-                            if (!in_array($paymentOrder->id, array_column($flow['payment_orders'], 'id'))) {
-                                $flow['payment_orders'][] = $paymentOrder;
-                            }
-                        }
-                        
-                        // Obtener recepciones directamente de la relación
-                        foreach ($purchaseOrder->receptions as $reception) {
-                            if (!in_array($reception->id, array_column($flow['receptions'], 'id'))) {
-                                $flow['receptions'][] = $reception;
-                                
-                                // Obtener devoluciones directamente de la relación
-                                foreach ($reception->devolutions as $devolution) {
-                                    if (!in_array($devolution->id, array_column($flow['devolutions'], 'id'))) {
-                                        $flow['devolutions'][] = $devolution;
-                                    }
-                                }
-                            }
-                        }
                     }
                 }
             }
 
-            // Agregar flujos que tengan al menos solicitudes de compra
-            // Mostrar todos los flujos que tengan solicitudes de compra, incluso si no tienen órdenes aún
-            if (!empty($flow['purchase_requests'])) {
-                $flows[] = $flow;
-            }
+            // Agregar TODOS los flujos, incluso los incompletos
+            // Esto incluye solicitudes generales sin solicitudes de compra
+            $flows[] = $flow;
         }
 
         return $flows;
