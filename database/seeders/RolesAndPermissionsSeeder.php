@@ -40,20 +40,20 @@ class RolesAndPermissionsSeeder extends Seeder
         ];
 
         foreach ($permissions as $permission) {
-            Permission::create(['name' => $permission, 'guard_name' => 'web']);
+            Permission::firstOrCreate(['name' => $permission, 'guard_name' => 'web']);
         }
 
         // Crear roles
-        $rolePersonal = Role::create(['name' => 'role_personal', 'guard_name' => 'web']);
-        $roleResponsableArea = Role::create(['name' => 'role_responsable_area', 'guard_name' => 'web']);
-        $roleResponsableCompras = Role::create(['name' => 'role_responsable_compras', 'guard_name' => 'web']);
-        $roleAdminInstitucion = Role::create(['name' => 'role_admin_institucion', 'guard_name' => 'web']);
-        $roleApoderado = Role::create(['name' => 'role_apoderado', 'guard_name' => 'web']);
-        $roleRepresentanteLegal = Role::create(['name' => 'role_representante_legal', 'guard_name' => 'web']);
-        $roleConsejo = Role::create(['name' => 'role_consejo', 'guard_name' => 'web']);
-        $roleTesoreria = Role::create(['name' => 'role_tesoreria', 'guard_name' => 'web']);
-        $roleContabilidad = Role::create(['name' => 'role_contabilidad', 'guard_name' => 'web']);
-        $roleAdminSistema = Role::create(['name' => 'role_admin_sistema', 'guard_name' => 'web']);
+        $rolePersonal = Role::firstOrCreate(['name' => 'role_personal', 'guard_name' => 'web']);
+        $roleResponsableArea = Role::firstOrCreate(['name' => 'role_responsable_area', 'guard_name' => 'web']);
+        $roleResponsableCompras = Role::firstOrCreate(['name' => 'role_responsable_compras', 'guard_name' => 'web']);
+        $roleAdminInstitucion = Role::firstOrCreate(['name' => 'role_admin_institucion', 'guard_name' => 'web']);
+        $roleApoderado = Role::firstOrCreate(['name' => 'role_apoderado', 'guard_name' => 'web']);
+        $roleRepresentanteLegal = Role::firstOrCreate(['name' => 'role_representante_legal', 'guard_name' => 'web']);
+        $roleConsejo = Role::firstOrCreate(['name' => 'role_consejo', 'guard_name' => 'web']);
+        $roleTesoreria = Role::firstOrCreate(['name' => 'role_tesoreria', 'guard_name' => 'web']);
+        $roleContabilidad = Role::firstOrCreate(['name' => 'role_contabilidad', 'guard_name' => 'web']);
+        $roleAdminSistema = Role::firstOrCreate(['name' => 'role_admin_sistema', 'guard_name' => 'web']);
 
         // Asignar permisos a roles
 
