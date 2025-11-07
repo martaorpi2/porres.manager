@@ -136,3 +136,5 @@ $(document).ready(function() {
 });
 </script>
 @endpush
+
+<x-backpack::menu-item title="Deliveries" icon="la la-question" :link="backpack_url('delivery')" />

@@ -1269,7 +1269,10 @@
                             @foreach($flow['purchase_requests'] as $pr)
                                 <div class="flow-timeline-item">
                                     <div class="flow-timeline-content">
-                                        <strong>Solicitud de Compra:</strong> {{ $pr->request_number }}
+                                        <strong>Solicitud de Compra:</strong> 
+                                        <a href="{{ backpack_url('purchase-request/' . $pr->id . '/show') }}" class="text-primary">
+                                            {{ $pr->request_number ?? 'N/A' }}
+                                        </a>
                                         <br>
                                         <small class="text-muted">
                                             Estado: {{ $pr->status }} | 

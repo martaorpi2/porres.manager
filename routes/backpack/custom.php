@@ -67,6 +67,7 @@ Route::group([
     
     // Dashboard custom route
     Route::get('dashboard', 'DashboardController@index')->name('dashboard');
+    Route::crud('delivery', 'DeliveryCrudController');
 }); // this should be the absolute last line of this file
 
 /**
