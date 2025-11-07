@@ -48,6 +48,11 @@ class Reception extends Model
     {
         return $this->hasMany(\App\Models\Devolution::class, 'reception_id');
     }
+
+    public function deliveries()
+    {
+        return $this->hasMany(\App\Models\Delivery::class, 'reception_id');
+    }
     /*
     |--------------------------------------------------------------------------
     | SCOPES

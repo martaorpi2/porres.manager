@@ -105,7 +105,7 @@
       text-transform: uppercase;
   }
 
-  .status-pendiente { background: #ffc107; color: #000; }
+  .status-pendiente { background: #fd7e14; color: #fff; }
   .status-aprobada { background: #28a745; color: #fff; }
   .status-en-proceso { background: #17a2b8; color: #fff; }
   .status-completada { background: #28a745; color: #fff; }
@@ -143,12 +143,14 @@
       color: #6c757d;
       font-size: 14px;
       text-transform: uppercase;
+      font-weight: bold;
   }
 
   .stat-card-pending {
       font-size: 14px;
-      color: #ffc107;
+      color: #871f1f;
       margin-top: 5px;
+      font-weight: 500;
   }
 
   .supplier-rating-card {
@@ -947,7 +949,7 @@
                 </div>
                 <div class="stat-card-number">{{ $stats['general_requests'] }}</div>
                 <div class="stat-card-label">Solicitudes Generales</div>
-                <div class="stat-card-pending">{{ $stats['general_requests_pending'] }} Pendientes</div>
+                <div class="stat-card-pending">{{ $stats['general_requests_delivered'] }} Entregadas</div>
             </div>
         </div>
         <div class="col-md-3">
@@ -977,6 +979,7 @@
                 </div>
                 <div class="stat-card-number">{{ $stats['payment_orders'] }}</div>
                 <div class="stat-card-label">Órdenes de Pago</div>
+                <div class="stat-card-pending">{{ $stats['payment_orders_pending'] }} Pendientes</div>
             </div>
         </div>
     </div>
@@ -1233,12 +1236,44 @@
         </div>
     </div>
 
+    <!-- Paso 7: Entregas -->
+    <div class="process-step">
+        <div class="process-step-header">
+            <div class="process-step-title">
+                <i class="la la-people-carry process-step-icon"></i>
+                <span>7. Entregas</span>
+            </div>
+            <span class="process-step-count">{{ $stats['deliveries'] }}</span>
+        </div>
+        <div class="process-step-content">
+            @forelse($deliveries as $delivery)
+                <div class="process-item-card" onclick="window.location='{{ backpack_url('delivery/' . $delivery->id . '/show') }}'">
+                    <div class="process-item-title">{{ $delivery->number ?? 'ENT-' . $delivery->id }}</div>
+                    <div class="process-item-meta">
+                        <span><i class="la la-truck-loading"></i> {{ $delivery->reception->number ?? 'REC-' . $delivery->reception_id }}</span>
+                        <span><i class="la la-file-alt"></i> {{ $delivery->generalRequest->number ?? 'N/A' }}</span>
+                    </div>
+                    <div class="process-item-meta">
+                        <span><i class="la la-user"></i> Entregado: {{ $delivery->deliveredBy->name ?? 'N/A' }}</span>
+                        <span><i class="la la-user"></i> Recibido: {{ $delivery->receivedBy->name ?? 'N/A' }}</span>
+                    </div>
+                    <div class="process-item-meta">
+                        <span class="process-item-status status-{{ strtolower(str_replace(' ', '-', $delivery->status ?? 'pendiente')) }}">{{ ucfirst($delivery->status ?? 'pendiente') }}</span>
+                        <span><i class="la la-calendar"></i> {{ $delivery->delivery_date ? $delivery->delivery_date->format('d/m/Y') : $delivery->created_at->format('d/m/Y') }}</span>
+                    </div>
+                </div>
+            @empty
+                <div class="text-muted">No hay entregas recientes</div>
+            @endforelse
+        </div>
+    </div>
+
     <!-- Flujos Completos de Procesos -->
     @if(isset($processFlows) && count($processFlows) > 0)
     <div class="row mb-4">
         <div class="col-md-12">
             <h3 class="section-title">Trazabilidad Completa de Procesos</h3>
-            <p class="text-muted">Muestra el flujo completo desde las solicitudes generales hasta las devoluciones (si aplica)</p>
+            <p class="text-muted">Muestra el flujo completo desde las solicitudes generales hasta las entregas y devoluciones (si aplica)</p>
         </div>
     </div>
 
@@ -1381,6 +1416,36 @@
                                                             @endif
                                                             @if($devolution->reason)
                                                                 | Motivo: {{ $devolution->reason }}
+                                                            @endif
+                                                        </small>
+                                                    </div>
+                                                </div>
+                                            @endforeach
+                                        @endif
+
+                                        {{-- Mostrar entregas relacionadas con esta recepción --}}
+                                        @if($reception->deliveries && $reception->deliveries->count() > 0)
+                                            @foreach($reception->deliveries as $delivery)
+                                                <div class="flow-timeline-item">
+                                                    <div class="flow-timeline-content" style="margin-left: 40px; border-left: 3px solid #ffc107;">
+                                                        <strong><i class="la la-people-carry"></i> Entrega:</strong> 
+                                                        <a href="{{ backpack_url('delivery/' . $delivery->id . '/show') }}" class="text-primary">
+                                                            {{ $delivery->number ?? 'ENT-' . $delivery->id }}
+                                                        </a>
+                                                        <br>
+                                                        <small class="text-muted">
+                                                            Solicitud General: {{ $delivery->generalRequest->number ?? 'N/A' }}
+                                                            @if($delivery->delivery_date)
+                                                                | Fecha: {{ $delivery->delivery_date->format('d/m/Y') }}
+                                                            @endif
+                                                            @if($delivery->deliveredBy)
+                                                                | Entregado por: {{ $delivery->deliveredBy->name }}
+                                                            @endif
+                                                            @if($delivery->receivedBy)
+                                                                | Recibido por: {{ $delivery->receivedBy->name }}
+                                                            @endif
+                                                            @if($delivery->status)
+                                                                | Estado: {{ ucfirst($delivery->status) }}
                                                             @endif
                                                         </small>
                                                     </div>

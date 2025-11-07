@@ -49,6 +49,14 @@ class GeneralRequest extends Model
         return $this->hasMany(GeneralRequestDetail::class);
     }
 
+    /**
+     * Get the deliveries for this general request.
+     */
+    public function deliveries()
+    {
+        return $this->hasMany(Delivery::class, 'general_request_id');
+    }
+
     public static function generateNextNumber(): string
     {
         $year = now()->year;

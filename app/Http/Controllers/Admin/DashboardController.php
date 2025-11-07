@@ -9,6 +9,7 @@ use App\Models\PurchaseOrder;
 use App\Models\PaymentOrder;
 use App\Models\Reception;
 use App\Models\Devolution;
+use App\Models\Delivery;
 use App\Models\Supplier;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -24,13 +25,17 @@ class DashboardController extends Controller
         $stats = [
             'general_requests' => GeneralRequest::count(),
             'general_requests_pending' => GeneralRequest::where('status', 'Pendiente')->count(),
+            'general_requests_delivered' => GeneralRequest::whereHas('deliveries')->count(),
             'purchase_requests' => PurchaseRequest::count(),
             'purchase_requests_pending' => PurchaseRequest::where('status', 'Pendiente')->count(),
             'purchase_orders' => PurchaseOrder::count(),
             'purchase_orders_pending' => PurchaseOrder::where('status', 'Pendiente')->count(),
             'payment_orders' => PaymentOrder::count(),
+            'payment_orders_pending' => PaymentOrder::where('status', 'Pendiente')->count(),
             'receptions' => Reception::count(),
             'devolutions' => Devolution::count(),
+            'deliveries' => Delivery::count(),
+            'deliveries_pending' => Delivery::where('status', 'pendiente')->count(),
         ];
 
         // Obtener solicitudes generales recientes con sus detalles
@@ -69,6 +74,12 @@ class DashboardController extends Controller
             ->limit(10)
             ->get();
 
+        // Obtener entregas recientes
+        $deliveries = Delivery::with(['reception.purchase_order.supplier', 'generalRequest', 'deliveredBy', 'receivedBy', 'details.product'])
+            ->orderBy('created_at', 'desc')
+            ->limit(10)
+            ->get();
+
         // Obtener el flujo completo de procesos (trazabilidad completa)
         $processFlows = $this->getProcessFlows();
 
@@ -94,6 +105,7 @@ class DashboardController extends Controller
             'paymentOrders',
             'receptions',
             'devolutions',
+            'deliveries',
             'processFlows',
             'suppliersWithRatings'
         ));
@@ -144,6 +156,9 @@ class DashboardController extends Controller
                                 'user',
                                 'devolutions' => function($q) {
                                     $q->with('user')->orderBy('created_at', 'desc');
+                                },
+                                'deliveries' => function($q) {
+                                    $q->with(['generalRequest', 'deliveredBy', 'receivedBy', 'details.product'])->orderBy('created_at', 'desc');
                                 }
                             ])->orderBy('created_at', 'desc');
                         }

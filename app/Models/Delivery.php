@@ -30,15 +30,14 @@ class Delivery extends Model
      */
     public function reception()
     {
-        return $this->belongsTo(Reception::class);
+        return $this->belongsTo(\App\Models\Reception::class, 'reception_id');
     }
-
     /**
      * Get the general request for this delivery.
      */
     public function generalRequest()
     {
-        return $this->belongsTo(GeneralRequest::class);
+        return $this->belongsTo(\App\Models\GeneralRequest::class);
     }
 
     /**
@@ -46,7 +45,7 @@ class Delivery extends Model
      */
     public function deliveredBy()
     {
-        return $this->belongsTo(User::class, 'delivered_by');
+        return $this->belongsTo(\App\Models\User::class, 'delivered_by');
     }
 
     /**

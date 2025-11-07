@@ -35,6 +35,7 @@
 
 <x-backpack::menu-item title="Recepciones" icon="la la-truck-loading" :link="backpack_url('reception')" />
 <x-backpack::menu-item title="Devoluciones" icon="la la-undo-alt" :link="backpack_url('devolution')" />
+<x-backpack::menu-item title="Entregas" icon="la la-people-carry" :link="backpack_url('delivery')" />
 
 <x-backpack::menu-dropdown title="Usuarios" icon="la la-users" trigger="click">
     <x-backpack::menu-dropdown-item title="Usuarios" :link="backpack_url('user')" />
@@ -136,5 +137,3 @@ $(document).ready(function() {
 });
 </script>
 @endpush
-
-<x-backpack::menu-item title="Deliveries" icon="la la-question" :link="backpack_url('delivery')" />
