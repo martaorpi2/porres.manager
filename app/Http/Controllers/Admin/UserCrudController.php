@@ -34,9 +34,6 @@ class UserCrudController extends CrudController
         CRUD::setModel(User::class);
         CRUD::setRoute(config('backpack.base.route_prefix') . '/user');
         CRUD::setEntityNameStrings('usuario', 'usuarios');
-        
-        // Always load relations
-        $this->crud->addClause('with', ['roles', 'permissions']);
     }
 
     /**
@@ -50,14 +47,19 @@ class UserCrudController extends CrudController
         CRUD::column('name')->label('Nombre');
         CRUD::column('email')->label('Email');
         
-        // Mostrar roles del usuario
-        CRUD::column([
+        // Mostrar roles del usuario usando closure con eager loading
+        CRUD::addClause('with', ['roles']);
+        
+        CRUD::addColumn([
             'name' => 'roles',
             'label' => 'Roles',
-            'type' => 'select_multiple',
-            'entity' => 'roles',
-            'attribute' => 'name',
-            'model' => 'App\Models\Role',
+            'type' => 'closure',
+            'function' => function($entry) {
+                if ($entry->roles && $entry->roles->count() > 0) {
+                    return $entry->roles->pluck('name')->join(', ');
+                }
+                return '-';
+            },
         ]);
 
         CRUD::column('created_at')->label('Creado');

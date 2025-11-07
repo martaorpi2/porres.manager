@@ -39,9 +39,15 @@ class RolesAndPermissionsSeeder extends Seeder
             'admin.audit',
         ];
 
+        $permissionsCreated = 0;
         foreach ($permissions as $permission) {
-            Permission::firstOrCreate(['name' => $permission, 'guard_name' => 'web']);
+            $created = Permission::firstOrCreate(['name' => $permission, 'guard_name' => 'web']);
+            if ($created->wasRecentlyCreated) {
+                $permissionsCreated++;
+            }
         }
+        
+        $this->command->info("✓ Creados {$permissionsCreated} permisos nuevos de " . count($permissions) . " totales");
 
         // Crear roles
         $rolePersonal = Role::firstOrCreate(['name' => 'role_personal', 'guard_name' => 'web']);
@@ -123,8 +129,14 @@ class RolesAndPermissionsSeeder extends Seeder
         ]);
 
         // Administrador del sistema - todos los permisos
-        $roleAdminSistema->givePermissionTo(Permission::all());
+        $allPermissions = Permission::all();
+        $roleAdminSistema->syncPermissions($allPermissions);
+        
+        $this->command->info("✓ Asignados " . $allPermissions->count() . " permisos al rol Administrador del Sistema");
 
+        $this->command->info('');
         $this->command->info('✓ Roles y permisos creados exitosamente');
+        $this->command->info("  - Total de permisos: " . Permission::count());
+        $this->command->info("  - Total de roles: " . Role::count());
     }
 }

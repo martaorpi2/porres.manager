@@ -41,6 +41,11 @@ class PermissionCrudController extends CrudController
     protected function setupListOperation()
     {
         CRUD::removeButton('show');
+        
+        // Configurar botones para mostrarse inline
+        CRUD::setOperationSetting('lineButtonsAsDropdown', false);
+        CRUD::setOperationSetting('lineButtonsAsDropdownMinimum', 999);
+        CRUD::setOperationSetting('lineButtonsAsDropdownShowBefore', 999);
 
         CRUD::column('name')->label('Nombre del Permiso');
         //CRUD::column('guard_name')->label('Guard');
