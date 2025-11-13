@@ -27,9 +27,6 @@ class GeneralRequestCrudController extends CrudController
         CRUD::enableResponsiveTable();
         
         CRUD::addClause('with', ['createdBy', 'area', 'details']);
-        
-        // Filtrar solicitudes que no estén convertidas a compra
-        CRUD::addClause('where', 'status', '!=', 'convertida_a_compra');
 
         CRUD::column('number')->label('Número');
         CRUD::column('title')->label('Título');
@@ -647,7 +644,7 @@ class GeneralRequestCrudController extends CrudController
 
     protected function setupShowOperation()
     {
-        CRUD::addClause('with', ['createdBy', 'area', 'purchaseRequests', 'details.product']);
+        CRUD::addClause('with', ['createdBy', 'area', 'purchaseRequests', 'details.product.stockLevels', 'deliveries.details']);
         
         CRUD::column('number')->label('Número');
         CRUD::column('createdBy.name')->label('Solicitante');
@@ -660,6 +657,8 @@ class GeneralRequestCrudController extends CrudController
         // Mostrar productos solicitados
         CRUD::column('products_table')->label('Productos Solicitados')->type('custom_html')
             ->value(function($entry) {
+                // Asegurar que se carguen las relaciones necesarias
+                $entry->load(['details.product.stockLevels']);
                 $details = $entry->details;
                 
                 if ($details->isEmpty()) {
@@ -679,17 +678,58 @@ class GeneralRequestCrudController extends CrudController
                 $html .= '<table class="table table-striped table-bordered mb-0">';
                 $html .= '<thead style="background-color: #871f1f; color: white;">';
                 $html .= '<tr>';
-                $html .= '<th width="40%" style="background-color: #871f1f; color: white;">Producto</th>';
-                $html .= '<th width="15%" class="text-center" style="background-color: #871f1f; color: white;">Cantidad</th>';
-                $html .= '<th width="30%" style="background-color: #871f1f; color: white;">Especificaciones</th>';
-                $html .= '<th width="15%" class="text-center" style="background-color: #871f1f; color: white;">Estado</th>';
+                $html .= '<th width="25%" style="background-color: #871f1f; color: white;">Producto</th>';
+                $html .= '<th width="10%" class="text-center" style="background-color: #871f1f; color: white;">Cantidad Solicitada</th>';
+                $html .= '<th width="10%" class="text-center" style="background-color: #871f1f; color: white;">Cantidad Entregada</th>';
+                $html .= '<th width="10%" class="text-center" style="background-color: #871f1f; color: white;">Estado Entrega</th>';
+                $html .= '<th width="10%" class="text-center" style="background-color: #871f1f; color: white;">Stock Disponible</th>';
+                $html .= '<th width="10%" class="text-center" style="background-color: #871f1f; color: white;">Disponibilidad</th>';
+                $html .= '<th width="15%" style="background-color: #871f1f; color: white;">Especificaciones</th>';
+                $html .= '<th width="10%" class="text-center" style="background-color: #871f1f; color: white;">Estado</th>';
                 $html .= '</tr>';
                 $html .= '</thead>';
                 $html .= '<tbody>';
                 
                 foreach ($details as $detail) {
+                    // Asegurar que el producto esté cargado
+                    if (!$detail->product) {
+                        continue;
+                    }
+                    
                     $productName = $detail->product->name ?? 'Producto no encontrado';
                     $productDescription = $detail->product->description ?? '';
+                    
+                    // Calcular stock disponible usando consulta directa
+                    $stockAvailable = 0;
+                    if ($detail->product_id) {
+                        try {
+                            $stockAvailable = (int) \App\Models\StockLevel::where('product_id', $detail->product_id)->sum('quantity');
+                        } catch (\Exception $e) {
+                            \Log::error('Error al calcular stock para producto ' . $detail->product_id . ': ' . $e->getMessage());
+                            $stockAvailable = 0;
+                        }
+                    }
+                    
+                    $requestedQuantity = $detail->requested_quantity ?? 0;
+                    $deliveredQuantity = $detail->delivered_quantity ?? 0;
+                    $hasEnoughStock = $stockAvailable >= $requestedQuantity;
+                    $stockDifference = $stockAvailable - $requestedQuantity;
+                    
+                    // Determinar estado de entrega
+                    $deliveryStatus = $detail->delivery_status ?? 'Pendiente';
+                    $isFullyDelivered = $detail->is_fully_delivered ?? false;
+                    $deliveryStatusColor = 'secondary';
+                    $deliveryStatusIcon = 'clock';
+                    if ($deliveryStatus == 'Completo') {
+                        $deliveryStatusColor = 'success';
+                        $deliveryStatusIcon = 'check-circle';
+                    } elseif ($deliveryStatus == 'Parcial') {
+                        $deliveryStatusColor = 'warning';
+                        $deliveryStatusIcon = 'exclamation-triangle';
+                    } else {
+                        $deliveryStatusColor = 'secondary';
+                        $deliveryStatusIcon = 'clock';
+                    }
                     
                     // Determinar color del badge según el estado
                     $statusColor = 'secondary';
@@ -710,6 +750,20 @@ class GeneralRequestCrudController extends CrudController
                             $statusColor = 'warning';
                     }
                     
+                    // Determinar color y mensaje de disponibilidad
+                    $availabilityBadge = '';
+                    $availabilityColor = '';
+                    if ($stockAvailable == 0) {
+                        $availabilityBadge = 'Sin stock';
+                        $availabilityColor = 'danger';
+                    } elseif ($hasEnoughStock) {
+                        $availabilityBadge = 'Stock suficiente';
+                        $availabilityColor = 'success';
+                    } else {
+                        $availabilityBadge = 'Stock insuficiente';
+                        $availabilityColor = 'warning';
+                    }
+                    
                     $html .= '<tr>';
                     $html .= '<td>';
                     $html .= '<strong>' . e($productName) . '</strong>';
@@ -721,7 +775,29 @@ class GeneralRequestCrudController extends CrudController
                     }
                     $html .= '</td>';
                     $html .= '<td class="text-center">';
-                    $html .= '<span class="badge bg-primary fs-6">' . number_format($detail->requested_quantity) . '</span>';
+                    $html .= '<span class="badge bg-primary fs-6">' . number_format($requestedQuantity) . '</span>';
+                    $html .= '</td>';
+                    $html .= '<td class="text-center">';
+                    $html .= '<span class="badge bg-' . ($deliveredQuantity > 0 ? ($isFullyDelivered ? 'success' : 'warning') : 'secondary') . ' fs-6" title="Cantidad entregada: ' . number_format($deliveredQuantity) . ' de ' . number_format($requestedQuantity) . '">';
+                    $html .= number_format($deliveredQuantity) . ' / ' . number_format($requestedQuantity);
+                    $html .= '</span>';
+                    $html .= '</td>';
+                    $html .= '<td class="text-center">';
+                    $html .= '<span class="badge bg-' . $deliveryStatusColor . '" title="Estado de entrega: ' . $deliveryStatus . '">';
+                    $html .= '<i class="la la-' . $deliveryStatusIcon . '"></i> ' . $deliveryStatus;
+                    $html .= '</span>';
+                    $html .= '</td>';
+                    $html .= '<td class="text-center">';
+                    $html .= '<span class="badge bg-' . ($stockAvailable > 0 ? 'info' : 'secondary') . ' fs-6" title="Stock total del producto">' . number_format($stockAvailable, 0, ',', '.') . '</span>';
+                    $html .= '</td>';
+                    $html .= '<td class="text-center">';
+                    $html .= '<span class="badge bg-' . $availabilityColor . '" title="Stock disponible: ' . number_format($stockAvailable) . ', Solicitado: ' . number_format($requestedQuantity) . ($stockDifference < 0 ? ', Faltante: ' . number_format(abs($stockDifference)) : '') . '">';
+                    $html .= '<i class="la la-' . ($hasEnoughStock ? 'check-circle' : ($stockAvailable == 0 ? 'times-circle' : 'exclamation-triangle')) . '"></i> ';
+                    $html .= $availabilityBadge;
+                    $html .= '</span>';
+                    if (!$hasEnoughStock && $stockAvailable > 0) {
+                        $html .= '<br><small class="text-warning">Faltan ' . number_format(abs($stockDifference)) . ' unidades</small>';
+                    }
                     $html .= '</td>';
                     $html .= '<td>';
                     if ($detail->specifications) {

@@ -45,7 +45,7 @@ class PurchaseRequestCrudController extends CrudController
         // Habilitar tabla responsiva
         CRUD::enableResponsiveTable();
         
-        CRUD::addClause('with', ['responsibilityArea', 'requestingUser', 'details']);
+        CRUD::addClause('with', ['responsibilityArea', 'requestingUser', 'details', 'purchaseOrders']);
         
         CRUD::column('request_number')->label('Número de Solicitud');
         CRUD::column('request_date')->label('Fecha');
@@ -65,10 +65,7 @@ class PurchaseRequestCrudController extends CrudController
         // Agregar columna personalizada para mostrar cantidad de cotizaciones
         CRUD::column('quotations_count')->label('Cotizaciones')->type('custom_html')
             ->value(function($entry) {
-                $productIds = $entry->details->pluck('product_id')->toArray();
-                $quotationsCount = \App\Models\MarketRate::whereHas('quoteDetails', function($query) use ($productIds) {
-                    $query->whereIn('product_id', $productIds);
-                })->count();
+                $quotationsCount = \App\Models\MarketRate::where('purchase_request_id', $entry->id)->count();
                 
                 if ($quotationsCount > 0) {
                     return '<span class="badge bg-success">' . $quotationsCount . ' cotizaciones</span>';
@@ -79,6 +76,9 @@ class PurchaseRequestCrudController extends CrudController
 
         // Botón para generar planilla comparativa
         CRUD::addButton('line', 'comparative_excel', 'view', 'crud::buttons.comparative_excel', 'end');
+        
+        // Botón para generar/ver orden de compra
+        CRUD::addButton('line', 'purchase_order_action', 'view', 'crud::buttons.purchase_order_action', 'end');
     }
 
     /**
@@ -1014,49 +1014,187 @@ class PurchaseRequestCrudController extends CrudController
     }
 
     /**
-     * Generate purchase order from selected market rate
+     * Generate purchase order from selected market rate or directly if amount <= 60000
      */
     public function generatePurchaseOrder($id)
     {
         $purchaseRequest = \App\Models\PurchaseRequest::with([
             'selectedMarketRate.supplier',
             'selectedMarketRate.quoteDetails.product',
+            'details.product',
             'responsibilityArea'
         ])->findOrFail($id);
         
-        if (!$purchaseRequest->selected_market_rate_id) {
-            \Alert::error('Debe seleccionar una cotización antes de generar la orden de compra.')->flash();
-            return redirect()->back();
+        $totalAmount = $purchaseRequest->total_amount ?? 0;
+        $threshold = 60000;
+        
+        // Si el monto es mayor a 60000, se requiere cotización
+        if ($totalAmount > $threshold) {
+            // Validar que haya al menos 3 cotizaciones
+            $quotationsCount = $this->countQuotationsForPurchaseRequest($purchaseRequest);
+            
+            if ($quotationsCount < 3) {
+                \Alert::error('Para solicitudes de compra mayores a $' . number_format($threshold, 2) . ' se requieren al menos 3 cotizaciones. Actualmente hay ' . $quotationsCount . ' cotización(es).')->flash();
+                return redirect()->back();
+            }
+            
+            // Validar que haya una cotización seleccionada
+            if (!$purchaseRequest->selected_market_rate_id) {
+                \Alert::error('Debe seleccionar una cotización antes de generar la orden de compra.')->flash();
+                return redirect()->back();
+            }
+            
+            // Generar orden desde cotización seleccionada
+            return $this->generatePurchaseOrderFromQuote($purchaseRequest);
+        } else {
+            // Si el monto es <= 60000, se puede generar sin cotización
+            // Verificar si se proporcionó un proveedor
+            $supplierId = request()->input('supplier_id');
+            
+            if (!$supplierId) {
+                \Alert::error('Debe seleccionar un proveedor para generar la orden de compra.')->flash();
+                return redirect()->back();
+            }
+            
+            // Generar orden directamente desde la solicitud
+            return $this->generatePurchaseOrderWithoutQuote($purchaseRequest, $supplierId);
         }
+    }
+    
+    /**
+     * Generate purchase order from selected quote
+     */
+    private function generatePurchaseOrderFromQuote($purchaseRequest)
+    {
+        // Generar número de orden
+        $ultimo = \App\Models\PurchaseOrder::max('id');
+        $orderNumber = 'OC-' . date('Y') . '-' . str_pad(($ultimo + 1), 3, '0', STR_PAD_LEFT);
         
         // Create purchase order
         $purchaseOrder = \App\Models\PurchaseOrder::create([
-            'order_number' => \App\Models\PurchaseOrder::generateNextNumber(),
-            'order_date' => now(),
+            'number' => $orderNumber,
+            'date' => now(),
             'supplier_id' => $purchaseRequest->selectedMarketRate->supplier_id,
+            'authorizing_user_id' => auth()->id(),
             'status' => 'Pendiente',
-            'total_amount' => $purchaseRequest->selectedMarketRate->total_amount,
-            'delivery_date' => now()->addDays(15),
-            'notes' => 'Generada desde solicitud: ' . $purchaseRequest->request_number
+            'purchase_request_id' => $purchaseRequest->id,
         ]);
         
-        // Create purchase order details
+        // Create purchase order details from quote
         foreach ($purchaseRequest->selectedMarketRate->quoteDetails as $quoteDetail) {
-            \App\Models\PurchaseOrderDetail::create([
-                'purchase_order_id' => $purchaseOrder->id,
-                'input_id' => $quoteDetail->product_id, // Assuming product maps to input
-                'quantity' => $quoteDetail->quantity,
-                'unit_cost' => $quoteDetail->unit_price,
-                'total_cost' => $quoteDetail->quantity * $quoteDetail->unit_price
-            ]);
+            // Buscar o crear el Input correspondiente al Product
+            $input = $this->findOrCreateInputFromProduct($quoteDetail->product);
+            
+            if ($input) {
+                \App\Models\PurchaseOrderDetail::create([
+                    'purchase_order_id' => $purchaseOrder->id,
+                    'input_id' => $input->id,
+                    'quantity' => $quoteDetail->quantity,
+                    'unit_price' => $quoteDetail->unit_price,
+                ]);
+            }
         }
         
         // Update purchase request status
         $purchaseRequest->update(['status' => 'Completada']);
         
-        \Alert::success('Orden de compra generada exitosamente: ' . $purchaseOrder->order_number)->flash();
+        \Alert::success('Orden de compra generada exitosamente: ' . $purchaseOrder->number)->flash();
         
         return redirect()->route('purchase-order.show', $purchaseOrder->id);
+    }
+    
+    /**
+     * Generate purchase order without quote (for amounts <= 60000)
+     */
+    private function generatePurchaseOrderWithoutQuote($purchaseRequest, $supplierId)
+    {
+        // Validar que el proveedor existe
+        $supplier = \App\Models\Supplier::findOrFail($supplierId);
+        
+        // Generar número de orden
+        $ultimo = \App\Models\PurchaseOrder::max('id');
+        $orderNumber = 'OC-' . date('Y') . '-' . str_pad(($ultimo + 1), 3, '0', STR_PAD_LEFT);
+        
+        // Create purchase order
+        $purchaseOrder = \App\Models\PurchaseOrder::create([
+            'number' => $orderNumber,
+            'date' => now(),
+            'supplier_id' => $supplierId,
+            'authorizing_user_id' => auth()->id(),
+            'status' => 'Pendiente',
+            'purchase_request_id' => $purchaseRequest->id,
+        ]);
+        
+        // Create purchase order details from purchase request details
+        foreach ($purchaseRequest->details as $requestDetail) {
+            if (!$requestDetail->product) {
+                continue;
+            }
+            
+            // Buscar o crear el Input correspondiente al Product
+            $input = $this->findOrCreateInputFromProduct($requestDetail->product);
+            
+            if ($input) {
+                \App\Models\PurchaseOrderDetail::create([
+                    'purchase_order_id' => $purchaseOrder->id,
+                    'input_id' => $input->id,
+                    'quantity' => $requestDetail->requested_quantity,
+                    'unit_price' => $requestDetail->estimated_unit_price ?? 0,
+                ]);
+            }
+        }
+        
+        // Update purchase request status
+        $purchaseRequest->update(['status' => 'Completada']);
+        
+        \Alert::success('Orden de compra generada exitosamente: ' . $purchaseOrder->number)->flash();
+        
+        return redirect()->route('purchase-order.show', $purchaseOrder->id);
+    }
+    
+    /**
+     * Count quotations for a purchase request
+     */
+    private function countQuotationsForPurchaseRequest($purchaseRequest)
+    {
+        return \App\Models\MarketRate::where('purchase_request_id', $purchaseRequest->id)->count();
+    }
+    
+    /**
+     * Find or create Input from Product
+     */
+    protected function findOrCreateInputFromProduct($product)
+    {
+        // Intentar encontrar un input con el mismo nombre
+        $input = \App\Models\Input::where('name', $product->name)->first();
+        
+        if ($input) {
+            return $input;
+        }
+
+        // Si no existe, crear uno nuevo
+        try {
+            $input = \App\Models\Input::create([
+                'name' => $product->name,
+                'description' => $product->description ?? '',
+                'unit' => $product->unit_measurement ?? 'unidad',
+                'price' => 0, // El precio se establecerá en el detalle de la orden
+            ]);
+
+            \Log::info('Input creado desde Product', [
+                'product_id' => $product->id,
+                'input_id' => $input->id,
+                'name' => $input->name
+            ]);
+
+            return $input;
+        } catch (\Exception $e) {
+            \Log::error('Error al crear input desde Product', [
+                'product_id' => $product->id,
+                'error' => $e->getMessage()
+            ]);
+            return null;
+        }
     }
 
 
@@ -1068,7 +1206,7 @@ class PurchaseRequestCrudController extends CrudController
      */
     protected function setupShowOperation()
     {
-        CRUD::addClause('with', ['responsibilityArea', 'requestingUser', 'approvedBy', 'details.product', 'selectedMarketRate.supplier', 'selectedBy', 'convertedFromGeneralRequest']);
+        CRUD::addClause('with', ['responsibilityArea', 'requestingUser', 'approvedBy', 'details.product', 'selectedMarketRate.supplier', 'selectedBy', 'convertedFromGeneralRequest', 'deliveries.details']);
         
         CRUD::column('request_number')->label('Número de Solicitud');
         CRUD::column('request_date')->label('Fecha');
@@ -1105,15 +1243,36 @@ class PurchaseRequestCrudController extends CrudController
                 $html .= '<table class="table table-sm table-bordered mb-0">';
                 $html .= '<thead class="table-light">';
                 $html .= '<tr>';
-                $html .= '<th style="width: 40%;">Producto</th>';
-                $html .= '<th style="width: 20%;">Cantidad</th>';
-                $html .= '<th style="width: 30%;">Especificaciones</th>';
-                $html .= '<th style="width: 10%;">Estado</th>';
+                $html .= '<th style="width: 30%;">Producto</th>';
+                $html .= '<th style="width: 12%;" class="text-center">Cantidad Solicitada</th>';
+                $html .= '<th style="width: 12%;" class="text-center">Cantidad Entregada</th>';
+                $html .= '<th style="width: 12%;" class="text-center">Estado Entrega</th>';
+                $html .= '<th style="width: 24%;">Especificaciones</th>';
+                $html .= '<th style="width: 10%;" class="text-center">Estado</th>';
                 $html .= '</tr>';
                 $html .= '</thead>';
                 $html .= '<tbody>';
                 
                 foreach ($details as $detail) {
+                    $deliveredQuantity = $detail->delivered_quantity ?? 0;
+                    $requestedQuantity = $detail->requested_quantity ?? 0;
+                    $deliveryStatus = $detail->delivery_status ?? 'Pendiente';
+                    $isFullyDelivered = $detail->is_fully_delivered ?? false;
+                    
+                    // Determinar estado de entrega
+                    $deliveryStatusColor = 'secondary';
+                    $deliveryStatusIcon = 'clock';
+                    if ($deliveryStatus == 'Completo') {
+                        $deliveryStatusColor = 'success';
+                        $deliveryStatusIcon = 'check-circle';
+                    } elseif ($deliveryStatus == 'Parcial') {
+                        $deliveryStatusColor = 'warning';
+                        $deliveryStatusIcon = 'exclamation-triangle';
+                    } else {
+                        $deliveryStatusColor = 'secondary';
+                        $deliveryStatusIcon = 'clock';
+                    }
+                    
                     $html .= '<tr>';
                     $productName = $detail->product->name ?? 'Producto no encontrado';
                     if (is_array($productName)) {
@@ -1124,10 +1283,20 @@ class PurchaseRequestCrudController extends CrudController
                         $html .= '<br><small class="text-muted">' . $detail->product->description . '</small>';
                     }
                     $html .= '</td>';
-                    $html .= '<td><span class="badge bg-info">' . $detail->requested_quantity . '</span>';
+                    $html .= '<td class="text-center"><span class="badge bg-primary">' . number_format($requestedQuantity) . '</span>';
                     if ($detail->product && $detail->product->unit_measurement && !is_array($detail->product->unit_measurement)) {
                         $html .= '<br><small class="text-muted">' . $detail->product->unit_measurement . '</small>';
                     }
+                    $html .= '</td>';
+                    $html .= '<td class="text-center">';
+                    $html .= '<span class="badge bg-' . ($deliveredQuantity > 0 ? ($isFullyDelivered ? 'success' : 'warning') : 'secondary') . '" title="Cantidad entregada: ' . number_format($deliveredQuantity) . ' de ' . number_format($requestedQuantity) . '">';
+                    $html .= number_format($deliveredQuantity) . ' / ' . number_format($requestedQuantity);
+                    $html .= '</span>';
+                    $html .= '</td>';
+                    $html .= '<td class="text-center">';
+                    $html .= '<span class="badge bg-' . $deliveryStatusColor . '" title="Estado de entrega: ' . $deliveryStatus . '">';
+                    $html .= '<i class="la la-' . $deliveryStatusIcon . '"></i> ' . $deliveryStatus;
+                    $html .= '</span>';
                     $html .= '</td>';
                     $specifications = $detail->specifications ?? 'Sin especificaciones';
                     if (is_array($specifications)) {
@@ -1138,7 +1307,7 @@ class PurchaseRequestCrudController extends CrudController
                     if (is_array($status)) {
                         $status = 'Pendiente';
                     }
-                    $html .= '<td><span class="badge bg-' . ($detail->status == 'Aprobada' ? 'success' : ($detail->status == 'Rechazada' ? 'danger' : 'warning')) . '">' . $status . '</span></td>';
+                    $html .= '<td class="text-center"><span class="badge bg-' . ($detail->status == 'Aprobada' ? 'success' : ($detail->status == 'Rechazada' ? 'danger' : 'warning')) . '">' . $status . '</span></td>';
                     $html .= '</tr>';
                 }
                 
@@ -1154,13 +1323,10 @@ class PurchaseRequestCrudController extends CrudController
         // Agregar campo para mostrar cotizaciones disponibles
         CRUD::column('market_rates_table')->label('Cotizaciones Disponibles')->type('custom_html')
             ->value(function($entry) {
-                $productIds = $entry->details->pluck('product_id')->toArray();
                 $marketRates = \App\Models\MarketRate::with([
                     'supplier',
                     'quoteDetails.product'
-                ])->whereHas('quoteDetails', function($query) use ($productIds) {
-                    $query->whereIn('product_id', $productIds);
-                })->get();
+                ])->where('purchase_request_id', $entry->id)->get();
                 
                 if ($marketRates->isEmpty()) {
                     return '<div class="alert alert-warning">No hay cotizaciones disponibles para los productos de esta solicitud.</div>';
@@ -1220,16 +1386,61 @@ class PurchaseRequestCrudController extends CrudController
                 $html .= '</table>';
                 $html .= '</div>';
                 
-                // Botón para generar orden de compra si hay cotización seleccionada
-                if ($entry->selected_market_rate_id && $entry->status != 'Completada') {
-                    $html .= '<div class="mt-3">';
-                    $html .= '<form method="POST" action="' . route('purchase-request.generate-purchase-order', $entry->id) . '">';
-                    $html .= csrf_field();
-                    $html .= '<button type="submit" class="btn btn-primary" onclick="return confirm(\'¿Está seguro de generar la orden de compra?\')">';
-                    $html .= '<i class="la la-shopping-cart"></i> Generar Orden de Compra';
-                    $html .= '</button>';
-                    $html .= '</form>';
-                    $html .= '</div>';
+                // Lógica para mostrar botón de generar orden según el monto
+                $totalAmount = $entry->total_amount ?? 0;
+                $threshold = 60000;
+                $quotationsCount = \App\Models\MarketRate::where('purchase_request_id', $entry->id)->count();
+                
+                if ($entry->status != 'Completada') {
+                    if ($totalAmount > $threshold) {
+                        // Para montos mayores a 60000, se requieren 3 cotizaciones y una seleccionada
+                        if ($quotationsCount < 3) {
+                            $html .= '<div class="mt-3 alert alert-warning">';
+                            $html .= '<i class="la la-exclamation-triangle"></i> <strong>Atención:</strong> Para solicitudes mayores a $' . number_format($threshold, 2) . ' se requieren al menos 3 cotizaciones. Actualmente hay ' . $quotationsCount . ' cotización(es).';
+                            $html .= '</div>';
+                        } elseif (!$entry->selected_market_rate_id) {
+                            $html .= '<div class="mt-3 alert alert-warning">';
+                            $html .= '<i class="la la-exclamation-triangle"></i> <strong>Atención:</strong> Debe seleccionar una cotización antes de generar la orden de compra.';
+                            $html .= '</div>';
+                        } else {
+                            // Hay 3+ cotizaciones y una seleccionada, mostrar botón
+                            $html .= '<div class="mt-3">';
+                            $html .= '<form method="POST" action="' . route('purchase-request.generate-purchase-order', $entry->id) . '">';
+                            $html .= csrf_field();
+                            $html .= '<button type="submit" class="btn btn-primary" onclick="return confirm(\'¿Está seguro de generar la orden de compra?\')">';
+                            $html .= '<i class="la la-shopping-cart"></i> Generar Orden de Compra';
+                            $html .= '</button>';
+                            $html .= '</form>';
+                            $html .= '</div>';
+                        }
+                    } else {
+                        // Para montos <= 60000, se puede generar sin cotización (pero necesita proveedor)
+                        $html .= '<div class="mt-3">';
+                        $html .= '<div class="alert alert-info">';
+                        $html .= '<i class="la la-info-circle"></i> <strong>Información:</strong> Esta solicitud tiene un monto de $' . number_format($totalAmount, 2) . ', por lo que no se requiere cotización. Puede generar la orden de compra directamente seleccionando un proveedor.';
+                        $html .= '</div>';
+                        $html .= '<form method="POST" action="' . route('purchase-request.generate-purchase-order', $entry->id) . '">';
+                        $html .= csrf_field();
+                        $html .= '<div class="row">';
+                        $html .= '<div class="col-md-6">';
+                        $html .= '<label for="supplier_id" class="form-label">Seleccionar Proveedor:</label>';
+                        $html .= '<select name="supplier_id" id="supplier_id" class="form-control" required>';
+                        $html .= '<option value="">Seleccione un proveedor...</option>';
+                        $suppliers = \App\Models\Supplier::all();
+                        foreach ($suppliers as $supplier) {
+                            $html .= '<option value="' . $supplier->id . '">' . ($supplier->company_name ?? 'Proveedor #' . $supplier->id) . '</option>';
+                        }
+                        $html .= '</select>';
+                        $html .= '</div>';
+                        $html .= '<div class="col-md-6 d-flex align-items-end">';
+                        $html .= '<button type="submit" class="btn btn-primary" onclick="return confirm(\'¿Está seguro de generar la orden de compra?\')">';
+                        $html .= '<i class="la la-shopping-cart"></i> Generar Orden de Compra';
+                        $html .= '</button>';
+                        $html .= '</div>';
+                        $html .= '</div>';
+                        $html .= '</form>';
+                        $html .= '</div>';
+                    }
                 }
                 
                 return $html;

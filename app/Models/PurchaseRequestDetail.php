@@ -52,4 +52,55 @@ class PurchaseRequestDetail extends Model
             $this->estimated_total = $this->estimated_unit_price * $this->requested_quantity;
         }
     }
+
+    /**
+     * Get the total delivered quantity for this detail.
+     */
+    public function getDeliveredQuantityAttribute()
+    {
+        if (!$this->purchase_request_id || !$this->product_id) {
+            return 0;
+        }
+
+        // Obtener todas las entregas relacionadas con esta solicitud de compra
+        $deliveries = \App\Models\Delivery::where('purchase_request_id', $this->purchase_request_id)
+            ->with('details')
+            ->get();
+
+        $totalDelivered = 0;
+        foreach ($deliveries as $delivery) {
+            // Sumar las cantidades entregadas de este producto en esta entrega
+            $deliveryDetail = $delivery->details->where('product_id', $this->product_id)->first();
+            if ($deliveryDetail) {
+                $totalDelivered += $deliveryDetail->delivered_quantity ?? 0;
+            }
+        }
+
+        return $totalDelivered;
+    }
+
+    /**
+     * Check if this detail is fully delivered.
+     */
+    public function getIsFullyDeliveredAttribute()
+    {
+        return $this->delivered_quantity >= $this->requested_quantity;
+    }
+
+    /**
+     * Get delivery status text.
+     */
+    public function getDeliveryStatusAttribute()
+    {
+        $delivered = $this->delivered_quantity;
+        $requested = $this->requested_quantity;
+
+        if ($delivered == 0) {
+            return 'Pendiente';
+        } elseif ($delivered >= $requested) {
+            return 'Completo';
+        } else {
+            return 'Parcial';
+        }
+    }
 }

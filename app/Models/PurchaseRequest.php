@@ -112,6 +112,14 @@ class PurchaseRequest extends Model
     }
 
     /**
+     * Get the deliveries for this purchase request.
+     */
+    public function deliveries()
+    {
+        return $this->hasMany(Delivery::class, 'purchase_request_id');
+    }
+
+    /**
      * Generate the next request number.
      */
     public static function generateNextNumber(): string

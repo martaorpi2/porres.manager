@@ -14,6 +14,7 @@ class Delivery extends Model
     protected $fillable = [
         'reception_id',
         'general_request_id',
+        'purchase_request_id',
         'delivery_date',
         'delivered_by',
         'received_by',
@@ -26,18 +27,27 @@ class Delivery extends Model
     ];
 
     /**
-     * Get the reception for this delivery.
+     * Get the reception for this delivery (opcional).
      */
     public function reception()
     {
         return $this->belongsTo(\App\Models\Reception::class, 'reception_id');
     }
+    
     /**
-     * Get the general request for this delivery.
+     * Get the general request for this delivery (opcional).
      */
     public function generalRequest()
     {
         return $this->belongsTo(\App\Models\GeneralRequest::class);
+    }
+    
+    /**
+     * Get the purchase request for this delivery (opcional).
+     */
+    public function purchaseRequest()
+    {
+        return $this->belongsTo(\App\Models\PurchaseRequest::class);
     }
 
     /**

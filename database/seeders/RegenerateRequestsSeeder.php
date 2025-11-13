@@ -166,12 +166,13 @@ class RegenerateRequestsSeeder extends Seeder
             \App\Models\PurchaseRequest::create($request);
         }
         
-        // Convertir solicitudes generales en solicitudes de compra
+        // Convertir solo algunas solicitudes generales en solicitudes de compra (dejar otras sin convertir)
         $generalRequests = \App\Models\GeneralRequest::all();
         $convertedCount = 0;
+        $maxToConvert = 2; // Solo convertir 2 de las 5 solicitudes
         
         foreach ($generalRequests as $generalRequest) {
-            if ($convertedCount < 4) {
+            if ($convertedCount < $maxToConvert) {
                 $purchaseRequest = \App\Models\PurchaseRequest::create([
                     'request_number' => \App\Models\PurchaseRequest::generateNextNumber(),
                     'request_date' => now()->subDays(rand(1, 5)),
@@ -190,6 +191,7 @@ class RegenerateRequestsSeeder extends Seeder
                 $generalRequest->update(['status' => 'convertida_a_compra']);
                 $convertedCount++;
             }
+            // Las demás solicitudes se mantienen sin convertir (con estados: creada, revisada_area, archivada)
         }
     }
     
