@@ -5,6 +5,7 @@ namespace Database\Seeders;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Schema;
 use App\Models\User;
 use App\Models\Category;
 use App\Models\Product;
@@ -160,48 +161,51 @@ class CompleteDataSeeder extends Seeder
     {
         DB::statement('SET FOREIGN_KEY_CHECKS=0;');
         
-        // Limpiar tablas en orden correcto
-        DeliveryDetail::truncate();
-        Delivery::truncate();
-        PaymentOrder::truncate();
-        Reception::truncate();
-        PurchaseOrderDetail::truncate();
-        PurchaseOrder::truncate();
-        QuoteDetail::truncate();
-        MarketRate::truncate();
-        PurchaseRequestDetail::truncate();
-        PurchaseRequest::truncate();
-        GeneralRequestDetail::truncate();
-        GeneralRequest::truncate();
-        QuoteDetail::truncate();
-        MarketRate::truncate();
-        \App\Models\Application::truncate();
-        PurchaseRequestDetail::truncate();
-        PurchaseRequest::truncate();
-        PurchaseOrderDetail::truncate();
-        PurchaseOrder::truncate();
-        Reception::truncate();
-        PaymentOrder::truncate();
-        DeliveryDetail::truncate();
-        Delivery::truncate();
-        DB::table('op_details')->truncate();
-        DB::table('supplier_ratings')->truncate();
-        DB::table('suppliers_sectors')->truncate();
-        DB::table('sectors')->truncate();
-        DB::table('request_details')->truncate();
-        DB::table('inventory_movements')->truncate();
-        Devolution::truncate();
-        StockLevel::truncate();
-        Input::truncate();
-        Product::truncate();
-        Location::truncate();
-        Supplier::truncate();
-        \App\Models\SuppliersHeading::truncate();
-        ResponsibilityArea::truncate();
-        Category::truncate();
+        // Función auxiliar para truncar solo si la tabla existe
+        $truncateIfExists = function($tableName, $model = null) {
+            if (Schema::hasTable($tableName)) {
+                if ($model) {
+                    $model::truncate();
+                } else {
+                    DB::table($tableName)->truncate();
+                }
+            }
+        };
+        
+        // Limpiar tablas en orden correcto (solo si existen)
+        $truncateIfExists('delivery_details', DeliveryDetail::class);
+        $truncateIfExists('deliveries', Delivery::class);
+        $truncateIfExists('payment_orders', PaymentOrder::class);
+        $truncateIfExists('receptions', Reception::class);
+        $truncateIfExists('purchase_order_details', PurchaseOrderDetail::class);
+        $truncateIfExists('purchase_orders', PurchaseOrder::class);
+        $truncateIfExists('quote_details', QuoteDetail::class);
+        $truncateIfExists('market_rates', MarketRate::class);
+        $truncateIfExists('purchase_request_details', PurchaseRequestDetail::class);
+        $truncateIfExists('purchase_requests', PurchaseRequest::class);
+        $truncateIfExists('general_request_details', GeneralRequestDetail::class);
+        $truncateIfExists('general_requests', GeneralRequest::class);
+        $truncateIfExists('applications', \App\Models\Application::class);
+        $truncateIfExists('op_details');
+        $truncateIfExists('supplier_ratings');
+        $truncateIfExists('suppliers_sectors');
+        $truncateIfExists('sectors', Sector::class);
+        $truncateIfExists('request_details');
+        $truncateIfExists('inventory_movements', InventoryMovement::class);
+        $truncateIfExists('devolutions', Devolution::class);
+        $truncateIfExists('stock_levels', StockLevel::class);
+        $truncateIfExists('inputs', Input::class);
+        $truncateIfExists('products', Product::class);
+        $truncateIfExists('locations', Location::class);
+        $truncateIfExists('suppliers', Supplier::class);
+        $truncateIfExists('suppliers_headings', \App\Models\SuppliersHeading::class);
+        $truncateIfExists('responsibility_areas', ResponsibilityArea::class);
+        $truncateIfExists('categories', Category::class);
         
         // Limpiar usuarios excepto el admin si existe
-        User::where('email', '!=', 'admin@admin')->delete();
+        if (Schema::hasTable('users')) {
+            User::where('email', '!=', 'admin@admin')->delete();
+        }
         
         DB::statement('SET FOREIGN_KEY_CHECKS=1;');
     }
@@ -544,10 +548,13 @@ class CompleteDataSeeder extends Seeder
         
         foreach ($generalRequests as $gr) {
             if ($gr->is_converted && $convertedCount < 5) {
+                // Asegurar que al menos algunas tengan status 'Aprobada' para generar cotizaciones
+                $status = $convertedCount < 3 ? 'Aprobada' : ['Pendiente', 'Aprobada', 'En Proceso'][rand(0, 2)];
+                
                 $pr = PurchaseRequest::create([
                     'request_number' => PurchaseRequest::generateNextNumber(),
                     'request_date' => now()->subDays(rand(1, 30)),
-                    'status' => ['Pendiente', 'Aprobada', 'En Proceso'][rand(0, 2)],
+                    'status' => $status,
                     'priority' => $gr->priority,
                     'justification' => $gr->description,
                     'responsibility_area_id' => $gr->area_id,
@@ -559,6 +566,7 @@ class CompleteDataSeeder extends Seeder
                 ]);
                 
                 // Replicar detalles
+                $gr->load('details');
                 foreach ($gr->details as $detail) {
                     PurchaseRequestDetail::create([
                         'purchase_request_id' => $pr->id,
@@ -630,52 +638,70 @@ class CompleteDataSeeder extends Seeder
             return;
         }
         
+        $marketRatesCreated = 0;
+        $quoteDetailsCreated = 0;
+        
         foreach ($purchaseRequests as $pr) {
-            if ($pr->status == 'Aprobada') {
-                $numQuotes = rand(2, 4);
-                $selectedSupplier = null;
-                $selectedMarketRate = null;
+            // Crear cotizaciones para todas las solicitudes aprobadas, y al menos para algunas otras
+            if ($pr->status == 'Aprobada' || rand(0, 2) == 0) {
+                $pr->load('details');
                 
-                for ($i = 0; $i < $numQuotes; $i++) {
-                    $supplier = $suppliers[array_rand($suppliers)];
-                    // Asegurar que la primera cotización siempre esté seleccionada
-                    $isSelected = $i == 0;
+                if ($pr->details->count() > 0) {
+                    $numQuotes = rand(2, 4);
+                    $selectedSupplier = null;
+                    $selectedMarketRate = null;
                     
-                    $mr = MarketRate::create([
-                        'purchase_request_id' => $pr->id,
-                        'supplier_id' => $supplier->id,
-                        'date' => now()->subDays(rand(1, 10)),
-                        'total_amount' => rand(4000, 60000),
-                        'is_selected' => $isSelected,
-                    ]);
-                    
-                    if ($isSelected) {
-                        $pr->update(['selected_market_rate_id' => $mr->id]);
-                        $selectedSupplier = $supplier;
-                        $selectedMarketRate = $mr;
-                    }
-                    
-                    // Crear detalles de cotización
-                    foreach ($pr->details as $detail) {
-                        $unitPrice = $detail->estimated_unit_price * (0.9 + rand(0, 20) / 100);
-                        QuoteDetail::create([
-                            'market_rate_id' => $mr->id,
-                            'product_id' => $detail->product_id,
-                            'quantity' => $detail->requested_quantity,
-                            'unit_price' => $unitPrice,
+                    for ($i = 0; $i < $numQuotes; $i++) {
+                        $supplier = $suppliers[array_rand($suppliers)];
+                        // Asegurar que la primera cotización siempre esté seleccionada
+                        $isSelected = $i == 0;
+                        
+                        // Calcular total desde detalles
+                        $totalAmount = $pr->details->sum(function($detail) {
+                            $unitPrice = $detail->estimated_unit_price * (0.9 + rand(0, 20) / 100);
+                            return $unitPrice * $detail->requested_quantity;
+                        });
+                        
+                        $mr = MarketRate::create([
+                            'purchase_request_id' => $pr->id,
+                            'supplier_id' => $supplier->id,
+                            'date' => now()->subDays(rand(1, 10)),
+                            'total_amount' => $totalAmount > 0 ? $totalAmount : rand(4000, 60000),
+                            'is_selected' => $isSelected,
                         ]);
+                        
+                        $marketRatesCreated++;
+                        
+                        if ($isSelected) {
+                            $pr->update(['selected_market_rate_id' => $mr->id]);
+                            $selectedSupplier = $supplier;
+                            $selectedMarketRate = $mr;
+                        }
+                        
+                        // Crear detalles de cotización
+                        foreach ($pr->details as $detail) {
+                            $unitPrice = $detail->estimated_unit_price * (0.9 + rand(0, 20) / 100);
+                            QuoteDetail::create([
+                                'market_rate_id' => $mr->id,
+                                'product_id' => $detail->product_id,
+                                'quantity' => $detail->requested_quantity,
+                                'unit_price' => $unitPrice,
+                            ]);
+                            $quoteDetailsCreated++;
+                        }
                     }
                 }
             }
         }
         
-        $this->command->info("  ✓ Cotizaciones creadas");
+        $this->command->info("  ✓ {$marketRatesCreated} cotizaciones creadas con {$quoteDetailsCreated} detalles");
     }
     
     private function createPurchaseOrders($purchaseRequests, $suppliers)
     {
         $purchaseOrders = [];
         $adminUser = \App\Models\User::where('email', 'admin@admin')->first() ?? \App\Models\User::first();
+        $detailsCreated = 0;
         
         foreach ($purchaseRequests as $pr) {
             // Buscar cotización seleccionada
@@ -735,13 +761,14 @@ class CompleteDataSeeder extends Seeder
                         'quantity' => $detail->requested_quantity,
                         'unit_price' => $detail->estimated_unit_price ?? 0,
                     ]);
+                    $detailsCreated++;
                 }
                 
                 $purchaseOrders[] = $po;
             }
         }
         
-        $this->command->info("  ✓ " . count($purchaseOrders) . " órdenes de compra creadas");
+        $this->command->info("  ✓ " . count($purchaseOrders) . " órdenes de compra creadas con {$detailsCreated} detalles");
         return $purchaseOrders;
     }
     
@@ -750,9 +777,13 @@ class CompleteDataSeeder extends Seeder
         $responsableUser = $users['responsable_informatica'] ?? \App\Models\User::first();
         $receptions = [];
         
+        // Asegurar que se creen al menos 2 recepciones
+        $minReceptions = min(2, count($purchaseOrders));
+        $receptionCount = 0;
+        
         foreach ($purchaseOrders as $po) {
             // Crear recepción para al menos algunas órdenes
-            if (rand(0, 1) == 1 || count($receptions) == 0) {
+            if ($receptionCount < $minReceptions || rand(0, 1) == 1) {
                 $reception = Reception::create([
                     'purchase_order_id' => $po->id,
                     'date' => now()->subDays(rand(1, 5)),
@@ -762,6 +793,7 @@ class CompleteDataSeeder extends Seeder
                 $receptions[] = $reception;
                 // Actualizar estado de la orden a Recibida
                 $po->update(['status' => 'Recibida']);
+                $receptionCount++;
             }
         }
         
@@ -772,31 +804,58 @@ class CompleteDataSeeder extends Seeder
     private function createDeliveries($generalRequests, $users, $products)
     {
         $responsableUser = $users['responsable_informatica'] ?? \App\Models\User::first();
+        $deliveriesCreated = 0;
+        
+        // Asegurar que se creen al menos 5 entregas
+        $minDeliveries = min(5, count($generalRequests));
+        $deliveryCount = 0;
         
         foreach ($generalRequests as $gr) {
-            if (!$gr->is_converted && rand(0, 1) == 1) {
-                $delivery = Delivery::create([
-                    'general_request_id' => $gr->id,
-                    'delivery_date' => now()->subDays(rand(1, 10)),
-                    'delivered_by' => $responsableUser->id,
-                    'received_by' => $gr->created_by,
-                    'observations' => 'Entrega completada',
-                ]);
+            // Crear entregas para solicitudes no convertidas o algunas convertidas también
+            // Asegurar al menos minDeliveries entregas
+            $shouldCreate = false;
+            
+            if (!$gr->is_converted) {
+                // Para solicitudes no convertidas, crear más entregas
+                $shouldCreate = ($deliveryCount < $minDeliveries) || rand(0, 1) == 1;
+            } else {
+                // Para solicitudes convertidas, crear algunas entregas también
+                $shouldCreate = ($deliveryCount < $minDeliveries) && rand(0, 2) == 0;
+            }
+            
+            if ($shouldCreate) {
+                // Cargar los detalles de la solicitud general
+                $gr->load('details');
                 
-                foreach ($gr->details as $detail) {
-                    DeliveryDetail::create([
-                        'delivery_id' => $delivery->id,
-                        'product_id' => $detail->product_id,
-                        'delivered_quantity' => rand(1, $detail->requested_quantity),
+                if ($gr->details->count() > 0) {
+                    $delivery = Delivery::create([
+                        'general_request_id' => $gr->id,
+                        'delivery_date' => now()->subDays(rand(1, 10)),
+                        'delivered_by' => $responsableUser->id,
+                        'received_by' => $gr->created_by,
+                        'observations' => 'Entrega completada',
                     ]);
+                    
+                    foreach ($gr->details as $detail) {
+                        DeliveryDetail::create([
+                            'delivery_id' => $delivery->id,
+                            'product_id' => $detail->product_id,
+                            'delivered_quantity' => rand(1, max(1, $detail->requested_quantity)),
+                        ]);
+                    }
+                    
+                    // Actualizar estado de entrega
+                    $statusOptions = ['entregada_totalmente', 'entregada_parcialmente', 'sin_entrega'];
+                    $newStatus = rand(0, 1) == 1 ? 'entregada_totalmente' : 'entregada_parcialmente';
+                    $gr->update(['status' => $newStatus]);
+                    
+                    $deliveriesCreated++;
+                    $deliveryCount++;
                 }
-                
-                // Actualizar estado de entrega
-                $gr->update(['status' => rand(0, 1) == 1 ? 'entregada_totalmente' : 'entregada_parcialmente']);
             }
         }
         
-        $this->command->info("  ✓ Entregas creadas");
+        $this->command->info("  ✓ {$deliveriesCreated} entregas creadas con sus detalles");
     }
     
     private function createPaymentOrders($purchaseOrders, $users)
@@ -811,19 +870,35 @@ class CompleteDataSeeder extends Seeder
         
         // Si no hay órdenes recibidas, marcar algunas como recibidas
         if ($receivedOrders->isEmpty() && count($purchaseOrders) > 0) {
-            foreach ($purchaseOrders->take(2) as $po) {
+            $ordersToMark = min(2, count($purchaseOrders));
+            foreach ($purchaseOrders->take($ordersToMark) as $po) {
                 $po->update(['status' => 'Recibida']);
                 $receivedOrders->push($po);
             }
         }
         
+        // Asegurar que se creen al menos 2 órdenes de pago
+        $minPaymentOrders = min(2, $receivedOrders->count());
+        $paymentOrderCount = 0;
+        
         foreach ($receivedOrders as $po) {
+            // Cargar detalles si no están cargados
+            if (!$po->relationLoaded('details')) {
+                $po->load('details');
+            }
+            
             // Calcular total desde detalles
             $totalAmount = $po->details->sum(function($detail) {
                 return $detail->quantity * $detail->unit_price;
             });
             
-            if ($totalAmount > 0) {
+            // Si no hay total, usar un valor por defecto
+            if ($totalAmount <= 0) {
+                $totalAmount = rand(5000, 50000);
+            }
+            
+            // Crear orden de pago si hay total o si necesitamos más órdenes
+            if ($totalAmount > 0 && ($paymentOrderCount < $minPaymentOrders || rand(0, 1) == 1)) {
                 $paymentOrder = PaymentOrder::create([
                     'purchase_order_id' => $po->id,
                     'payment_number' => 'OP-' . date('Y') . '-' . str_pad(rand(1, 9999), 4, '0', STR_PAD_LEFT),
@@ -834,6 +909,7 @@ class CompleteDataSeeder extends Seeder
                 ]);
                 
                 $paymentOrders[] = $paymentOrder;
+                $paymentOrderCount++;
             }
         }
         
@@ -892,8 +968,14 @@ class CompleteDataSeeder extends Seeder
             $receivedOrders = collect($purchaseOrders);
         }
         
-        foreach ($receivedOrders->take(3) as $po) {
-            $ratedBy = $users[array_rand($users)];
+        // Asegurar que se creen al menos 2 calificaciones
+        $minRatings = min(2, $receivedOrders->count());
+        $ratingsToCreate = max($minRatings, min(3, $receivedOrders->count()));
+        
+        foreach ($receivedOrders->take($ratingsToCreate) as $po) {
+            $userKeys = array_keys($users);
+            $randomKey = $userKeys[array_rand($userKeys)];
+            $ratedBy = $users[$randomKey];
             
             $rating = SupplierRating::create([
                 'supplier_id' => $po->supplier_id,
@@ -954,6 +1036,11 @@ class CompleteDataSeeder extends Seeder
     private function createPaymentOrderDetails($paymentOrders)
     {
         $details = [];
+        
+        if (empty($paymentOrders)) {
+            $this->command->warn("  ⚠ No hay órdenes de pago disponibles. Omitiendo creación de detalles.");
+            return;
+        }
         
         foreach ($paymentOrders as $paymentOrder) {
             // Crear 1-2 detalles por orden de pago
@@ -1054,9 +1141,18 @@ class CompleteDataSeeder extends Seeder
             return;
         }
         
-        $numDevolutions = min(3, count($receptionsCollection));
-        foreach ($receptionsCollection->random($numDevolutions) as $reception) {
-            $user = $users[array_rand($users)];
+        // Asegurar que se creen al menos 2 devoluciones
+        $minDevolutions = min(2, count($receptionsCollection));
+        $numDevolutions = max($minDevolutions, min(3, count($receptionsCollection)));
+        
+        $selectedReceptions = $receptionsCollection->count() >= $numDevolutions 
+            ? $receptionsCollection->random($numDevolutions) 
+            : $receptionsCollection;
+            
+        foreach ($selectedReceptions as $reception) {
+            $userKeys = array_keys($users);
+            $randomKey = $userKeys[array_rand($userKeys)];
+            $user = $users[$randomKey];
             
             $devolution = Devolution::create([
                 'reception_id' => $reception->id,
