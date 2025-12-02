@@ -40,96 +40,116 @@ class RolesAndPermissionsSeeder extends Seeder
         ];
 
         $permissionsCreated = 0;
+        // Crear permisos para ambos guards (web y backpack)
         foreach ($permissions as $permission) {
-            $created = Permission::firstOrCreate(['name' => $permission, 'guard_name' => 'web']);
-            if ($created->wasRecentlyCreated) {
-                $permissionsCreated++;
+            foreach (['web', 'backpack'] as $guard) {
+                $created = Permission::firstOrCreate(['name' => $permission, 'guard_name' => $guard]);
+                if ($created->wasRecentlyCreated) {
+                    $permissionsCreated++;
+                }
             }
         }
         
         $this->command->info("✓ Creados {$permissionsCreated} permisos nuevos de " . count($permissions) . " totales");
 
-        // Crear roles
-        $rolePersonal = Role::firstOrCreate(['name' => 'role_personal', 'guard_name' => 'web']);
-        $roleResponsableArea = Role::firstOrCreate(['name' => 'role_responsable_area', 'guard_name' => 'web']);
-        $roleResponsableCompras = Role::firstOrCreate(['name' => 'role_responsable_compras', 'guard_name' => 'web']);
-        $roleAdminInstitucion = Role::firstOrCreate(['name' => 'role_admin_institucion', 'guard_name' => 'web']);
-        $roleApoderado = Role::firstOrCreate(['name' => 'role_apoderado', 'guard_name' => 'web']);
-        $roleRepresentanteLegal = Role::firstOrCreate(['name' => 'role_representante_legal', 'guard_name' => 'web']);
-        $roleConsejo = Role::firstOrCreate(['name' => 'role_consejo', 'guard_name' => 'web']);
-        $roleTesoreria = Role::firstOrCreate(['name' => 'role_tesoreria', 'guard_name' => 'web']);
-        $roleContabilidad = Role::firstOrCreate(['name' => 'role_contabilidad', 'guard_name' => 'web']);
-        $roleAdminSistema = Role::firstOrCreate(['name' => 'role_admin_sistema', 'guard_name' => 'web']);
+        // Crear roles para ambos guards
+        $rolePersonal = Role::firstOrCreate(['name' => 'role_personal', 'guard_name' => 'backpack']);
+        $rolePersonalWeb = Role::firstOrCreate(['name' => 'role_personal', 'guard_name' => 'web']);
+        $roleResponsableArea = Role::firstOrCreate(['name' => 'role_responsable_area', 'guard_name' => 'backpack']);
+        $roleResponsableCompras = Role::firstOrCreate(['name' => 'role_responsable_compras', 'guard_name' => 'backpack']);
+        $roleAdminInstitucion = Role::firstOrCreate(['name' => 'role_admin_institucion', 'guard_name' => 'backpack']);
+        $roleApoderado = Role::firstOrCreate(['name' => 'role_apoderado', 'guard_name' => 'backpack']);
+        $roleRepresentanteLegal = Role::firstOrCreate(['name' => 'role_representante_legal', 'guard_name' => 'backpack']);
+        $roleConsejo = Role::firstOrCreate(['name' => 'role_consejo', 'guard_name' => 'backpack']);
+        $roleTesoreria = Role::firstOrCreate(['name' => 'role_tesoreria', 'guard_name' => 'backpack']);
+        $roleContabilidad = Role::firstOrCreate(['name' => 'role_contabilidad', 'guard_name' => 'backpack']);
+        $roleAdminSistema = Role::firstOrCreate(['name' => 'role_admin_sistema', 'guard_name' => 'backpack']);
 
-        // Asignar permisos a roles
+        // Asignar permisos a roles (usando guard backpack)
 
         // Personal solicitante - puede crear y ver solicitudes
         $rolePersonal->givePermissionTo([
-            'solicitud.crear',
-            'solicitud.ver',
+            Permission::findByName('solicitud.crear', 'backpack'),
+            Permission::findByName('solicitud.ver', 'backpack'),
+        ]);
+        
+        // También asignar al rol web para compatibilidad
+        $rolePersonalWeb->givePermissionTo([
+            Permission::findByName('solicitud.crear', 'web'),
+            Permission::findByName('solicitud.ver', 'web'),
         ]);
 
-        // Responsable de depósito - puede ver, aprobar y entregar solicitudes
+        // Responsable de depósito - puede crear, ver, aprobar y entregar solicitudes
         $roleResponsableArea->givePermissionTo([
-            'solicitud.ver',
-            'solicitud.aprobar',
-            'solicitud.entregar',
+            Permission::findByName('solicitud.crear', 'backpack'),
+            Permission::findByName('solicitud.ver', 'backpack'),
+            Permission::findByName('solicitud.aprobar', 'backpack'),
+            Permission::findByName('solicitud.entregar', 'backpack'),
+        ]);
+        
+        // También asignar al rol web para compatibilidad
+        $roleResponsableAreaWeb = Role::firstOrCreate(['name' => 'role_responsable_area', 'guard_name' => 'web']);
+        $roleResponsableAreaWeb->givePermissionTo([
+            Permission::findByName('solicitud.crear', 'web'),
+            Permission::findByName('solicitud.ver', 'web'),
+            Permission::findByName('solicitud.aprobar', 'web'),
+            Permission::findByName('solicitud.entregar', 'web'),
         ]);
 
         // Responsable de compras - puede crear y aprobar compras según monto
         $roleResponsableCompras->givePermissionTo([
-            'compra.crear',
-            'compra.aprobar',
-            'compra.ejecutar',
-            'solicitud.ver',
+            Permission::findByName('compra.crear', 'backpack'),
+            Permission::findByName('compra.aprobar', 'backpack'),
+            Permission::findByName('compra.ejecutar', 'backpack'),
+            Permission::findByName('solicitud.ver', 'backpack'),
         ]);
 
         // Administrador - permisos de administración institucional y aprobación de compras
         $roleAdminInstitucion->givePermissionTo([
-            'compra.aprobar',
-            'compra.ejecutar',
-            'solicitud.ver',
-            'solicitud.aprobar',
+            Permission::findByName('compra.aprobar', 'backpack'),
+            Permission::findByName('compra.ejecutar', 'backpack'),
+            Permission::findByName('solicitud.ver', 'backpack'),
+            Permission::findByName('solicitud.aprobar', 'backpack'),
         ]);
 
         // Apoderado legal - puede aprobar compras de mayor monto
         $roleApoderado->givePermissionTo([
-            'compra.aprobar',
-            'compra.ejecutar',
-            'solicitud.ver',
-            'solicitud.aprobar',
+            Permission::findByName('compra.aprobar', 'backpack'),
+            Permission::findByName('compra.ejecutar', 'backpack'),
+            Permission::findByName('solicitud.ver', 'backpack'),
+            Permission::findByName('solicitud.aprobar', 'backpack'),
         ]);
 
         // Representante legal - puede aprobar compras de mayor monto
         $roleRepresentanteLegal->givePermissionTo([
-            'compra.aprobar',
-            'compra.ejecutar',
-            'solicitud.ver',
-            'solicitud.aprobar',
+            Permission::findByName('compra.aprobar', 'backpack'),
+            Permission::findByName('compra.ejecutar', 'backpack'),
+            Permission::findByName('solicitud.ver', 'backpack'),
+            Permission::findByName('solicitud.aprobar', 'backpack'),
         ]);
 
         // Consejo de dirección - puede aprobar compras de mayor monto
         $roleConsejo->givePermissionTo([
-            'compra.aprobar',
-            'compra.ejecutar',
-            'solicitud.ver',
-            'solicitud.aprobar',
+            Permission::findByName('compra.aprobar', 'backpack'),
+            Permission::findByName('compra.ejecutar', 'backpack'),
+            Permission::findByName('solicitud.ver', 'backpack'),
+            Permission::findByName('solicitud.aprobar', 'backpack'),
         ]);
 
         // Tesorería - puede ver finanzas y exportar reportes
         $roleTesoreria->givePermissionTo([
-            'finanzas.ver',
-            'reportes.exportar',
+            Permission::findByName('finanzas.ver', 'backpack'),
+            Permission::findByName('reportes.exportar', 'backpack'),
         ]);
 
         // Contabilidad - puede ver finanzas y exportar reportes
         $roleContabilidad->givePermissionTo([
-            'finanzas.ver',
-            'reportes.exportar',
+            Permission::findByName('finanzas.ver', 'backpack'),
+            Permission::findByName('reportes.exportar', 'backpack'),
         ]);
 
-        // Administrador del sistema - todos los permisos
-        $allPermissions = Permission::all();
+        // Administrador del sistema - todos los permisos del guard backpack
+        $allPermissions = Permission::where('guard_name', 'backpack')->get();
         $roleAdminSistema->syncPermissions($allPermissions);
         
         $this->command->info("✓ Asignados " . $allPermissions->count() . " permisos al rol Administrador del Sistema");

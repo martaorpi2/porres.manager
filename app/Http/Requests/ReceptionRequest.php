@@ -58,7 +58,10 @@ class ReceptionRequest extends FormRequest
     public function attributes()
     {
         return [
-            //
+            'purchase_order_id' => 'orden de compra',
+            'date' => 'fecha',
+            'according' => 'conforme',
+            'area_manager_id' => 'responsable de área',
         ];
     }
 

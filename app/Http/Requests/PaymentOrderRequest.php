@@ -138,7 +138,11 @@ class PaymentOrderRequest extends FormRequest
     public function attributes()
     {
         return [
-            //
+            'purchase_order_id' => 'orden de compra',
+            'total_amount' => 'monto total',
+            'date' => 'fecha',
+            'status' => 'estado',
+            'authorizing_user_id' => 'usuario autorizador',
         ];
     }
 
@@ -150,7 +154,17 @@ class PaymentOrderRequest extends FormRequest
     public function messages()
     {
         return [
-            //
+            'purchase_order_id.required' => 'El campo orden de compra es obligatorio.',
+            'purchase_order_id.exists' => 'La orden de compra seleccionada no existe.',
+            'total_amount.required' => 'El campo monto total es obligatorio.',
+            'total_amount.numeric' => 'El campo monto total debe ser un número.',
+            'total_amount.min' => 'El campo monto total debe ser mayor a 0.',
+            'date.required' => 'El campo fecha es obligatorio.',
+            'date.date' => 'El campo fecha debe ser una fecha válida.',
+            'status.required' => 'El campo estado es obligatorio.',
+            'status.in' => 'El campo estado debe ser: Pendiente, Aprobada o Ejecutada.',
+            'authorizing_user_id.required' => 'El campo usuario autorizador es obligatorio.',
+            'authorizing_user_id.exists' => 'El usuario autorizador seleccionado no existe.',
         ];
     }
 }

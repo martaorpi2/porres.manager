@@ -31,7 +31,6 @@ class DeliveryRequest extends FormRequest
             'delivery_date' => 'required|date',
             'delivered_by' => 'required|exists:users,id',
             'received_by' => 'required|exists:users,id',
-            'status' => 'nullable|in:pendiente,entregada,cancelada',
             'observations' => 'nullable|string',
         ];
     }
@@ -58,7 +57,13 @@ class DeliveryRequest extends FormRequest
     public function attributes()
     {
         return [
-            //
+            'delivery_date' => 'fecha de entrega',
+            'delivered_by' => 'entregado por',
+            'received_by' => 'recibido por',
+            'general_request_id' => 'solicitud general',
+            'purchase_request_id' => 'solicitud de compra',
+            'reception_id' => 'recepción',
+            'observations' => 'observaciones',
         ];
     }
 
@@ -70,7 +75,15 @@ class DeliveryRequest extends FormRequest
     public function messages()
     {
         return [
-            //
+            'delivery_date.required' => 'El campo fecha de entrega es obligatorio.',
+            'delivery_date.date' => 'El campo fecha de entrega debe ser una fecha válida.',
+            'delivered_by.required' => 'El campo entregado por es obligatorio.',
+            'delivered_by.exists' => 'El usuario seleccionado en entregado por no existe.',
+            'received_by.required' => 'El campo recibido por es obligatorio.',
+            'received_by.exists' => 'El usuario seleccionado en recibido por no existe.',
+            'general_request_id.exists' => 'La solicitud general seleccionada no existe.',
+            'purchase_request_id.exists' => 'La solicitud de compra seleccionada no existe.',
+            'reception_id.exists' => 'La recepción seleccionada no existe.',
         ];
     }
 }

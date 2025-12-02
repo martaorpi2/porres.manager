@@ -21,81 +21,204 @@ class DashboardController extends Controller
      */
     public function index()
     {
+        $user = backpack_user();
+        $isPersonal = $user && $user->hasRole('role_personal');
+        $isResponsableArea = $user && $user->hasRole('role_responsable_area');
+        
         // Estadísticas generales
-        $stats = [
-            'general_requests' => GeneralRequest::count(),
-            'general_requests_pending' => GeneralRequest::where('status', 'Pendiente')->count(),
-            'general_requests_delivered' => GeneralRequest::whereHas('deliveries')->count(),
-            'purchase_requests' => PurchaseRequest::count(),
-            'purchase_requests_pending' => PurchaseRequest::where('status', 'Pendiente')->count(),
-            'purchase_orders' => PurchaseOrder::count(),
-            'purchase_orders_pending' => PurchaseOrder::where('status', 'Pendiente')->count(),
-            'payment_orders' => PaymentOrder::count(),
-            'payment_orders_pending' => PaymentOrder::where('status', 'Pendiente')->count(),
-            'receptions' => Reception::count(),
-            'devolutions' => Devolution::count(),
-            'deliveries' => Delivery::count(),
-            'deliveries_pending' => Delivery::where('status', 'pendiente')->count(),
-        ];
+        if ($isPersonal) {
+            // Para role_personal, solo mostrar sus propias solicitudes y entregas
+            $userRequests = GeneralRequest::where('created_by', $user->id);
+            
+            $stats = [
+                'general_requests' => $userRequests->count(),
+                'general_requests_pending' => GeneralRequest::where('created_by', $user->id)->where('status', 'creada')->count(),
+                'general_requests_delivered' => GeneralRequest::where('created_by', $user->id)->whereHas('deliveries')->count(),
+                // Aprobadas: revisadas por el área (revisada_area) o convertidas a compra (convertida_a_compra)
+                'general_requests_approved' => GeneralRequest::where('created_by', $user->id)
+                    ->whereIn('status', ['revisada_area', 'convertida_a_compra'])
+                    ->count(),
+                // Entregadas: las que tienen entregas asociadas
+                'general_requests_entregada' => GeneralRequest::where('created_by', $user->id)
+                    ->whereHas('deliveries')
+                    ->count(),
+                // Rechazadas: archivadas
+                'general_requests_rejected' => GeneralRequest::where('created_by', $user->id)
+                    ->where('status', 'archivada')
+                    ->count(),
+                'purchase_requests' => 0,
+                'purchase_requests_pending' => 0,
+                'purchase_orders' => 0,
+                'purchase_orders_pending' => 0,
+                'payment_orders' => 0,
+                'payment_orders_pending' => 0,
+                'receptions' => 0,
+                'devolutions' => 0,
+                'deliveries' => Delivery::where('received_by', $user->id)->count(),
+            ];
+        } elseif ($isResponsableArea) {
+            // Para role_responsable_area, mostrar solicitudes de su área y sus recepciones/entregas
+            $userAreas = \App\Models\ResponsibilityArea::where('responsible_user_id', $user->id)->pluck('id');
+            $userRequestsQuery = GeneralRequest::where(function($query) use ($user, $userAreas) {
+                $query->where('created_by', $user->id);
+                if ($userAreas->isNotEmpty()) {
+                    $query->orWhereIn('area_id', $userAreas);
+                }
+            });
+            
+            $stats = [
+                'general_requests' => $userRequestsQuery->count(),
+                'general_requests_pending' => (clone $userRequestsQuery)->where('status', 'creada')->count(),
+                'general_requests_delivered' => (clone $userRequestsQuery)->whereHas('deliveries')->count(),
+                'purchase_requests' => PurchaseRequest::where('requesting_user_id', $user->id)->count(),
+                'purchase_requests_pending' => PurchaseRequest::where('requesting_user_id', $user->id)->where('status', 'Pendiente')->count(),
+                'purchase_orders' => 0,
+                'purchase_orders_pending' => 0,
+                'payment_orders' => 0,
+                'payment_orders_pending' => 0,
+                'receptions' => Reception::where('area_manager_id', $user->id)->count(),
+                'devolutions' => 0,
+                'deliveries' => Delivery::count(),
+            ];
+        } else {
+            // Para otros roles, mostrar todas las estadísticas
+            $stats = [
+                'general_requests' => GeneralRequest::count(),
+                'general_requests_pending' => GeneralRequest::where('status', 'Pendiente')->count(),
+                'general_requests_delivered' => GeneralRequest::whereHas('deliveries')->count(),
+                'purchase_requests' => PurchaseRequest::count(),
+                'purchase_requests_pending' => PurchaseRequest::where('status', 'Pendiente')->count(),
+                'purchase_orders' => PurchaseOrder::count(),
+                'purchase_orders_pending' => PurchaseOrder::where('status', 'Pendiente')->count(),
+                'payment_orders' => PaymentOrder::count(),
+                'payment_orders_pending' => PaymentOrder::where('status', 'Pendiente')->count(),
+                'receptions' => Reception::count(),
+                'devolutions' => Devolution::count(),
+                'deliveries' => Delivery::count(),
+            ];
+        }
 
         // Obtener solicitudes generales recientes con sus detalles
-        $generalRequests = GeneralRequest::with(['createdBy', 'area', 'details.product', 'purchaseRequests'])
+        $generalRequestsQuery = GeneralRequest::with(['createdBy', 'area', 'details.product', 'purchaseRequests']);
+        
+        if ($isPersonal) {
+            $generalRequestsQuery->where('created_by', $user->id);
+        } elseif ($isResponsableArea) {
+            $userAreas = \App\Models\ResponsibilityArea::where('responsible_user_id', $user->id)->pluck('id');
+            $generalRequestsQuery->where(function($query) use ($user, $userAreas) {
+                $query->where('created_by', $user->id);
+                if ($userAreas->isNotEmpty()) {
+                    $query->orWhereIn('area_id', $userAreas);
+                }
+            });
+        }
+        
+        $generalRequests = $generalRequestsQuery
             ->orderBy('created_at', 'desc')
             ->limit(10)
             ->get();
 
         // Obtener solicitudes de compra recientes
-        $purchaseRequests = PurchaseRequest::with(['requestingUser', 'responsibilityArea', 'convertedFromGeneralRequest', 'details.product', 'selectedMarketRate'])
-            ->orderBy('created_at', 'desc')
-            ->limit(10)
-            ->get();
+        $purchaseRequestsQuery = PurchaseRequest::with(['requestingUser', 'responsibilityArea', 'convertedFromGeneralRequest', 'details.product', 'selectedMarketRate']);
+        
+        if ($isResponsableArea) {
+            // Para role_responsable_area, solo mostrar sus solicitudes de compra
+            $purchaseRequestsQuery->where('requesting_user_id', $user->id);
+        } elseif ($isPersonal) {
+            // Para role_personal, no mostrar solicitudes de compra
+            $purchaseRequests = collect();
+        }
+        
+        if (!$isPersonal) {
+            $purchaseRequests = $purchaseRequestsQuery
+                ->orderBy('created_at', 'desc')
+                ->limit(10)
+                ->get();
+        }
 
-        // Obtener órdenes de compra recientes
-        $purchaseOrders = PurchaseOrder::with(['supplier', 'user', 'details', 'receptions'])
-            ->orderBy('created_at', 'desc')
-            ->limit(10)
-            ->get();
+        // Obtener órdenes de compra recientes (solo si no es role_personal ni role_responsable_area)
+        $purchaseOrders = collect();
+        if (!$isPersonal && !$isResponsableArea) {
+            $purchaseOrders = PurchaseOrder::with(['supplier', 'user', 'details', 'receptions'])
+                ->orderBy('created_at', 'desc')
+                ->limit(10)
+                ->get();
+        }
 
-        // Obtener órdenes de pago recientes
-        $paymentOrders = PaymentOrder::with(['purchase_order.supplier', 'user'])
-            ->orderBy('created_at', 'desc')
-            ->limit(10)
-            ->get();
+        // Obtener órdenes de pago recientes (solo si no es role_personal ni role_responsable_area)
+        $paymentOrders = collect();
+        if (!$isPersonal && !$isResponsableArea) {
+            $paymentOrders = PaymentOrder::with(['purchase_order.supplier', 'user'])
+                ->orderBy('created_at', 'desc')
+                ->limit(10)
+                ->get();
+        }
 
         // Obtener recepciones recientes
-        $receptions = Reception::with(['purchase_order.supplier', 'user', 'devolutions'])
-            ->orderBy('created_at', 'desc')
-            ->limit(10)
-            ->get();
+        $receptionsQuery = Reception::with(['purchase_order.supplier', 'user', 'devolutions']);
+        if ($isResponsableArea) {
+            $receptionsQuery->where('area_manager_id', $user->id);
+        } elseif ($isPersonal) {
+            $receptions = collect();
+        }
+        
+        if (!$isPersonal) {
+            $receptions = $receptionsQuery
+                ->orderBy('created_at', 'desc')
+                ->limit(10)
+                ->get();
+        }
 
-        // Obtener devoluciones recientes
-        $devolutions = Devolution::with(['reception.purchase_order.supplier', 'user'])
-            ->orderBy('created_at', 'desc')
-            ->limit(10)
-            ->get();
+        // Obtener devoluciones recientes (solo si no es role_personal ni role_responsable_area)
+        $devolutions = collect();
+        if (!$isPersonal && !$isResponsableArea) {
+            $devolutions = Devolution::with(['reception.purchase_order.supplier', 'user'])
+                ->orderBy('created_at', 'desc')
+                ->limit(10)
+                ->get();
+        }
 
         // Obtener entregas recientes
-        $deliveries = Delivery::with(['reception.purchase_order.supplier', 'generalRequest', 'deliveredBy', 'receivedBy', 'details.product'])
+        $deliveriesQuery = Delivery::with(['reception.purchase_order.supplier', 'generalRequest', 'deliveredBy', 'receivedBy', 'details.product']);
+        
+        if ($isPersonal) {
+            // Para role_personal, solo mostrar entregas donde él es el receptor
+            $deliveriesQuery->where('received_by', $user->id);
+        }
+        
+        $deliveries = $deliveriesQuery
             ->orderBy('created_at', 'desc')
             ->limit(10)
             ->get();
 
         // Obtener el flujo completo de procesos (trazabilidad completa)
-        $processFlows = $this->getProcessFlows();
+        $processFlows = [];
+        if ($isPersonal) {
+            // Para role_personal, mostrar solo el flujo de sus propias solicitudes
+            $processFlows = $this->getProcessFlowsForPersonal($user);
+        } elseif ($isResponsableArea) {
+            // Para role_responsable_area, mostrar flujo de solicitudes de su área
+            $processFlows = $this->getProcessFlowsForResponsableArea($user);
+        } else {
+            $processFlows = $this->getProcessFlows();
+        }
 
-        // Obtener 8 proveedores con sus calificaciones promedio
-        $suppliersWithRatings = Supplier::with('ratings')
-            ->get()
-            ->filter(function($supplier) {
-                return $supplier->ratings->count() > 0;
-            })
-            ->map(function($supplier) {
-                $supplier->average_rating = $supplier->average_rating;
-                $supplier->total_ratings = $supplier->total_ratings;
-                return $supplier;
-            })
-            ->sortByDesc('average_rating')
-            ->take(8);
+        // Obtener 8 proveedores con sus calificaciones promedio (solo si no es role_personal)
+        $suppliersWithRatings = collect();
+        if (!$isPersonal) {
+            $suppliersWithRatings = Supplier::with('ratings')
+                ->get()
+                ->filter(function($supplier) {
+                    return $supplier->ratings->count() > 0;
+                })
+                ->map(function($supplier) {
+                    $supplier->average_rating = $supplier->average_rating;
+                    $supplier->total_ratings = $supplier->total_ratings;
+                    return $supplier;
+                })
+                ->sortByDesc('average_rating')
+                ->take(8);
+        }
 
         return view('vendor.backpack.ui.dashboard', compact(
             'stats',
@@ -107,7 +230,9 @@ class DashboardController extends Controller
             'devolutions',
             'deliveries',
             'processFlows',
-            'suppliersWithRatings'
+            'suppliersWithRatings',
+            'isPersonal',
+            'isResponsableArea'
         ));
     }
 
@@ -176,6 +301,167 @@ class DashboardController extends Controller
 
             // Agregar TODOS los flujos, incluso los incompletos
             // Esto incluye solicitudes generales sin solicitudes de compra
+            $flows[] = $flow;
+        }
+
+        return $flows;
+    }
+    
+    /**
+     * Obtener el flujo completo de procesos para usuarios con rol role_personal
+     */
+    private function getProcessFlowsForPersonal($user)
+    {
+        $flows = [];
+
+        // Obtener solo las solicitudes generales del usuario
+        $generalRequests = GeneralRequest::where('created_by', $user->id)
+            ->with([
+                'purchaseRequests' => function($query) {
+                    $query->with([
+                        'selectedMarketRate.supplier',
+                        'details.product'
+                    ]);
+                },
+                'createdBy',
+                'area',
+                'details.product',
+                'deliveries' => function($query) use ($user) {
+                    $query->where('received_by', $user->id)
+                        ->with(['deliveredBy', 'receivedBy', 'details.product']);
+                }
+            ])
+            ->orderBy('created_at', 'desc')
+            ->limit(20)
+            ->get();
+
+        foreach ($generalRequests as $generalRequest) {
+            $flow = [
+                'general_request' => $generalRequest,
+                'purchase_requests' => [],
+                'purchase_orders' => [],
+            ];
+
+            // Obtener solicitudes de compra relacionadas
+            foreach ($generalRequest->purchaseRequests as $purchaseRequest) {
+                $flow['purchase_requests'][] = $purchaseRequest;
+
+                // Obtener órdenes de compra relacionadas
+                $purchaseOrders = PurchaseOrder::where('purchase_request_id', $purchaseRequest->id)
+                    ->with([
+                        'supplier', 
+                        'details', 
+                        'paymentOrders' => function($query) {
+                            $query->with('user')->orderBy('created_at', 'desc');
+                        },
+                        'receptions' => function($query) {
+                            $query->with([
+                                'user',
+                                'devolutions' => function($q) {
+                                    $q->with('user')->orderBy('created_at', 'desc');
+                                },
+                                'deliveries' => function($q) use ($user) {
+                                    $q->where('received_by', $user->id)
+                                        ->with(['generalRequest', 'deliveredBy', 'receivedBy', 'details.product'])
+                                        ->orderBy('created_at', 'desc');
+                                }
+                            ])->orderBy('created_at', 'desc');
+                        }
+                    ])
+                    ->get();
+                
+                foreach ($purchaseOrders as $purchaseOrder) {
+                    if (!in_array($purchaseOrder->id, array_column($flow['purchase_orders'], 'id'))) {
+                        $flow['purchase_orders'][] = $purchaseOrder;
+                    }
+                }
+            }
+
+            $flows[] = $flow;
+        }
+
+        return $flows;
+    }
+    
+    /**
+     * Obtener el flujo completo de procesos para usuarios con rol role_responsable_area
+     */
+    private function getProcessFlowsForResponsableArea($user)
+    {
+        $flows = [];
+        $userAreas = \App\Models\ResponsibilityArea::where('responsible_user_id', $user->id)->pluck('id');
+
+        // Obtener solicitudes generales de su área o que él creó
+        $generalRequests = GeneralRequest::where(function($query) use ($user, $userAreas) {
+            $query->where('created_by', $user->id);
+            if ($userAreas->isNotEmpty()) {
+                $query->orWhereIn('area_id', $userAreas);
+            }
+        })
+            ->with([
+                'purchaseRequests' => function($query) use ($user) {
+                    $query->where('requesting_user_id', $user->id)
+                        ->with([
+                            'selectedMarketRate.supplier',
+                            'details.product'
+                        ]);
+                },
+                'createdBy',
+                'area',
+                'details.product',
+                'deliveries' => function($query) {
+                    $query->with(['deliveredBy', 'receivedBy', 'details.product']);
+                }
+            ])
+            ->orderBy('created_at', 'desc')
+            ->limit(20)
+            ->get();
+
+        foreach ($generalRequests as $generalRequest) {
+            $flow = [
+                'general_request' => $generalRequest,
+                'purchase_requests' => [],
+                'purchase_orders' => [],
+            ];
+
+            // Obtener solicitudes de compra relacionadas (solo las del usuario)
+            foreach ($generalRequest->purchaseRequests as $purchaseRequest) {
+                // Solo incluir si el purchaseRequest fue creado por este usuario
+                if ($purchaseRequest->requesting_user_id == $user->id) {
+                    $flow['purchase_requests'][] = $purchaseRequest;
+
+                // Obtener órdenes de compra relacionadas
+                $purchaseOrders = PurchaseOrder::where('purchase_request_id', $purchaseRequest->id)
+                    ->with([
+                        'supplier', 
+                        'details', 
+                        'paymentOrders' => function($query) {
+                            $query->with('user')->orderBy('created_at', 'desc');
+                        },
+                        'receptions' => function($query) use ($user) {
+                            $query->where('area_manager_id', $user->id)
+                                ->with([
+                                    'user',
+                                    'devolutions' => function($q) {
+                                        $q->with('user')->orderBy('created_at', 'desc');
+                                    },
+                                    'deliveries' => function($q) {
+                                        $q->with(['generalRequest', 'deliveredBy', 'receivedBy', 'details.product'])
+                                            ->orderBy('created_at', 'desc');
+                                    }
+                                ])->orderBy('created_at', 'desc');
+                        }
+                    ])
+                    ->get();
+                
+                foreach ($purchaseOrders as $purchaseOrder) {
+                    if (!in_array($purchaseOrder->id, array_column($flow['purchase_orders'], 'id'))) {
+                        $flow['purchase_orders'][] = $purchaseOrder;
+                    }
+                }
+                } // Cerrar if del purchaseRequest
+            }
+
             $flows[] = $flow;
         }
 

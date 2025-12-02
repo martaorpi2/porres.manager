@@ -54,7 +54,8 @@ class PurchaseRequestDetail extends Model
     }
 
     /**
-     * Get the total delivered quantity for this detail.
+     * Get the total received quantity from receptions for this detail.
+     * Para solicitudes de compra, la cantidad recibida viene de las recepciones de las órdenes de compra.
      */
     public function getDeliveredQuantityAttribute()
     {
@@ -62,21 +63,39 @@ class PurchaseRequestDetail extends Model
             return 0;
         }
 
-        // Obtener todas las entregas relacionadas con esta solicitud de compra
-        $deliveries = \App\Models\Delivery::where('purchase_request_id', $this->purchase_request_id)
-            ->with('details')
+        // Obtener todas las órdenes de compra relacionadas con esta solicitud de compra
+        $purchaseOrders = \App\Models\PurchaseOrder::where('purchase_request_id', $this->purchase_request_id)
+            ->with(['receptions', 'details.input'])
             ->get();
 
-        $totalDelivered = 0;
-        foreach ($deliveries as $delivery) {
-            // Sumar las cantidades entregadas de este producto en esta entrega
-            $deliveryDetail = $delivery->details->where('product_id', $this->product_id)->first();
-            if ($deliveryDetail) {
-                $totalDelivered += $deliveryDetail->delivered_quantity ?? 0;
+        $totalReceived = 0;
+        
+        foreach ($purchaseOrders as $purchaseOrder) {
+            // Solo contar recepciones que estén conforme
+            $receptions = $purchaseOrder->receptions->where('according', 'Si');
+            
+            if ($receptions->isEmpty()) {
+                continue;
+            }
+            
+            // Para cada recepción conforme, obtener la cantidad del producto desde los detalles de la orden
+            foreach ($purchaseOrder->details as $orderDetail) {
+                if (!$orderDetail->input) {
+                    continue;
+                }
+                
+                // Buscar el producto correspondiente al input
+                $product = \App\Models\Product::where('name', $orderDetail->input->name)->first();
+                
+                if ($product && $product->id == $this->product_id) {
+                    // Si hay al menos una recepción conforme, sumar la cantidad de la orden
+                    $totalReceived += $orderDetail->quantity ?? 0;
+                    break; // Solo contar una vez por orden
+                }
             }
         }
 
-        return $totalDelivered;
+        return $totalReceived;
     }
 
     /**

@@ -54,6 +54,12 @@ class ReceptionCrudController extends CrudController
         
         // Cargar relaciones para evitar N+1 queries
         CRUD::addClause('with', ['purchase_order', 'user']);
+        
+        // Si el usuario tiene rol role_responsable_area, solo mostrar recepciones donde él es el responsable
+        $user = backpack_user();
+        if ($user && $user->hasRole('role_responsable_area')) {
+            CRUD::addClause('where', 'area_manager_id', $user->id);
+        }
 
         // Columnas básicas para evitar errores
         CRUD::addColumn([

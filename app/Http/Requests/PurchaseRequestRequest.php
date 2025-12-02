@@ -76,6 +76,10 @@ class PurchaseRequestRequest extends FormRequest
             'requesting_user_id.exists' => 'El usuario solicitante seleccionado no es válido.',
             'priority.required' => 'La prioridad es obligatoria.',
             'priority.in' => 'La prioridad debe ser: Baja, Media, Alta o Urgente.',
+            'status.in' => 'El estado debe ser: Pendiente, Aprobada, Rechazada, En Proceso o Completada.',
+            'total_amount.numeric' => 'El campo monto total debe ser un número.',
+            'total_amount.min' => 'El campo monto total debe ser mayor o igual a 0.',
+            'converted_from_general_request_id.exists' => 'La solicitud general origen seleccionada no existe.',
         ];
     }
 }

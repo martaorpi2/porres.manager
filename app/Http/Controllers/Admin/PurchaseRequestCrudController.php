@@ -47,6 +47,13 @@ class PurchaseRequestCrudController extends CrudController
         
         CRUD::addClause('with', ['responsibilityArea', 'requestingUser', 'details', 'purchaseOrders']);
         
+        // Si el usuario tiene rol role_responsable_area, solo mostrar sus solicitudes de compra
+        $user = backpack_user();
+        if ($user && $user->hasRole('role_responsable_area', 'backpack')) {
+            \Log::info('Filtrando solicitudes de compra para role_responsable_area:', ['user_id' => $user->id, 'email' => $user->email]);
+            CRUD::addClause('where', 'requesting_user_id', $user->id);
+        }
+        
         CRUD::column('request_number')->label('Número de Solicitud');
         CRUD::column('request_date')->label('Fecha');
         CRUD::column('responsibilityArea.name')->label('Área');
@@ -65,7 +72,9 @@ class PurchaseRequestCrudController extends CrudController
         // Agregar columna personalizada para mostrar cantidad de cotizaciones
         CRUD::column('quotations_count')->label('Cotizaciones')->type('custom_html')
             ->value(function($entry) {
-                $quotationsCount = \App\Models\MarketRate::where('purchase_request_id', $entry->id)->count();
+                // Usar la relación del modelo en lugar de consulta directa
+                $entry->load('marketRates');
+                $quotationsCount = $entry->marketRates->count();
                 
                 if ($quotationsCount > 0) {
                     return '<span class="badge bg-success">' . $quotationsCount . ' cotizaciones</span>';
@@ -74,11 +83,13 @@ class PurchaseRequestCrudController extends CrudController
                 }
             });
 
-        // Botón para generar planilla comparativa
+        // Botón para generar planilla comparativa (disponible para todos)
         CRUD::addButton('line', 'comparative_excel', 'view', 'crud::buttons.comparative_excel', 'end');
         
-        // Botón para generar/ver orden de compra
-        CRUD::addButton('line', 'purchase_order_action', 'view', 'crud::buttons.purchase_order_action', 'end');
+        // Botón para generar/ver orden de compra (solo para usuarios que no sean role_responsable_area)
+        if (!$user || !$user->hasRole('role_responsable_area', 'backpack')) {
+            CRUD::addButton('line', 'purchase_order_action', 'view', 'crud::buttons.purchase_order_action', 'end');
+        }
     }
 
     /**
@@ -102,8 +113,10 @@ class PurchaseRequestCrudController extends CrudController
         
         // Override defaults if converting from general request
         if ($generalRequest) {
+            $user = backpack_user();
             CRUD::modifyField('responsibility_area_id', ['default' => $generalRequest->area_id]);
-            CRUD::modifyField('requesting_user_id', ['default' => $generalRequest->created_by]);
+            // El requesting_user_id debe ser el usuario logueado (responsable de área), no el creador de la solicitud general
+            CRUD::modifyField('requesting_user_id', ['default' => $user ? $user->id : $generalRequest->created_by]);
             CRUD::modifyField('priority', ['default' => $generalRequest->priority]);
             CRUD::modifyField('justification', ['default' => $generalRequest->description]);
             
@@ -111,18 +124,16 @@ class PurchaseRequestCrudController extends CrudController
             if ($generalRequest->area_id) {
                 CRUD::modifyField('responsibility_area_id', ['value' => $generalRequest->area_id]);
             }
-            if ($generalRequest->created_by) {
-                CRUD::modifyField('requesting_user_id', ['value' => $generalRequest->created_by]);
+            // El requesting_user_id debe ser el usuario logueado
+            if ($user) {
+                CRUD::modifyField('requesting_user_id', ['value' => $user->id]);
             }
         }
         
         // Campo oculto para la conversión
         if ($convertedFrom) {
-            // Agregar el campo oculto con el ID de la solicitud general
-            CRUD::field('converted_from_general_request_id')
-                ->type('hidden')
-                ->value($convertedFrom)
-                ->attributes(['name' => 'converted_from_general_request_id']);
+            // Establecer el valor del campo oculto que ya está definido en setupCreateFields
+            CRUD::modifyField('converted_from_general_request_id', ['value' => $convertedFrom]);
             
             // Mostrar información de la solicitud general
             $generalRequestInfo = '';
@@ -142,12 +153,18 @@ class PurchaseRequestCrudController extends CrudController
                 ->value($generalRequestInfo . '
                 <script>
                 document.addEventListener("DOMContentLoaded", function() {
-                    // Asegurar que el campo oculto se envíe con el formulario
-                    var hiddenField = document.createElement("input");
-                    hiddenField.type = "hidden";
-                    hiddenField.name = "converted_from_general_request_id";
-                    hiddenField.value = "' . $convertedFrom . '";
-                    document.querySelector("form").appendChild(hiddenField);
+                    // Asegurar que el campo oculto tenga el valor correcto
+                    var hiddenField = document.querySelector("input[name=\'converted_from_general_request_id\']");
+                    if (hiddenField) {
+                        hiddenField.value = "' . $convertedFrom . '";
+                    } else {
+                        // Si no existe, crearlo
+                        hiddenField = document.createElement("input");
+                        hiddenField.type = "hidden";
+                        hiddenField.name = "converted_from_general_request_id";
+                        hiddenField.value = "' . $convertedFrom . '";
+                        document.querySelector("form").appendChild(hiddenField);
+                    }
                 });
                 </script>');
         }
@@ -220,6 +237,9 @@ class PurchaseRequestCrudController extends CrudController
         // Campos ocultos con valores por defecto
         CRUD::field('status')->type('hidden')->default('Pendiente');
         CRUD::field('total_amount')->type('hidden')->default(0);
+        
+        // Campo oculto para conversión desde solicitud general (se establecerá dinámicamente)
+        CRUD::field('converted_from_general_request_id')->type('hidden')->attributes(['name' => 'converted_from_general_request_id']);
         
         // Campo para seleccionar productos
         CRUD::field('products_selection')->label('Productos Solicitados')->type('custom_html')
@@ -436,14 +456,23 @@ class PurchaseRequestCrudController extends CrudController
         // Obtener datos para guardar
         $dataToSave = $this->crud->getStrippedSaveRequest($request);
         
-        // Verificar si viene de una solicitud general desde el parámetro URL
-        $convertedFrom = request()->get('converted_from');
-        \Log::info('Parámetro converted_from desde URL:', ['converted_from' => $convertedFrom]);
+        // Verificar si viene de una solicitud general desde el parámetro URL o del request
+        $convertedFrom = request()->get('converted_from') ?? $request->input('converted_from_general_request_id');
+        \Log::info('Parámetro converted_from desde URL:', ['converted_from' => request()->get('converted_from')]);
+        \Log::info('Campo converted_from_general_request_id en request:', ['field' => $request->input('converted_from_general_request_id')]);
         \Log::info('Campo converted_from_general_request_id en datos:', ['field' => $dataToSave['converted_from_general_request_id'] ?? 'no existe']);
         
-        if ($convertedFrom && !isset($dataToSave['converted_from_general_request_id'])) {
+        // Si viene de una conversión, asegurar que se guarde el ID
+        if ($convertedFrom) {
             $dataToSave['converted_from_general_request_id'] = $convertedFrom;
             \Log::info('Agregado converted_from_general_request_id a datos:', ['id' => $convertedFrom]);
+        }
+
+        // Asegurar que requesting_user_id sea el usuario logueado (especialmente para role_responsable_area)
+        $user = backpack_user();
+        if ($user) {
+            $dataToSave['requesting_user_id'] = $user->id;
+            \Log::info('Establecido requesting_user_id al usuario logueado:', ['user_id' => $user->id, 'email' => $user->email]);
         }
 
         // Asegurar que los campos requeridos tengan valores por defecto
@@ -464,19 +493,25 @@ class PurchaseRequestCrudController extends CrudController
             // insert item in the db
             $item = $this->crud->create($dataToSave);
             $this->data['entry'] = $this->crud->entry = $item;
+            
+            // Recargar el item para asegurar que tiene el converted_from_general_request_id
+            $item->refresh();
+            \Log::info('Item creado:', ['id' => $item->id, 'converted_from_general_request_id' => $item->converted_from_general_request_id]);
 
             // Verificar si el usuario seleccionó productos manualmente
             $selectedProducts = $request->input('selected_products');
-            $hasManualProducts = !empty($selectedProducts);
+            $hasManualProducts = !empty($selectedProducts) && $selectedProducts !== '[]';
 
             // Si viene de una solicitud general y NO hay productos seleccionados manualmente,
             // replicar automáticamente los productos de la solicitud general
             if ($item->converted_from_general_request_id && !$hasManualProducts) {
+                \Log::info('Replicando productos desde solicitud general');
                 $this->replicateProductsFromGeneralRequest($item);
             }
 
             // Procesar productos seleccionados manualmente (si el usuario los seleccionó)
             if ($hasManualProducts) {
+                \Log::info('Procesando productos seleccionados manualmente');
                 $this->processSelectedProducts($item, $request);
             }
 
@@ -549,14 +584,24 @@ class PurchaseRequestCrudController extends CrudController
                 }
 
                 // Crear el detalle en la solicitud de compra
+                // Convertir a números para evitar errores de multiplicación
+                $estimatedUnitPrice = (float)($generalDetail->estimated_unit_price ?? 0);
+                $requestedQuantity = (float)($generalDetail->requested_quantity ?? 0);
+                $estimatedTotal = (float)($generalDetail->estimated_total ?? 0);
+                
+                // Si no hay estimated_total, calcularlo
+                if ($estimatedTotal == 0 && $estimatedUnitPrice > 0 && $requestedQuantity > 0) {
+                    $estimatedTotal = $estimatedUnitPrice * $requestedQuantity;
+                }
+                
                 $purchaseRequestDetail = \App\Models\PurchaseRequestDetail::create([
                     'purchase_request_id' => $purchaseRequest->id,
                     'product_id' => $generalDetail->product_id,
-                    'requested_quantity' => $generalDetail->requested_quantity,
+                    'requested_quantity' => $requestedQuantity,
                     'specifications' => $generalDetail->specifications,
                     'justification' => $generalDetail->justification,
-                    'estimated_unit_price' => $generalDetail->estimated_unit_price ?? 0,
-                    'estimated_total' => $generalDetail->estimated_total ?? ($generalDetail->estimated_unit_price * $generalDetail->requested_quantity ?? 0),
+                    'estimated_unit_price' => $estimatedUnitPrice,
+                    'estimated_total' => $estimatedTotal,
                     'status' => 'Pendiente'
                 ]);
 
@@ -613,8 +658,9 @@ class PurchaseRequestCrudController extends CrudController
         
         foreach ($products as $productData) {
             $productId = $productData['product_id'];
-            $quantity = $productData['quantity'];
-            $price = $productData['price'] ?? 0;
+            // Convertir a números para evitar errores de multiplicación
+            $quantity = (float)($productData['quantity'] ?? 0);
+            $price = (float)($productData['price'] ?? 0);
             $specifications = $productData['specifications'] ?? '';
             
             // Si es un producto nuevo (ID que empieza con "new_")
@@ -1018,6 +1064,12 @@ class PurchaseRequestCrudController extends CrudController
      */
     public function generatePurchaseOrder($id)
     {
+        // Verificar que el usuario no sea role_responsable_area
+        $user = backpack_user();
+        if ($user && $user->hasRole('role_responsable_area', 'backpack')) {
+            abort(403, 'Los responsables de área no pueden generar órdenes de compra.');
+        }
+        
         $purchaseRequest = \App\Models\PurchaseRequest::with([
             'selectedMarketRate.supplier',
             'selectedMarketRate.quoteDetails.product',
@@ -1157,7 +1209,8 @@ class PurchaseRequestCrudController extends CrudController
      */
     private function countQuotationsForPurchaseRequest($purchaseRequest)
     {
-        return \App\Models\MarketRate::where('purchase_request_id', $purchaseRequest->id)->count();
+        // Usar la relación del modelo en lugar de consulta directa
+        return $purchaseRequest->marketRates()->count();
     }
     
     /**
@@ -1225,6 +1278,67 @@ class PurchaseRequestCrudController extends CrudController
         // Eliminar completamente la sección de adjuntos
         CRUD::removeColumn('attachments');
 
+        // Agregar campo personalizado para mostrar información de la solicitud general de origen
+        CRUD::column('general_request_info')->label('Solicitud General de Origen')->type('custom_html')
+            ->value(function($entry) {
+                if (!$entry->convertedFromGeneralRequest) {
+                    return '<div class="alert alert-secondary">
+                        <i class="la la-info-circle"></i> Esta solicitud de compra no fue convertida desde una solicitud general.
+                    </div>';
+                }
+                
+                $generalRequest = $entry->convertedFromGeneralRequest;
+                $html = '<div class="card border-info">';
+                $html .= '<div class="card-header bg-info text-white">';
+                $html .= '<h6 class="mb-0"><i class="la la-file-alt"></i> Solicitud General de Origen</h6>';
+                $html .= '</div>';
+                $html .= '<div class="card-body">';
+                $html .= '<div class="row">';
+                $html .= '<div class="col-md-6">';
+                $html .= '<p><strong>Número:</strong> ' . e($generalRequest->number ?? 'N/A') . '</p>';
+                $html .= '<p><strong>Título:</strong> ' . e($generalRequest->title ?? 'N/A') . '</p>';
+                $html .= '<p><strong>Estado:</strong> ';
+                $status = $generalRequest->status ?? 'N/A';
+                $statusClass = strtolower(str_replace([' ', '_'], '-', $status));
+                $statusColors = [
+                    'creada' => 'secondary',
+                    'revisada-area' => 'info',
+                    'archivada' => 'dark',
+                    'convertida-a-compra' => 'warning',
+                    'entregada-parcialmente' => 'warning',
+                    'entregada-totalmente' => 'success',
+                ];
+                $badgeColor = $statusColors[$statusClass] ?? 'secondary';
+                $html .= '<span class="badge bg-' . $badgeColor . '">' . ucfirst(str_replace('_', ' ', $status)) . '</span>';
+                $html .= '</p>';
+                $html .= '</div>';
+                $html .= '<div class="col-md-6">';
+                $html .= '<p><strong>Área:</strong> ' . e($generalRequest->area->name ?? 'N/A') . '</p>';
+                $html .= '<p><strong>Creada por:</strong> ' . e($generalRequest->createdBy->name ?? 'N/A') . '</p>';
+                $html .= '<p><strong>Fecha de creación:</strong> ' . ($generalRequest->created_at ? $generalRequest->created_at->format('d/m/Y H:i') : 'N/A') . '</p>';
+                $html .= '</div>';
+                $html .= '</div>';
+                if ($generalRequest->description) {
+                    $html .= '<div class="row mt-2">';
+                    $html .= '<div class="col-12">';
+                    $html .= '<p><strong>Descripción:</strong></p>';
+                    $html .= '<p class="text-muted">' . nl2br(e($generalRequest->description)) . '</p>';
+                    $html .= '</div>';
+                    $html .= '</div>';
+                }
+                $html .= '<div class="row mt-2">';
+                $html .= '<div class="col-12">';
+                $html .= '<a href="' . backpack_url('general-request/' . $generalRequest->id) . '" class="btn btn-sm btn-primary">';
+                $html .= '<i class="la la-eye"></i> Ver Solicitud General';
+                $html .= '</a>';
+                $html .= '</div>';
+                $html .= '</div>';
+                $html .= '</div>';
+                $html .= '</div>';
+                
+                return $html;
+            });
+
         // Agregar campo personalizado para mostrar detalles de productos
         CRUD::column('details_table')->label('Detalles de Productos')->type('custom_html')
             ->value(function($entry) {
@@ -1245,8 +1359,8 @@ class PurchaseRequestCrudController extends CrudController
                 $html .= '<tr>';
                 $html .= '<th style="width: 30%;">Producto</th>';
                 $html .= '<th style="width: 12%;" class="text-center">Cantidad Solicitada</th>';
-                $html .= '<th style="width: 12%;" class="text-center">Cantidad Entregada</th>';
-                $html .= '<th style="width: 12%;" class="text-center">Estado Entrega</th>';
+                $html .= '<th style="width: 12%;" class="text-center">Cantidad Recibida</th>';
+                $html .= '<th style="width: 12%;" class="text-center">Estado Recepción</th>';
                 $html .= '<th style="width: 24%;">Especificaciones</th>';
                 $html .= '<th style="width: 10%;" class="text-center">Estado</th>';
                 $html .= '</tr>';
@@ -1259,7 +1373,7 @@ class PurchaseRequestCrudController extends CrudController
                     $deliveryStatus = $detail->delivery_status ?? 'Pendiente';
                     $isFullyDelivered = $detail->is_fully_delivered ?? false;
                     
-                    // Determinar estado de entrega
+                    // Determinar estado de recepción
                     $deliveryStatusColor = 'secondary';
                     $deliveryStatusIcon = 'clock';
                     if ($deliveryStatus == 'Completo') {
@@ -1289,12 +1403,12 @@ class PurchaseRequestCrudController extends CrudController
                     }
                     $html .= '</td>';
                     $html .= '<td class="text-center">';
-                    $html .= '<span class="badge bg-' . ($deliveredQuantity > 0 ? ($isFullyDelivered ? 'success' : 'warning') : 'secondary') . '" title="Cantidad entregada: ' . number_format($deliveredQuantity) . ' de ' . number_format($requestedQuantity) . '">';
+                    $html .= '<span class="badge bg-' . ($deliveredQuantity > 0 ? ($isFullyDelivered ? 'success' : 'warning') : 'secondary') . '" title="Cantidad recibida: ' . number_format($deliveredQuantity) . ' de ' . number_format($requestedQuantity) . '">';
                     $html .= number_format($deliveredQuantity) . ' / ' . number_format($requestedQuantity);
                     $html .= '</span>';
                     $html .= '</td>';
                     $html .= '<td class="text-center">';
-                    $html .= '<span class="badge bg-' . $deliveryStatusColor . '" title="Estado de entrega: ' . $deliveryStatus . '">';
+                    $html .= '<span class="badge bg-' . $deliveryStatusColor . '" title="Estado de recepción: ' . $deliveryStatus . '">';
                     $html .= '<i class="la la-' . $deliveryStatusIcon . '"></i> ' . $deliveryStatus;
                     $html .= '</span>';
                     $html .= '</td>';
@@ -1323,10 +1437,9 @@ class PurchaseRequestCrudController extends CrudController
         // Agregar campo para mostrar cotizaciones disponibles
         CRUD::column('market_rates_table')->label('Cotizaciones Disponibles')->type('custom_html')
             ->value(function($entry) {
-                $marketRates = \App\Models\MarketRate::with([
-                    'supplier',
-                    'quoteDetails.product'
-                ])->where('purchase_request_id', $entry->id)->get();
+                // Usar la relación del modelo en lugar de consulta directa
+                $entry->load(['marketRates.supplier', 'marketRates.quoteDetails.product']);
+                $marketRates = $entry->marketRates;
                 
                 if ($marketRates->isEmpty()) {
                     return '<div class="alert alert-warning">No hay cotizaciones disponibles para los productos de esta solicitud.</div>';
@@ -1387,11 +1500,17 @@ class PurchaseRequestCrudController extends CrudController
                 $html .= '</div>';
                 
                 // Lógica para mostrar botón de generar orden según el monto
+                // El rol role_responsable_area no puede generar órdenes de compra
+                $user = backpack_user();
+                $canGenerateOrder = !($user && $user->hasRole('role_responsable_area', 'backpack'));
+                
                 $totalAmount = $entry->total_amount ?? 0;
                 $threshold = 60000;
-                $quotationsCount = \App\Models\MarketRate::where('purchase_request_id', $entry->id)->count();
+                // Usar la relación del modelo en lugar de consulta directa
+                $entry->load('marketRates');
+                $quotationsCount = $entry->marketRates->count();
                 
-                if ($entry->status != 'Completada') {
+                if ($entry->status != 'Completada' && $canGenerateOrder) {
                     if ($totalAmount > $threshold) {
                         // Para montos mayores a 60000, se requieren 3 cotizaciones y una seleccionada
                         if ($quotationsCount < 3) {
@@ -1441,6 +1560,11 @@ class PurchaseRequestCrudController extends CrudController
                         $html .= '</form>';
                         $html .= '</div>';
                     }
+                } elseif ($entry->status != 'Completada' && !$canGenerateOrder) {
+                    // Usuario con rol role_responsable_area no puede generar órdenes de compra
+                    $html .= '<div class="mt-3 alert alert-info">';
+                    $html .= '<i class="la la-info-circle"></i> <strong>Información:</strong> Los responsables de área no pueden generar órdenes de compra. Esta función está reservada para otros roles del sistema.';
+                    $html .= '</div>';
                 }
                 
                 return $html;

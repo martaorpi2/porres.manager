@@ -26,7 +26,25 @@ class GeneralRequestCrudController extends CrudController
         // Habilitar tabla responsiva
         CRUD::enableResponsiveTable();
         
-        CRUD::addClause('with', ['createdBy', 'area', 'details']);
+        // Cargar relaciones necesarias, incluyendo productos para verificar stock y entregas
+        CRUD::addClause('with', ['createdBy', 'area', 'details.product', 'deliveries']);
+
+        // Si el usuario tiene rol role_personal, solo mostrar sus solicitudes
+        $user = backpack_user();
+        if ($user && $user->hasRole('role_personal')) {
+            CRUD::addClause('where', 'created_by', $user->id);
+        } elseif ($user && $user->hasRole('role_responsable_area')) {
+            // Para role_responsable_area, mostrar solicitudes de su área o que él creó
+            $userAreas = \App\Models\ResponsibilityArea::where('responsible_user_id', $user->id)->pluck('id');
+            if ($userAreas->isNotEmpty()) {
+                CRUD::addClause(function($query) use ($user, $userAreas) {
+                    $query->where('created_by', $user->id)
+                        ->orWhereIn('area_id', $userAreas);
+                });
+            } else {
+                CRUD::addClause('where', 'created_by', $user->id);
+            }
+        }
 
         CRUD::column('number')->label('Número');
         CRUD::column('title')->label('Título');
@@ -46,6 +64,10 @@ class GeneralRequestCrudController extends CrudController
 
         // Botón para convertir a solicitud de compra (solo para solicitudes no convertidas y con productos)
         CRUD::addButton('line', 'convert_to_purchase', 'view', 'crud::buttons.convert_to_purchase', 'end');
+        
+        // Reemplazar el botón de eliminar con uno personalizado que verifica condiciones
+        CRUD::removeButton('delete');
+        CRUD::addButton('line', 'delete', 'view', 'crud::buttons.delete_general_request', 'end');
 
         // Filtro personalizado por número usando parámetros de URL
         if (request()->has('numero')) {
@@ -92,6 +114,12 @@ class GeneralRequestCrudController extends CrudController
 
     protected function setupCreateOperation()
     {
+        // Verificar permisos
+        $user = backpack_user();
+        if (!$user || !$user->hasPermissionTo('solicitud.crear', 'backpack')) {
+            abort(403, 'No tienes permiso para crear solicitudes generales.');
+        }
+        
         CRUD::field('number')->label('Número de Solicitud')->default(\App\Models\GeneralRequest::generateNextNumber())->attributes(['readonly' => 'readonly']);
 
         CRUD::field('title')->label('Título')->validationRules('required|string|max:255');
@@ -137,34 +165,168 @@ class GeneralRequestCrudController extends CrudController
 
     protected function setupUpdateOperation()
     {
-        // Usar los mismos campos que en create
-        $this->setupCreateOperation();
+        // Verificar permisos y que el usuario solo pueda editar sus propias solicitudes si es role_personal
+        $user = backpack_user();
+        if (!$user || !$user->hasPermissionTo('solicitud.crear', 'backpack')) {
+            abort(403, 'No tienes permiso para editar solicitudes generales.');
+        }
         
-        // Cargar productos existentes para edición
-        $entry = $this->crud->getCurrentEntry();
-        if ($entry) {
-            // Cargar la relación con productos
-            $entry->load('details.product');
-            
-            if ($entry->details) {
-                $existingProducts = $entry->details->map(function($detail) {
-                    return [
-                        'product_id' => $detail->product_id,
-                        'product_name' => $detail->product->name,
-                        'unit' => $detail->product->unit_measurement,
-                        'description' => $detail->product->description,
-                        'quantity' => $detail->requested_quantity,
-                        'price' => $detail->estimated_unit_price,
-                        'specifications' => $detail->specifications
-                    ];
-                })->toArray();
-                
-                // Modificar el campo de productos para incluir los existentes
-                CRUD::modifyField('products_selection', [
-                    'value' => $this->getProductsSelectionHtml($existingProducts)
-                ]);
+        // Si es role_personal, solo puede editar sus propias solicitudes
+        if ($user->hasRole('role_personal', 'backpack')) {
+            $entry = $this->crud->getCurrentEntry();
+            if ($entry && $entry->created_by != $user->id) {
+                abort(403, 'Solo puedes editar tus propias solicitudes.');
             }
         }
+        
+        $entry = $this->crud->getCurrentEntry();
+        $isResponsableArea = $user->hasRole('role_responsable_area', 'backpack');
+        $isOwnRequest = $entry && $entry->created_by == $user->id;
+        $canOnlyChangeStatus = false;
+        
+        // Si es role_responsable_area y la solicitud NO es propia, verificar si puede cambiar solo el estado
+        if ($isResponsableArea && !$isOwnRequest && $entry) {
+            // Verificar si la solicitud pertenece a un área donde el usuario es responsable
+            $userAreas = \App\Models\ResponsibilityArea::where('responsible_user_id', $user->id)->pluck('id');
+            if ($entry->area_id && $userAreas->contains($entry->area_id)) {
+                // Puede cambiar solo el estado
+                $canOnlyChangeStatus = true;
+            } else {
+                // No puede editar solicitudes de otras áreas
+                abort(403, 'Solo puedes editar solicitudes de tu área o las que creaste.');
+            }
+        } elseif ($isResponsableArea && !$isOwnRequest) {
+            // Si es role_responsable_area intentando editar una solicitud que no es suya y no es de su área
+            abort(403, 'Solo puedes editar solicitudes de tu área o las que creaste.');
+        }
+        
+        // Si solo puede cambiar el estado, mostrar solo ese campo
+        if ($canOnlyChangeStatus) {
+            // Mostrar información de la solicitud (solo lectura)
+            CRUD::field('number')->label('Número de Solicitud')->type('text')->attributes(['readonly' => 'readonly', 'disabled' => 'disabled']);
+            CRUD::field('title')->label('Título')->type('text')->attributes(['readonly' => 'readonly', 'disabled' => 'disabled']);
+            CRUD::field('description')->label('Descripción')->type('textarea')->attributes(['readonly' => 'readonly', 'disabled' => 'disabled']);
+            
+            CRUD::field('area_id')->label('Área')
+                ->type('select')
+                ->model('App\Models\ResponsibilityArea')
+                ->attribute('name')
+                ->attributes(['readonly' => 'readonly', 'disabled' => 'disabled']);
+            
+            CRUD::field('created_by')->label('Creado por')
+                ->type('select')
+                ->model('App\Models\User')
+                ->attribute('name')
+                ->attributes(['readonly' => 'readonly', 'disabled' => 'disabled']);
+            
+            CRUD::field('priority')->label('Prioridad')
+                ->type('select_from_array')
+                ->options([
+                    'Baja' => 'Baja',
+                    'Media' => 'Media',
+                    'Alta' => 'Alta',
+                    'Urgente' => 'Urgente'
+                ])
+                ->attributes(['readonly' => 'readonly', 'disabled' => 'disabled']);
+            
+            // Campo editable: Estado
+            CRUD::field('status')->label('Estado')
+                ->type('select_from_array')
+                ->options([
+                    'creada' => 'Creada',
+                    'revisada_area' => 'Revisada por Área',
+                    'archivada' => 'Archivada',
+                    'convertida_a_compra' => 'Convertida a Compra',
+                    'entregada_parcialmente' => 'Entregada Parcialmente',
+                    'entregada_totalmente' => 'Entregada Totalmente',
+                ])
+                ->allows_null(false);
+            
+            // Agregar mensaje informativo
+            CRUD::addField([
+                'name' => 'status_change_info',
+                'type' => 'custom_html',
+                'value' => '<div class="alert alert-info">
+                    <i class="la la-info-circle"></i> <strong>Nota:</strong> Solo puedes modificar el estado de esta solicitud. Los demás campos no son editables.
+                </div>',
+            ]);
+        } else {
+            // Usar los mismos campos que en create (edición completa)
+            $this->setupCreateOperation();
+            
+            // Cargar productos existentes para edición
+            if ($entry) {
+                // Cargar la relación con productos
+                $entry->load('details.product');
+                
+                if ($entry->details) {
+                    $existingProducts = $entry->details->map(function($detail) {
+                        return [
+                            'product_id' => $detail->product_id,
+                            'product_name' => $detail->product->name,
+                            'unit' => $detail->product->unit_measurement,
+                            'description' => $detail->product->description,
+                            'quantity' => $detail->requested_quantity,
+                            'price' => $detail->estimated_unit_price,
+                            'specifications' => $detail->specifications
+                        ];
+                    })->toArray();
+                    
+                    // Modificar el campo de productos para incluir los existentes
+                    CRUD::modifyField('products_selection', [
+                        'value' => $this->getProductsSelectionHtml($existingProducts)
+                    ]);
+                }
+            }
+        }
+    }
+
+    protected function setupDeleteOperation()
+    {
+        // Verificar que solo el creador pueda eliminar
+        $user = backpack_user();
+        $entry = $this->crud->getCurrentEntry();
+        
+        if ($entry) {
+            // Solo el creador puede eliminar
+            if ($entry->created_by != $user->id) {
+                abort(403, 'Solo puedes eliminar las solicitudes que creaste.');
+            }
+            
+            // Verificar si tiene entregas (total o parcialmente)
+            $entry->load('deliveries.details');
+            $hasDeliveries = $entry->deliveries->isNotEmpty();
+            
+            if ($hasDeliveries) {
+                abort(403, 'No se puede eliminar una solicitud que tiene entregas registradas (total o parcialmente).');
+            }
+        }
+    }
+    
+    /**
+     * Remove the specified resource from storage.
+     */
+    public function destroy($id)
+    {
+        $this->crud->hasAccessOrFail('delete');
+        
+        $user = backpack_user();
+        $entry = $this->crud->getEntry($id);
+        
+        // Verificar que solo el creador pueda eliminar
+        if ($entry->created_by != $user->id) {
+            abort(403, 'Solo puedes eliminar las solicitudes que creaste.');
+        }
+        
+        // Verificar si tiene entregas (total o parcialmente)
+        $entry->load('deliveries.details');
+        $hasDeliveries = $entry->deliveries->isNotEmpty();
+        
+        if ($hasDeliveries) {
+            abort(403, 'No se puede eliminar una solicitud que tiene entregas registradas (total o parcialmente).');
+        }
+        
+        return $this->crud->delete($id);
     }
 
     /**
@@ -459,8 +621,31 @@ class GeneralRequestCrudController extends CrudController
         // register any Model Events defined on fields
         $this->crud->registerFieldEvents();
 
+        $user = backpack_user();
+        $entry = $this->crud->getCurrentEntry();
+        $isResponsableArea = $user && $user->hasRole('role_responsable_area', 'backpack');
+        $isOwnRequest = $entry && $entry->created_by == $user->id;
+        $canOnlyChangeStatus = false;
+        
+        // Verificar si solo puede cambiar el estado
+        if ($isResponsableArea && !$isOwnRequest && $entry) {
+            $userAreas = \App\Models\ResponsibilityArea::where('responsible_user_id', $user->id)->pluck('id');
+            if ($entry->area_id && $userAreas->contains($entry->area_id)) {
+                $canOnlyChangeStatus = true;
+            }
+        }
+
         // Obtener datos para guardar
         $dataToSave = $this->crud->getStrippedSaveRequest($request);
+
+        // Si solo puede cambiar el estado, solo guardar el estado
+        if ($canOnlyChangeStatus) {
+            // Solo guardar el estado, ignorar otros campos
+            $dataToSave = [];
+            if ($request->has('status')) {
+                $dataToSave['status'] = $request->input('status');
+            }
+        }
 
         // Debug: Log todos los datos del request
         \Log::info('Datos del request completo (UPDATE):', $request->all());
@@ -471,8 +656,11 @@ class GeneralRequestCrudController extends CrudController
             $item = $this->crud->update($this->crud->getCurrentEntryId(), $dataToSave);
             $this->data['entry'] = $this->crud->entry = $item;
 
-            // Eliminar productos existentes y procesar los nuevos
-            $this->processSelectedProducts($item, $request, true);
+            // Solo procesar productos si no es solo cambio de estado
+            if (!$canOnlyChangeStatus) {
+                // Eliminar productos existentes y procesar los nuevos
+                $this->processSelectedProducts($item, $request, true);
+            }
 
             // show a success message
             \Alert::success(trans('backpack::crud.update_success'))->flash();
@@ -645,6 +833,9 @@ class GeneralRequestCrudController extends CrudController
     protected function setupShowOperation()
     {
         CRUD::addClause('with', ['createdBy', 'area', 'purchaseRequests', 'details.product.stockLevels', 'deliveries.details']);
+
+        CRUD::removeButton('delete');
+        CRUD::addButton('line', 'delete', 'view', 'crud::buttons.delete_general_request', 'end');
         
         CRUD::column('number')->label('Número');
         CRUD::column('createdBy.name')->label('Solicitante');
@@ -679,13 +870,12 @@ class GeneralRequestCrudController extends CrudController
                 $html .= '<thead style="background-color: #871f1f; color: white;">';
                 $html .= '<tr>';
                 $html .= '<th width="25%" style="background-color: #871f1f; color: white;">Producto</th>';
-                $html .= '<th width="10%" class="text-center" style="background-color: #871f1f; color: white;">Cantidad Solicitada</th>';
-                $html .= '<th width="10%" class="text-center" style="background-color: #871f1f; color: white;">Cantidad Entregada</th>';
-                $html .= '<th width="10%" class="text-center" style="background-color: #871f1f; color: white;">Estado Entrega</th>';
-                $html .= '<th width="10%" class="text-center" style="background-color: #871f1f; color: white;">Stock Disponible</th>';
-                $html .= '<th width="10%" class="text-center" style="background-color: #871f1f; color: white;">Disponibilidad</th>';
+                $html .= '<th width="12%" class="text-center" style="background-color: #871f1f; color: white;">Cantidad Solicitada</th>';
+                $html .= '<th width="12%" class="text-center" style="background-color: #871f1f; color: white;">Cantidad Entregada</th>';
+                $html .= '<th width="12%" class="text-center" style="background-color: #871f1f; color: white;">Estado Entrega</th>';
+                $html .= '<th width="12%" class="text-center" style="background-color: #871f1f; color: white;">Stock Disponible</th>';
+                $html .= '<th width="12%" class="text-center" style="background-color: #871f1f; color: white;">Disponibilidad</th>';
                 $html .= '<th width="15%" style="background-color: #871f1f; color: white;">Especificaciones</th>';
-                $html .= '<th width="10%" class="text-center" style="background-color: #871f1f; color: white;">Estado</th>';
                 $html .= '</tr>';
                 $html .= '</thead>';
                 $html .= '<tbody>';
@@ -712,6 +902,7 @@ class GeneralRequestCrudController extends CrudController
                     
                     $requestedQuantity = $detail->requested_quantity ?? 0;
                     $deliveredQuantity = $detail->delivered_quantity ?? 0;
+                    $pendingQuantity = max(0, $requestedQuantity - $deliveredQuantity);
                     $hasEnoughStock = $stockAvailable >= $requestedQuantity;
                     $stockDifference = $stockAvailable - $requestedQuantity;
                     
@@ -729,25 +920,6 @@ class GeneralRequestCrudController extends CrudController
                     } else {
                         $deliveryStatusColor = 'secondary';
                         $deliveryStatusIcon = 'clock';
-                    }
-                    
-                    // Determinar color del badge según el estado
-                    $statusColor = 'secondary';
-                    switch ($detail->status) {
-                        case 'Aprobada':
-                            $statusColor = 'success';
-                            break;
-                        case 'Rechazada':
-                            $statusColor = 'danger';
-                            break;
-                        case 'En Cotización':
-                            $statusColor = 'info';
-                            break;
-                        case 'Comprada':
-                            $statusColor = 'primary';
-                            break;
-                        default:
-                            $statusColor = 'warning';
                     }
                     
                     // Determinar color y mensaje de disponibilidad
@@ -781,6 +953,9 @@ class GeneralRequestCrudController extends CrudController
                     $html .= '<span class="badge bg-' . ($deliveredQuantity > 0 ? ($isFullyDelivered ? 'success' : 'warning') : 'secondary') . ' fs-6" title="Cantidad entregada: ' . number_format($deliveredQuantity) . ' de ' . number_format($requestedQuantity) . '">';
                     $html .= number_format($deliveredQuantity) . ' / ' . number_format($requestedQuantity);
                     $html .= '</span>';
+                    if ($pendingQuantity > 0) {
+                        $html .= '<br><small class="text-warning">Faltan: ' . number_format($pendingQuantity) . '</small>';
+                    }
                     $html .= '</td>';
                     $html .= '<td class="text-center">';
                     $html .= '<span class="badge bg-' . $deliveryStatusColor . '" title="Estado de entrega: ' . $deliveryStatus . '">';
@@ -805,9 +980,6 @@ class GeneralRequestCrudController extends CrudController
                     } else {
                         $html .= '<small class="text-muted">Sin especificaciones</small>';
                     }
-                    $html .= '</td>';
-                    $html .= '<td class="text-center">';
-                    $html .= '<span class="badge bg-' . $statusColor . '">' . e($detail->status) . '</span>';
                     $html .= '</td>';
                     $html .= '</tr>';
                 }
@@ -837,6 +1009,50 @@ class GeneralRequestCrudController extends CrudController
                 }
                 return '';
             });
+        
+        // Agregar botón para registrar entrega solo para role_responsable_area y solo si la solicitud es de su área
+        $user = backpack_user();
+        if ($user && $user->hasRole('role_responsable_area', 'backpack')) {
+            CRUD::column('register_delivery_button')->label('Acciones')->type('custom_html')
+                ->value(function($entry) use ($user) {
+                    // Verificar si la solicitud pertenece a un área donde el usuario es responsable
+                    $userAreas = \App\Models\ResponsibilityArea::where('responsible_user_id', $user->id)->pluck('id');
+                    $canDeliver = false;
+                    
+                    // Puede entregar si la solicitud pertenece a una de sus áreas
+                    if ($entry->area_id && $userAreas->contains($entry->area_id)) {
+                        $canDeliver = true;
+                    }
+                    
+                    if (!$canDeliver) {
+                        return '<div class="alert alert-warning">
+                            <i class="la la-exclamation-triangle"></i> No puedes registrar entregas para solicitudes de otras áreas.
+                        </div>';
+                    }
+                    
+                    // No mostrar el botón si la solicitud ya está totalmente entregada
+                    if ($entry->status === 'entregada_totalmente') {
+                        return '<div class="alert alert-success">
+                            <i class="la la-check-circle"></i> <strong>Solicitud totalmente entregada:</strong> Esta solicitud ya ha sido entregada completamente. No se pueden registrar más entregas.
+                        </div>';
+                    }
+                    
+                    return '<div class="card mb-3" style="border-left: 4px solid #28a745;">
+                        <div class="card-body">
+                            <h5 class="card-title">
+                                <i class="la la-people-carry"></i> Registrar Entrega de Productos
+                            </h5>
+                            <p class="card-text">
+                                Registra la entrega de los productos de esta solicitud general al personal solicitante.
+                            </p>
+                            <a href="' . backpack_url('delivery/create?general_request_id=' . $entry->id) . '" 
+                               class="btn btn-success">
+                                <i class="la la-plus"></i> Registrar Entrega
+                            </a>
+                        </div>
+                    </div>';
+                });
+        }
     }
     
     /**

@@ -44,6 +44,23 @@ class StockLevelCrudController extends CrudController
         // Habilitar tabla responsiva
         CRUD::enableResponsiveTable();
         
+        // Si el usuario tiene rol role_responsable_area, solo mostrar stock de sus áreas
+        $user = backpack_user();
+        if ($user && $user->hasRole('role_responsable_area')) {
+            // Obtener las áreas de responsabilidad del usuario
+            $userAreas = \App\Models\ResponsibilityArea::where('responsible_user_id', $user->id)->pluck('name');
+            
+            if ($userAreas->isNotEmpty()) {
+                // Filtrar stock por ubicaciones que coinciden con los nombres de las áreas
+                CRUD::addClause('whereHas', 'location', function($query) use ($userAreas) {
+                    $query->whereIn('name', $userAreas);
+                });
+            } else {
+                // Si no tiene áreas asignadas, no mostrar nada
+                CRUD::addClause('where', 'id', 0);
+            }
+        }
+        
         CRUD::column('product')->label('Producto');
         CRUD::column('location')->label('Depósito');
         CRUD::addColumn([
@@ -100,7 +117,31 @@ class StockLevelCrudController extends CrudController
         CRUD::setValidation(StockLevelRequest::class);
         CRUD::field('product')->label('Producto');
         
-        // Solo mostrar las 4 ubicaciones que corresponden a áreas de responsabilidad
+        // Si el usuario tiene rol role_responsable_area, solo mostrar ubicaciones de sus áreas
+        $user = backpack_user();
+        $locationOptions = function ($query) use ($user) {
+            if ($user && $user->hasRole('role_responsable_area')) {
+                // Obtener las áreas de responsabilidad del usuario
+                $userAreas = \App\Models\ResponsibilityArea::where('responsible_user_id', $user->id)->pluck('name');
+                
+                if ($userAreas->isNotEmpty()) {
+                    // Filtrar solo las ubicaciones que coinciden con los nombres de las áreas del usuario
+                    return $query->whereIn('name', $userAreas)->get();
+                } else {
+                    // Si no tiene áreas asignadas, no mostrar ubicaciones
+                    return collect();
+                }
+            } else {
+                // Para otros roles, mostrar todas las ubicaciones de áreas de responsabilidad
+                return $query->whereIn('name', [
+                    'Insumos Generales',
+                    'Mantenimiento',
+                    'Insumos de Salud',
+                    'Informática'
+                ])->get();
+            }
+        };
+        
         CRUD::addField([
             'name' => 'location_id',
             'label' => 'Depósito',
@@ -108,15 +149,7 @@ class StockLevelCrudController extends CrudController
             'entity' => 'location',
             'model' => 'App\Models\Location',
             'attribute' => 'name',
-            'options' => function ($query) {
-                // Filtrar solo las ubicaciones que corresponden a áreas de responsabilidad
-                return $query->whereIn('name', [
-                    'Insumos Generales',
-                    'Mantenimiento',
-                    'Insumos de Salud',
-                    'Informática'
-                ])->get();
-            },
+            'options' => $locationOptions,
         ]);
         
         CRUD::addField([
@@ -168,8 +201,25 @@ class StockLevelCrudController extends CrudController
      */
     public function store()
     {
-        // Asegurar que el last_updated_by esté asignado antes de guardar
+        // Si el usuario tiene rol role_responsable_area, verificar que solo pueda crear stock en sus áreas
         $user = backpack_user();
+        if ($user && $user->hasRole('role_responsable_area')) {
+            $locationId = request()->input('location_id');
+            if ($locationId) {
+                $location = \App\Models\Location::find($locationId);
+                if ($location) {
+                    // Obtener las áreas de responsabilidad del usuario
+                    $userAreas = \App\Models\ResponsibilityArea::where('responsible_user_id', $user->id)->pluck('name');
+                    
+                    // Verificar que la ubicación pertenezca a una de sus áreas
+                    if (!$userAreas->contains($location->name)) {
+                        abort(403, 'No tienes permiso para crear stock en esta ubicación. Solo puedes crear stock en tus áreas de responsabilidad.');
+                    }
+                }
+            }
+        }
+        
+        // Asegurar que el last_updated_by esté asignado antes de guardar
         if ($user && !request()->has('last_updated_by')) {
             request()->merge(['last_updated_by' => $user->id]);
         }
@@ -182,12 +232,50 @@ class StockLevelCrudController extends CrudController
      */
     public function update()
     {
-        // Asegurar que el last_updated_by esté asignado antes de actualizar
+        // Si el usuario tiene rol role_responsable_area, verificar que solo pueda actualizar stock de sus áreas
         $user = backpack_user();
+        if ($user && $user->hasRole('role_responsable_area')) {
+            $locationId = request()->input('location_id');
+            if ($locationId) {
+                $location = \App\Models\Location::find($locationId);
+                if ($location) {
+                    // Obtener las áreas de responsabilidad del usuario
+                    $userAreas = \App\Models\ResponsibilityArea::where('responsible_user_id', $user->id)->pluck('name');
+                    
+                    // Verificar que la ubicación pertenezca a una de sus áreas
+                    if (!$userAreas->contains($location->name)) {
+                        abort(403, 'No tienes permiso para modificar el stock de esta ubicación. Solo puedes modificar el stock de tus áreas de responsabilidad.');
+                    }
+                }
+            }
+        }
+        
+        // Asegurar que el last_updated_by esté asignado antes de actualizar
         if ($user) {
             request()->merge(['last_updated_by' => $user->id]);
         }
         
         return parent::update();
+    }
+    
+    /**
+     * Setup delete operation - verificar permisos para role_responsable_area
+     */
+    protected function setupDeleteOperation()
+    {
+        // Si el usuario tiene rol role_responsable_area, verificar que solo pueda eliminar stock de sus áreas
+        $user = backpack_user();
+        if ($user && $user->hasRole('role_responsable_area')) {
+            $entry = $this->crud->getCurrentEntry();
+            if ($entry && $entry->location) {
+                // Obtener las áreas de responsabilidad del usuario
+                $userAreas = \App\Models\ResponsibilityArea::where('responsible_user_id', $user->id)->pluck('name');
+                
+                // Verificar que la ubicación del stock pertenezca a una de sus áreas
+                if (!$userAreas->contains($entry->location->name)) {
+                    abort(403, 'No tienes permiso para eliminar el stock de esta ubicación. Solo puedes eliminar el stock de tus áreas de responsabilidad.');
+                }
+            }
+        }
     }
 }

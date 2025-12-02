@@ -28,6 +28,12 @@ class PaymentOrderCrudController extends CrudController
      */
     public function setup()
     {
+        // Bloquear acceso para role_responsable_area
+        $user = backpack_user();
+        if ($user && $user->hasRole('role_responsable_area')) {
+            abort(403, 'No tienes permiso para acceder a órdenes de pago.');
+        }
+        
         CRUD::setModel(\App\Models\PaymentOrder::class);
         CRUD::setRoute(config('backpack.base.route_prefix') . '/payment-order');
         CRUD::setEntityNameStrings('orden de pago', 'ordenes de pago');

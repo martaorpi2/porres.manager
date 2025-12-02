@@ -2,46 +2,65 @@
 <li class="nav-item"><a class="nav-link" href="{{ backpack_url('dashboard') }}"><i class="la la-home nav-icon"></i> {{ trans('backpack::base.dashboard') }}</a></li>--}}
 <li class="nav-item"><a class="nav-link" href="{{ backpack_url('dashboard') }}"><i class="la la-home nav-icon"></i> Inicio</a></li>
 
-<x-backpack::menu-dropdown title="Proveedores" icon="la la-truck" trigger="click">
-    <x-backpack::menu-dropdown-item title="Listado" :link="backpack_url('supplier')" />
-    <x-backpack::menu-dropdown-item title="Calificaciones" :link="backpack_url('supplier-rating')" />
-    <x-backpack::menu-dropdown-item title="Rubros" :link="backpack_url('suppliers-heading')" />
-    <x-backpack::menu-dropdown-item title="Sectores" :link="backpack_url('sector')" />
-</x-backpack::menu-dropdown>
+@if(backpack_user() && backpack_user()->hasRole('role_personal'))
+    {{-- Menú para usuarios con rol role_personal --}}    
+    <x-backpack::menu-item title="Solicitudes Generales" icon="la la-file-alt" :link="backpack_url('general-request')" />
+    <x-backpack::menu-item title="Entregas" icon="la la-people-carry" :link="backpack_url('delivery')" />
+@elseif(backpack_user() && backpack_user()->hasRole('role_responsable_area'))
+    {{-- Menú para usuarios con rol role_responsable_area --}}
+    <x-backpack::menu-dropdown title="Solicitudes" icon="la la-file-alt" trigger="click">
+        <x-backpack::menu-dropdown-item title="Solicitudes Generales" :link="backpack_url('general-request')" />
+        <x-backpack::menu-dropdown-item title="Solicitudes de Compra" :link="backpack_url('purchase-request')" />
+    </x-backpack::menu-dropdown>
+    
+    <x-backpack::menu-item title="Stock" icon="la la-boxes" :link="backpack_url('stock-level')" />
+    <x-backpack::menu-item title="Entregas" icon="la la-people-carry" :link="backpack_url('delivery')" />
+    <x-backpack::menu-item title="Recepciones" icon="la la-truck-loading" :link="backpack_url('reception')" />
+@else
+    {{-- Menú completo para otros roles --}}
+    <x-backpack::menu-dropdown title="Proveedores" icon="la la-truck" trigger="click">
+        <x-backpack::menu-dropdown-item title="Listado" :link="backpack_url('supplier')" />
+        <x-backpack::menu-dropdown-item title="Calificaciones" :link="backpack_url('supplier-rating')" />
+        <x-backpack::menu-dropdown-item title="Rubros" :link="backpack_url('suppliers-heading')" />
+        <x-backpack::menu-dropdown-item title="Sectores" :link="backpack_url('sector')" />
+    </x-backpack::menu-dropdown>
 
-<x-backpack::menu-dropdown title="Inventario" icon="la la-boxes" trigger="click">
-    <x-backpack::menu-dropdown-item title="Productos" :link="backpack_url('product')" />
-    <x-backpack::menu-dropdown-item title="Categorías" :link="backpack_url('category')" />
-    <x-backpack::menu-dropdown-item title="Ubicaciones" :link="backpack_url('location')" />
-    <x-backpack::menu-item title="Stock" :link="backpack_url('stock-level')" />
-    <x-backpack::menu-item title="Movimientos" :link="backpack_url('inventory-movement')" />
-</x-backpack::menu-dropdown>
+    <x-backpack::menu-dropdown title="Inventario" icon="la la-boxes" trigger="click">
+        <x-backpack::menu-dropdown-item title="Productos" :link="backpack_url('product')" />
+        <x-backpack::menu-dropdown-item title="Categorías" :link="backpack_url('category')" />
+        <x-backpack::menu-dropdown-item title="Ubicaciones" :link="backpack_url('location')" />
+        <x-backpack::menu-item title="Stock" :link="backpack_url('stock-level')" />
+        <x-backpack::menu-item title="Movimientos" :link="backpack_url('inventory-movement')" />
+    </x-backpack::menu-dropdown>
 
-<x-backpack::menu-dropdown title="Solicitudes" icon="la la-file-alt" trigger="click">
-    <x-backpack::menu-dropdown-item title="Solicitudes Generales" :link="backpack_url('general-request')" />
-    <x-backpack::menu-dropdown-item title="Solicitudes de Compra" :link="backpack_url('purchase-request')" />
-    <x-backpack::menu-item title="Asignación de Productos" :link="backpack_url('product-assignment')" />
-    <x-backpack::menu-dropdown-item title="Áreas de Responsabilidad" :link="backpack_url('responsibility-area')" />
-</x-backpack::menu-dropdown>
+    <x-backpack::menu-dropdown title="Solicitudes" icon="la la-file-alt" trigger="click">
+        <x-backpack::menu-dropdown-item title="Solicitudes Generales" :link="backpack_url('general-request')" />
+        <x-backpack::menu-dropdown-item title="Solicitudes de Compra" :link="backpack_url('purchase-request')" />
+        <x-backpack::menu-item title="Asignación de Productos" :link="backpack_url('product-assignment')" />
+        <x-backpack::menu-dropdown-item title="Áreas de Responsabilidad" :link="backpack_url('responsibility-area')" />
+    </x-backpack::menu-dropdown>
 
-{{--<x-backpack::menu-dropdown title="Cotizaciones" icon="la la-calculator" trigger="click">
-    <x-backpack::menu-item title="Listado" :link="backpack_url('market-rate')" />
-    <x-backpack::menu-item title="Detalle" :link="backpack_url('quote-detail')" />
-</x-backpack::menu-dropdown>--}}
-<x-backpack::menu-item title="Cotizaciones" icon="la la-calculator" :link="backpack_url('market-rate')" />
+    {{--<x-backpack::menu-dropdown title="Cotizaciones" icon="la la-calculator" trigger="click">
+        <x-backpack::menu-item title="Listado" :link="backpack_url('market-rate')" />
+        <x-backpack::menu-item title="Detalle" :link="backpack_url('quote-detail')" />
+    </x-backpack::menu-dropdown>--}}
+    <x-backpack::menu-item title="Cotizaciones" icon="la la-calculator" :link="backpack_url('market-rate')" />
 
-<x-backpack::menu-item title="Ordenes de Compra" icon="la la-shopping-cart" :link="backpack_url('purchase-order')" />
-<x-backpack::menu-item title="Ordenes de Pago" icon="la la-money-bill-wave" :link="backpack_url('payment-order')" />
+    <x-backpack::menu-item title="Ordenes de Compra" icon="la la-shopping-cart" :link="backpack_url('purchase-order')" />
+    <x-backpack::menu-item title="Ordenes de Pago" icon="la la-money-bill-wave" :link="backpack_url('payment-order')" />
 
-<x-backpack::menu-item title="Recepciones" icon="la la-truck-loading" :link="backpack_url('reception')" />
-<x-backpack::menu-item title="Devoluciones" icon="la la-undo-alt" :link="backpack_url('devolution')" />
-<x-backpack::menu-item title="Entregas" icon="la la-people-carry" :link="backpack_url('delivery')" />
+    <x-backpack::menu-item title="Recepciones" icon="la la-truck-loading" :link="backpack_url('reception')" />
+    <x-backpack::menu-item title="Devoluciones" icon="la la-undo-alt" :link="backpack_url('devolution')" />
+    <x-backpack::menu-item title="Entregas" icon="la la-people-carry" :link="backpack_url('delivery')" />
 
-<x-backpack::menu-dropdown title="Usuarios" icon="la la-users" trigger="click">
-    <x-backpack::menu-dropdown-item title="Usuarios" :link="backpack_url('user')" />
-    <x-backpack::menu-dropdown-item title="Roles" :link="backpack_url('role')" />
-    <x-backpack::menu-dropdown-item title="Permisos" :link="backpack_url('permission')" />
-</x-backpack::menu-dropdown>
+    @can('admin.usuarios')
+    <x-backpack::menu-dropdown title="Usuarios" icon="la la-users" trigger="click">
+        <x-backpack::menu-dropdown-item title="Usuarios" :link="backpack_url('user')" />
+        <x-backpack::menu-dropdown-item title="Roles" :link="backpack_url('role')" />
+        <x-backpack::menu-dropdown-item title="Permisos" :link="backpack_url('permission')" />
+    </x-backpack::menu-dropdown>
+    @endcan
+@endif
 
 @push('after_scripts')
 <script>

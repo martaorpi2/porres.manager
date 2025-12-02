@@ -100,6 +100,7 @@ class GeneralRequestDetail extends Model
         } elseif ($delivered >= $requested) {
             return 'Completo';
         } else {
+            // Si hay entrega parcial, el estado es "Parcial"
             return 'Parcial';
         }
     }

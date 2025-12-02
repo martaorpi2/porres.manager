@@ -39,7 +39,9 @@ class DevolutionRequest extends FormRequest
     public function attributes()
     {
         return [
-            //
+            'reception_id' => 'recepción',
+            'reason' => 'motivo',
+            'date' => 'fecha',
         ];
     }
 
@@ -51,7 +53,14 @@ class DevolutionRequest extends FormRequest
     public function messages()
     {
         return [
-            //
+            'reception_id.required' => 'El campo recepción es obligatorio.',
+            'reception_id.integer' => 'El campo recepción debe ser un número entero.',
+            'reception_id.exists' => 'La recepción seleccionada no existe.',
+            'reason.required' => 'El campo motivo es obligatorio.',
+            'reason.string' => 'El campo motivo debe ser texto.',
+            'reason.max' => 'El campo motivo no puede tener más de 1000 caracteres.',
+            'date.required' => 'El campo fecha es obligatorio.',
+            'date.date' => 'El campo fecha debe ser una fecha válida.',
         ];
     }
 }

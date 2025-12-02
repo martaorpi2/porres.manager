@@ -111,6 +111,14 @@
   .status-completada { background: #28a745; color: #fff; }
   .status-rechazada { background: #dc3545; color: #fff; }
   .status-recibida { background: #28a745; color: #fff; }
+  
+  /* Estados de Solicitudes Generales */
+  .process-item-status.status-creada { background: #6c757d !important; color: #fff !important; }
+  .process-item-status.status-revisada-area { background: #17a2b8 !important; color: #fff !important; }
+  .process-item-status.status-archivada { background: #495057 !important; color: #fff !important; }
+  .process-item-status.status-convertida-a-compra { background: #fd7e14 !important; color: #fff !important; }
+  .process-item-status.status-entregada-parcialmente { background: #ffc107 !important; color: #000 !important; }
+  .process-item-status.status-entregada-totalmente { background: #28a745 !important; color: #fff !important; }
 
   .stat-card {
       background: white;
@@ -934,6 +942,47 @@
 
 @section('content')
 <div class="container-fluid">
+    @if(isset($isPersonal) && $isPersonal)
+    <!-- Cards de Estado de Solicitudes para role_personal -->
+    <div class="row mb-4">
+        <div class="col-md-12 d-flex justify-content-between align-items-center">
+            <h2 class="section-title mb-0">Estado de Mis Solicitudes</h2>
+            <a href="{{ backpack_url('general-request/create') }}" class="btn btn-primary">
+                <i class="la la-plus"></i> Nueva Solicitud General
+            </a>
+        </div>
+    </div>
+    <div class="row mb-4">
+        <div class="col-md-4">
+            <div class="stat-card" style="border-left: 4px solid #28a745;">
+                <div class="stat-card-icon" style="color: #28a745;">
+                    <i class="la la-check-circle"></i>
+                </div>
+                <div class="stat-card-number" style="color: #28a745;">{{ $stats['general_requests_approved'] ?? 0 }}</div>
+                <div class="stat-card-label">Solicitudes Aprobadas</div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="stat-card" style="border-left: 4px solid #17a2b8;">
+                <div class="stat-card-icon" style="color: #17a2b8;">
+                    <i class="la la-truck"></i>
+                </div>
+                <div class="stat-card-number" style="color: #17a2b8;">{{ $stats['general_requests_entregada'] ?? 0 }}</div>
+                <div class="stat-card-label">Solicitudes Entregadas</div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="stat-card" style="border-left: 4px solid #dc3545;">
+                <div class="stat-card-icon" style="color: #dc3545;">
+                    <i class="la la-times-circle"></i>
+                </div>
+                <div class="stat-card-number" style="color: #dc3545;">{{ $stats['general_requests_rejected'] ?? 0 }}</div>
+                <div class="stat-card-label">Solicitudes Rechazadas</div>
+            </div>
+        </div>
+    </div>
+    @endif
+    
     <!-- Estadísticas Generales -->
     <div class="row mb-4">
         <div class="col-md-12">
@@ -942,26 +991,29 @@
     </div>
 
     <div class="row mb-4">
-        <div class="col-md-3">
+        <div class="col-md-{{ isset($isPersonal) && $isPersonal ? '6' : (isset($isResponsableArea) && $isResponsableArea ? '4' : '3') }}">
             <div class="stat-card">
                 <div class="stat-card-icon">
                     <i class="la la-file-alt"></i>
                 </div>
                 <div class="stat-card-number">{{ $stats['general_requests'] }}</div>
-                <div class="stat-card-label">Solicitudes Generales</div>
+                <div class="stat-card-label">{{ isset($isPersonal) && $isPersonal ? 'Mis Solicitudes Generales' : (isset($isResponsableArea) && $isResponsableArea ? 'Solicitudes Generales' : 'Solicitudes Generales') }}</div>
                 <div class="stat-card-pending">{{ $stats['general_requests_delivered'] }} Entregadas</div>
             </div>
         </div>
-        <div class="col-md-3">
+        @if((isset($isResponsableArea) && $isResponsableArea) || (!isset($isPersonal) || !$isPersonal))
+        <div class="col-md-{{ isset($isPersonal) && $isPersonal ? '6' : (isset($isResponsableArea) && $isResponsableArea ? '4' : '3') }}">
             <div class="stat-card">
                 <div class="stat-card-icon">
                     <i class="la la-shopping-cart"></i>
                 </div>
                 <div class="stat-card-number">{{ $stats['purchase_requests'] }}</div>
-                <div class="stat-card-label">Solicitudes de Compra</div>
+                <div class="stat-card-label">{{ isset($isResponsableArea) && $isResponsableArea ? 'Mis Solicitudes de Compra' : 'Solicitudes de Compra' }}</div>
                 <div class="stat-card-pending">{{ $stats['purchase_requests_pending'] }} Pendientes</div>
             </div>
         </div>
+        @endif
+        @if((!isset($isPersonal) || !$isPersonal) && (!isset($isResponsableArea) || !$isResponsableArea))
         <div class="col-md-3">
             <div class="stat-card">
                 <div class="stat-card-icon">
@@ -982,8 +1034,19 @@
                 <div class="stat-card-pending">{{ $stats['payment_orders_pending'] }} Pendientes</div>
             </div>
         </div>
+        @endif
+        <div class="col-md-{{ isset($isPersonal) && $isPersonal ? '6' : '3' }}">
+            <div class="stat-card">
+                <div class="stat-card-icon">
+                    <i class="la la-people-carry"></i>
+                </div>
+                <div class="stat-card-number">{{ $stats['deliveries'] }}</div>
+                <div class="stat-card-label">{{ isset($isPersonal) && $isPersonal ? 'Mis Entregas' : 'Entregas' }}</div>
+            </div>
+        </div>
     </div>
 
+    @if(!isset($isPersonal) || !$isPersonal)
     <div class="row mb-4">
         <div class="col-md-6">
             <div class="stat-card">
@@ -1004,6 +1067,7 @@
             </div>
         </div>
     </div>
+    @endif
 
     <!-- Proveedores con Calificaciones -->
     @if(isset($suppliersWithRatings) && $suppliersWithRatings->count() > 0)
@@ -1077,7 +1141,14 @@
                 <i class="la la-file-alt process-step-icon"></i>
                 <span>1. Solicitudes Generales</span>
             </div>
-            <span class="process-step-count">{{ $stats['general_requests'] }}</span>
+            <div class="d-flex align-items-center gap-3">
+                <span class="process-step-count">{{ $stats['general_requests'] }}</span>
+                @if(isset($isPersonal) && $isPersonal)
+                <a href="{{ backpack_url('general-request/create') }}" class="btn btn-sm btn-primary">
+                    <i class="la la-plus"></i> Nueva Solicitud
+                </a>
+                @endif
+            </div>
         </div>
         <div class="process-step-content">
             @forelse($generalRequests as $generalRequest)
@@ -1085,7 +1156,24 @@
                     <div class="process-item-title">{{ $generalRequest->number }}</div>
                     <div class="process-item-meta">
                         <span>{{ $generalRequest->title }}</span>
-                        <span class="process-item-status status-{{ strtolower(str_replace(' ', '-', $generalRequest->status)) }}">{{ $generalRequest->status }}</span>
+                        @php
+                            $status = $generalRequest->status ?? 'N/A';
+                            $statusClass = strtolower(str_replace([' ', '_'], '-', $status));
+                            
+                            // Definir colores por estado
+                            $statusColors = [
+                                'creada' => ['bg' => '#6c757d', 'text' => '#fff'],
+                                'revisada-area' => ['bg' => '#17a2b8', 'text' => '#fff'],
+                                'archivada' => ['bg' => '#495057', 'text' => '#fff'],
+                                'convertida-a-compra' => ['bg' => '#fd7e14', 'text' => '#fff'],
+                                'entregada-parcialmente' => ['bg' => '#ffc107', 'text' => '#000'],
+                                'entregada-totalmente' => ['bg' => '#28a745', 'text' => '#fff'],
+                            ];
+                            $color = $statusColors[$statusClass] ?? ['bg' => '#6c757d', 'text' => '#fff'];
+                        @endphp
+                        <span class="process-item-status status-{{ $statusClass }}" style="background-color: {{ $color['bg'] }} !important; color: {{ $color['text'] }} !important;">
+                            {{ ucfirst(str_replace('_', ' ', $status)) }}
+                        </span>
                     </div>
                     <div class="process-item-meta">
                         <span><i class="la la-user"></i> {{ $generalRequest->createdBy->name ?? 'N/A' }}</span>
@@ -1098,6 +1186,7 @@
         </div>
     </div>
 
+    @if((isset($isResponsableArea) && $isResponsableArea) || (!isset($isPersonal) || !$isPersonal))
     <!-- Paso 2: Solicitudes de Compra -->
     <div class="process-step">
         <div class="process-step-header">
@@ -1125,7 +1214,9 @@
             @endforelse
         </div>
     </div>
+    @endif
 
+    @if((!isset($isPersonal) || !$isPersonal) && (!isset($isResponsableArea) || !$isResponsableArea))
     <!-- Paso 3: Órdenes de Compra -->
     <div class="process-step">
         <div class="process-step-header">
@@ -1181,13 +1272,15 @@
             @endforelse
         </div>
     </div>
+    @endif
 
-    <!-- Paso 5: Recepciones -->
+    @if(!isset($isPersonal) || !$isPersonal)
+    <!-- Paso {{ (isset($isResponsableArea) && $isResponsableArea) ? '3' : '5' }}: Recepciones -->
     <div class="process-step">
         <div class="process-step-header">
             <div class="process-step-title">
                 <i class="la la-truck-loading process-step-icon"></i>
-                <span>5. Recepciones</span>
+                <span>@if(isset($isResponsableArea) && $isResponsableArea)3.@else 5.@endif Recepciones</span>
             </div>
             <span class="process-step-count">{{ $stats['receptions'] }}</span>
         </div>
@@ -1208,7 +1301,9 @@
             @endforelse
         </div>
     </div>
+    @endif
 
+    @if((!isset($isPersonal) || !$isPersonal) && (!isset($isResponsableArea) || !$isResponsableArea))
     <!-- Paso 6: Devoluciones -->
     <div class="process-step">
         <div class="process-step-header">
@@ -1235,13 +1330,14 @@
             @endforelse
         </div>
     </div>
+    @endif
 
-    <!-- Paso 7: Entregas -->
+    <!-- Paso {{ (isset($isPersonal) && $isPersonal) ? '2' : ((isset($isResponsableArea) && $isResponsableArea) ? '4' : '7') }}: Entregas -->
     <div class="process-step">
         <div class="process-step-header">
             <div class="process-step-title">
                 <i class="la la-people-carry process-step-icon"></i>
-                <span>7. Entregas</span>
+                <span>@if(isset($isPersonal) && $isPersonal)2.@elseif(isset($isResponsableArea) && $isResponsableArea)4.@else 7.@endif Entregas</span>
             </div>
             <span class="process-step-count">{{ $stats['deliveries'] }}</span>
         </div>
@@ -1250,15 +1346,22 @@
                 <div class="process-item-card" onclick="window.location='{{ backpack_url('delivery/' . $delivery->id . '/show') }}'">
                     <div class="process-item-title">{{ $delivery->number ?? 'ENT-' . $delivery->id }}</div>
                     <div class="process-item-meta">
+                        @if($delivery->reception)
                         <span><i class="la la-truck-loading"></i> {{ $delivery->reception->number ?? 'REC-' . $delivery->reception_id }}</span>
+                        @endif
+                        @if($delivery->generalRequest)
                         <span><i class="la la-file-alt"></i> {{ $delivery->generalRequest->number ?? 'N/A' }}</span>
+                        @endif
                     </div>
                     <div class="process-item-meta">
-                        <span><i class="la la-user"></i> Entregado: {{ $delivery->deliveredBy->name ?? 'N/A' }}</span>
-                        <span><i class="la la-user"></i> Recibido: {{ $delivery->receivedBy->name ?? 'N/A' }}</span>
+                        @if($delivery->deliveredBy)
+                        <span><i class="la la-user"></i> Entregado por: {{ $delivery->deliveredBy->name ?? 'N/A' }}</span>
+                        @endif
+                        @if($delivery->receivedBy)
+                        <span><i class="la la-user"></i> Recibido por: {{ $delivery->receivedBy->name ?? 'N/A' }}</span>
+                        @endif
                     </div>
                     <div class="process-item-meta">
-                        <span class="process-item-status status-{{ strtolower(str_replace(' ', '-', $delivery->status ?? 'pendiente')) }}">{{ ucfirst($delivery->status ?? 'pendiente') }}</span>
                         <span><i class="la la-calendar"></i> {{ $delivery->delivery_date ? $delivery->delivery_date->format('d/m/Y') : $delivery->created_at->format('d/m/Y') }}</span>
                     </div>
                 </div>
@@ -1268,6 +1371,7 @@
         </div>
     </div>
 
+    @if((!isset($isPersonal) || !$isPersonal) && (!isset($isResponsableArea) || !$isResponsableArea))
     <!-- Flujos Completos de Procesos -->
     @if(isset($processFlows) && count($processFlows) > 0)
     <div class="row mb-4">
@@ -1295,7 +1399,26 @@
                                 <small class="text-muted">
                                     Creada por: {{ $flow['general_request']->createdBy->name ?? 'N/A' }} 
                                     | {{ $flow['general_request']->created_at->format('d/m/Y H:i') }}
-                                    | Estado: {{ $flow['general_request']->status ?? 'N/A' }}
+                                    | Estado: 
+                                    @php
+                                        $status = $flow['general_request']->status ?? 'N/A';
+                                        // Convertir guiones bajos a guiones y espacios a guiones
+                                        $statusClass = strtolower(str_replace([' ', '_'], '-', $status));
+                                        
+                                        // Definir colores por estado
+                                        $statusColors = [
+                                            'creada' => ['bg' => '#6c757d', 'text' => '#fff'],
+                                            'revisada-area' => ['bg' => '#17a2b8', 'text' => '#fff'],
+                                            'archivada' => ['bg' => '#495057', 'text' => '#fff'],
+                                            'convertida-a-compra' => ['bg' => '#fd7e14', 'text' => '#fff'],
+                                            'entregada-parcialmente' => ['bg' => '#ffc107', 'text' => '#000'],
+                                            'entregada-totalmente' => ['bg' => '#28a745', 'text' => '#fff'],
+                                        ];
+                                        $color = $statusColors[$statusClass] ?? ['bg' => '#6c757d', 'text' => '#fff'];
+                                    @endphp
+                                    <span class="process-item-status status-{{ $statusClass }}" style="background-color: {{ $color['bg'] }} !important; color: {{ $color['text'] }} !important;">
+                                        {{ ucfirst(str_replace('_', ' ', $status)) }}
+                                    </span>
                                 </small>
                             </div>
                         </div>
@@ -1440,13 +1563,10 @@
                                                             @endif
                                                             @if($delivery->deliveredBy)
                                                                 | Entregado por: {{ $delivery->deliveredBy->name }}
-                                                            @endif
-                                                            @if($delivery->receivedBy)
+                                                                @endif
+                                                                @if($delivery->receivedBy)
                                                                 | Recibido por: {{ $delivery->receivedBy->name }}
-                                                            @endif
-                                                            @if($delivery->status)
-                                                                | Estado: {{ ucfirst($delivery->status) }}
-                                                            @endif
+                                                                @endif
                                                         </small>
                                                     </div>
                                                 </div>
@@ -1482,6 +1602,7 @@
             </div>
         </div>
     </div>
+    @endif
     @endif
 </div>
 @endsection
