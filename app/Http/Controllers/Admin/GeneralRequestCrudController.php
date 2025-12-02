@@ -74,6 +74,10 @@ class GeneralRequestCrudController extends CrudController
         // Botón para convertir a solicitud de compra (solo para solicitudes no convertidas y con productos)
         CRUD::addButton('line', 'convert_to_purchase', 'view', 'crud::buttons.convert_to_purchase', 'end');
         
+        // Reemplazar el botón de editar con uno personalizado que verifica condiciones
+        CRUD::removeButton('update');
+        CRUD::addButton('line', 'edit', 'view', 'crud::buttons.edit_general_request', 'end');
+        
         // Reemplazar el botón de eliminar con uno personalizado que verifica condiciones
         CRUD::removeButton('delete');
         CRUD::addButton('line', 'delete', 'view', 'crud::buttons.delete_general_request', 'end');
@@ -180,25 +184,36 @@ class GeneralRequestCrudController extends CrudController
             abort(403, 'No tienes permiso para editar solicitudes generales.');
         }
         
-        // Si es role_personal, solo puede editar sus propias solicitudes
-        if ($user->hasRole('role_personal', 'backpack')) {
-            $entry = $this->crud->getCurrentEntry();
-            if ($entry && $entry->created_by != $user->id) {
-                abort(403, 'Solo puedes editar tus propias solicitudes.');
-            }
+        $entry = $this->crud->getCurrentEntry();
+        if (!$entry) {
+            abort(404, 'Solicitud no encontrada.');
         }
         
-        $entry = $this->crud->getCurrentEntry();
+        // No se puede editar si ya fue convertida a compra
+        if ($entry->is_converted) {
+            abort(403, 'No se puede editar una solicitud que ya fue convertida a solicitud de compra.');
+        }
+        
         $isResponsableArea = $user->hasRole('role_responsable_area', 'backpack');
-        $isOwnRequest = $entry && $entry->created_by == $user->id;
+        $isOwnRequest = $entry->created_by == $user->id;
         $canOnlyChangeStatus = false;
+        
+        // Si es role_personal, solo puede editar sus propias solicitudes y solo si el estado es "creada"
+        if ($user->hasRole('role_personal', 'backpack')) {
+            if (!$isOwnRequest) {
+                abort(403, 'Solo puedes editar tus propias solicitudes.');
+            }
+            if ($entry->status !== 'creada') {
+                abort(403, 'Solo puedes editar solicitudes con estado "creada".');
+            }
+        }
         
         // Si es role_responsable_area y la solicitud NO es propia, verificar si puede cambiar solo el estado
         if ($isResponsableArea && !$isOwnRequest && $entry) {
             // Verificar si la solicitud pertenece a un área donde el usuario es responsable
             $userAreas = \App\Models\ResponsibilityArea::where('responsible_user_id', $user->id)->pluck('id');
             if ($entry->area_id && $userAreas->contains($entry->area_id)) {
-                // Puede cambiar solo el estado
+                // Puede cambiar solo el estado (pero no si está convertida, ya validado arriba)
                 $canOnlyChangeStatus = true;
             } else {
                 // No puede editar solicitudes de otras áreas
@@ -207,6 +222,13 @@ class GeneralRequestCrudController extends CrudController
         } elseif ($isResponsableArea && !$isOwnRequest) {
             // Si es role_responsable_area intentando editar una solicitud que no es suya y no es de su área
             abort(403, 'Solo puedes editar solicitudes de tu área o las que creaste.');
+        }
+        
+        // Si es el creador (pero no role_personal), solo puede editar si el estado es "creada"
+        if ($isOwnRequest && !$user->hasRole('role_personal', 'backpack') && !$isResponsableArea) {
+            if ($entry->status !== 'creada') {
+                abort(403, 'Solo puedes editar solicitudes con estado "creada".');
+            }
         }
         
         // Si solo puede cambiar el estado, mostrar solo ese campo
@@ -303,7 +325,7 @@ class GeneralRequestCrudController extends CrudController
 
     protected function setupDeleteOperation()
     {
-        // Verificar que solo el creador pueda eliminar
+        // Verificar que solo el creador pueda eliminar, solo si el estado es "creada" y no está convertida
         $user = backpack_user();
         $entry = $this->crud->getCurrentEntry();
         
@@ -313,12 +335,14 @@ class GeneralRequestCrudController extends CrudController
                 abort(403, 'Solo puedes eliminar las solicitudes que creaste.');
             }
             
-            // Verificar si tiene entregas (total o parcialmente)
-            $entry->load('deliveries.details');
-            $hasDeliveries = $entry->deliveries->isNotEmpty();
+            // Solo se puede eliminar si el estado es "creada"
+            if ($entry->status !== 'creada') {
+                abort(403, 'Solo se pueden eliminar solicitudes con estado "creada".');
+            }
             
-            if ($hasDeliveries) {
-                abort(403, 'No se puede eliminar una solicitud que tiene entregas registradas (total o parcialmente).');
+            // No se puede eliminar si ya fue convertida a solicitud de compra
+            if ($entry->is_converted) {
+                abort(403, 'No se puede eliminar una solicitud que ya fue convertida a solicitud de compra.');
             }
         }
     }
@@ -338,12 +362,14 @@ class GeneralRequestCrudController extends CrudController
             abort(403, 'Solo puedes eliminar las solicitudes que creaste.');
         }
         
-        // Verificar si tiene entregas (total o parcialmente)
-        $entry->load('deliveries.details');
-        $hasDeliveries = $entry->deliveries->isNotEmpty();
+        // Solo se puede eliminar si el estado es "creada"
+        if ($entry->status !== 'creada') {
+            abort(403, 'Solo se pueden eliminar solicitudes con estado "creada".');
+        }
         
-        if ($hasDeliveries) {
-            abort(403, 'No se puede eliminar una solicitud que tiene entregas registradas (total o parcialmente).');
+        // No se puede eliminar si ya fue convertida a solicitud de compra
+        if ($entry->is_converted) {
+            abort(403, 'No se puede eliminar una solicitud que ya fue convertida a solicitud de compra.');
         }
         
         return $this->crud->delete($id);
@@ -643,15 +669,44 @@ class GeneralRequestCrudController extends CrudController
 
         $user = backpack_user();
         $entry = $this->crud->getCurrentEntry();
+        
+        if (!$entry) {
+            abort(404, 'Solicitud no encontrada.');
+        }
+        
+        // No se puede editar si ya fue convertida a compra
+        if ($entry->is_converted) {
+            abort(403, 'No se puede editar una solicitud que ya fue convertida a solicitud de compra.');
+        }
+        
         $isResponsableArea = $user && $user->hasRole('role_responsable_area', 'backpack');
-        $isOwnRequest = $entry && $entry->created_by == $user->id;
+        $isOwnRequest = $entry->created_by == $user->id;
         $canOnlyChangeStatus = false;
+        
+        // Si es role_personal, solo puede editar sus propias solicitudes y solo si el estado es "creada"
+        if ($user->hasRole('role_personal', 'backpack')) {
+            if (!$isOwnRequest) {
+                abort(403, 'Solo puedes editar tus propias solicitudes.');
+            }
+            if ($entry->status !== 'creada') {
+                abort(403, 'Solo puedes editar solicitudes con estado "creada".');
+            }
+        }
         
         // Verificar si solo puede cambiar el estado
         if ($isResponsableArea && !$isOwnRequest && $entry) {
             $userAreas = \App\Models\ResponsibilityArea::where('responsible_user_id', $user->id)->pluck('id');
             if ($entry->area_id && $userAreas->contains($entry->area_id)) {
                 $canOnlyChangeStatus = true;
+            } else {
+                abort(403, 'Solo puedes editar solicitudes de tu área o las que creaste.');
+            }
+        }
+        
+        // Si es el creador (pero no role_personal), solo puede editar si el estado es "creada"
+        if ($isOwnRequest && !$user->hasRole('role_personal', 'backpack') && !$isResponsableArea) {
+            if ($entry->status !== 'creada') {
+                abort(403, 'Solo puedes editar solicitudes con estado "creada".');
             }
         }
 
@@ -854,6 +909,10 @@ class GeneralRequestCrudController extends CrudController
     {
         CRUD::addClause('with', ['createdBy', 'area', 'purchaseRequests', 'details.product.stockLevels', 'deliveries.details']);
 
+        // Reemplazar el botón de editar con uno personalizado que verifica condiciones
+        CRUD::removeButton('update');
+        CRUD::addButton('line', 'edit', 'view', 'crud::buttons.edit_general_request', 'end');
+        
         CRUD::removeButton('delete');
         CRUD::addButton('line', 'delete', 'view', 'crud::buttons.delete_general_request', 'end');
         

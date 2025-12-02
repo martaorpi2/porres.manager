@@ -44,19 +44,70 @@ class StockLevelCrudController extends CrudController
         // Habilitar tabla responsiva
         CRUD::enableResponsiveTable();
         
+        // Cargar relación location para evitar problemas con whereHas
+        CRUD::addClause('with', ['location', 'product']);
+        
         // Si el usuario tiene rol role_responsable_area, solo mostrar stock de sus áreas
         $user = backpack_user();
-        if ($user && $user->hasRole('role_responsable_area')) {
+        
+        // Debug: Log para verificar usuario
+        \Log::info('StockLevelCrudController - setupListOperation', [
+            'user_id' => $user ? $user->id : null,
+            'user_email' => $user ? $user->email : null,
+            'has_role' => $user ? $user->hasRole('role_responsable_area', 'backpack') : false,
+        ]);
+        
+        if ($user && $user->hasRole('role_responsable_area', 'backpack')) {
             // Obtener las áreas de responsabilidad del usuario
             $userAreas = \App\Models\ResponsibilityArea::where('responsible_user_id', $user->id)->pluck('name');
             
+            \Log::info('StockLevelCrudController - Áreas del usuario', [
+                'user_id' => $user->id,
+                'areas' => $userAreas->toArray(),
+            ]);
+            
             if ($userAreas->isNotEmpty()) {
-                // Filtrar stock por ubicaciones que coinciden con los nombres de las áreas
-                CRUD::addClause('whereHas', 'location', function($query) use ($userAreas) {
-                    $query->whereIn('name', $userAreas);
-                });
+                // Mapear nombres de áreas a nombres de ubicaciones
+                $areaLocationMap = [
+                    'Informática' => 'Informática',
+                    'Mantenimiento' => 'Mantenimiento',
+                    'Salud' => 'Insumos de Salud',
+                    'Insumos Generales' => 'Insumos Generales',
+                ];
+                
+                $locationNames = [];
+                foreach ($userAreas as $areaName) {
+                    if (isset($areaLocationMap[$areaName])) {
+                        $locationNames[] = $areaLocationMap[$areaName];
+                    } else {
+                        // Si no hay mapeo, usar el nombre del área directamente
+                        $locationNames[] = $areaName;
+                    }
+                }
+                
+                \Log::info('StockLevelCrudController - Ubicaciones filtradas', [
+                    'location_names' => $locationNames,
+                ]);
+                
+                // Obtener IDs de ubicaciones para filtrar directamente
+                $locationIds = \App\Models\Location::whereIn('name', $locationNames)->pluck('id');
+                
+                \Log::info('StockLevelCrudController - IDs de ubicaciones', [
+                    'location_ids' => $locationIds->toArray(),
+                ]);
+                
+                // Filtrar stock por IDs de ubicaciones (más eficiente que whereHas)
+                if ($locationIds->isNotEmpty()) {
+                    CRUD::addClause('whereIn', 'location_id', $locationIds);
+                } else {
+                    // Si no hay ubicaciones, no mostrar nada
+                    CRUD::addClause('where', 'id', 0);
+                }
             } else {
                 // Si no tiene áreas asignadas, no mostrar nada
+                \Log::warning('StockLevelCrudController - Usuario sin áreas asignadas', [
+                    'user_id' => $user->id,
+                ]);
                 CRUD::addClause('where', 'id', 0);
             }
         }
@@ -120,13 +171,30 @@ class StockLevelCrudController extends CrudController
         // Si el usuario tiene rol role_responsable_area, solo mostrar ubicaciones de sus áreas
         $user = backpack_user();
         $locationOptions = function ($query) use ($user) {
-            if ($user && $user->hasRole('role_responsable_area')) {
+            if ($user && $user->hasRole('role_responsable_area', 'backpack')) {
                 // Obtener las áreas de responsabilidad del usuario
                 $userAreas = \App\Models\ResponsibilityArea::where('responsible_user_id', $user->id)->pluck('name');
                 
                 if ($userAreas->isNotEmpty()) {
-                    // Filtrar solo las ubicaciones que coinciden con los nombres de las áreas del usuario
-                    return $query->whereIn('name', $userAreas)->get();
+                    // Mapear nombres de áreas a nombres de ubicaciones
+                    $areaLocationMap = [
+                        'Informática' => 'Informática',
+                        'Mantenimiento' => 'Mantenimiento',
+                        'Salud' => 'Insumos de Salud',
+                        'Insumos Generales' => 'Insumos Generales',
+                    ];
+                    
+                    $locationNames = [];
+                    foreach ($userAreas as $areaName) {
+                        if (isset($areaLocationMap[$areaName])) {
+                            $locationNames[] = $areaLocationMap[$areaName];
+                        } else {
+                            $locationNames[] = $areaName;
+                        }
+                    }
+                    
+                    // Filtrar solo las ubicaciones que coinciden con los nombres mapeados
+                    return $query->whereIn('name', $locationNames)->get();
                 } else {
                     // Si no tiene áreas asignadas, no mostrar ubicaciones
                     return collect();
@@ -134,10 +202,10 @@ class StockLevelCrudController extends CrudController
             } else {
                 // Para otros roles, mostrar todas las ubicaciones de áreas de responsabilidad
                 return $query->whereIn('name', [
-                    'Insumos Generales',
+                    'Informática',
                     'Mantenimiento',
                     'Insumos de Salud',
-                    'Informática'
+                    'Insumos Generales'
                 ])->get();
             }
         };
@@ -203,7 +271,7 @@ class StockLevelCrudController extends CrudController
     {
         // Si el usuario tiene rol role_responsable_area, verificar que solo pueda crear stock en sus áreas
         $user = backpack_user();
-        if ($user && $user->hasRole('role_responsable_area')) {
+        if ($user && $user->hasRole('role_responsable_area', 'backpack')) {
             $locationId = request()->input('location_id');
             if ($locationId) {
                 $location = \App\Models\Location::find($locationId);
@@ -211,8 +279,25 @@ class StockLevelCrudController extends CrudController
                     // Obtener las áreas de responsabilidad del usuario
                     $userAreas = \App\Models\ResponsibilityArea::where('responsible_user_id', $user->id)->pluck('name');
                     
+                    // Mapear nombres de áreas a nombres de ubicaciones
+                    $areaLocationMap = [
+                        'Informática' => 'Informática',
+                        'Mantenimiento' => 'Mantenimiento',
+                        'Salud' => 'Insumos de Salud',
+                        'Insumos Generales' => 'Insumos Generales',
+                    ];
+                    
+                    $locationNames = [];
+                    foreach ($userAreas as $areaName) {
+                        if (isset($areaLocationMap[$areaName])) {
+                            $locationNames[] = $areaLocationMap[$areaName];
+                        } else {
+                            $locationNames[] = $areaName;
+                        }
+                    }
+                    
                     // Verificar que la ubicación pertenezca a una de sus áreas
-                    if (!$userAreas->contains($location->name)) {
+                    if (!in_array($location->name, $locationNames)) {
                         abort(403, 'No tienes permiso para crear stock en esta ubicación. Solo puedes crear stock en tus áreas de responsabilidad.');
                     }
                 }
@@ -234,7 +319,7 @@ class StockLevelCrudController extends CrudController
     {
         // Si el usuario tiene rol role_responsable_area, verificar que solo pueda actualizar stock de sus áreas
         $user = backpack_user();
-        if ($user && $user->hasRole('role_responsable_area')) {
+        if ($user && $user->hasRole('role_responsable_area', 'backpack')) {
             $locationId = request()->input('location_id');
             if ($locationId) {
                 $location = \App\Models\Location::find($locationId);
@@ -242,8 +327,25 @@ class StockLevelCrudController extends CrudController
                     // Obtener las áreas de responsabilidad del usuario
                     $userAreas = \App\Models\ResponsibilityArea::where('responsible_user_id', $user->id)->pluck('name');
                     
+                    // Mapear nombres de áreas a nombres de ubicaciones
+                    $areaLocationMap = [
+                        'Informática' => 'Informática',
+                        'Mantenimiento' => 'Mantenimiento',
+                        'Salud' => 'Insumos de Salud',
+                        'Insumos Generales' => 'Insumos Generales',
+                    ];
+                    
+                    $locationNames = [];
+                    foreach ($userAreas as $areaName) {
+                        if (isset($areaLocationMap[$areaName])) {
+                            $locationNames[] = $areaLocationMap[$areaName];
+                        } else {
+                            $locationNames[] = $areaName;
+                        }
+                    }
+                    
                     // Verificar que la ubicación pertenezca a una de sus áreas
-                    if (!$userAreas->contains($location->name)) {
+                    if (!in_array($location->name, $locationNames)) {
                         abort(403, 'No tienes permiso para modificar el stock de esta ubicación. Solo puedes modificar el stock de tus áreas de responsabilidad.');
                     }
                 }
@@ -265,14 +367,31 @@ class StockLevelCrudController extends CrudController
     {
         // Si el usuario tiene rol role_responsable_area, verificar que solo pueda eliminar stock de sus áreas
         $user = backpack_user();
-        if ($user && $user->hasRole('role_responsable_area')) {
+        if ($user && $user->hasRole('role_responsable_area', 'backpack')) {
             $entry = $this->crud->getCurrentEntry();
             if ($entry && $entry->location) {
                 // Obtener las áreas de responsabilidad del usuario
                 $userAreas = \App\Models\ResponsibilityArea::where('responsible_user_id', $user->id)->pluck('name');
                 
+                // Mapear nombres de áreas a nombres de ubicaciones
+                $areaLocationMap = [
+                    'Informática' => 'Informática',
+                    'Mantenimiento' => 'Mantenimiento',
+                    'Salud' => 'Insumos de Salud',
+                    'Insumos Generales' => 'Insumos Generales',
+                ];
+                
+                $locationNames = [];
+                foreach ($userAreas as $areaName) {
+                    if (isset($areaLocationMap[$areaName])) {
+                        $locationNames[] = $areaLocationMap[$areaName];
+                    } else {
+                        $locationNames[] = $areaName;
+                    }
+                }
+                
                 // Verificar que la ubicación del stock pertenezca a una de sus áreas
-                if (!$userAreas->contains($entry->location->name)) {
+                if (!in_array($entry->location->name, $locationNames)) {
                     abort(403, 'No tienes permiso para eliminar el stock de esta ubicación. Solo puedes eliminar el stock de tus áreas de responsabilidad.');
                 }
             }

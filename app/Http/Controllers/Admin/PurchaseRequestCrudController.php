@@ -458,6 +458,14 @@ class PurchaseRequestCrudController extends CrudController
         
         // Verificar si viene de una solicitud general desde el parámetro URL o del request
         $convertedFrom = request()->get('converted_from') ?? $request->input('converted_from_general_request_id');
+        
+        // Validar que el usuario personal no pueda convertir solicitudes generales
+        $user = backpack_user();
+        if ($convertedFrom && $user && $user->hasRole('role_personal', 'backpack')) {
+            \Alert::error('No tienes permisos para convertir solicitudes generales a solicitudes de compra.')->flash();
+            return redirect()->back();
+        }
+        
         \Log::info('Parámetro converted_from desde URL:', ['converted_from' => request()->get('converted_from')]);
         \Log::info('Campo converted_from_general_request_id en request:', ['field' => $request->input('converted_from_general_request_id')]);
         \Log::info('Campo converted_from_general_request_id en datos:', ['field' => $dataToSave['converted_from_general_request_id'] ?? 'no existe']);
@@ -469,7 +477,6 @@ class PurchaseRequestCrudController extends CrudController
         }
 
         // Asegurar que requesting_user_id sea el usuario logueado (especialmente para role_responsable_area)
-        $user = backpack_user();
         if ($user) {
             $dataToSave['requesting_user_id'] = $user->id;
             \Log::info('Establecido requesting_user_id al usuario logueado:', ['user_id' => $user->id, 'email' => $user->email]);

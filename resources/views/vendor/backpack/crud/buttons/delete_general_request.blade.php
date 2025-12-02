@@ -2,15 +2,9 @@
     $user = backpack_user();
     $canDelete = false;
     
-    // Solo el creador puede eliminar
-    if ($entry->created_by == $user->id) {
-        // Verificar si tiene entregas (total o parcialmente)
-        $entry->load('deliveries');
-        $hasDeliveries = $entry->deliveries->isNotEmpty();
-        
-        if (!$hasDeliveries) {
-            $canDelete = true;
-        }
+    // Solo el creador puede eliminar, solo si el estado es "creada" y no está convertida a compra
+    if ($entry->created_by == $user->id && $entry->status === 'creada' && !$entry->is_converted) {
+        $canDelete = true;
     }
 @endphp
 

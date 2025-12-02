@@ -2,6 +2,10 @@
     $hasAccess = $crud->hasAccess('show', $entry);
     $notConverted = !$entry->is_converted;
     
+    // Verificar si el usuario tiene el rol role_personal (no puede convertir)
+    $user = backpack_user();
+    $isPersonal = $user && $user->hasRole('role_personal', 'backpack');
+    
     // Verificar si hay productos sin suficiente stock
     $hasInsufficientStock = false;
     if ($entry->details && $entry->details->count() > 0) {
@@ -26,8 +30,9 @@
         $hasInsufficientStock = true;
     }
     
-    // Solo mostrar el botón si no está convertida, tiene acceso y hay productos sin suficiente stock
-    $canConvert = $hasAccess && $notConverted && $hasInsufficientStock;
+    // Solo mostrar el botón si no está convertida, tiene acceso, hay productos sin suficiente stock
+    // Y el usuario NO es role_personal
+    $canConvert = $hasAccess && $notConverted && $hasInsufficientStock && !$isPersonal;
 @endphp
 
 @if ($canConvert)

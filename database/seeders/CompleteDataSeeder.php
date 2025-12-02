@@ -229,7 +229,6 @@ class CompleteDataSeeder extends Seeder
         // Usuarios por rol
         $rolesData = [
             'role_personal' => ['name' => 'Personal Solicitante', 'email' => 'personal@admin'],
-            'role_responsable_area' => ['name' => 'Responsable Área', 'email' => 'responsable@admin'],
             'role_responsable_compras' => ['name' => 'Responsable Compras', 'email' => 'compras@admin'],
             'role_admin_institucion' => ['name' => 'Admin Institucional', 'email' => 'admininst@admin'],
             'role_apoderado' => ['name' => 'Apoderado Legal', 'email' => 'apoderado@admin'],
@@ -259,6 +258,31 @@ class CompleteDataSeeder extends Seeder
             }
         }
         
+        // Crear usuarios responsables por área (uno para cada área)
+        $responsableRole = Role::where('name', 'role_responsable_area')->where('guard_name', 'backpack')->first();
+        if ($responsableRole) {
+            $responsablesData = [
+                'responsable_informatica' => ['name' => 'Responsable Informática', 'email' => 'responsable.informatica@admin', 'area' => 'Informática'],
+                'responsable_mantenimiento' => ['name' => 'Responsable Mantenimiento', 'email' => 'responsable.mantenimiento@admin', 'area' => 'Mantenimiento'],
+                'responsable_salud' => ['name' => 'Responsable Salud', 'email' => 'responsable.salud@admin', 'area' => 'Salud'],
+                'responsable_insumos' => ['name' => 'Responsable Insumos Generales', 'email' => 'responsable.insumos@admin', 'area' => 'Insumos Generales'],
+            ];
+            
+            foreach ($responsablesData as $key => $responsableData) {
+                $user = User::updateOrCreate(
+                    ['email' => $responsableData['email']],
+                    [
+                        'name' => $responsableData['name'],
+                        'password' => Hash::make('password'),
+                        'email_verified_at' => now(),
+                    ]
+                );
+                $user->assignRole($responsableRole);
+                $users[$key] = $user;
+                $this->command->info("  ✓ Usuario {$responsableData['email']} creado como responsable de {$responsableData['area']}");
+            }
+        }
+        
         return $users;
     }
     
@@ -268,22 +292,22 @@ class CompleteDataSeeder extends Seeder
             [
                 'name' => 'Informática',
                 'description' => 'Responsable de equipos de cómputo, software y sistemas informáticos',
-                'responsible_user_id' => $users['role_responsable_area']->id ?? null,
+                'responsible_user_id' => $users['responsable_informatica']->id ?? null,
             ],
             [
                 'name' => 'Mantenimiento',
                 'description' => 'Responsable de herramientas, repuestos y materiales de mantenimiento',
-                'responsible_user_id' => $users['role_responsable_area']->id ?? null,
+                'responsible_user_id' => $users['responsable_mantenimiento']->id ?? null,
             ],
             [
                 'name' => 'Salud',
                 'description' => 'Responsable de material médico, reactivos y equipos de laboratorio',
-                'responsible_user_id' => $users['role_responsable_area']->id ?? null,
+                'responsible_user_id' => $users['responsable_salud']->id ?? null,
             ],
             [
                 'name' => 'Insumos Generales',
                 'description' => 'Responsable de material de oficina, limpieza y suministros generales',
-                'responsible_user_id' => $users['role_responsable_area']->id ?? null,
+                'responsible_user_id' => $users['responsable_insumos']->id ?? null,
             ],
         ];
         
@@ -291,7 +315,7 @@ class CompleteDataSeeder extends Seeder
         foreach ($areasData as $areaData) {
             $area = ResponsibilityArea::create($areaData);
             $areas[$area->name] = $area;
-            $this->command->info("  ✓ Área {$area->name} creada");
+            $this->command->info("  ✓ Área {$area->name} creada con responsable ID: {$area->responsible_user_id}");
         }
         
         return $areas;
@@ -404,10 +428,11 @@ class CompleteDataSeeder extends Seeder
     private function createLocations()
     {
         $locationsData = [
+            ['name' => 'Informática', 'description' => 'Depósito de equipos informáticos'],
+            ['name' => 'Mantenimiento', 'description' => 'Depósito de herramientas y repuestos'],
+            ['name' => 'Insumos de Salud', 'description' => 'Depósito de material médico y reactivos'],
+            ['name' => 'Insumos Generales', 'description' => 'Depósito de material de oficina y limpieza'],
             ['name' => 'Almacén Principal', 'description' => 'Almacén principal del instituto'],
-            ['name' => 'Depósito Informática', 'description' => 'Depósito de equipos informáticos'],
-            ['name' => 'Laboratorio', 'description' => 'Almacén del laboratorio'],
-            ['name' => 'Oficina', 'description' => 'Almacén de oficina'],
         ];
         
         $locations = [];
@@ -722,7 +747,7 @@ class CompleteDataSeeder extends Seeder
     
     private function createReceptions($purchaseOrders, $users)
     {
-        $responsableUser = \App\Models\User::where('email', 'responsable@admin')->first() ?? \App\Models\User::first();
+        $responsableUser = $users['responsable_informatica'] ?? \App\Models\User::first();
         $receptions = [];
         
         foreach ($purchaseOrders as $po) {
@@ -746,7 +771,7 @@ class CompleteDataSeeder extends Seeder
     
     private function createDeliveries($generalRequests, $users, $products)
     {
-        $responsableUser = \App\Models\User::where('email', 'responsable@admin')->first() ?? \App\Models\User::first();
+        $responsableUser = $users['responsable_informatica'] ?? \App\Models\User::first();
         
         foreach ($generalRequests as $gr) {
             if (!$gr->is_converted && rand(0, 1) == 1) {
