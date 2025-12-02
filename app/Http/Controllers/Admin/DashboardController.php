@@ -22,8 +22,14 @@ class DashboardController extends Controller
     public function index()
     {
         $user = backpack_user();
-        $isPersonal = $user && $user->hasRole('role_personal');
-        $isResponsableArea = $user && $user->hasRole('role_responsable_area');
+        
+        // Validar que el usuario esté autenticado
+        if (!$user) {
+            abort(403, 'Usuario no autenticado');
+        }
+        
+        $isPersonal = $user->hasRole('role_personal');
+        $isResponsableArea = $user->hasRole('role_responsable_area');
         
         // Estadísticas generales
         if ($isPersonal) {
@@ -33,16 +39,18 @@ class DashboardController extends Controller
             $stats = [
                 'general_requests' => $userRequests->count(),
                 'general_requests_pending' => GeneralRequest::where('created_by', $user->id)->where('status', 'creada')->count(),
-                'general_requests_delivered' => GeneralRequest::where('created_by', $user->id)->whereHas('deliveries')->count(),
-                // Aprobadas: revisadas por el área (revisada_area) o convertidas a compra (convertida_a_compra)
+                'general_requests_delivered' => GeneralRequest::where('created_by', $user->id)
+                    ->whereIn('status', ['entregada_parcialmente', 'entregada_totalmente'])
+                    ->count(),
+                // Aprobadas: revisadas por el área (status = 'revisada_area')
                 'general_requests_approved' => GeneralRequest::where('created_by', $user->id)
-                    ->whereIn('status', ['revisada_area', 'convertida_a_compra'])
+                    ->where('status', 'revisada_area')
                     ->count(),
-                // Entregadas: las que tienen entregas asociadas
+                // Entregadas: las que tienen status = 'entregada_totalmente' o 'entregada_parcialmente'
                 'general_requests_entregada' => GeneralRequest::where('created_by', $user->id)
-                    ->whereHas('deliveries')
+                    ->whereIn('status', ['entregada_parcialmente', 'entregada_totalmente'])
                     ->count(),
-                // Rechazadas: archivadas
+                // Rechazadas: archivadas (status = 'archivada')
                 'general_requests_rejected' => GeneralRequest::where('created_by', $user->id)
                     ->where('status', 'archivada')
                     ->count(),
@@ -232,7 +240,8 @@ class DashboardController extends Controller
             'processFlows',
             'suppliersWithRatings',
             'isPersonal',
-            'isResponsableArea'
+            'isResponsableArea',
+            'user'
         ));
     }
 
@@ -354,7 +363,7 @@ class DashboardController extends Controller
                         'paymentOrders' => function($query) {
                             $query->with('user')->orderBy('created_at', 'desc');
                         },
-                        'receptions' => function($query) {
+                        'receptions' => function($query) use ($user) {
                             $query->with([
                                 'user',
                                 'devolutions' => function($q) {
@@ -425,41 +434,13 @@ class DashboardController extends Controller
             ];
 
             // Obtener solicitudes de compra relacionadas (solo las del usuario)
+            // NO incluir órdenes de compra ni órdenes de pago para role_responsable_area
             foreach ($generalRequest->purchaseRequests as $purchaseRequest) {
                 // Solo incluir si el purchaseRequest fue creado por este usuario
                 if ($purchaseRequest->requesting_user_id == $user->id) {
                     $flow['purchase_requests'][] = $purchaseRequest;
-
-                // Obtener órdenes de compra relacionadas
-                $purchaseOrders = PurchaseOrder::where('purchase_request_id', $purchaseRequest->id)
-                    ->with([
-                        'supplier', 
-                        'details', 
-                        'paymentOrders' => function($query) {
-                            $query->with('user')->orderBy('created_at', 'desc');
-                        },
-                        'receptions' => function($query) use ($user) {
-                            $query->where('area_manager_id', $user->id)
-                                ->with([
-                                    'user',
-                                    'devolutions' => function($q) {
-                                        $q->with('user')->orderBy('created_at', 'desc');
-                                    },
-                                    'deliveries' => function($q) {
-                                        $q->with(['generalRequest', 'deliveredBy', 'receivedBy', 'details.product'])
-                                            ->orderBy('created_at', 'desc');
-                                    }
-                                ])->orderBy('created_at', 'desc');
-                        }
-                    ])
-                    ->get();
-                
-                foreach ($purchaseOrders as $purchaseOrder) {
-                    if (!in_array($purchaseOrder->id, array_column($flow['purchase_orders'], 'id'))) {
-                        $flow['purchase_orders'][] = $purchaseOrder;
-                    }
+                    // No incluir órdenes de compra ni órdenes de pago para este rol
                 }
-                } // Cerrar if del purchaseRequest
             }
 
             $flows[] = $flow;

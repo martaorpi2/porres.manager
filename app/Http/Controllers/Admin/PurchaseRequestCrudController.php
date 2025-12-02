@@ -526,8 +526,8 @@ class PurchaseRequestCrudController extends CrudController
                 \Log::info('Intentando actualizar solicitud general:', ['id' => $item->converted_from_general_request_id]);
                 $generalRequest = \App\Models\GeneralRequest::find($item->converted_from_general_request_id);
                 if ($generalRequest) {
-                    $generalRequest->update(['status' => 'convertida_a_compra']);
-                    \Log::info('Solicitud general actualizada exitosamente:', ['id' => $generalRequest->id, 'status' => $generalRequest->status]);
+                    $generalRequest->update(['is_converted' => true]);
+                    \Log::info('Solicitud general actualizada exitosamente:', ['id' => $generalRequest->id, 'is_converted' => $generalRequest->is_converted]);
                     \Alert::info('La solicitud general ' . $generalRequest->number . ' ha sido marcada como convertida a compra.')->flash();
                 } else {
                     \Log::error('No se encontró la solicitud general con ID:', ['id' => $item->converted_from_general_request_id]);

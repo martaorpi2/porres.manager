@@ -1,6 +1,6 @@
 @php
     $hasAccess = $crud->hasAccess('show', $entry);
-    $notConverted = $entry->status != 'convertida_a_compra';
+    $notConverted = !$entry->is_converted;
     
     // Verificar si hay productos sin suficiente stock
     $hasInsufficientStock = false;

@@ -20,10 +20,12 @@ class GeneralRequest extends Model
         'priority',
         'attachments',
         'status',
+        'is_converted',
     ];
 
     protected $casts = [
         'attachments' => 'array',
+        'is_converted' => 'boolean',
     ];
 
     public function createdBy()

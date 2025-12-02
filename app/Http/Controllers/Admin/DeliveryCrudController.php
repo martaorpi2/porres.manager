@@ -817,7 +817,12 @@ class DeliveryCrudController extends CrudController
             }
         }
         
-        // Actualizar estado según corresponda
+        // Actualizar status según corresponda
+        // No actualizar si está archivada
+        if ($generalRequest->status === 'archivada') {
+            return;
+        }
+        
         if ($hasDetails && $hasAnyDelivery) {
             if ($allDelivered) {
                 // Todos los productos están completamente entregados
@@ -825,12 +830,17 @@ class DeliveryCrudController extends CrudController
                 $generalRequest->save();
             } else {
                 // Algunos productos están entregados pero no todos están completos
-                // Incluso si fue convertida a compra, si hay entregas parciales, el estado debe ser "entregada_parcialmente"
+                // Incluso si fue convertida a compra, si hay entregas parciales, el status debe ser "entregada_parcialmente"
                 $generalRequest->status = 'entregada_parcialmente';
                 $generalRequest->save();
             }
+        } else {
+            // Si no hay entregas, establecer como sin_entrega (solo si no está en otro estado del flujo)
+            if (!in_array($generalRequest->status, ['creada', 'revisada_area', 'archivada'])) {
+                $generalRequest->status = 'sin_entrega';
+                $generalRequest->save();
+            }
         }
-        // Si no hay entregas, mantener el estado actual
     }
     
     /**

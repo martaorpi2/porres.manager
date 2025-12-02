@@ -53,6 +53,15 @@ class GeneralRequestCrudController extends CrudController
         CRUD::column('priority')->label('Prioridad');
         CRUD::column('status')->label('Estado');
         
+        // Columna para mostrar si está convertida
+        CRUD::column('conversion_status')->label('Conversión')->type('custom_html')
+            ->value(function($entry) {
+                if ($entry->is_converted) {
+                    return '<span class="badge bg-success"><i class="la la-check-circle"></i> Convertida</span>';
+                }
+                return '<span class="badge bg-secondary"><i class="la la-times-circle"></i> No convertida</span>';
+            });
+        
         // Agregar columna personalizada para mostrar cantidad de productos
         CRUD::column('details_count')->label('Productos')->type('custom_html')
             ->value(function($entry) {
@@ -149,7 +158,7 @@ class GeneralRequestCrudController extends CrudController
 
         CRUD::field('status')->label('Estado')
             ->type('hidden')
-            ->default('Creada');
+            ->default('creada');
             
         // Campo hidden para almacenar los productos seleccionados
         CRUD::addField([
@@ -229,18 +238,29 @@ class GeneralRequestCrudController extends CrudController
                 ])
                 ->attributes(['readonly' => 'readonly', 'disabled' => 'disabled']);
             
-            // Campo editable: Estado
-            CRUD::field('status')->label('Estado')
+            // Campo editable: Estado (solo estados de solicitud)
+            CRUD::field('status')->label('Estado de Solicitud')
                 ->type('select_from_array')
                 ->options([
                     'creada' => 'Creada',
                     'revisada_area' => 'Revisada por Área',
                     'archivada' => 'Archivada',
-                    'convertida_a_compra' => 'Convertida a Compra',
-                    'entregada_parcialmente' => 'Entregada Parcialmente',
-                    'entregada_totalmente' => 'Entregada Totalmente',
                 ])
                 ->allows_null(false);
+            
+            // Campo de solo lectura para mostrar si está convertida
+            CRUD::field('is_converted_display')->label('Convertida a Compra')
+                ->type('custom_html')
+                ->value(function($entry) {
+                    if ($entry->is_converted) {
+                        return '<div class="alert alert-success">
+                            <i class="la la-check-circle"></i> <strong>Sí, esta solicitud ha sido convertida a orden de compra.</strong>
+                        </div>';
+                    }
+                    return '<div class="alert alert-secondary">
+                        <i class="la la-times-circle"></i> <strong>No, esta solicitud aún no ha sido convertida.</strong>
+                    </div>';
+                });
             
             // Agregar mensaje informativo
             CRUD::addField([
@@ -843,7 +863,16 @@ class GeneralRequestCrudController extends CrudController
         CRUD::column('title')->label('Título');
         CRUD::column('Description')->label('Descripción');
         CRUD::column('priority')->label('Prioridad');
-        CRUD::column('status')->label('Estado');
+        CRUD::column('status')->label('Estado de Solicitud');
+        
+        // Columna para mostrar si está convertida
+        CRUD::column('conversion_status_show')->label('Convertida a Compra')->type('custom_html')
+            ->value(function($entry) {
+                if ($entry->is_converted) {
+                    return '<span class="badge bg-success"><i class="la la-check-circle"></i> Sí, convertida</span>';
+                }
+                return '<span class="badge bg-secondary"><i class="la la-times-circle"></i> No convertida</span>';
+            });
         
         // Mostrar productos solicitados
         CRUD::column('products_table')->label('Productos Solicitados')->type('custom_html')
@@ -996,7 +1025,7 @@ class GeneralRequestCrudController extends CrudController
         // Mostrar información de conversión si existe
         CRUD::column('conversion_info')->label('Información de Conversión')->type('custom_html')
             ->value(function($entry) {
-                if ($entry->status == 'convertida_a_compra' && $entry->purchaseRequests->isNotEmpty()) {
+                if ($entry->is_converted && $entry->purchaseRequests->isNotEmpty()) {
                     $html = '<div class="alert alert-success">';
                     $html .= '<h5><i class="la la-check-circle"></i> Solicitud Convertida a Compra</h5>';
                     foreach ($entry->purchaseRequests as $purchaseRequest) {
@@ -1065,7 +1094,7 @@ class GeneralRequestCrudController extends CrudController
         CRUD::setEntityNameStrings('solicitud general convertida', 'solicitudes generales convertidas');
         
         // Solo mostrar solicitudes convertidas
-        CRUD::addClause('where', 'status', '=', 'convertida_a_compra');
+        CRUD::addClause('where', 'is_converted', '=', true);
         CRUD::addClause('with', ['createdBy', 'area', 'purchaseRequests']);
         
         CRUD::column('number')->label('Número');

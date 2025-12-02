@@ -116,9 +116,6 @@
   .process-item-status.status-creada { background: #6c757d !important; color: #fff !important; }
   .process-item-status.status-revisada-area { background: #17a2b8 !important; color: #fff !important; }
   .process-item-status.status-archivada { background: #495057 !important; color: #fff !important; }
-  .process-item-status.status-convertida-a-compra { background: #fd7e14 !important; color: #fff !important; }
-  .process-item-status.status-entregada-parcialmente { background: #ffc107 !important; color: #000 !important; }
-  .process-item-status.status-entregada-totalmente { background: #28a745 !important; color: #fff !important; }
 
   .stat-card {
       background: white;
@@ -1160,20 +1157,27 @@
                             $status = $generalRequest->status ?? 'N/A';
                             $statusClass = strtolower(str_replace([' ', '_'], '-', $status));
                             
-                            // Definir colores por estado
+                            // Definir colores por estado (solo estados de solicitud)
                             $statusColors = [
-                                'creada' => ['bg' => '#6c757d', 'text' => '#fff'],
-                                'revisada-area' => ['bg' => '#17a2b8', 'text' => '#fff'],
-                                'archivada' => ['bg' => '#495057', 'text' => '#fff'],
-                                'convertida-a-compra' => ['bg' => '#fd7e14', 'text' => '#fff'],
-                                'entregada-parcialmente' => ['bg' => '#ffc107', 'text' => '#000'],
-                                'entregada-totalmente' => ['bg' => '#28a745', 'text' => '#fff'],
+                                'creada' => ['bg' => '#6c757d', 'text' => '#fff', 'label' => 'Creada'],
+                                'revisada-area' => ['bg' => '#17a2b8', 'text' => '#fff', 'label' => 'Revisada por Área'],
+                                'archivada' => ['bg' => '#495057', 'text' => '#fff', 'label' => 'Archivada'],
                             ];
-                            $color = $statusColors[$statusClass] ?? ['bg' => '#6c757d', 'text' => '#fff'];
+                            $color = $statusColors[$statusClass] ?? ['bg' => '#6c757d', 'text' => '#fff', 'label' => ucfirst(str_replace('_', ' ', $status))];
+                            $isConverted = $generalRequest->is_converted ?? false;
                         @endphp
                         <span class="process-item-status status-{{ $statusClass }}" style="background-color: {{ $color['bg'] }} !important; color: {{ $color['text'] }} !important;">
-                            {{ ucfirst(str_replace('_', ' ', $status)) }}
+                            {{ $color['label'] }}
                         </span>
+                        @if($isConverted)
+                            <span class="badge bg-success" style="margin-left: 5px;" title="Convertida a compra">
+                                <i class="la la-check-circle"></i> Convertida
+                            </span>
+                        @else
+                            <span class="badge bg-secondary" style="margin-left: 5px;" title="No convertida">
+                                <i class="la la-times-circle"></i> No convertida
+                            </span>
+                        @endif
                     </div>
                     <div class="process-item-meta">
                         <span><i class="la la-user"></i> {{ $generalRequest->createdBy->name ?? 'N/A' }}</span>
@@ -1405,20 +1409,27 @@
                                         // Convertir guiones bajos a guiones y espacios a guiones
                                         $statusClass = strtolower(str_replace([' ', '_'], '-', $status));
                                         
-                                        // Definir colores por estado
+                                        // Definir colores por estado (solo estados de solicitud)
                                         $statusColors = [
-                                            'creada' => ['bg' => '#6c757d', 'text' => '#fff'],
-                                            'revisada-area' => ['bg' => '#17a2b8', 'text' => '#fff'],
-                                            'archivada' => ['bg' => '#495057', 'text' => '#fff'],
-                                            'convertida-a-compra' => ['bg' => '#fd7e14', 'text' => '#fff'],
-                                            'entregada-parcialmente' => ['bg' => '#ffc107', 'text' => '#000'],
-                                            'entregada-totalmente' => ['bg' => '#28a745', 'text' => '#fff'],
+                                            'creada' => ['bg' => '#6c757d', 'text' => '#fff', 'label' => 'Creada'],
+                                            'revisada-area' => ['bg' => '#17a2b8', 'text' => '#fff', 'label' => 'Revisada por Área'],
+                                            'archivada' => ['bg' => '#495057', 'text' => '#fff', 'label' => 'Archivada'],
                                         ];
-                                        $color = $statusColors[$statusClass] ?? ['bg' => '#6c757d', 'text' => '#fff'];
+                                        $color = $statusColors[$statusClass] ?? ['bg' => '#6c757d', 'text' => '#fff', 'label' => ucfirst(str_replace('_', ' ', $status))];
+                                        $isConverted = $flow['general_request']->is_converted ?? false;
                                     @endphp
                                     <span class="process-item-status status-{{ $statusClass }}" style="background-color: {{ $color['bg'] }} !important; color: {{ $color['text'] }} !important;">
-                                        {{ ucfirst(str_replace('_', ' ', $status)) }}
+                                        {{ $color['label'] }}
                                     </span>
+                                    @if($isConverted)
+                                        <span class="badge bg-success" style="margin-left: 5px;" title="Convertida a compra">
+                                            <i class="la la-check-circle"></i> Convertida
+                                        </span>
+                                    @else
+                                        <span class="badge bg-secondary" style="margin-left: 5px;" title="No convertida">
+                                            <i class="la la-times-circle"></i> No convertida
+                                        </span>
+                                    @endif
                                 </small>
                             </div>
                         </div>
@@ -1450,7 +1461,7 @@
                             </div>
                         @endif
 
-                        @if(isset($flow['purchase_orders']) && count($flow['purchase_orders']) > 0)
+                        @if((!isset($isResponsableArea) || !$isResponsableArea) && isset($flow['purchase_orders']) && count($flow['purchase_orders']) > 0)
                             @foreach($flow['purchase_orders'] as $po)
                                 <div class="flow-timeline-item">
                                     <div class="flow-timeline-content">
