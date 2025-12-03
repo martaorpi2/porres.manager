@@ -57,9 +57,10 @@ class PurchaseOrderCrudController extends CrudController
         // Habilitar tabla responsiva
         CRUD::enableResponsiveTable();
         
-        // Ocultar botones de editar y eliminar para role_admin_institucion
+        // Ocultar botones de crear, editar y eliminar para role_admin_institucion y role_apoderado
         $user = backpack_user();
-        if ($user && $user->hasRole('role_admin_institucion', 'backpack')) {
+        if ($user && ($user->hasRole('role_admin_institucion', 'backpack') || $user->hasRole('role_apoderado', 'backpack'))) {
+            CRUD::removeButton('create');
             CRUD::removeButton('update');
             CRUD::removeButton('delete');
         }

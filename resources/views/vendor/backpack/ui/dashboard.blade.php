@@ -1204,6 +1204,43 @@
         </div>
     </div>
 
+    @if((isset($isAdminInstitucion) && $isAdminInstitucion) || (isset($isApoderado) && $isApoderado) && isset($pendingApprovalRequests))
+    <!-- Solicitudes Pendientes de Aprobación (Administrador del Instituto o Apoderado) -->
+    <div class="process-step" style="border-left: 4px solid #ffc107;">
+        <div class="process-step-header" style="background-color: #fff3cd;">
+            <div class="process-step-title">
+                <i class="la la-exclamation-triangle process-step-icon" style="color: #856404;"></i>
+                <span style="color: #856404; font-weight: bold;">Solicitudes Pendientes de Aprobación</span>
+            </div>
+            <span class="process-step-count" style="background-color: #ffc107; color: #856404;">{{ $pendingApprovalRequests->count() }}</span>
+        </div>
+        <div class="process-step-content">
+            @forelse($pendingApprovalRequests as $purchaseRequest)
+                <div class="process-item-card" onclick="window.location='{{ backpack_url('purchase-request/' . $purchaseRequest->id . '/show') }}'" style="border-left: 3px solid #ffc107; cursor: pointer;">
+                    <div class="process-item-title">
+                        {{ $purchaseRequest->request_number }}
+                        <span class="badge bg-warning text-dark" style="margin-left: 10px;">Requiere Aprobación</span>
+                    </div>
+                    <div class="process-item-meta">
+                        <span><i class="la la-user"></i> {{ $purchaseRequest->requestingUser->name ?? 'N/A' }}</span>
+                        <span><i class="la la-building"></i> {{ $purchaseRequest->responsibilityArea->name ?? 'N/A' }}</span>
+                    </div>
+                    <div class="process-item-meta">
+                        <span><i class="la la-calendar"></i> {{ $purchaseRequest->request_date->format('d/m/Y') ?? 'N/A' }}</span>
+                        <span><i class="la la-dollar-sign"></i> ${{ number_format($purchaseRequest->total_amount, 2) }}</span>
+                    </div>
+                    <div class="process-item-meta">
+                        <span><i class="la la-box"></i> {{ $purchaseRequest->details->count() }} productos</span>
+                        <span class="process-item-status status-pendiente">{{ $purchaseRequest->status }}</span>
+                    </div>
+                </div>
+            @empty
+                <div class="text-muted">No hay solicitudes pendientes de aprobación</div>
+            @endforelse
+        </div>
+    </div>
+    @endif
+
     @if((isset($isResponsableArea) && $isResponsableArea) || (!isset($isPersonal) || !$isPersonal))
     <!-- Paso 2: Solicitudes de Compra -->
     <div class="process-step">

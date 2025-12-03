@@ -172,12 +172,16 @@ class PurchaseRequest extends Model
             return false;
         }
 
-        // Si requiere aprobación de administrador, solo el admin del instituto puede aprobar
+        // Si requiere aprobación de administrador, el admin del instituto o apoderado pueden aprobar
         // pero solo si no supera su límite de monto
         if ($this->requires_admin_approval) {
             if ($user->hasRole('role_admin_institucion', 'backpack')) {
                 $adminLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_admin_institucion');
                 return $this->total_amount <= $adminLimit;
+            }
+            if ($user->hasRole('role_apoderado', 'backpack')) {
+                $apoderadoLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_apoderado');
+                return $this->total_amount <= $apoderadoLimit;
             }
             return false;
         }
@@ -192,6 +196,12 @@ class PurchaseRequest extends Model
         if ($user->hasRole('role_admin_institucion', 'backpack')) {
             $adminLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_admin_institucion');
             return $this->total_amount <= $adminLimit;
+        }
+
+        // El apoderado puede aprobar solo si no supera su límite
+        if ($user->hasRole('role_apoderado', 'backpack')) {
+            $apoderadoLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_apoderado');
+            return $this->total_amount <= $apoderadoLimit;
         }
 
         return false;

@@ -24,7 +24,7 @@ class PurchaseAuthorizationLimitSeeder extends Seeder
             [
                 'role_name' => 'role_admin_institucion',
                 'role_display_name' => 'Administrador del Instituto',
-                'limit_amount' => 350000.00,
+                'limit_amount' => 500000.00,
                 'description' => 'Límite de autorización para el administrador del instituto',
                 'is_active' => true,
             ],

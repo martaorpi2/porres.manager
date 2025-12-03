@@ -50,8 +50,8 @@ class PurchaseRequestCrudController extends CrudController
         // Filtrar solicitudes según el rol del usuario
         $user = backpack_user();
         if ($user) {
-            // Roles que pueden ver todas las solicitudes (administradores)
-            $adminRoles = ['role_admin_sistema', 'role_admin_institucion', 'role_responsable_compras'];
+            // Roles que pueden ver todas las solicitudes (administradores y apoderado)
+            $adminRoles = ['role_admin_sistema', 'role_admin_institucion', 'role_responsable_compras', 'role_apoderado'];
             $isAdmin = false;
             foreach ($adminRoles as $role) {
                 if ($user->hasRole($role, 'backpack')) {
@@ -97,11 +97,14 @@ class PurchaseRequestCrudController extends CrudController
 
         // Remover botón de edición por defecto y usar el personalizado
         CRUD::removeButton('update');
-        CRUD::addButton('line', 'edit_purchase_request', 'view', 'crud::buttons.edit_purchase_request', 'beginning');
         
-        // Ocultar botón de eliminar para role_admin_institucion
-        if ($user && $user->hasRole('role_admin_institucion', 'backpack')) {
+        // Ocultar botones de crear, editar y eliminar para role_admin_institucion y role_apoderado
+        if ($user && ($user->hasRole('role_admin_institucion', 'backpack') || $user->hasRole('role_apoderado', 'backpack'))) {
+            CRUD::removeButton('create');
             CRUD::removeButton('delete');
+            // No agregar el botón personalizado de editar para estos roles
+        } else {
+            CRUD::addButton('line', 'edit_purchase_request', 'view', 'crud::buttons.edit_purchase_request', 'beginning');
         }
         
         // Botón para ver orden de compra (solo si existe y para usuarios que no sean role_responsable_area)
@@ -1968,6 +1971,11 @@ class PurchaseRequestCrudController extends CrudController
                 $adminLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_admin_institucion');
                 abort(403, 'No puedes aprobar esta solicitud de compra porque supera tu límite de autorización de $' . number_format($adminLimit, 2) . '. El monto de la solicitud es $' . number_format($purchaseRequest->total_amount, 2) . '.');
             }
+            // Verificar si es apoderado y supera su límite
+            if ($user->hasRole('role_apoderado', 'backpack')) {
+                $apoderadoLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_apoderado');
+                abort(403, 'No puedes aprobar esta solicitud de compra porque supera tu límite de autorización de $' . number_format($apoderadoLimit, 2) . '. El monto de la solicitud es $' . number_format($purchaseRequest->total_amount, 2) . '.');
+            }
             abort(403, 'No tienes permiso para aprobar esta solicitud de compra.');
         }
         
@@ -2259,9 +2267,9 @@ class PurchaseRequestCrudController extends CrudController
     {
         CRUD::addClause('with', ['responsibilityArea', 'requestingUser', 'approvedBy', 'details.product', 'selectedMarketRate.supplier', 'selectedBy', 'convertedFromGeneralRequest', 'deliveries.details', 'purchaseOrders.paymentOrders']);
         
-        // Ocultar botón de eliminar para role_admin_institucion
+        // Ocultar botón de eliminar para role_admin_institucion y role_apoderado
         $user = backpack_user();
-        if ($user && $user->hasRole('role_admin_institucion', 'backpack')) {
+        if ($user && ($user->hasRole('role_admin_institucion', 'backpack') || $user->hasRole('role_apoderado', 'backpack'))) {
             CRUD::removeButton('delete');
         }
         
@@ -3085,13 +3093,23 @@ class PurchaseRequestCrudController extends CrudController
                         </div>';
                     }
                     
-                    // Si requiere aprobación de administrador y el usuario no es admin
+                    // Si es apoderado y supera su límite
+                    if ($user->hasRole('role_apoderado', 'backpack')) {
+                        $apoderadoLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_apoderado');
+                        return '<div class="alert alert-danger mt-3">
+                            <i class="la la-exclamation-triangle"></i> 
+                            <strong>Límite excedido:</strong> Esta solicitud ($' . number_format($entry->total_amount, 2) . ') supera tu límite de autorización de $' . number_format($apoderadoLimit, 2) . '. No puedes aprobar esta solicitud.
+                        </div>';
+                    }
+                    
+                    // Si requiere aprobación de administrador y el usuario no es admin ni apoderado
                     if ($entry->requires_admin_approval) {
                         $comprasLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_responsable_compras');
                         $adminLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_admin_institucion');
+                        $apoderadoLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_apoderado');
                         return '<div class="alert alert-warning mt-3">
                             <i class="la la-exclamation-triangle"></i> 
-                            <strong>Requiere aprobación:</strong> Esta solicitud ($' . number_format($entry->total_amount, 2) . ') supera el límite de autorización del responsable de compras ($' . number_format($comprasLimit, 2) . '). Requiere aprobación del administrador del instituto (límite: $' . number_format($adminLimit, 2) . ').
+                            <strong>Requiere aprobación:</strong> Esta solicitud ($' . number_format($entry->total_amount, 2) . ') supera el límite de autorización del responsable de compras ($' . number_format($comprasLimit, 2) . '). Requiere aprobación del administrador del instituto (límite: $' . number_format($adminLimit, 2) . ') o apoderado (límite: $' . number_format($apoderadoLimit, 2) . ').
                         </div>';
                     }
                     return '';

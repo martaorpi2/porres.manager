@@ -30,6 +30,8 @@ class DashboardController extends Controller
         
         $isPersonal = $user->hasRole('role_personal');
         $isResponsableArea = $user->hasRole('role_responsable_area');
+        $isAdminInstitucion = $user->hasRole('role_admin_institucion', 'backpack');
+        $isApoderado = $user->hasRole('role_apoderado', 'backpack');
         
         // Estadísticas generales
         if ($isPersonal) {
@@ -166,6 +168,27 @@ class DashboardController extends Controller
                 ->limit(10)
                 ->get();
         }
+        
+        // Obtener solicitudes de compra pendientes de aprobación del administrador del instituto o apoderado
+        $pendingApprovalRequests = collect();
+        if ($isAdminInstitucion || $isApoderado) {
+            $comprasLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_responsable_compras');
+            
+            if ($isAdminInstitucion) {
+                $userLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_admin_institucion');
+            } else {
+                $userLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_apoderado');
+            }
+            
+            $pendingApprovalRequests = PurchaseRequest::with(['requestingUser', 'responsibilityArea', 'details.product'])
+                ->where('status', 'Pendiente')
+                ->where('requires_admin_approval', true)
+                ->where('total_amount', '<=', $userLimit)
+                ->where('total_amount', '>', $comprasLimit)
+                ->orderBy('created_at', 'desc')
+                ->limit(10)
+                ->get();
+        }
 
         // Obtener órdenes de compra recientes (solo si no es role_personal ni role_responsable_area)
         $purchaseOrders = collect();
@@ -242,6 +265,7 @@ class DashboardController extends Controller
             // Para role_responsable_area, mostrar flujo de solicitudes de su área
             $processFlows = $this->getProcessFlowsForResponsableArea($user);
         } else {
+            // Para administradores y apoderados, mostrar todos los flujos
             $processFlows = $this->getProcessFlows();
         }
 
@@ -275,6 +299,9 @@ class DashboardController extends Controller
             'suppliersWithRatings',
             'isPersonal',
             'isResponsableArea',
+            'isAdminInstitucion',
+            'isApoderado',
+            'pendingApprovalRequests',
             'user'
         ));
     }
