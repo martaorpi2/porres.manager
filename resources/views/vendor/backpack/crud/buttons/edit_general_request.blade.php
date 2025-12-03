@@ -3,7 +3,7 @@
     $canEdit = false;
     
     // Verificar si el usuario es administrador (puede editar cualquier solicitud)
-    $adminRoles = ['role_admin_sistema', 'role_admin_institucion', 'role_responsable_compras'];
+    $adminRoles = ['role_admin_sistema', 'role_admin_institucion'];
     $isAdmin = false;
     foreach ($adminRoles as $role) {
         if ($user && $user->hasRole($role, 'backpack')) {
@@ -15,15 +15,22 @@
     // Solo el creador puede editar, solo si el estado es "creada" y no está convertida a compra
     // Excepción: role_responsable_area puede cambiar el estado de solicitudes de su área
     // Excepción: administradores pueden editar cualquier solicitud
+    // Excepción: role_responsable_compras solo puede editar sus propias solicitudes
     $isOwnRequest = $entry->created_by == $user->id;
     $isResponsableArea = $user && $user->hasRole('role_responsable_area', 'backpack');
+    $isResponsableCompras = $user && $user->hasRole('role_responsable_compras', 'backpack');
     
     if (!$entry->is_converted) {
         if ($isAdmin) {
             // Los administradores pueden editar cualquier solicitud
             $canEdit = true;
+        } elseif ($isResponsableCompras) {
+            // El usuario de compras solo puede editar sus propias solicitudes
+            if ($isOwnRequest && $entry->status === 'creada') {
+                $canEdit = true;
+            }
         } elseif ($isOwnRequest) {
-            // Todos los usuarios (incluyendo responsables de área) solo pueden editar sus propias solicitudes
+            // Todos los demás usuarios solo pueden editar sus propias solicitudes
             // y solo si el estado es "creada"
             if ($entry->status === 'creada') {
                 $canEdit = true;

@@ -99,14 +99,9 @@ class PurchaseRequestCrudController extends CrudController
         CRUD::removeButton('update');
         CRUD::addButton('line', 'edit_purchase_request', 'view', 'crud::buttons.edit_purchase_request', 'beginning');
         
-        // Botón para generar planilla comparativa (solo para usuarios que no sean role_responsable_area)
+        // Botón para ver orden de compra (solo si existe y para usuarios que no sean role_responsable_area)
         if (!$user || !$user->hasRole('role_responsable_area', 'backpack')) {
-            CRUD::addButton('line', 'comparative_excel', 'view', 'crud::buttons.comparative_excel', 'end');
-        }
-        
-        // Botón para generar/ver orden de compra (solo para usuarios que no sean role_responsable_area)
-        if (!$user || !$user->hasRole('role_responsable_area', 'backpack')) {
-            CRUD::addButton('line', 'purchase_order_action', 'view', 'crud::buttons.purchase_order_action', 'end');
+            CRUD::addButton('line', 'view_purchase_order', 'view', 'crud::buttons.view_purchase_order', 'end');
         }
     }
 
@@ -1851,7 +1846,7 @@ class PurchaseRequestCrudController extends CrudController
                 }
                 $html .= '<div class="row mt-2">';
                 $html .= '<div class="col-12">';
-                $html .= '<a href="' . backpack_url('general-request/' . $generalRequest->id) . '" class="btn btn-sm btn-primary">';
+                $html .= '<a href="' . backpack_url('general-request/' . $generalRequest->id . '/show') . '" class="btn btn-sm btn-primary">';
                 $html .= '<i class="la la-eye"></i> Ver Solicitud General';
                 $html .= '</a>';
                 $html .= '</div>';
@@ -1952,6 +1947,41 @@ class PurchaseRequestCrudController extends CrudController
                 $html .= '</table>';
                 $html .= '</div>';
                 $html .= '</div>';
+                
+                // Agregar botón para editar/agregar productos si el usuario tiene permisos
+                $user = backpack_user();
+                if ($user) {
+                    $adminRoles = ['role_admin_sistema', 'role_admin_institucion', 'role_responsable_compras'];
+                    $isAdmin = false;
+                    foreach ($adminRoles as $role) {
+                        if ($user->hasRole($role, 'backpack')) {
+                            $isAdmin = true;
+                            break;
+                        }
+                    }
+                    
+                    $isOwnRequest = $entry->requesting_user_id == $user->id;
+                    $isResponsableArea = $user->hasRole('role_responsable_area', 'backpack');
+                    
+                    // Verificar si puede editar
+                    $canEdit = false;
+                    if ($isAdmin) {
+                        $canEdit = true;
+                    } elseif ($isOwnRequest && $entry->status === 'Pendiente') {
+                        $canEdit = true;
+                    } elseif ($isResponsableArea && $entry->status === 'Pendiente') {
+                        $canEdit = true;
+                    }
+                    
+                    if ($canEdit) {
+                        $html .= '<div class="card-footer bg-light text-end">';
+                        $html .= '<a href="' . backpack_url('purchase-request/' . $entry->id . '/edit') . '" class="btn btn-primary">';
+                        $html .= '<i class="la la-edit"></i> Editar Productos';
+                        $html .= '</a>';
+                        $html .= '</div>';
+                    }
+                }
+                
                 $html .= '</div>';
                 
                 return $html;
@@ -2321,6 +2351,16 @@ class PurchaseRequestCrudController extends CrudController
                 
                 return $html;
             });
+        
+        // Agregar botones de acción en la vista previa
+        // Botón para generar planilla comparativa (solo para usuarios que no sean role_responsable_area)
+        $user = backpack_user();
+        if (!$user || !$user->hasRole('role_responsable_area', 'backpack')) {
+            CRUD::addButton('top', 'comparative_excel', 'view', 'crud::buttons.comparative_excel', 'end');
+            
+            // Botón para generar/ver orden de compra (solo para usuarios que no sean role_responsable_area)
+            CRUD::addButton('top', 'purchase_order_action', 'view', 'crud::buttons.purchase_order_action', 'end');
+        }
     }
 }
 

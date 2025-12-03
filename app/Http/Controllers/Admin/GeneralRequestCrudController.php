@@ -211,7 +211,7 @@ class GeneralRequestCrudController extends CrudController
         }
         
         // Verificar si el usuario es administrador (puede editar cualquier solicitud)
-        $adminRoles = ['role_admin_sistema', 'role_admin_institucion', 'role_responsable_compras'];
+        $adminRoles = ['role_admin_sistema', 'role_admin_institucion'];
         $isAdmin = false;
         foreach ($adminRoles as $role) {
             if ($user->hasRole($role, 'backpack')) {
@@ -221,10 +221,19 @@ class GeneralRequestCrudController extends CrudController
         }
         
         $isOwnRequest = $entry->created_by == $user->id;
+        $isResponsableCompras = $user->hasRole('role_responsable_compras', 'backpack');
         $canOnlyChangeStatus = false;
         
-        // Si no es administrador, verificar restricciones
-        if (!$isAdmin) {
+        // Si es responsable de compras, solo puede editar sus propias solicitudes
+        if ($isResponsableCompras) {
+            if (!$isOwnRequest) {
+                abort(403, 'Solo puedes editar las solicitudes generales que creaste.');
+            }
+            // Si es el creador, solo puede editar si el estado es "creada"
+            if ($entry->status !== 'creada') {
+                abort(403, 'Solo puedes editar solicitudes con estado "creada".');
+            }
+        } elseif (!$isAdmin) {
             // Todos los usuarios (incluyendo responsables de área) solo pueden editar sus propias solicitudes
             if (!$isOwnRequest) {
                 abort(403, 'Solo puedes editar las solicitudes que creaste.');
@@ -622,7 +631,7 @@ class GeneralRequestCrudController extends CrudController
         }
         
         // Verificar si el usuario es administrador (puede editar cualquier solicitud)
-        $adminRoles = ['role_admin_sistema', 'role_admin_institucion', 'role_responsable_compras'];
+        $adminRoles = ['role_admin_sistema', 'role_admin_institucion'];
         $isAdmin = false;
         foreach ($adminRoles as $role) {
             if ($user && $user->hasRole($role, 'backpack')) {
@@ -632,10 +641,19 @@ class GeneralRequestCrudController extends CrudController
         }
         
         $isOwnRequest = $entry->created_by == $user->id;
+        $isResponsableCompras = $user && $user->hasRole('role_responsable_compras', 'backpack');
         $canOnlyChangeStatus = false;
         
-        // Si no es administrador, verificar restricciones
-        if (!$isAdmin) {
+        // Si es responsable de compras, solo puede editar sus propias solicitudes
+        if ($isResponsableCompras) {
+            if (!$isOwnRequest) {
+                abort(403, 'Solo puedes editar las solicitudes generales que creaste.');
+            }
+            // Si es el creador, solo puede editar si el estado es "creada"
+            if ($entry->status !== 'creada') {
+                abort(403, 'Solo puedes editar solicitudes con estado "creada".');
+            }
+        } elseif (!$isAdmin) {
             // Todos los usuarios (incluyendo responsables de área) solo pueden editar sus propias solicitudes
             if (!$isOwnRequest) {
                 abort(403, 'Solo puedes editar las solicitudes que creaste.');

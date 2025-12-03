@@ -40,7 +40,9 @@
         <x-backpack::menu-dropdown-item title="Solicitudes Generales" :link="backpack_url('general-request')" />
         <x-backpack::menu-dropdown-item title="Solicitudes de Compra" :link="backpack_url('purchase-request')" />
         <x-backpack::menu-item title="Asignación de Productos" :link="backpack_url('product-assignment')" />
-        <x-backpack::menu-dropdown-item title="Áreas de Responsabilidad" :link="backpack_url('responsibility-area')" />
+        @unless(backpack_user() && backpack_user()->hasRole('role_responsable_compras'))
+            <x-backpack::menu-dropdown-item title="Áreas de Responsabilidad" :link="backpack_url('responsibility-area')" />
+        @endunless
     </x-backpack::menu-dropdown>
 
     {{--<x-backpack::menu-dropdown title="Cotizaciones" icon="la la-calculator" trigger="click">
