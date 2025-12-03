@@ -99,8 +99,10 @@ class PurchaseRequestCrudController extends CrudController
         CRUD::removeButton('update');
         CRUD::addButton('line', 'edit_purchase_request', 'view', 'crud::buttons.edit_purchase_request', 'beginning');
         
-        // Botón para generar planilla comparativa (disponible para todos)
-        CRUD::addButton('line', 'comparative_excel', 'view', 'crud::buttons.comparative_excel', 'end');
+        // Botón para generar planilla comparativa (solo para usuarios que no sean role_responsable_area)
+        if (!$user || !$user->hasRole('role_responsable_area', 'backpack')) {
+            CRUD::addButton('line', 'comparative_excel', 'view', 'crud::buttons.comparative_excel', 'end');
+        }
         
         // Botón para generar/ver orden de compra (solo para usuarios que no sean role_responsable_area)
         if (!$user || !$user->hasRole('role_responsable_area', 'backpack')) {
@@ -294,10 +296,10 @@ class PurchaseRequestCrudController extends CrudController
                 })->toArray();
                 
                 CRUD::field('products_selection')->label('Productos Solicitados')->type('custom_html')
-                    ->value($this->getProductsSelectionHtml($existingProducts));
+                    ->value($this->getProductsSelectionHtml($existingProducts, $entry->responsibility_area_id));
             } else {
                 CRUD::field('products_selection')->label('Productos Solicitados')->type('custom_html')
-                    ->value($this->getProductsSelectionHtml([]));
+                    ->value($this->getProductsSelectionHtml([], $entry->responsibility_area_id));
             }
         } else {
             // Para administradores, usar todos los campos
@@ -590,9 +592,77 @@ class PurchaseRequestCrudController extends CrudController
     }
     
     /**
+     * Get products filtered by responsibility area
+     * Muestra solo productos de las categorías relacionadas con el área
+     */
+    public function getProductosByArea()
+    {
+        $areaId = request()->get('area_id');
+        $query = \App\Models\Product::with(['category', 'stockLevels']);
+        
+        if ($areaId) {
+            // Obtener el área
+            $area = \App\Models\ResponsibilityArea::find($areaId);
+            
+            if ($area) {
+                // Mapeo de áreas a categorías permitidas
+                $areaCategoryMap = [
+                    'Informática' => ['Equipos Informáticos', 'Software'],
+                    'Salud' => ['Material Médico', 'Reactivos'],
+                    'Insumos de Salud' => ['Material Médico', 'Reactivos'],
+                    'Mantenimiento' => ['Herramientas', 'Repuestos'],
+                    'Insumos Generales' => ['Material de Oficina', 'Limpieza', 'Insumos Generales'],
+                ];
+                
+                // Obtener las categorías permitidas para esta área
+                $areaName = $area->name;
+                if (isset($areaCategoryMap[$areaName])) {
+                    $allowedCategoryNames = $areaCategoryMap[$areaName];
+                    
+                    // Obtener los IDs de las categorías permitidas
+                    $categoryIds = \App\Models\Category::whereIn('name', $allowedCategoryNames)
+                        ->pluck('id');
+                    
+                    if ($categoryIds->isNotEmpty()) {
+                        // Filtrar productos por las categorías permitidas
+                        $query->whereIn('category_id', $categoryIds);
+                    } else {
+                        // Si no hay categorías relacionadas, no mostrar ningún producto
+                        $query->where('id', 0);
+                    }
+                } else {
+                    // Si el área no está en el mapeo, no mostrar ningún producto
+                    $query->where('id', 0);
+                }
+            } else {
+                // Si no existe el área, no mostrar ningún producto
+                $query->where('id', 0);
+            }
+        }
+        
+        // Obtener productos filtrados
+        $productos = $query->get()
+            ->map(function($producto) {
+                $stockTotal = $producto->stockLevels->sum('quantity');
+                return [
+                    'id' => $producto->id,
+                    'name' => $producto->name,
+                    'description' => $producto->description,
+                    'category_name' => $producto->category->name ?? 'Sin categoría',
+                    'unit_measurement' => $producto->unit_measurement,
+                    'stock_total' => $stockTotal,
+                    'minimum_stock' => $producto->minimum_stock,
+                ];
+            })
+            ->values();
+
+        return response()->json($productos);
+    }
+    
+    /**
      * Generate HTML for products selection with existing products
      */
-    private function getProductsSelectionHtml($existingProducts = [])
+    private function getProductsSelectionHtml($existingProducts = [], $areaId = null)
     {
         $existingProductsJson = json_encode($existingProducts);
         
@@ -654,7 +724,10 @@ class PurchaseRequestCrudController extends CrudController
             
             // Función para cargar productos
             function loadProducts() {
-                fetch("' . backpack_url('api/productos') . '")
+                const areaId = ' . ($areaId ? $areaId : 'null') . ';
+                const url = areaId ? "' . backpack_url('api/productos-por-area') . '?area_id=" + areaId : "' . backpack_url('api/productos') . '";
+                
+                fetch(url)
                     .then(response => response.json())
                     .then(data => {
                         const select = document.getElementById("product-select");
@@ -1709,7 +1782,7 @@ class PurchaseRequestCrudController extends CrudController
      */
     protected function setupShowOperation()
     {
-        CRUD::addClause('with', ['responsibilityArea', 'requestingUser', 'approvedBy', 'details.product', 'selectedMarketRate.supplier', 'selectedBy', 'convertedFromGeneralRequest', 'deliveries.details']);
+        CRUD::addClause('with', ['responsibilityArea', 'requestingUser', 'approvedBy', 'details.product', 'selectedMarketRate.supplier', 'selectedBy', 'convertedFromGeneralRequest', 'deliveries.details', 'purchaseOrders.paymentOrders']);
         
         CRUD::column('request_number')->label('Número de Solicitud');
         CRUD::column('request_date')->label('Fecha');
@@ -2071,8 +2144,13 @@ class PurchaseRequestCrudController extends CrudController
         // Agregar campo para mostrar sugerencias de proveedores
         CRUD::column('supplier_suggestions_table')->label('Sugerencias de Proveedores')->type('custom_html')
             ->value(function($entry) {
-                $entry->load(['supplierSuggestions.supplier', 'supplierSuggestions.suggestedBy']);
-                $suggestions = $entry->supplierSuggestions;
+                try {
+                    $entry->load(['supplierSuggestions.supplier', 'supplierSuggestions.suggestedBy']);
+                    $suggestions = $entry->supplierSuggestions;
+                } catch (\Exception $e) {
+                    // Si hay un error al cargar las sugerencias (por ejemplo, tabla no existe), usar colección vacía
+                    $suggestions = collect([]);
+                }
                 
                 $html = '';
                 
@@ -2175,6 +2253,72 @@ class PurchaseRequestCrudController extends CrudController
                     $html .= '<p><strong>Justificación:</strong> ' . $entry->selection_justification . '</p>';
                 }
                 $html .= '</div>';
+                return $html;
+            });
+
+        // Agregar botones para crear entregas y recepciones (solo para role_responsable_area)
+        CRUD::column('delivery_reception_actions')->label('Acciones')->type('custom_html')
+            ->value(function($entry) {
+                $user = backpack_user();
+                $isResponsableArea = $user && $user->hasRole('role_responsable_area', 'backpack');
+                
+                if (!$isResponsableArea) {
+                    return '';
+                }
+                
+                // Verificar condiciones:
+                // 1. La solicitud debe estar aprobada
+                $isApproved = $entry->status === 'Aprobada';
+                
+                // 2. Debe existir al menos una orden de compra relacionada
+                $entry->load('purchaseOrders.paymentOrders');
+                $hasPurchaseOrder = $entry->purchaseOrders->isNotEmpty();
+                
+                // 3. Debe existir al menos una orden de pago relacionada con alguna orden de compra
+                $hasPaymentOrder = false;
+                if ($hasPurchaseOrder) {
+                    foreach ($entry->purchaseOrders as $purchaseOrder) {
+                        if ($purchaseOrder->paymentOrders->isNotEmpty()) {
+                            $hasPaymentOrder = true;
+                            break;
+                        }
+                    }
+                }
+                
+                // Si no se cumplen todas las condiciones, no mostrar nada
+                if (!$isApproved || !$hasPurchaseOrder || !$hasPaymentOrder) {
+                    return '';
+                }
+                
+                $html = '<div class="card border-success mt-3">';
+                $html .= '<div class="card-header bg-success text-white">';
+                $html .= '<h6 class="mb-0"><i class="la la-tasks"></i> Acciones Disponibles</h6>';
+                $html .= '</div>';
+                $html .= '<div class="card-body">';
+                $html .= '<div class="row">';
+                
+                // Botón para crear entrega
+                $html .= '<div class="col-md-6 mb-2">';
+                $html .= '<a href="' . backpack_url('delivery/create?purchase_request_id=' . $entry->id) . '" class="btn btn-primary btn-block">';
+                $html .= '<i class="la la-people-carry"></i> Crear Entrega';
+                $html .= '</a>';
+                $html .= '</div>';
+                
+                // Botón para crear recepción
+                // Necesitamos obtener la primera orden de compra para pasarla como parámetro
+                $firstPurchaseOrder = $entry->purchaseOrders->first();
+                if ($firstPurchaseOrder) {
+                    $html .= '<div class="col-md-6 mb-2">';
+                    $html .= '<a href="' . backpack_url('reception/create?purchase_order_id=' . $firstPurchaseOrder->id) . '" class="btn btn-success btn-block">';
+                    $html .= '<i class="la la-truck-loading"></i> Crear Recepción';
+                    $html .= '</a>';
+                    $html .= '</div>';
+                }
+                
+                $html .= '</div>';
+                $html .= '</div>';
+                $html .= '</div>';
+                
                 return $html;
             });
     }

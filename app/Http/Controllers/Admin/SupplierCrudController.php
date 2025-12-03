@@ -47,29 +47,38 @@ class SupplierCrudController extends CrudController
         // Filtrar proveedores por área si el usuario es responsable de área
         $user = backpack_user();
         if ($user && $user->hasRole('role_responsable_area', 'backpack')) {
-            // Obtener las áreas de responsabilidad del usuario
-            $userAreas = \App\Models\ResponsibilityArea::where('responsible_user_id', $user->id)->pluck('id');
+            // Obtener las áreas de responsabilidad del usuario con sus nombres
+            $userAreas = \App\Models\ResponsibilityArea::where('responsible_user_id', $user->id)->get();
             
             if ($userAreas->isNotEmpty()) {
-                // Obtener IDs de proveedores relacionados con solicitudes de compra de las áreas del usuario
-                // a través de cotizaciones
-                $supplierIdsFromMarketRates = \App\Models\MarketRate::whereHas('purchaseRequest', function($q) use ($userAreas) {
-                    $q->whereIn('responsibility_area_id', $userAreas);
-                })->pluck('supplier_id')->unique();
+                // Mapeo de áreas a rubros permitidos
+                $areaRubroMap = [
+                    'Informática' => ['Tecnología'],
+                    'Salud' => ['Salud'],
+                    'Insumos de Salud' => ['Salud'],
+                    'Mantenimiento' => ['Herramientas'],
+                    'Insumos Generales' => ['Oficina'],
+                ];
                 
-                // Obtener IDs de proveedores relacionados a través de sugerencias
-                $supplierIdsFromSuggestions = \App\Models\SupplierSuggestion::whereHas('purchaseRequest', function($q) use ($userAreas) {
-                    $q->whereIn('responsibility_area_id', $userAreas);
-                })->pluck('supplier_id')->unique();
+                // Obtener todos los rubros permitidos para las áreas del usuario
+                $allowedRubroNames = collect();
                 
-                // Combinar ambos conjuntos de IDs
-                $supplierIds = $supplierIdsFromMarketRates->merge($supplierIdsFromSuggestions)->unique();
+                foreach ($userAreas as $area) {
+                    $areaName = $area->name;
+                    if (isset($areaRubroMap[$areaName])) {
+                        $allowedRubroNames = $allowedRubroNames->merge($areaRubroMap[$areaName]);
+                    }
+                }
                 
-                if ($supplierIds->isNotEmpty()) {
-                    // Filtrar proveedores por los IDs obtenidos
-                    CRUD::addClause('whereIn', 'id', $supplierIds);
+                // Obtener los IDs de rubros permitidos
+                $allowedRubroIds = \App\Models\SuppliersHeading::whereIn('name', $allowedRubroNames->unique())
+                    ->pluck('id');
+                
+                // Filtrar proveedores por rubro
+                if ($allowedRubroIds->isNotEmpty()) {
+                    CRUD::addClause('whereIn', 'supplier_heading_id', $allowedRubroIds);
                 } else {
-                    // Si no hay proveedores relacionados, no mostrar ningún proveedor
+                    // Si no hay rubros relacionados, no mostrar ningún proveedor
                     CRUD::addClause('where', 'id', 0);
                 }
             } else {
@@ -184,14 +193,65 @@ class SupplierCrudController extends CrudController
         CRUD::field('company_name')->label('Nombre');
         CRUD::field('cuit')->label('Cuit');
         CRUD::field('address')->label('Dirección');
-        CRUD::addField([
-            'name' => 'supplier_heading_id',
-            'label' => 'Rubro',
-            'type' => 'select',
-            'entity' => 'heading',
-            'model' => 'App\Models\SuppliersHeading',
-            'attribute' => 'name',
-        ]);
+        
+        // Filtrar rubros según el área del responsable
+        $user = backpack_user();
+        $rubroOptions = null;
+        
+        if ($user && $user->hasRole('role_responsable_area', 'backpack')) {
+            // Obtener las áreas de responsabilidad del usuario con sus nombres
+            $userAreas = \App\Models\ResponsibilityArea::where('responsible_user_id', $user->id)->get();
+            
+            if ($userAreas->isNotEmpty()) {
+                // Mapeo de áreas a rubros permitidos
+                $areaRubroMap = [
+                    'Informática' => ['Tecnología'],
+                    'Salud' => ['Salud'],
+                    'Insumos de Salud' => ['Salud'],
+                    'Mantenimiento' => ['Herramientas'],
+                    'Insumos Generales' => ['Oficina'],
+                ];
+                
+                // Obtener todos los rubros permitidos para las áreas del usuario
+                $allowedRubroNames = collect();
+                
+                foreach ($userAreas as $area) {
+                    $areaName = $area->name;
+                    if (isset($areaRubroMap[$areaName])) {
+                        $allowedRubroNames = $allowedRubroNames->merge($areaRubroMap[$areaName]);
+                    }
+                }
+                
+                // Obtener los rubros permitidos
+                $rubros = \App\Models\SuppliersHeading::whereIn('name', $allowedRubroNames->unique())
+                    ->pluck('name', 'id')
+                    ->toArray();
+                
+                if (!empty($rubros)) {
+                    $rubroOptions = $rubros;
+                }
+            }
+        }
+        
+        // Configurar el campo de rubro
+        if ($rubroOptions !== null && is_array($rubroOptions)) {
+            CRUD::addField([
+                'name' => 'supplier_heading_id',
+                'label' => 'Rubro',
+                'type' => 'select_from_array',
+                'options' => $rubroOptions,
+                'allows_null' => false,
+            ]);
+        } else {
+            CRUD::addField([
+                'name' => 'supplier_heading_id',
+                'label' => 'Rubro',
+                'type' => 'select',
+                'entity' => 'heading',
+                'model' => 'App\Models\SuppliersHeading',
+                'attribute' => 'name',
+            ]);
+        }
         CRUD::addField([
             'name' => 'sectors',
             'label' => 'Sectores',
@@ -228,22 +288,42 @@ class SupplierCrudController extends CrudController
         // Filtrar proveedores por área si el usuario es responsable de área
         $user = backpack_user();
         if ($user && $user->hasRole('role_responsable_area', 'backpack')) {
-            $userAreas = \App\Models\ResponsibilityArea::where('responsible_user_id', $user->id)->pluck('id');
+            // Obtener las áreas de responsabilidad del usuario con sus nombres
+            $userAreas = \App\Models\ResponsibilityArea::where('responsible_user_id', $user->id)->get();
             
             if ($userAreas->isNotEmpty()) {
-                $query->where(function($q) use ($userAreas) {
-                    $q->whereHas('marketRates', function($subQ) use ($userAreas) {
-                        $subQ->whereHas('purchaseRequest', function($subSubQ) use ($userAreas) {
-                            $subSubQ->whereIn('responsibility_area_id', $userAreas);
-                        });
-                    })
-                    ->orWhereHas('supplierSuggestions', function($subQ) use ($userAreas) {
-                        $subQ->whereHas('purchaseRequest', function($subSubQ) use ($userAreas) {
-                            $subSubQ->whereIn('responsibility_area_id', $userAreas);
-                        });
-                    });
-                });
+                // Mapeo de áreas a rubros permitidos
+                $areaRubroMap = [
+                    'Informática' => ['Tecnología'],
+                    'Salud' => ['Salud'],
+                    'Insumos de Salud' => ['Salud'],
+                    'Mantenimiento' => ['Herramientas'],
+                    'Insumos Generales' => ['Oficina'],
+                ];
+                
+                // Obtener todos los rubros permitidos para las áreas del usuario
+                $allowedRubroNames = collect();
+                
+                foreach ($userAreas as $area) {
+                    $areaName = $area->name;
+                    if (isset($areaRubroMap[$areaName])) {
+                        $allowedRubroNames = $allowedRubroNames->merge($areaRubroMap[$areaName]);
+                    }
+                }
+                
+                // Obtener los IDs de rubros permitidos
+                $allowedRubroIds = \App\Models\SuppliersHeading::whereIn('name', $allowedRubroNames->unique())
+                    ->pluck('id');
+                
+                // Filtrar proveedores por rubro
+                if ($allowedRubroIds->isNotEmpty()) {
+                    $query->whereIn('supplier_heading_id', $allowedRubroIds);
+                } else {
+                    // Si no hay rubros relacionados, no mostrar ningún proveedor
+                    $query->where('id', 0);
+                }
             } else {
+                // Si no tiene áreas asignadas, no mostrar ningún proveedor
                 $query->where('id', 0);
             }
         }
@@ -315,22 +395,42 @@ class SupplierCrudController extends CrudController
         // Filtrar proveedores por área si el usuario es responsable de área
         $user = backpack_user();
         if ($user && $user->hasRole('role_responsable_area', 'backpack')) {
-            $userAreas = \App\Models\ResponsibilityArea::where('responsible_user_id', $user->id)->pluck('id');
+            // Obtener las áreas de responsabilidad del usuario con sus nombres
+            $userAreas = \App\Models\ResponsibilityArea::where('responsible_user_id', $user->id)->get();
             
             if ($userAreas->isNotEmpty()) {
-                $query->where(function($q) use ($userAreas) {
-                    $q->whereHas('marketRates', function($subQ) use ($userAreas) {
-                        $subQ->whereHas('purchaseRequest', function($subSubQ) use ($userAreas) {
-                            $subSubQ->whereIn('responsibility_area_id', $userAreas);
-                        });
-                    })
-                    ->orWhereHas('supplierSuggestions', function($subQ) use ($userAreas) {
-                        $subQ->whereHas('purchaseRequest', function($subSubQ) use ($userAreas) {
-                            $subSubQ->whereIn('responsibility_area_id', $userAreas);
-                        });
-                    });
-                });
+                // Mapeo de áreas a rubros permitidos
+                $areaRubroMap = [
+                    'Informática' => ['Tecnología'],
+                    'Salud' => ['Salud'],
+                    'Insumos de Salud' => ['Salud'],
+                    'Mantenimiento' => ['Herramientas'],
+                    'Insumos Generales' => ['Oficina'],
+                ];
+                
+                // Obtener todos los rubros permitidos para las áreas del usuario
+                $allowedRubroNames = collect();
+                
+                foreach ($userAreas as $area) {
+                    $areaName = $area->name;
+                    if (isset($areaRubroMap[$areaName])) {
+                        $allowedRubroNames = $allowedRubroNames->merge($areaRubroMap[$areaName]);
+                    }
+                }
+                
+                // Obtener los IDs de rubros permitidos
+                $allowedRubroIds = \App\Models\SuppliersHeading::whereIn('name', $allowedRubroNames->unique())
+                    ->pluck('id');
+                
+                // Filtrar proveedores por rubro
+                if ($allowedRubroIds->isNotEmpty()) {
+                    $query->whereIn('supplier_heading_id', $allowedRubroIds);
+                } else {
+                    // Si no hay rubros relacionados, no mostrar ningún proveedor
+                    $query->where('id', 0);
+                }
             } else {
+                // Si no tiene áreas asignadas, no mostrar ningún proveedor
                 $query->where('id', 0);
             }
         }

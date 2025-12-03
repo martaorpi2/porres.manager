@@ -44,6 +44,48 @@ class ProductCrudController extends CrudController
         // Habilitar tabla responsiva
         CRUD::enableResponsiveTable();
         
+        // Filtrar productos según el rol del usuario
+        $user = backpack_user();
+        if ($user && $user->hasRole('role_responsable_area', 'backpack')) {
+            // Obtener las áreas de responsabilidad del usuario con sus nombres
+            $userAreas = \App\Models\ResponsibilityArea::where('responsible_user_id', $user->id)->get();
+            
+            if ($userAreas->isNotEmpty()) {
+                // Mapeo de áreas a categorías permitidas
+                $areaCategoryMap = [
+                    'Informática' => ['Equipos Informáticos', 'Software'],
+                    'Salud' => ['Material Médico', 'Reactivos'],
+                    'Insumos de Salud' => ['Material Médico', 'Reactivos'],
+                    'Mantenimiento' => ['Herramientas', 'Repuestos'],
+                    'Insumos Generales' => ['Material de Oficina', 'Limpieza', 'Insumos Generales'],
+                ];
+                
+                // Obtener todas las categorías permitidas para las áreas del usuario
+                $allowedCategoryNames = collect();
+                foreach ($userAreas as $area) {
+                    $areaName = $area->name;
+                    if (isset($areaCategoryMap[$areaName])) {
+                        $allowedCategoryNames = $allowedCategoryNames->merge($areaCategoryMap[$areaName]);
+                    }
+                }
+                
+                // Obtener los IDs de las categorías permitidas
+                $categoryIds = \App\Models\Category::whereIn('name', $allowedCategoryNames->unique())
+                    ->pluck('id');
+                
+                if ($categoryIds->isNotEmpty()) {
+                    // Filtrar productos por las categorías permitidas
+                    CRUD::addClause('whereIn', 'category_id', $categoryIds);
+                } else {
+                    // Si no hay categorías relacionadas, no mostrar ningún producto
+                    CRUD::addClause('where', 'id', 0);
+                }
+            } else {
+                // Si no tiene áreas asignadas, no mostrar ningún producto
+                CRUD::addClause('where', 'id', 0);
+            }
+        }
+        
         // Agregar botón personalizado de exportación
         CRUD::addButton('top', 'export_excel', 'view', 'crud::buttons.export_excel', 'end');
         CRUD::addButton('top', 'export_pdf', 'view', 'crud::buttons.export_pdf', 'end');
@@ -107,27 +149,70 @@ class ProductCrudController extends CrudController
     protected function setupCreateOperation()
     {
         CRUD::setValidation(ProductRequest::class);
-        CRUD::addField([
-            'name' => 'category_id',
-            'label' => 'Categoría',
-            'type' => 'select',
-            'entity' => 'category',
-            'model' => 'App\Models\Category',
-            'attribute' => 'name',
-        ]);
+        
+        // Obtener categorías permitidas según el área del responsable
+        $allowedCategoryIds = null;
+        $user = backpack_user();
+        if ($user && $user->hasRole('role_responsable_area', 'backpack')) {
+            // Obtener las áreas de responsabilidad del usuario con sus nombres
+            $userAreas = \App\Models\ResponsibilityArea::where('responsible_user_id', $user->id)->get();
+            
+            if ($userAreas->isNotEmpty()) {
+                // Mapeo de áreas a categorías permitidas
+                $areaCategoryMap = [
+                    'Informática' => ['Equipos Informáticos', 'Software'],
+                    'Salud' => ['Material Médico', 'Reactivos'],
+                    'Insumos de Salud' => ['Material Médico', 'Reactivos'],
+                    'Mantenimiento' => ['Herramientas', 'Repuestos'],
+                    'Insumos Generales' => ['Material de Oficina', 'Limpieza', 'Insumos Generales'],
+                ];
+                
+                // Obtener todas las categorías permitidas para las áreas del usuario
+                $allowedCategoryNames = collect();
+                foreach ($userAreas as $area) {
+                    $areaName = $area->name;
+                    if (isset($areaCategoryMap[$areaName])) {
+                        $allowedCategoryNames = $allowedCategoryNames->merge($areaCategoryMap[$areaName]);
+                    }
+                }
+                
+                // Obtener los IDs de las categorías permitidas
+                $allowedCategoryIds = \App\Models\Category::whereIn('name', $allowedCategoryNames->unique())
+                    ->pluck('id')
+                    ->toArray();
+            }
+        }
+        
+        // Configurar el campo de categoría
+        if ($allowedCategoryIds !== null && !empty($allowedCategoryIds)) {
+            // Si hay categorías permitidas, usar select_from_array con las categorías filtradas
+            $categories = \App\Models\Category::whereIn('id', $allowedCategoryIds)
+                ->pluck('name', 'id')
+                ->toArray();
+            
+            CRUD::addField([
+                'name' => 'category_id',
+                'label' => 'Categoría',
+                'type' => 'select_from_array',
+                'options' => $categories,
+            ]);
+        } else {
+            // Si no hay restricciones, mostrar todas las categorías
+            CRUD::addField([
+                'name' => 'category_id',
+                'label' => 'Categoría',
+                'type' => 'select',
+                'entity' => 'category',
+                'model' => 'App\Models\Category',
+                'attribute' => 'name',
+            ]);
+        }
         CRUD::field('name')->label('Nombre');
         CRUD::field('description')->label('Descripción');
         CRUD::field('unit_measurement')->label('Unidad Med.');
         CRUD::field('minimum_stock')->label('Stock Mín.');
         CRUD::field('expiration_date')->label('Fecha Vencimiento');
-        CRUD::addField([
-            'name' => 'location',
-            'label' => 'Ubicación',
-            'type' => 'select_from_array',
-            'options' => \App\Models\Location::pluck('name', 'name')->toArray(),
-            'allows_null' => true,
-            'default' => null,
-        ]);
+        // Campo de ubicación oculto en create
         CRUD::field('utilization_percentage')->label('% Utilización');
         /**
          * Fields can be defined using the fluent syntax:
@@ -152,6 +237,48 @@ class ProductCrudController extends CrudController
     public function exportExcel()
     {
         $query = \App\Models\Product::with('category');
+        
+        // Filtrar productos según el rol del usuario
+        $user = backpack_user();
+        if ($user && $user->hasRole('role_responsable_area', 'backpack')) {
+            // Obtener las áreas de responsabilidad del usuario con sus nombres
+            $userAreas = \App\Models\ResponsibilityArea::where('responsible_user_id', $user->id)->get();
+            
+            if ($userAreas->isNotEmpty()) {
+                // Mapeo de áreas a categorías permitidas
+                $areaCategoryMap = [
+                    'Informática' => ['Equipos Informáticos', 'Software'],
+                    'Salud' => ['Material Médico', 'Reactivos'],
+                    'Insumos de Salud' => ['Material Médico', 'Reactivos'],
+                    'Mantenimiento' => ['Herramientas', 'Repuestos'],
+                    'Insumos Generales' => ['Material de Oficina', 'Limpieza', 'Insumos Generales'],
+                ];
+                
+                // Obtener todas las categorías permitidas para las áreas del usuario
+                $allowedCategoryNames = collect();
+                foreach ($userAreas as $area) {
+                    $areaName = $area->name;
+                    if (isset($areaCategoryMap[$areaName])) {
+                        $allowedCategoryNames = $allowedCategoryNames->merge($areaCategoryMap[$areaName]);
+                    }
+                }
+                
+                // Obtener los IDs de las categorías permitidas
+                $categoryIds = \App\Models\Category::whereIn('name', $allowedCategoryNames->unique())
+                    ->pluck('id');
+                
+                if ($categoryIds->isNotEmpty()) {
+                    // Filtrar productos por las categorías permitidas
+                    $query->whereIn('category_id', $categoryIds);
+                } else {
+                    // Si no hay categorías relacionadas, no mostrar ningún producto
+                    $query->where('id', 0);
+                }
+            } else {
+                // Si no tiene áreas asignadas, no mostrar ningún producto
+                $query->where('id', 0);
+            }
+        }
         
         // Aplicar los mismos filtros que en el listado
         if (request()->has('categoria')) {
@@ -220,6 +347,48 @@ class ProductCrudController extends CrudController
     public function exportPdf()
     {
         $query = \App\Models\Product::with('category');
+        
+        // Filtrar productos según el rol del usuario
+        $user = backpack_user();
+        if ($user && $user->hasRole('role_responsable_area', 'backpack')) {
+            // Obtener las áreas de responsabilidad del usuario con sus nombres
+            $userAreas = \App\Models\ResponsibilityArea::where('responsible_user_id', $user->id)->get();
+            
+            if ($userAreas->isNotEmpty()) {
+                // Mapeo de áreas a categorías permitidas
+                $areaCategoryMap = [
+                    'Informática' => ['Equipos Informáticos', 'Software'],
+                    'Salud' => ['Material Médico', 'Reactivos'],
+                    'Insumos de Salud' => ['Material Médico', 'Reactivos'],
+                    'Mantenimiento' => ['Herramientas', 'Repuestos'],
+                    'Insumos Generales' => ['Material de Oficina', 'Limpieza', 'Insumos Generales'],
+                ];
+                
+                // Obtener todas las categorías permitidas para las áreas del usuario
+                $allowedCategoryNames = collect();
+                foreach ($userAreas as $area) {
+                    $areaName = $area->name;
+                    if (isset($areaCategoryMap[$areaName])) {
+                        $allowedCategoryNames = $allowedCategoryNames->merge($areaCategoryMap[$areaName]);
+                    }
+                }
+                
+                // Obtener los IDs de las categorías permitidas
+                $categoryIds = \App\Models\Category::whereIn('name', $allowedCategoryNames->unique())
+                    ->pluck('id');
+                
+                if ($categoryIds->isNotEmpty()) {
+                    // Filtrar productos por las categorías permitidas
+                    $query->whereIn('category_id', $categoryIds);
+                } else {
+                    // Si no hay categorías relacionadas, no mostrar ningún producto
+                    $query->where('id', 0);
+                }
+            } else {
+                // Si no tiene áreas asignadas, no mostrar ningún producto
+                $query->where('id', 0);
+            }
+        }
         
         // Aplicar los mismos filtros que en el listado
         if (request()->has('categoria')) {

@@ -50,4 +50,12 @@ class Product extends Model
     {
         return $this->hasMany(InventoryMovement::class);
     }
+
+    /**
+     * Get the purchase request details for this product.
+     */
+    public function purchaseRequestDetails()
+    {
+        return $this->hasMany(PurchaseRequestDetail::class);
+    }
 }

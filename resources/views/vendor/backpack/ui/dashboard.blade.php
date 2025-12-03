@@ -1039,6 +1039,7 @@
                 </div>
                 <div class="stat-card-number">{{ $stats['deliveries'] }}</div>
                 <div class="stat-card-label">{{ isset($isPersonal) && $isPersonal ? 'Mis Entregas' : 'Entregas' }}</div>
+                <div class="stat-card-pending">&nbsp;</div>
             </div>
         </div>
     </div>

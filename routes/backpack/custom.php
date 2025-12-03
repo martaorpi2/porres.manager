@@ -36,6 +36,7 @@ Route::group([
     Route::crud('inventory-movement', 'InventoryMovementCrudController');
     Route::crud('application', 'ApplicationCrudController');
     Route::get('api/productos', 'ApplicationCrudController@getProductos')->name('api.productos');
+    Route::get('api/productos-por-area', 'PurchaseRequestCrudController@getProductosByArea')->name('api.productos-por-area');
     Route::crud('request-detail', 'RequestDetailCrudController');
     Route::crud('market-rate', 'MarketRateCrudController');
     Route::crud('quote-detail', 'QuoteDetailCrudController');

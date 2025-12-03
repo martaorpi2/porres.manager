@@ -166,10 +166,65 @@ class StockLevelCrudController extends CrudController
     protected function setupCreateOperation()
     {
         CRUD::setValidation(StockLevelRequest::class);
-        CRUD::field('product')->label('Producto');
+        
+        // Filtrar productos según el área del responsable
+        $user = backpack_user();
+        $productOptions = null;
+        
+        if ($user && $user->hasRole('role_responsable_area', 'backpack')) {
+            // Obtener las áreas de responsabilidad del usuario con sus nombres
+            $userAreas = \App\Models\ResponsibilityArea::where('responsible_user_id', $user->id)->get();
+            
+            if ($userAreas->isNotEmpty()) {
+                // Mapeo de áreas a categorías permitidas
+                $areaCategoryMap = [
+                    'Informática' => ['Equipos Informáticos', 'Software'],
+                    'Salud' => ['Material Médico', 'Reactivos'],
+                    'Insumos de Salud' => ['Material Médico', 'Reactivos'],
+                    'Mantenimiento' => ['Herramientas', 'Repuestos'],
+                    'Insumos Generales' => ['Material de Oficina', 'Limpieza', 'Insumos Generales'],
+                ];
+                
+                // Obtener todas las categorías permitidas para las áreas del usuario
+                $allowedCategoryNames = collect();
+                foreach ($userAreas as $area) {
+                    $areaName = $area->name;
+                    if (isset($areaCategoryMap[$areaName])) {
+                        $allowedCategoryNames = $allowedCategoryNames->merge($areaCategoryMap[$areaName]);
+                    }
+                }
+                
+                // Obtener los IDs de las categorías permitidas
+                $categoryIds = \App\Models\Category::whereIn('name', $allowedCategoryNames->unique())
+                    ->pluck('id');
+                
+                if ($categoryIds->isNotEmpty()) {
+                    // Obtener los productos filtrados por categorías
+                    $products = \App\Models\Product::whereIn('category_id', $categoryIds)
+                        ->pluck('name', 'id')
+                        ->toArray();
+                    
+                    if (!empty($products)) {
+                        $productOptions = $products;
+                    }
+                }
+            }
+        }
+        
+        // Configurar el campo de producto
+        if ($productOptions !== null && is_array($productOptions)) {
+            CRUD::addField([
+                'name' => 'product_id',
+                'label' => 'Producto',
+                'type' => 'select_from_array',
+                'options' => $productOptions,
+                'allows_null' => false,
+            ]);
+        } else {
+            CRUD::field('product')->label('Producto');
+        }
         
         // Si el usuario tiene rol role_responsable_area, solo mostrar ubicaciones de sus áreas
-        $user = backpack_user();
         $locationOptions = function ($query) use ($user) {
             if ($user && $user->hasRole('role_responsable_area', 'backpack')) {
                 // Obtener las áreas de responsabilidad del usuario
