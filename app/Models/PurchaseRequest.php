@@ -120,6 +120,14 @@ class PurchaseRequest extends Model
     }
 
     /**
+     * Get all supplier suggestions for this purchase request.
+     */
+    public function supplierSuggestions()
+    {
+        return $this->hasMany(SupplierSuggestion::class);
+    }
+
+    /**
      * Generate the next request number.
      */
     public static function generateNextNumber(): string

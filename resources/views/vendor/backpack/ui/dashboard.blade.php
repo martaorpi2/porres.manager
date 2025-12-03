@@ -1032,7 +1032,7 @@
             </div>
         </div>
         @endif
-        <div class="col-md-{{ isset($isPersonal) && $isPersonal ? '6' : '3' }}">
+        <div class="col-md-{{ isset($isPersonal) && $isPersonal ? '6' : (isset($isResponsableArea) && $isResponsableArea ? '4' : '3') }}">
             <div class="stat-card">
                 <div class="stat-card-icon">
                     <i class="la la-people-carry"></i>
@@ -1375,7 +1375,6 @@
         </div>
     </div>
 
-    @if((!isset($isPersonal) || !$isPersonal) && (!isset($isResponsableArea) || !$isResponsableArea))
     <!-- Flujos Completos de Procesos -->
     @if(isset($processFlows) && count($processFlows) > 0)
     <div class="row mb-4">
@@ -1613,7 +1612,6 @@
             </div>
         </div>
     </div>
-    @endif
     @endif
 </div>
 @endsection

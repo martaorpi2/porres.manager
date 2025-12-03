@@ -30,6 +30,12 @@ class MarketRateCrudController extends CrudController
         CRUD::setModel(\App\Models\MarketRate::class);
         CRUD::setRoute(config('backpack.base.route_prefix') . '/market-rate');
         CRUD::setEntityNameStrings('cotización', 'cotizaciones');
+        
+        // Restringir creación de cotizaciones solo al responsable de compras
+        $user = backpack_user();
+        if ($user && !$user->hasRole('role_responsable_compras', 'backpack') && !$user->hasRole('role_admin_sistema', 'backpack') && !$user->hasRole('role_admin_institucion', 'backpack')) {
+            CRUD::denyAccess('create');
+        }
     }
 
     /**
@@ -91,6 +97,27 @@ class MarketRateCrudController extends CrudController
     {
         CRUD::setValidation(MarketRateRequest::class);
         
+        // Obtener purchase_request_id de la URL si existe
+        $purchaseRequestId = request()->get('purchase_request_id');
+        
+        // Cargar productos de la solicitud de compra si se proporciona el ID
+        $purchaseRequestProducts = [];
+        if ($purchaseRequestId) {
+            $purchaseRequest = \App\Models\PurchaseRequest::with('details.product')->find($purchaseRequestId);
+            if ($purchaseRequest && $purchaseRequest->details) {
+                $purchaseRequestProducts = $purchaseRequest->details->map(function($detail) {
+                    return [
+                        'product_id' => $detail->product_id,
+                        'product_name' => $detail->product ? ($detail->product->name . ' (' . ($detail->product->unit_measurement ?? 'unidad') . ')') : 'Producto no encontrado',
+                        'quantity' => $detail->requested_quantity ?? 0,
+                        'unit_price' => 0, // Precio inicial en 0, el usuario debe ingresarlo
+                        'unit' => $detail->product ? ($detail->product->unit_measurement ?? 'unidad') : 'unidad',
+                        'description' => $detail->product ? ($detail->product->description ?? '') : ''
+                    ];
+                })->toArray();
+            }
+        }
+        
         // Campo para seleccionar proveedor
         CRUD::field([
             'name' => 'supplier_id',
@@ -109,18 +136,25 @@ class MarketRateCrudController extends CrudController
             'entity' => 'purchaseRequest',
             'attribute' => 'request_number',
             'model' => 'App\Models\PurchaseRequest',
+            'default' => $purchaseRequestId,
         ]);
         
         // Campo informativo para mostrar información sobre las cotizaciones
+        $infoMessage = '<div class="alert alert-info">
+            <i class="la la-info-circle"></i> 
+            <strong>Información:</strong> Las cotizaciones se asocian con solicitudes de compra específicas.';
+        if ($purchaseRequestId && !empty($purchaseRequestProducts)) {
+            $infoMessage .= '<br><strong>Los productos de la solicitud de compra se han cargado automáticamente. Por favor, ingrese los precios unitarios para cada producto.</strong>';
+        } else {
+            $infoMessage .= ' Selecciona la solicitud de compra para la cual deseas crear la cotización.';
+        }
+        $infoMessage .= '</div>';
+        
         CRUD::field([
             'name' => 'purchase_request_info',
             'label' => 'Información',
             'type' => 'custom_html',
-            'value' => '<div class="alert alert-info">
-                <i class="la la-info-circle"></i> 
-                <strong>Información:</strong> Las cotizaciones se asocian con solicitudes de compra específicas. 
-                Selecciona la solicitud de compra para la cual deseas crear la cotización.
-            </div>',
+            'value' => $infoMessage,
         ]);
         
         CRUD::field('date')->label('Fecha')->type('date')->default(now()->format('Y-m-d'));
@@ -138,7 +172,7 @@ class MarketRateCrudController extends CrudController
             'name' => 'quote_items_selection',
             'label' => 'Items de la Cotización',
             'type' => 'custom_html',
-            'value' => $this->getQuoteItemsSelectionHtml(),
+            'value' => $this->getQuoteItemsSelectionHtml($purchaseRequestProducts),
         ]);
         
         // Campo oculto para almacenar los items seleccionados
@@ -302,6 +336,21 @@ class MarketRateCrudController extends CrudController
      */
     public function store()
     {
+        // Verificar que solo el responsable de compras pueda crear cotizaciones
+        $user = backpack_user();
+        $adminRoles = ['role_admin_sistema', 'role_admin_institucion', 'role_responsable_compras'];
+        $isAdmin = false;
+        foreach ($adminRoles as $role) {
+            if ($user && $user->hasRole($role, 'backpack')) {
+                $isAdmin = true;
+                break;
+            }
+        }
+        
+        if (!$isAdmin) {
+            abort(403, 'Solo el responsable de compras puede crear cotizaciones.');
+        }
+        
         $this->crud->hasAccessOrFail('create');
 
         // execute the FormRequest authorization and validation, if one is required

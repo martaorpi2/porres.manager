@@ -2,6 +2,9 @@
     $hasAccess = $crud->hasAccess('show', $entry);
     $notConverted = !$entry->is_converted;
     
+    // Verificar si el estado es "entregada_totalmente" (no se puede convertir)
+    $isFullyDelivered = $entry->status === 'entregada_totalmente';
+    
     // Verificar si el usuario tiene el rol role_personal (no puede convertir)
     $user = backpack_user();
     $isPersonal = $user && $user->hasRole('role_personal', 'backpack');
@@ -30,9 +33,9 @@
         $hasInsufficientStock = true;
     }
     
-    // Solo mostrar el botón si no está convertida, tiene acceso, hay productos sin suficiente stock
-    // Y el usuario NO es role_personal
-    $canConvert = $hasAccess && $notConverted && $hasInsufficientStock && !$isPersonal;
+    // Solo mostrar el botón si no está convertida, no está totalmente entregada, tiene acceso, 
+    // hay productos sin suficiente stock y el usuario NO es role_personal
+    $canConvert = $hasAccess && $notConverted && !$isFullyDelivered && $hasInsufficientStock && !$isPersonal;
 @endphp
 
 @if ($canConvert)

@@ -29,20 +29,36 @@ class GeneralRequestCrudController extends CrudController
         // Cargar relaciones necesarias, incluyendo productos para verificar stock y entregas
         CRUD::addClause('with', ['createdBy', 'area', 'details.product', 'deliveries']);
 
-        // Si el usuario tiene rol role_personal, solo mostrar sus solicitudes
+        // Filtrar solicitudes según el rol del usuario
         $user = backpack_user();
-        if ($user && $user->hasRole('role_personal')) {
-            CRUD::addClause('where', 'created_by', $user->id);
-        } elseif ($user && $user->hasRole('role_responsable_area')) {
-            // Para role_responsable_area, mostrar solicitudes de su área o que él creó
-            $userAreas = \App\Models\ResponsibilityArea::where('responsible_user_id', $user->id)->pluck('id');
-            if ($userAreas->isNotEmpty()) {
-                CRUD::addClause(function($query) use ($user, $userAreas) {
-                    $query->where('created_by', $user->id)
-                        ->orWhereIn('area_id', $userAreas);
-                });
-            } else {
-                CRUD::addClause('where', 'created_by', $user->id);
+        if ($user) {
+            // Roles que pueden ver todas las solicitudes (administradores)
+            $adminRoles = ['role_admin_sistema', 'role_admin_institucion', 'role_responsable_compras'];
+            $isAdmin = false;
+            foreach ($adminRoles as $role) {
+                if ($user->hasRole($role, 'backpack')) {
+                    $isAdmin = true;
+                    break;
+                }
+            }
+            
+            if (!$isAdmin) {
+                // Para role_responsable_area, mostrar solicitudes de su área o que él creó
+                if ($user->hasRole('role_responsable_area', 'backpack')) {
+                    $userAreas = \App\Models\ResponsibilityArea::where('responsible_user_id', $user->id)->pluck('id');
+                    if ($userAreas->isNotEmpty()) {
+                        CRUD::addClause(function($query) use ($user, $userAreas) {
+                            $query->where('created_by', $user->id)
+                                ->orWhereIn('area_id', $userAreas);
+                        });
+                    } else {
+                        // Si no tiene áreas asignadas, solo sus propias solicitudes
+                        CRUD::addClause('where', 'created_by', $user->id);
+                    }
+                } else {
+                    // Para todos los demás usuarios, solo mostrar sus propias solicitudes
+                    CRUD::addClause('where', 'created_by', $user->id);
+                }
             }
         }
 
@@ -194,131 +210,57 @@ class GeneralRequestCrudController extends CrudController
             abort(403, 'No se puede editar una solicitud que ya fue convertida a solicitud de compra.');
         }
         
-        $isResponsableArea = $user->hasRole('role_responsable_area', 'backpack');
+        // Verificar si el usuario es administrador (puede editar cualquier solicitud)
+        $adminRoles = ['role_admin_sistema', 'role_admin_institucion', 'role_responsable_compras'];
+        $isAdmin = false;
+        foreach ($adminRoles as $role) {
+            if ($user->hasRole($role, 'backpack')) {
+                $isAdmin = true;
+                break;
+            }
+        }
+        
         $isOwnRequest = $entry->created_by == $user->id;
         $canOnlyChangeStatus = false;
         
-        // Si es role_personal, solo puede editar sus propias solicitudes y solo si el estado es "creada"
-        if ($user->hasRole('role_personal', 'backpack')) {
+        // Si no es administrador, verificar restricciones
+        if (!$isAdmin) {
+            // Todos los usuarios (incluyendo responsables de área) solo pueden editar sus propias solicitudes
             if (!$isOwnRequest) {
-                abort(403, 'Solo puedes editar tus propias solicitudes.');
+                abort(403, 'Solo puedes editar las solicitudes que creaste.');
             }
+            
+            // Si es el creador, solo puede editar si el estado es "creada"
             if ($entry->status !== 'creada') {
                 abort(403, 'Solo puedes editar solicitudes con estado "creada".');
             }
         }
         
-        // Si es role_responsable_area y la solicitud NO es propia, verificar si puede cambiar solo el estado
-        if ($isResponsableArea && !$isOwnRequest && $entry) {
-            // Verificar si la solicitud pertenece a un área donde el usuario es responsable
-            $userAreas = \App\Models\ResponsibilityArea::where('responsible_user_id', $user->id)->pluck('id');
-            if ($entry->area_id && $userAreas->contains($entry->area_id)) {
-                // Puede cambiar solo el estado (pero no si está convertida, ya validado arriba)
-                $canOnlyChangeStatus = true;
-            } else {
-                // No puede editar solicitudes de otras áreas
-                abort(403, 'Solo puedes editar solicitudes de tu área o las que creaste.');
-            }
-        } elseif ($isResponsableArea && !$isOwnRequest) {
-            // Si es role_responsable_area intentando editar una solicitud que no es suya y no es de su área
-            abort(403, 'Solo puedes editar solicitudes de tu área o las que creaste.');
-        }
+        // Usar los mismos campos que en create (edición completa)
+        $this->setupCreateOperation();
         
-        // Si es el creador (pero no role_personal), solo puede editar si el estado es "creada"
-        if ($isOwnRequest && !$user->hasRole('role_personal', 'backpack') && !$isResponsableArea) {
-            if ($entry->status !== 'creada') {
-                abort(403, 'Solo puedes editar solicitudes con estado "creada".');
-            }
-        }
-        
-        // Si solo puede cambiar el estado, mostrar solo ese campo
-        if ($canOnlyChangeStatus) {
-            // Mostrar información de la solicitud (solo lectura)
-            CRUD::field('number')->label('Número de Solicitud')->type('text')->attributes(['readonly' => 'readonly', 'disabled' => 'disabled']);
-            CRUD::field('title')->label('Título')->type('text')->attributes(['readonly' => 'readonly', 'disabled' => 'disabled']);
-            CRUD::field('description')->label('Descripción')->type('textarea')->attributes(['readonly' => 'readonly', 'disabled' => 'disabled']);
+        // Cargar productos existentes para edición
+        if ($entry) {
+            // Cargar la relación con productos
+            $entry->load('details.product');
             
-            CRUD::field('area_id')->label('Área')
-                ->type('select')
-                ->model('App\Models\ResponsibilityArea')
-                ->attribute('name')
-                ->attributes(['readonly' => 'readonly', 'disabled' => 'disabled']);
-            
-            CRUD::field('created_by')->label('Creado por')
-                ->type('select')
-                ->model('App\Models\User')
-                ->attribute('name')
-                ->attributes(['readonly' => 'readonly', 'disabled' => 'disabled']);
-            
-            CRUD::field('priority')->label('Prioridad')
-                ->type('select_from_array')
-                ->options([
-                    'Baja' => 'Baja',
-                    'Media' => 'Media',
-                    'Alta' => 'Alta',
-                    'Urgente' => 'Urgente'
-                ])
-                ->attributes(['readonly' => 'readonly', 'disabled' => 'disabled']);
-            
-            // Campo editable: Estado (solo estados de solicitud)
-            CRUD::field('status')->label('Estado de Solicitud')
-                ->type('select_from_array')
-                ->options([
-                    'creada' => 'Creada',
-                    'revisada_area' => 'Revisada por Área',
-                    'archivada' => 'Archivada',
-                ])
-                ->allows_null(false);
-            
-            // Campo de solo lectura para mostrar si está convertida
-            CRUD::field('is_converted_display')->label('Convertida a Compra')
-                ->type('custom_html')
-                ->value(function($entry) {
-                    if ($entry->is_converted) {
-                        return '<div class="alert alert-success">
-                            <i class="la la-check-circle"></i> <strong>Sí, esta solicitud ha sido convertida a orden de compra.</strong>
-                        </div>';
-                    }
-                    return '<div class="alert alert-secondary">
-                        <i class="la la-times-circle"></i> <strong>No, esta solicitud aún no ha sido convertida.</strong>
-                    </div>';
-                });
-            
-            // Agregar mensaje informativo
-            CRUD::addField([
-                'name' => 'status_change_info',
-                'type' => 'custom_html',
-                'value' => '<div class="alert alert-info">
-                    <i class="la la-info-circle"></i> <strong>Nota:</strong> Solo puedes modificar el estado de esta solicitud. Los demás campos no son editables.
-                </div>',
-            ]);
-        } else {
-            // Usar los mismos campos que en create (edición completa)
-            $this->setupCreateOperation();
-            
-            // Cargar productos existentes para edición
-            if ($entry) {
-                // Cargar la relación con productos
-                $entry->load('details.product');
+            if ($entry->details) {
+                $existingProducts = $entry->details->map(function($detail) {
+                    return [
+                        'product_id' => $detail->product_id,
+                        'product_name' => $detail->product->name,
+                        'unit' => $detail->product->unit_measurement,
+                        'description' => $detail->product->description,
+                        'quantity' => $detail->requested_quantity,
+                        'price' => $detail->estimated_unit_price,
+                        'specifications' => $detail->specifications
+                    ];
+                })->toArray();
                 
-                if ($entry->details) {
-                    $existingProducts = $entry->details->map(function($detail) {
-                        return [
-                            'product_id' => $detail->product_id,
-                            'product_name' => $detail->product->name,
-                            'unit' => $detail->product->unit_measurement,
-                            'description' => $detail->product->description,
-                            'quantity' => $detail->requested_quantity,
-                            'price' => $detail->estimated_unit_price,
-                            'specifications' => $detail->specifications
-                        ];
-                    })->toArray();
-                    
-                    // Modificar el campo de productos para incluir los existentes
-                    CRUD::modifyField('products_selection', [
-                        'value' => $this->getProductsSelectionHtml($existingProducts)
-                    ]);
-                }
+                // Modificar el campo de productos para incluir los existentes
+                CRUD::modifyField('products_selection', [
+                    'value' => $this->getProductsSelectionHtml($existingProducts)
+                ]);
             }
         }
     }
@@ -679,32 +621,27 @@ class GeneralRequestCrudController extends CrudController
             abort(403, 'No se puede editar una solicitud que ya fue convertida a solicitud de compra.');
         }
         
-        $isResponsableArea = $user && $user->hasRole('role_responsable_area', 'backpack');
+        // Verificar si el usuario es administrador (puede editar cualquier solicitud)
+        $adminRoles = ['role_admin_sistema', 'role_admin_institucion', 'role_responsable_compras'];
+        $isAdmin = false;
+        foreach ($adminRoles as $role) {
+            if ($user && $user->hasRole($role, 'backpack')) {
+                $isAdmin = true;
+                break;
+            }
+        }
+        
         $isOwnRequest = $entry->created_by == $user->id;
         $canOnlyChangeStatus = false;
         
-        // Si es role_personal, solo puede editar sus propias solicitudes y solo si el estado es "creada"
-        if ($user->hasRole('role_personal', 'backpack')) {
+        // Si no es administrador, verificar restricciones
+        if (!$isAdmin) {
+            // Todos los usuarios (incluyendo responsables de área) solo pueden editar sus propias solicitudes
             if (!$isOwnRequest) {
-                abort(403, 'Solo puedes editar tus propias solicitudes.');
+                abort(403, 'Solo puedes editar las solicitudes que creaste.');
             }
-            if ($entry->status !== 'creada') {
-                abort(403, 'Solo puedes editar solicitudes con estado "creada".');
-            }
-        }
-        
-        // Verificar si solo puede cambiar el estado
-        if ($isResponsableArea && !$isOwnRequest && $entry) {
-            $userAreas = \App\Models\ResponsibilityArea::where('responsible_user_id', $user->id)->pluck('id');
-            if ($entry->area_id && $userAreas->contains($entry->area_id)) {
-                $canOnlyChangeStatus = true;
-            } else {
-                abort(403, 'Solo puedes editar solicitudes de tu área o las que creaste.');
-            }
-        }
-        
-        // Si es el creador (pero no role_personal), solo puede editar si el estado es "creada"
-        if ($isOwnRequest && !$user->hasRole('role_personal', 'backpack') && !$isResponsableArea) {
+            
+            // Si es el creador, solo puede editar si el estado es "creada"
             if ($entry->status !== 'creada') {
                 abort(403, 'Solo puedes editar solicitudes con estado "creada".');
             }
@@ -712,15 +649,6 @@ class GeneralRequestCrudController extends CrudController
 
         // Obtener datos para guardar
         $dataToSave = $this->crud->getStrippedSaveRequest($request);
-
-        // Si solo puede cambiar el estado, solo guardar el estado
-        if ($canOnlyChangeStatus) {
-            // Solo guardar el estado, ignorar otros campos
-            $dataToSave = [];
-            if ($request->has('status')) {
-                $dataToSave['status'] = $request->input('status');
-            }
-        }
 
         // Debug: Log todos los datos del request
         \Log::info('Datos del request completo (UPDATE):', $request->all());
@@ -731,11 +659,8 @@ class GeneralRequestCrudController extends CrudController
             $item = $this->crud->update($this->crud->getCurrentEntryId(), $dataToSave);
             $this->data['entry'] = $this->crud->entry = $item;
 
-            // Solo procesar productos si no es solo cambio de estado
-            if (!$canOnlyChangeStatus) {
-                // Eliminar productos existentes y procesar los nuevos
-                $this->processSelectedProducts($item, $request, true);
-            }
+            // Eliminar productos existentes y procesar los nuevos
+            $this->processSelectedProducts($item, $request, true);
 
             // show a success message
             \Alert::success(trans('backpack::crud.update_success'))->flash();
@@ -977,11 +902,35 @@ class GeneralRequestCrudController extends CrudController
                     $productName = $detail->product->name ?? 'Producto no encontrado';
                     $productDescription = $detail->product->description ?? '';
                     
-                    // Calcular stock disponible usando consulta directa
+                    // Calcular stock disponible solo de la ubicación del área de la solicitud
                     $stockAvailable = 0;
                     if ($detail->product_id) {
                         try {
-                            $stockAvailable = (int) \App\Models\StockLevel::where('product_id', $detail->product_id)->sum('quantity');
+                            // Obtener la ubicación correspondiente al área de la solicitud
+                            $location = null;
+                            if ($entry->area) {
+                                // Mapeo entre nombres de áreas y nombres de ubicaciones
+                                $areaLocationMap = [
+                                    'Informática' => 'Informática',
+                                    'Mantenimiento' => 'Mantenimiento',
+                                    'Salud' => 'Insumos de Salud',
+                                    'Insumos Generales' => 'Insumos Generales',
+                                ];
+                                
+                                $areaName = $entry->area->name;
+                                $locationName = $areaLocationMap[$areaName] ?? $areaName;
+                                $location = \App\Models\Location::where('name', $locationName)->first();
+                            }
+                            
+                            if ($location) {
+                                // Stock solo de la ubicación del área
+                                $stockAvailable = (int) \App\Models\StockLevel::where('product_id', $detail->product_id)
+                                    ->where('location_id', $location->id)
+                                    ->sum('quantity');
+                            } else {
+                                // Si no hay ubicación, sumar todas (comportamiento anterior)
+                                $stockAvailable = (int) \App\Models\StockLevel::where('product_id', $detail->product_id)->sum('quantity');
+                            }
                         } catch (\Exception $e) {
                             \Log::error('Error al calcular stock para producto ' . $detail->product_id . ': ' . $e->getMessage());
                             $stockAvailable = 0;

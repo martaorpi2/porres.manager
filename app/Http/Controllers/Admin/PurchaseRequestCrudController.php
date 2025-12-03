@@ -47,11 +47,23 @@ class PurchaseRequestCrudController extends CrudController
         
         CRUD::addClause('with', ['responsibilityArea', 'requestingUser', 'details', 'purchaseOrders']);
         
-        // Si el usuario tiene rol role_responsable_area, solo mostrar sus solicitudes de compra
+        // Filtrar solicitudes según el rol del usuario
         $user = backpack_user();
-        if ($user && $user->hasRole('role_responsable_area', 'backpack')) {
-            \Log::info('Filtrando solicitudes de compra para role_responsable_area:', ['user_id' => $user->id, 'email' => $user->email]);
-            CRUD::addClause('where', 'requesting_user_id', $user->id);
+        if ($user) {
+            // Roles que pueden ver todas las solicitudes (administradores)
+            $adminRoles = ['role_admin_sistema', 'role_admin_institucion', 'role_responsable_compras'];
+            $isAdmin = false;
+            foreach ($adminRoles as $role) {
+                if ($user->hasRole($role, 'backpack')) {
+                    $isAdmin = true;
+                    break;
+                }
+            }
+            
+            if (!$isAdmin) {
+                // Todos los usuarios (incluyendo responsables de área) solo ven sus propias solicitudes
+                CRUD::addClause('where', 'requesting_user_id', $user->id);
+            }
         }
         
         CRUD::column('request_number')->label('Número de Solicitud');
@@ -83,6 +95,10 @@ class PurchaseRequestCrudController extends CrudController
                 }
             });
 
+        // Remover botón de edición por defecto y usar el personalizado
+        CRUD::removeButton('update');
+        CRUD::addButton('line', 'edit_purchase_request', 'view', 'crud::buttons.edit_purchase_request', 'beginning');
+        
         // Botón para generar planilla comparativa (disponible para todos)
         CRUD::addButton('line', 'comparative_excel', 'view', 'crud::buttons.comparative_excel', 'end');
         
@@ -178,25 +194,158 @@ class PurchaseRequestCrudController extends CrudController
      */
     protected function setupUpdateOperation()
     {
-        $this->setupCreateFields();
+        // Verificar permisos y que el usuario solo pueda editar sus propias solicitudes
+        $user = backpack_user();
+        if (!$user) {
+            abort(403, 'No tienes permiso para editar solicitudes de compra.');
+        }
         
-        // Agregar campos adicionales para actualización
-        CRUD::field('status')->label('Estado')
-            ->type('select_from_array')
-            ->options([
-                'Pendiente' => 'Pendiente',
-                'Aprobada' => 'Aprobada',
-                'Rechazada' => 'Rechazada',
-                'En Proceso' => 'En Proceso',
-                'Completada' => 'Completada'
-            ]);
+        $entry = $this->crud->getCurrentEntry();
+        if (!$entry) {
+            abort(404, 'Solicitud de compra no encontrada.');
+        }
+        
+        // Verificar si el usuario es administrador (puede editar cualquier solicitud)
+        $adminRoles = ['role_admin_sistema', 'role_admin_institucion', 'role_responsable_compras'];
+        $isAdmin = false;
+        foreach ($adminRoles as $role) {
+            if ($user->hasRole($role, 'backpack')) {
+                $isAdmin = true;
+                break;
+            }
+        }
+        
+        $isOwnRequest = $entry->requesting_user_id == $user->id;
+        
+        // Verificar si el usuario es responsable de área
+        $isResponsableArea = $user && $user->hasRole('role_responsable_area', 'backpack');
+        
+        // Si no es administrador, verificar restricciones
+        if (!$isAdmin) {
+            // Todos los usuarios solo pueden editar sus propias solicitudes
+            if (!$isOwnRequest) {
+                abort(403, 'Solo puedes editar las solicitudes de compra que creaste.');
+            }
             
-        CRUD::field('approved_by')->label('Aprobado por')
-            ->type('select')
-            ->model('App\Models\User')
-            ->attribute('name');
+            // Solo puede editar si el estado es "Pendiente"
+            if ($entry->status !== 'Pendiente') {
+                abort(403, 'Solo puedes editar solicitudes de compra con estado "Pendiente".');
+            }
+        }
+        
+        // Si es responsable de área, solo puede modificar prioridad, justificación y productos
+        if ($isResponsableArea) {
+            // Campos de solo lectura (información) - se muestran como inputs bloqueados con readonly
+            CRUD::field('request_number')->label('Número de Solicitud')
+                ->type('text')
+                ->default($entry->request_number)
+                ->attributes(['readonly' => 'readonly']);
             
-        CRUD::field('approved_date')->label('Fecha de Aprobación')->type('date');
+            CRUD::field('request_date')->label('Fecha de Solicitud')
+                ->type('date')
+                ->default($entry->request_date ? $entry->request_date->format('Y-m-d') : '')
+                ->attributes(['readonly' => 'readonly']);
+            
+            // Para el área, mostrar el nombre pero mantener el ID
+            CRUD::field('responsibility_area_display')->label('Área de Responsabilidad')
+                ->type('text')
+                ->default($entry->responsibilityArea ? $entry->responsibilityArea->name : '')
+                ->attributes(['readonly' => 'readonly']);
+            CRUD::field('responsibility_area_id')->type('hidden')->value($entry->responsibility_area_id);
+            
+            // Para el usuario, mostrar el nombre pero mantener el ID
+            CRUD::field('requesting_user_display')->label('Usuario Solicitante')
+                ->type('text')
+                ->default($entry->requestingUser ? $entry->requestingUser->name : '')
+                ->attributes(['readonly' => 'readonly']);
+            CRUD::field('requesting_user_id')->type('hidden')->value($entry->requesting_user_id);
+            
+            // Campos ocultos que deben mantenerse con sus valores actuales
+            CRUD::field('status')->type('hidden')->value($entry->status);
+            CRUD::field('total_amount')->type('hidden')->value($entry->total_amount);
+            CRUD::field('observations')->type('hidden')->value($entry->observations);
+            
+            // Campos editables para responsable de área
+            CRUD::field('priority')->label('Prioridad')
+                ->type('select_from_array')
+                ->options([
+                    'Baja' => 'Baja',
+                    'Media' => 'Media',
+                    'Alta' => 'Alta',
+                    'Urgente' => 'Urgente'
+                ])
+                ->default($entry->priority ?? 'Media');
+            
+            CRUD::field('justification')->label('Justificación')->type('textarea')->default($entry->justification);
+            
+            // Campo para seleccionar productos
+            $entry->load('details.product');
+            if ($entry->details && $entry->details->count() > 0) {
+                $existingProducts = $entry->details->map(function($detail) {
+                    return [
+                        'product_id' => $detail->product_id,
+                        'product_name' => $detail->product ? $detail->product->name : 'N/A',
+                        'unit' => $detail->product ? $detail->product->unit_measurement : '',
+                        'description' => $detail->product ? $detail->product->description : '',
+                        'quantity' => $detail->requested_quantity ?? 0,
+                        'price' => $detail->estimated_unit_price ?? 0,
+                        'specifications' => $detail->specifications ?? ''
+                    ];
+                })->toArray();
+                
+                CRUD::field('products_selection')->label('Productos Solicitados')->type('custom_html')
+                    ->value($this->getProductsSelectionHtml($existingProducts));
+            } else {
+                CRUD::field('products_selection')->label('Productos Solicitados')->type('custom_html')
+                    ->value($this->getProductsSelectionHtml([]));
+            }
+        } else {
+            // Para administradores, usar todos los campos
+            $this->setupCreateFields();
+            
+            // Cargar productos existentes para edición
+            if ($entry) {
+                // Cargar la relación con productos
+                $entry->load('details.product');
+                
+                if ($entry->details && $entry->details->count() > 0) {
+                    $existingProducts = $entry->details->map(function($detail) {
+                        return [
+                            'product_id' => $detail->product_id,
+                            'product_name' => $detail->product ? $detail->product->name : 'N/A',
+                            'unit' => $detail->product ? $detail->product->unit_measurement : '',
+                            'description' => $detail->product ? $detail->product->description : '',
+                            'quantity' => $detail->requested_quantity ?? 0,
+                            'price' => $detail->estimated_unit_price ?? 0,
+                            'specifications' => $detail->specifications ?? ''
+                        ];
+                    })->toArray();
+                    
+                    // Modificar el campo de productos para incluir los existentes
+                    CRUD::modifyField('products_selection', [
+                        'value' => $this->getProductsSelectionHtml($existingProducts)
+                    ]);
+                }
+            }
+            
+            // Agregar campos adicionales para actualización
+            CRUD::field('status')->label('Estado')
+                ->type('select_from_array')
+                ->options([
+                    'Pendiente' => 'Pendiente',
+                    'Aprobada' => 'Aprobada',
+                    'Rechazada' => 'Rechazada',
+                    'En Proceso' => 'En Proceso',
+                    'Completada' => 'Completada'
+                ]);
+            
+            CRUD::field('approved_by')->label('Aprobado por')
+                ->type('select')
+                ->model('App\Models\User')
+                ->attribute('name');
+                
+            CRUD::field('approved_date')->label('Fecha de Aprobación')->type('date');
+        }
     }
 
     /**
@@ -330,7 +479,7 @@ class PurchaseRequestCrudController extends CrudController
                 }
                 
                 // Función para agregar producto a la lista
-                function addProductToList(productId, productName, unit, description, quantity) {
+                function addProductToList(productId, productName, unit, description, quantity, price = 0, specifications = "") {
                     const container = document.getElementById("selected-products-list");
                     const productDiv = document.createElement("div");
                     productDiv.className = "selected-product-item border p-3 mb-2";
@@ -348,11 +497,11 @@ class PurchaseRequestCrudController extends CrudController
                             </div>
                             <div class="col-md-2">
                                 <label>Precio Unit. Est.:</label>
-                                <input type="number" class="form-control product-price" step="0.01" min="0">
+                                <input type="number" class="form-control product-price" step="0.01" min="0" value="${price}">
                             </div>
                             <div class="col-md-3">
                                 <label>Especificaciones:</label>
-                                <textarea class="form-control product-specs" rows="2"></textarea>
+                                <textarea class="form-control product-specs" rows="2">${specifications}</textarea>
                             </div>
                             <div class="col-md-1">
                                 <button type="button" class="btn btn-danger btn-sm remove-product">
@@ -438,6 +587,227 @@ class PurchaseRequestCrudController extends CrudController
             });
             </script>
             ');
+    }
+    
+    /**
+     * Generate HTML for products selection with existing products
+     */
+    private function getProductsSelectionHtml($existingProducts = [])
+    {
+        $existingProductsJson = json_encode($existingProducts);
+        
+        return '
+        <div id="products-container">
+            <div class="row mb-3">
+                <div class="col-md-6">
+                    <label for="product-select" class="form-label">Seleccionar Producto</label>
+                    <select id="product-select" class="form-control">
+                        <option value="">Seleccionar un producto...</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label for="product-quantity" class="form-label">Cantidad</label>
+                    <input type="number" id="product-quantity" class="form-control" min="1" value="1">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">&nbsp;</label>
+                    <button type="button" id="add-product-btn" class="btn btn-primary btn-block">
+                        <i class="la la-plus"></i> Agregar
+                    </button>
+                </div>
+            </div>
+            <div class="row mb-3">
+                <div class="col-12">
+                    <button type="button" id="add-new-product-btn" class="btn btn-success">
+                        <i class="la la-plus-circle"></i> Agregar Nuevo Producto
+                    </button>
+                </div>
+            </div>
+            <div id="selected-products-list"></div>
+        </div>
+        
+        <script>
+        document.addEventListener("DOMContentLoaded", function() {
+            const existingProducts = ' . $existingProductsJson . ';
+            
+            // Cargar productos existentes
+            loadProducts();
+            
+            // Cargar productos existentes en la lista
+            if (existingProducts && existingProducts.length > 0) {
+                existingProducts.forEach(product => {
+                    addProductToList(
+                        product.product_id, 
+                        product.product_name + " (" + product.unit + ")", 
+                        product.unit, 
+                        product.description, 
+                        product.quantity,
+                        product.price,
+                        product.specifications
+                    );
+                });
+            }
+            
+            // Event listeners
+            document.getElementById("add-product-btn").addEventListener("click", addProduct);
+            document.getElementById("add-new-product-btn").addEventListener("click", showNewProductModal);
+            
+            // Función para cargar productos
+            function loadProducts() {
+                fetch("' . backpack_url('api/productos') . '")
+                    .then(response => response.json())
+                    .then(data => {
+                        const select = document.getElementById("product-select");
+                        select.innerHTML = \'<option value="">Seleccionar un producto...</option>\';
+                        data.forEach(product => {
+                            const option = document.createElement("option");
+                            option.value = product.id;
+                            option.textContent = product.name + " (" + product.unit_measurement + ")";
+                            option.setAttribute("data-unit", product.unit_measurement);
+                            option.setAttribute("data-description", product.description || "");
+                            select.appendChild(option);
+                        });
+                    })
+                    .catch(error => console.error("Error loading products:", error));
+            }
+            
+            // Función para agregar producto
+            function addProduct() {
+                const select = document.getElementById("product-select");
+                const quantity = document.getElementById("product-quantity");
+                
+                if (!select.value) {
+                    alert("Por favor seleccione un producto");
+                    return;
+                }
+                
+                if (!quantity.value || quantity.value < 1) {
+                    alert("Por favor ingrese una cantidad válida");
+                    return;
+                }
+                
+                const selectedOption = select.options[select.selectedIndex];
+                const productId = select.value;
+                const productName = selectedOption.textContent;
+                const unit = selectedOption.getAttribute("data-unit");
+                const description = selectedOption.getAttribute("data-description");
+                
+                addProductToList(productId, productName, unit, description, quantity.value);
+                
+                // Limpiar campos
+                select.value = "";
+                quantity.value = 1;
+            }
+            
+            // Función para agregar producto a la lista
+            function addProductToList(productId, productName, unit, description, quantity, price = 0, specifications = "") {
+                const container = document.getElementById("selected-products-list");
+                const productDiv = document.createElement("div");
+                productDiv.className = "selected-product-item border p-3 mb-2";
+                productDiv.setAttribute("data-product-id", productId);
+                
+                productDiv.innerHTML = `
+                    <div class="row">
+                        <div class="col-md-4">
+                            <strong>${productName}</strong>
+                            ${description ? `<br><small class="text-muted">${description}</small>` : ""}
+                        </div>
+                        <div class="col-md-2">
+                            <label>Cantidad:</label>
+                            <input type="number" class="form-control product-quantity" value="${quantity}" min="1">
+                        </div>
+                        <div class="col-md-2">
+                            <label>Precio Unit. Est.:</label>
+                            <input type="number" class="form-control product-price" step="0.01" min="0" value="${price}">
+                        </div>
+                        <div class="col-md-3">
+                            <label>Especificaciones:</label>
+                            <textarea class="form-control product-specs" rows="2">${specifications}</textarea>
+                        </div>
+                        <div class="col-md-1">
+                            <button type="button" class="btn btn-danger btn-sm remove-product">
+                                <i class="la la-trash"></i>
+                            </button>
+                        </div>
+                    </div>
+                `;
+                
+                container.appendChild(productDiv);
+                
+                // Event listener para remover producto
+                productDiv.querySelector(".remove-product").addEventListener("click", function() {
+                    productDiv.remove();
+                    updateHiddenFields();
+                });
+                
+                // Event listeners para actualizar totales
+                productDiv.querySelector(".product-quantity").addEventListener("input", updateTotals);
+                productDiv.querySelector(".product-price").addEventListener("input", updateTotals);
+                
+                updateHiddenFields();
+            }
+            
+            // Función para actualizar campos ocultos
+            function updateHiddenFields() {
+                const products = [];
+                document.querySelectorAll(".selected-product-item").forEach(item => {
+                    const productId = item.getAttribute("data-product-id");
+                    const quantity = item.querySelector(".product-quantity").value;
+                    const price = item.querySelector(".product-price").value;
+                    const specs = item.querySelector(".product-specs").value;
+                    
+                    products.push({
+                        product_id: productId,
+                        quantity: quantity,
+                        price: price,
+                        specifications: specs
+                    });
+                });
+                
+                // Crear o actualizar campo oculto
+                let hiddenField = document.querySelector("input[name=\'selected_products\']");
+                if (!hiddenField) {
+                    hiddenField = document.createElement("input");
+                    hiddenField.type = "hidden";
+                    hiddenField.name = "selected_products";
+                    document.querySelector("form").appendChild(hiddenField);
+                }
+                hiddenField.value = JSON.stringify(products);
+            }
+            
+            // Función para actualizar totales
+            function updateTotals() {
+                updateHiddenFields();
+            }
+            
+            // Función para mostrar modal de nuevo producto
+            function showNewProductModal() {
+                const productName = prompt("Nombre del nuevo producto:");
+                if (!productName) return;
+                
+                const productUnit = prompt("Unidad del producto (ej: kg, litros, unidades):");
+                if (!productUnit) return;
+                
+                const productDescription = prompt("Descripción del producto (opcional):") || "";
+                
+                // Agregar como producto temporal con ID negativo
+                const tempId = "new_" + Date.now();
+                const productData = {
+                    product_id: tempId,
+                    name: productName,
+                    unit: productUnit,
+                    description: productDescription,
+                    quantity: 1,
+                    price: 0,
+                    specifications: ""
+                };
+                
+                // Agregar a la lista de productos seleccionados
+                addProductToList(tempId, productName, productUnit, productDescription, 1);
+            }
+        });
+        </script>
+        ';
     }
 
     /**
@@ -1048,6 +1418,21 @@ class PurchaseRequestCrudController extends CrudController
      */
     public function storeMarketRateSelection($id, $marketRateId)
     {
+        // Verificar que solo el responsable de compras pueda seleccionar cotizaciones
+        $user = backpack_user();
+        $adminRoles = ['role_admin_sistema', 'role_admin_institucion', 'role_responsable_compras'];
+        $isAdmin = false;
+        foreach ($adminRoles as $role) {
+            if ($user && $user->hasRole($role, 'backpack')) {
+                $isAdmin = true;
+                break;
+            }
+        }
+        
+        if (!$isAdmin) {
+            abort(403, 'Solo el responsable de compras puede seleccionar cotizaciones.');
+        }
+        
         $purchaseRequest = \App\Models\PurchaseRequest::findOrFail($id);
         $marketRate = \App\Models\MarketRate::findOrFail($marketRateId);
         
@@ -1062,6 +1447,64 @@ class PurchaseRequestCrudController extends CrudController
         ]);
         
         \Alert::success('Cotización seleccionada y justificada exitosamente.')->flash();
+        
+        return redirect()->route('purchase-request.show', $id);
+    }
+
+    /**
+     * Show form to suggest a supplier
+     */
+    public function showSuggestSupplierForm($id)
+    {
+        $purchaseRequest = \App\Models\PurchaseRequest::with([
+            'responsibilityArea',
+            'details.product'
+        ])->findOrFail($id);
+        
+        // Verificar que el usuario sea responsable de área
+        $user = backpack_user();
+        if (!$user || !$user->hasRole('role_responsable_area', 'backpack')) {
+            abort(403, 'Solo los responsables de área pueden sugerir proveedores.');
+        }
+        
+        $suppliers = \App\Models\Supplier::all();
+        
+        return view('admin.purchase-request.suggest-supplier', compact('purchaseRequest', 'suppliers'));
+    }
+
+    /**
+     * Store supplier suggestion
+     */
+    public function storeSupplierSuggestion($id)
+    {
+        // Verificar que el usuario sea responsable de área
+        $user = backpack_user();
+        if (!$user || !$user->hasRole('role_responsable_area', 'backpack')) {
+            abort(403, 'Solo los responsables de área pueden sugerir proveedores.');
+        }
+        
+        $purchaseRequest = \App\Models\PurchaseRequest::findOrFail($id);
+        $request = request();
+        
+        // Validar que no exista ya una sugerencia del mismo usuario para el mismo proveedor
+        $existingSuggestion = \App\Models\SupplierSuggestion::where('purchase_request_id', $id)
+            ->where('supplier_id', $request->input('supplier_id'))
+            ->where('suggested_by', $user->id)
+            ->first();
+        
+        if ($existingSuggestion) {
+            \Alert::error('Ya has sugerido este proveedor para esta solicitud.')->flash();
+            return redirect()->back();
+        }
+        
+        \App\Models\SupplierSuggestion::create([
+            'purchase_request_id' => $id,
+            'supplier_id' => $request->input('supplier_id'),
+            'suggested_by' => $user->id,
+            'justification' => $request->input('justification'),
+        ]);
+        
+        \Alert::success('Proveedor sugerido exitosamente.')->flash();
         
         return redirect()->route('purchase-request.show', $id);
     }
@@ -1441,18 +1884,27 @@ class PurchaseRequestCrudController extends CrudController
                 return $html;
             });
 
-        // Agregar campo para mostrar cotizaciones disponibles
+        // Agregar campo para mostrar cotizaciones disponibles (oculto para responsables de área)
         CRUD::column('market_rates_table')->label('Cotizaciones Disponibles')->type('custom_html')
             ->value(function($entry) {
+                // Ocultar esta sección para responsables de área
+                $user = backpack_user();
+                $isResponsableArea = $user && $user->hasRole('role_responsable_area', 'backpack');
+                
+                if ($isResponsableArea) {
+                    return '';
+                }
+                
                 // Usar la relación del modelo en lugar de consulta directa
                 $entry->load(['marketRates.supplier', 'marketRates.quoteDetails.product']);
                 $marketRates = $entry->marketRates;
                 
-                if ($marketRates->isEmpty()) {
-                    return '<div class="alert alert-warning">No hay cotizaciones disponibles para los productos de esta solicitud.</div>';
-                }
+                $html = '';
                 
-                $html = '<div class="table-responsive">';
+                if ($marketRates->isEmpty()) {
+                    $html .= '<div class="alert alert-warning">No hay cotizaciones disponibles para los productos de esta solicitud.</div>';
+                } else {
+                    $html .= '<div class="table-responsive">';
                 $html .= '<table class="table table-striped table-bordered">';
                 $html .= '<thead class="thead-dark">';
                 $html .= '<tr>';
@@ -1492,7 +1944,18 @@ class PurchaseRequestCrudController extends CrudController
                     $html .= '</td>';
                     $html .= '<td>';
                     
-                    if (!$isSelected && $entry->status != 'Completada') {
+                    // Solo el responsable de compras puede seleccionar cotizaciones
+                    $user = backpack_user();
+                    $adminRoles = ['role_admin_sistema', 'role_admin_institucion', 'role_responsable_compras'];
+                    $canSelect = false;
+                    foreach ($adminRoles as $role) {
+                        if ($user && $user->hasRole($role, 'backpack')) {
+                            $canSelect = true;
+                            break;
+                        }
+                    }
+                    
+                    if (!$isSelected && $entry->status != 'Completada' && $canSelect) {
                         $html .= '<a href="' . route('purchase-request.show-select-market-rate', [$entry->id, $marketRate->id]) . '" class="btn btn-sm btn-success">';
                         $html .= '<i class="la la-check"></i> Seleccionar';
                         $html .= '</a>';
@@ -1502,9 +1965,10 @@ class PurchaseRequestCrudController extends CrudController
                     $html .= '</tr>';
                 }
                 
-                $html .= '</tbody>';
-                $html .= '</table>';
-                $html .= '</div>';
+                    $html .= '</tbody>';
+                    $html .= '</table>';
+                    $html .= '</div>';
+                }
                 
                 // Lógica para mostrar botón de generar orden según el monto
                 // El rol role_responsable_area no puede generar órdenes de compra
@@ -1517,12 +1981,39 @@ class PurchaseRequestCrudController extends CrudController
                 $entry->load('marketRates');
                 $quotationsCount = $entry->marketRates->count();
                 
+                // Botón para agregar nueva cotización (solo responsable de compras)
+                $user = backpack_user();
+                $adminRoles = ['role_admin_sistema', 'role_admin_institucion', 'role_responsable_compras'];
+                $canCreateQuotation = false;
+                foreach ($adminRoles as $role) {
+                    if ($user && $user->hasRole($role, 'backpack')) {
+                        $canCreateQuotation = true;
+                        break;
+                    }
+                }
+                
+                if ($canCreateQuotation) {
+                    $html .= '<div class="mt-3">';
+                    $html .= '<a href="' . backpack_url('market-rate/create?purchase_request_id=' . $entry->id) . '" class="btn btn-success">';
+                    $html .= '<i class="la la-plus"></i> Agregar Nueva Cotización';
+                    $html .= '</a>';
+                    $html .= '</div>';
+                }
+                
+                // Mostrar advertencia si hay menos de 3 cotizaciones (incluso después de generar orden)
+                if ($quotationsCount < 3) {
+                    $html .= '<div class="mt-3 alert alert-warning">';
+                    $html .= '<i class="la la-exclamation-triangle"></i> <strong>Atención:</strong> Se recomienda tener al menos 3 cotizaciones. Actualmente hay ' . $quotationsCount . ' cotización(es).';
+                    $html .= '</div>';
+                }
+                
                 if ($entry->status != 'Completada' && $canGenerateOrder) {
                     if ($totalAmount > $threshold) {
                         // Para montos mayores a 60000, se requieren 3 cotizaciones y una seleccionada
                         if ($quotationsCount < 3) {
-                            $html .= '<div class="mt-3 alert alert-warning">';
-                            $html .= '<i class="la la-exclamation-triangle"></i> <strong>Atención:</strong> Para solicitudes mayores a $' . number_format($threshold, 2) . ' se requieren al menos 3 cotizaciones. Actualmente hay ' . $quotationsCount . ' cotización(es).';
+                            // El mensaje de advertencia ya se mostró arriba, solo mostrar mensaje específico para generar orden
+                            $html .= '<div class="mt-3 alert alert-danger">';
+                            $html .= '<i class="la la-exclamation-triangle"></i> <strong>No se puede generar la orden:</strong> Para solicitudes mayores a $' . number_format($threshold, 2) . ' se requieren al menos 3 cotizaciones. Actualmente hay ' . $quotationsCount . ' cotización(es).';
                             $html .= '</div>';
                         } elseif (!$entry->selected_market_rate_id) {
                             $html .= '<div class="mt-3 alert alert-warning">';
@@ -1571,6 +2062,74 @@ class PurchaseRequestCrudController extends CrudController
                     // Usuario con rol role_responsable_area no puede generar órdenes de compra
                     $html .= '<div class="mt-3 alert alert-info">';
                     $html .= '<i class="la la-info-circle"></i> <strong>Información:</strong> Los responsables de área no pueden generar órdenes de compra. Esta función está reservada para otros roles del sistema.';
+                    $html .= '</div>';
+                }
+                
+                return $html;
+            });
+
+        // Agregar campo para mostrar sugerencias de proveedores
+        CRUD::column('supplier_suggestions_table')->label('Sugerencias de Proveedores')->type('custom_html')
+            ->value(function($entry) {
+                $entry->load(['supplierSuggestions.supplier', 'supplierSuggestions.suggestedBy']);
+                $suggestions = $entry->supplierSuggestions;
+                
+                $html = '';
+                
+                $user = backpack_user();
+                $isResponsableArea = $user && $user->hasRole('role_responsable_area', 'backpack');
+                
+                // Botón para sugerir proveedor (solo responsables de área)
+                if ($isResponsableArea && $entry->status != 'Completada') {
+                    $html .= '<div class="mb-3">';
+                    $html .= '<a href="' . route('purchase-request.suggest-supplier', $entry->id) . '" class="btn btn-info">';
+                    $html .= '<i class="la la-lightbulb"></i> Sugerir Proveedor';
+                    $html .= '</a>';
+                    $html .= '</div>';
+                }
+                
+                if ($suggestions->isEmpty()) {
+                    $html .= '<div class="alert alert-info">No hay sugerencias de proveedores para esta solicitud.</div>';
+                } else {
+                    $html .= '<div class="table-responsive">';
+                    $html .= '<table class="table table-striped table-bordered">';
+                    $html .= '<thead class="thead-dark">';
+                    $html .= '<tr>';
+                    $html .= '<th>Proveedor</th>';
+                    $html .= '<th>Sugerido por</th>';
+                    $html .= '<th>Justificación</th>';
+                    $html .= '<th>Fecha</th>';
+                    $html .= '</tr>';
+                    $html .= '</thead>';
+                    $html .= '<tbody>';
+                    
+                    foreach ($suggestions as $suggestion) {
+                        $html .= '<tr>';
+                        $supplierName = $suggestion->supplier->company_name ?? 'Proveedor no encontrado';
+                        if (is_array($supplierName)) {
+                            $supplierName = 'Proveedor no encontrado';
+                        }
+                        $html .= '<td><strong>' . $supplierName . '</strong></td>';
+                        $suggestedByName = $suggestion->suggestedBy->name ?? 'Usuario no encontrado';
+                        if (is_array($suggestedByName)) {
+                            $suggestedByName = 'Usuario no encontrado';
+                        }
+                        $html .= '<td>' . $suggestedByName . '</td>';
+                        $justification = $suggestion->justification ?? 'Sin justificación';
+                        if (is_array($justification)) {
+                            $justification = 'Sin justificación';
+                        }
+                        $html .= '<td>' . $justification . '</td>';
+                        $createdAt = $suggestion->created_at;
+                        if (is_string($createdAt)) {
+                            $createdAt = \Carbon\Carbon::parse($createdAt);
+                        }
+                        $html .= '<td>' . ($createdAt ? $createdAt->format('d/m/Y H:i') : 'N/A') . '</td>';
+                        $html .= '</tr>';
+                    }
+                    
+                    $html .= '</tbody>';
+                    $html .= '</table>';
                     $html .= '</div>';
                 }
                 

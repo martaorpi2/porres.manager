@@ -42,9 +42,22 @@ class DashboardController extends Controller
                 'general_requests_delivered' => GeneralRequest::where('created_by', $user->id)
                     ->whereIn('status', ['entregada_parcialmente', 'entregada_totalmente'])
                     ->count(),
-                // Aprobadas: revisadas por el área (status = 'revisada_area')
+                // Aprobadas: cualquier estado excepto 'creada' (a menos que esté convertida), 'archivada' y 'entregada_parcialmente'/'entregada_totalmente'
+                // Las convertidas a compra con estado entregada NO cuentan como aprobadas
+                // IMPORTANTE: Solo del usuario logueado (created_by = $user->id)
                 'general_requests_approved' => GeneralRequest::where('created_by', $user->id)
-                    ->where('status', 'revisada_area')
+                    ->whereNotIn('status', ['entregada_parcialmente', 'entregada_totalmente'])
+                    ->where(function($query) {
+                        $query->where(function($q) {
+                            // Estados que no son 'creada' ni 'archivada'
+                            $q->where('status', '!=', 'creada')
+                              ->where('status', '!=', 'archivada');
+                        })->orWhere(function($q) {
+                            // Estado 'creada' pero convertida a compra
+                            $q->where('status', 'creada')
+                              ->where('is_converted', true);
+                        });
+                    })
                     ->count(),
                 // Entregadas: las que tienen status = 'entregada_totalmente' o 'entregada_parcialmente'
                 'general_requests_entregada' => GeneralRequest::where('created_by', $user->id)
@@ -74,6 +87,16 @@ class DashboardController extends Controller
                 }
             });
             
+            // Filtrar entregas relacionadas con solicitudes generales de su área
+            $deliveriesQuery = Delivery::whereHas('generalRequest', function($query) use ($user, $userAreas) {
+                $query->where(function($q) use ($user, $userAreas) {
+                    $q->where('created_by', $user->id);
+                    if ($userAreas->isNotEmpty()) {
+                        $q->orWhereIn('area_id', $userAreas);
+                    }
+                });
+            });
+            
             $stats = [
                 'general_requests' => $userRequestsQuery->count(),
                 'general_requests_pending' => (clone $userRequestsQuery)->where('status', 'creada')->count(),
@@ -86,7 +109,7 @@ class DashboardController extends Controller
                 'payment_orders_pending' => 0,
                 'receptions' => Reception::where('area_manager_id', $user->id)->count(),
                 'devolutions' => 0,
-                'deliveries' => Delivery::count(),
+                'deliveries' => $deliveriesQuery->count(),
             ];
         } else {
             // Para otros roles, mostrar todas las estadísticas
@@ -123,7 +146,7 @@ class DashboardController extends Controller
         
         $generalRequests = $generalRequestsQuery
             ->orderBy('created_at', 'desc')
-            ->limit(10)
+            ->orderBy('id', 'desc')
             ->get();
 
         // Obtener solicitudes de compra recientes
@@ -192,6 +215,17 @@ class DashboardController extends Controller
         if ($isPersonal) {
             // Para role_personal, solo mostrar entregas donde él es el receptor
             $deliveriesQuery->where('received_by', $user->id);
+        } elseif ($isResponsableArea) {
+            // Para role_responsable_area, solo mostrar entregas relacionadas con solicitudes generales de su área
+            $userAreas = \App\Models\ResponsibilityArea::where('responsible_user_id', $user->id)->pluck('id');
+            $deliveriesQuery->whereHas('generalRequest', function($query) use ($user, $userAreas) {
+                $query->where(function($q) use ($user, $userAreas) {
+                    $q->where('created_by', $user->id);
+                    if ($userAreas->isNotEmpty()) {
+                        $q->orWhereIn('area_id', $userAreas);
+                    }
+                });
+            });
         }
         
         $deliveries = $deliveriesQuery
@@ -341,6 +375,7 @@ class DashboardController extends Controller
                 }
             ])
             ->orderBy('created_at', 'desc')
+            ->orderBy('id', 'desc')
             ->limit(20)
             ->get();
 

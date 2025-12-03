@@ -44,6 +44,40 @@ class SupplierCrudController extends CrudController
         // Habilitar tabla responsiva
         CRUD::enableResponsiveTable();
         
+        // Filtrar proveedores por área si el usuario es responsable de área
+        $user = backpack_user();
+        if ($user && $user->hasRole('role_responsable_area', 'backpack')) {
+            // Obtener las áreas de responsabilidad del usuario
+            $userAreas = \App\Models\ResponsibilityArea::where('responsible_user_id', $user->id)->pluck('id');
+            
+            if ($userAreas->isNotEmpty()) {
+                // Obtener IDs de proveedores relacionados con solicitudes de compra de las áreas del usuario
+                // a través de cotizaciones
+                $supplierIdsFromMarketRates = \App\Models\MarketRate::whereHas('purchaseRequest', function($q) use ($userAreas) {
+                    $q->whereIn('responsibility_area_id', $userAreas);
+                })->pluck('supplier_id')->unique();
+                
+                // Obtener IDs de proveedores relacionados a través de sugerencias
+                $supplierIdsFromSuggestions = \App\Models\SupplierSuggestion::whereHas('purchaseRequest', function($q) use ($userAreas) {
+                    $q->whereIn('responsibility_area_id', $userAreas);
+                })->pluck('supplier_id')->unique();
+                
+                // Combinar ambos conjuntos de IDs
+                $supplierIds = $supplierIdsFromMarketRates->merge($supplierIdsFromSuggestions)->unique();
+                
+                if ($supplierIds->isNotEmpty()) {
+                    // Filtrar proveedores por los IDs obtenidos
+                    CRUD::addClause('whereIn', 'id', $supplierIds);
+                } else {
+                    // Si no hay proveedores relacionados, no mostrar ningún proveedor
+                    CRUD::addClause('where', 'id', 0);
+                }
+            } else {
+                // Si no tiene áreas asignadas, no mostrar ningún proveedor
+                CRUD::addClause('where', 'id', 0);
+            }
+        }
+        
         // Agregar botón personalizado de exportación
         CRUD::addButton('top', 'export_excel', 'view', 'crud::buttons.export_excel', 'end');
         CRUD::addButton('top', 'export_pdf', 'view', 'crud::buttons.export_pdf', 'end');
@@ -191,6 +225,29 @@ class SupplierCrudController extends CrudController
     {
         $query = \App\Models\Supplier::with(['heading', 'sectors']);
         
+        // Filtrar proveedores por área si el usuario es responsable de área
+        $user = backpack_user();
+        if ($user && $user->hasRole('role_responsable_area', 'backpack')) {
+            $userAreas = \App\Models\ResponsibilityArea::where('responsible_user_id', $user->id)->pluck('id');
+            
+            if ($userAreas->isNotEmpty()) {
+                $query->where(function($q) use ($userAreas) {
+                    $q->whereHas('marketRates', function($subQ) use ($userAreas) {
+                        $subQ->whereHas('purchaseRequest', function($subSubQ) use ($userAreas) {
+                            $subSubQ->whereIn('responsibility_area_id', $userAreas);
+                        });
+                    })
+                    ->orWhereHas('supplierSuggestions', function($subQ) use ($userAreas) {
+                        $subQ->whereHas('purchaseRequest', function($subSubQ) use ($userAreas) {
+                            $subSubQ->whereIn('responsibility_area_id', $userAreas);
+                        });
+                    });
+                });
+            } else {
+                $query->where('id', 0);
+            }
+        }
+        
         // Aplicar los mismos filtros que en el listado
         if (request()->has('rubro')) {
             $rubroId = request()->get('rubro');
@@ -254,6 +311,29 @@ class SupplierCrudController extends CrudController
     public function exportPdf()
     {
         $query = \App\Models\Supplier::with(['heading', 'sectors']);
+        
+        // Filtrar proveedores por área si el usuario es responsable de área
+        $user = backpack_user();
+        if ($user && $user->hasRole('role_responsable_area', 'backpack')) {
+            $userAreas = \App\Models\ResponsibilityArea::where('responsible_user_id', $user->id)->pluck('id');
+            
+            if ($userAreas->isNotEmpty()) {
+                $query->where(function($q) use ($userAreas) {
+                    $q->whereHas('marketRates', function($subQ) use ($userAreas) {
+                        $subQ->whereHas('purchaseRequest', function($subSubQ) use ($userAreas) {
+                            $subSubQ->whereIn('responsibility_area_id', $userAreas);
+                        });
+                    })
+                    ->orWhereHas('supplierSuggestions', function($subQ) use ($userAreas) {
+                        $subQ->whereHas('purchaseRequest', function($subSubQ) use ($userAreas) {
+                            $subSubQ->whereIn('responsibility_area_id', $userAreas);
+                        });
+                    });
+                });
+            } else {
+                $query->where('id', 0);
+            }
+        }
         
         // Aplicar los mismos filtros que en el listado
         if (request()->has('rubro')) {

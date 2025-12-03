@@ -352,11 +352,35 @@ class DeliveryCrudController extends CrudController
             $deliveredQty = $detail->delivered_quantity ?? 0;
             $pendingQty = max(0, $requestedQty - $deliveredQty);
             
-            // Calcular stock disponible
+            // Calcular stock disponible solo de la ubicación del área de la solicitud
             $stockAvailable = 0;
             if ($detail->product_id) {
                 try {
-                    $stockAvailable = (int) \App\Models\StockLevel::where('product_id', $detail->product_id)->sum('quantity');
+                    // Obtener la ubicación correspondiente al área de la solicitud
+                    $location = null;
+                    if ($generalRequest->area) {
+                        // Mapeo entre nombres de áreas y nombres de ubicaciones
+                        $areaLocationMap = [
+                            'Informática' => 'Informática',
+                            'Mantenimiento' => 'Mantenimiento',
+                            'Salud' => 'Insumos de Salud',
+                            'Insumos Generales' => 'Insumos Generales',
+                        ];
+                        
+                        $areaName = $generalRequest->area->name;
+                        $locationName = $areaLocationMap[$areaName] ?? $areaName;
+                        $location = \App\Models\Location::where('name', $locationName)->first();
+                    }
+                    
+                    if ($location) {
+                        // Stock solo de la ubicación del área
+                        $stockAvailable = (int) \App\Models\StockLevel::where('product_id', $detail->product_id)
+                            ->where('location_id', $location->id)
+                            ->sum('quantity');
+                    } else {
+                        // Si no hay ubicación, sumar todas (comportamiento anterior)
+                        $stockAvailable = (int) \App\Models\StockLevel::where('product_id', $detail->product_id)->sum('quantity');
+                    }
                 } catch (\Exception $e) {
                     $stockAvailable = 0;
                 }
@@ -469,11 +493,35 @@ class DeliveryCrudController extends CrudController
             $deliveredQtyWithoutCurrent = max(0, $deliveredQty - $currentQty);
             $pendingQty = max(0, $requestedQty - $deliveredQtyWithoutCurrent);
             
-            // Calcular stock disponible
+            // Calcular stock disponible solo de la ubicación del área de la solicitud
             $stockAvailable = 0;
             if ($detail->product_id) {
                 try {
-                    $stockAvailable = (int) \App\Models\StockLevel::where('product_id', $detail->product_id)->sum('quantity');
+                    // Obtener la ubicación correspondiente al área de la solicitud
+                    $location = null;
+                    if ($generalRequest->area) {
+                        // Mapeo entre nombres de áreas y nombres de ubicaciones
+                        $areaLocationMap = [
+                            'Informática' => 'Informática',
+                            'Mantenimiento' => 'Mantenimiento',
+                            'Salud' => 'Insumos de Salud',
+                            'Insumos Generales' => 'Insumos Generales',
+                        ];
+                        
+                        $areaName = $generalRequest->area->name;
+                        $locationName = $areaLocationMap[$areaName] ?? $areaName;
+                        $location = \App\Models\Location::where('name', $locationName)->first();
+                    }
+                    
+                    if ($location) {
+                        // Stock solo de la ubicación del área
+                        $stockAvailable = (int) \App\Models\StockLevel::where('product_id', $detail->product_id)
+                            ->where('location_id', $location->id)
+                            ->sum('quantity');
+                    } else {
+                        // Si no hay ubicación, sumar todas (comportamiento anterior)
+                        $stockAvailable = (int) \App\Models\StockLevel::where('product_id', $detail->product_id)->sum('quantity');
+                    }
                 } catch (\Exception $e) {
                     $stockAvailable = 0;
                 }
@@ -744,8 +792,40 @@ class DeliveryCrudController extends CrudController
                             }
                         }
                         
-                        // Calcular stock disponible
-                        $stockAvailable = (int) \App\Models\StockLevel::where('product_id', $productId)->sum('quantity');
+                        // Calcular stock disponible solo de la ubicación del área de la solicitud
+                        $stockAvailable = 0;
+                        if ($delivery->general_request_id) {
+                            $generalRequest = \App\Models\GeneralRequest::with('area')->find($delivery->general_request_id);
+                            if ($generalRequest && $generalRequest->area) {
+                                // Mapeo entre nombres de áreas y nombres de ubicaciones
+                                $areaLocationMap = [
+                                    'Informática' => 'Informática',
+                                    'Mantenimiento' => 'Mantenimiento',
+                                    'Salud' => 'Insumos de Salud',
+                                    'Insumos Generales' => 'Insumos Generales',
+                                ];
+                                
+                                $areaName = $generalRequest->area->name;
+                                $locationName = $areaLocationMap[$areaName] ?? $areaName;
+                                $location = \App\Models\Location::where('name', $locationName)->first();
+                                
+                                if ($location) {
+                                    // Stock solo de la ubicación del área
+                                    $stockAvailable = (int) \App\Models\StockLevel::where('product_id', $productId)
+                                        ->where('location_id', $location->id)
+                                        ->sum('quantity');
+                                } else {
+                                    // Si no hay ubicación, sumar todas (comportamiento anterior)
+                                    $stockAvailable = (int) \App\Models\StockLevel::where('product_id', $productId)->sum('quantity');
+                                }
+                            } else {
+                                // Si no hay área, sumar todas (comportamiento anterior)
+                                $stockAvailable = (int) \App\Models\StockLevel::where('product_id', $productId)->sum('quantity');
+                            }
+                        } else {
+                            // Si no hay solicitud general, sumar todas (comportamiento anterior)
+                            $stockAvailable = (int) \App\Models\StockLevel::where('product_id', $productId)->sum('quantity');
+                        }
                         
                         // El máximo a entregar es el mínimo entre lo pendiente y el stock disponible
                         $pendingQty = $requestedQty - $alreadyDelivered;
@@ -898,13 +978,25 @@ class DeliveryCrudController extends CrudController
             return null;
         }
         
-        // Buscar la ubicación que coincida con el nombre del área
-        $location = \App\Models\Location::where('name', $generalRequest->area->name)->first();
+        // Mapeo entre nombres de áreas y nombres de ubicaciones
+        $areaLocationMap = [
+            'Informática' => 'Informática',
+            'Mantenimiento' => 'Mantenimiento',
+            'Salud' => 'Insumos de Salud',
+            'Insumos Generales' => 'Insumos Generales',
+        ];
+        
+        $areaName = $generalRequest->area->name;
+        $locationName = $areaLocationMap[$areaName] ?? $areaName;
+        
+        // Buscar la ubicación usando el mapeo
+        $location = \App\Models\Location::where('name', $locationName)->first();
         
         if (!$location) {
             \Log::warning('getLocationForDelivery: Ubicación no encontrada para el área', [
                 'delivery_id' => $delivery->id ?? null,
-                'area_name' => $generalRequest->area->name,
+                'area_name' => $areaName,
+                'location_name_buscado' => $locationName,
                 'general_request_id' => $delivery->general_request_id
             ]);
         } else {
@@ -912,7 +1004,7 @@ class DeliveryCrudController extends CrudController
                 'delivery_id' => $delivery->id ?? null,
                 'location_id' => $location->id,
                 'location_name' => $location->name,
-                'area_name' => $generalRequest->area->name
+                'area_name' => $areaName
             ]);
         }
         

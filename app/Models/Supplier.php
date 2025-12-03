@@ -77,6 +77,22 @@ class Supplier extends Model
     {
         return $this->ratings()->count();
     }
+
+    /**
+     * Get all market rates for this supplier.
+     */
+    public function marketRates()
+    {
+        return $this->hasMany(\App\Models\MarketRate::class);
+    }
+
+    /**
+     * Get all supplier suggestions for this supplier.
+     */
+    public function supplierSuggestions()
+    {
+        return $this->hasMany(\App\Models\SupplierSuggestion::class);
+    }
     /*
      * |--------------------------------------------------------------------------
      * | SCOPES
