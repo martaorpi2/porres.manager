@@ -41,7 +41,9 @@ Route::group([
     Route::crud('market-rate', 'MarketRateCrudController');
     Route::crud('quote-detail', 'QuoteDetailCrudController');
     Route::crud('reception', 'ReceptionCrudController');
+    Route::get('reception/{id}/pdf', 'ReceptionCrudController@generatePdf')->name('reception.pdf');
     Route::crud('devolution', 'DevolutionCrudController');
+    Route::get('devolution/{id}/pdf', 'DevolutionCrudController@generatePdf')->name('devolution.pdf');
     Route::crud('responsibility-area', 'ResponsibilityAreaCrudController');
     Route::crud('purchase-request', 'PurchaseRequestCrudController');
     Route::get('purchase-request/{id}/comparative-excel', 'PurchaseRequestCrudController@generateComparativeExcel')->name('purchase-request.comparative-excel');
@@ -50,6 +52,11 @@ Route::group([
     Route::get('purchase-request/{id}/suggest-supplier', 'PurchaseRequestCrudController@showSuggestSupplierForm')->name('purchase-request.suggest-supplier');
     Route::post('purchase-request/{id}/suggest-supplier', 'PurchaseRequestCrudController@storeSupplierSuggestion')->name('purchase-request.store-supplier-suggestion');
     Route::post('purchase-request/{id}/generate-purchase-order', 'PurchaseRequestCrudController@generatePurchaseOrder')->name('purchase-request.generate-purchase-order');
+    Route::post('purchase-request/{id}/approve', 'PurchaseRequestCrudController@approvePurchaseRequest')->name('purchase-request.approve');
+    Route::post('purchase-request/{id}/reject', 'PurchaseRequestCrudController@rejectPurchaseRequest')->name('purchase-request.reject');
+    Route::get('quick-purchases', 'PurchaseRequestCrudController@quickPurchases')->name('quick-purchases');
+    Route::get('api/purchase-request/{id}', 'PurchaseRequestCrudController@getPurchaseRequestData')->name('api.purchase-request.data');
+    Route::get('api/suppliers', 'PurchaseRequestCrudController@getSuppliers')->name('api.suppliers');
     Route::crud('general-request', 'GeneralRequestCrudController');
     Route::get('general-request-converted', 'GeneralRequestCrudController@showConverted')->name('general-request.converted');
     
@@ -71,6 +78,7 @@ Route::group([
     // Dashboard custom route
     Route::get('dashboard', 'DashboardController@index')->name('dashboard');
     Route::crud('delivery', 'DeliveryCrudController');
+    Route::get('delivery/{id}/pdf', 'DeliveryCrudController@generatePdf')->name('delivery.pdf');
 }); // this should be the absolute last line of this file
 
 /**

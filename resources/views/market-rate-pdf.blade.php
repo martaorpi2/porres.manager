@@ -30,6 +30,18 @@
             padding: 15px;
             margin-bottom: 15px;
         }
+        .watermark {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) rotate(-45deg);
+            font-size: 60px;
+            color: rgba(0, 0, 0, 0.08);
+            font-weight: bold;
+            z-index: -1;
+            white-space: nowrap;
+            pointer-events: none;
+        }
     </style>
     @php
         function money_format_local($value) { return '$ ' . number_format((float)$value, 2, ',', '.'); }
@@ -37,6 +49,7 @@
     @endphp
 </head>
 <body>
+    <div class="watermark">porresManager - ISMP</div>
     <div class="quote-header">
         <div class="header">
             <h1 style="color: #1976D2;">COTIZACIÓN</h1>

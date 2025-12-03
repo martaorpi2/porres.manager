@@ -13,6 +13,7 @@ use App\Models\Input;
 use App\Models\GeneralRequestDetail;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Barryvdh\DomPDF\Facade\Pdf;
 
 /**
  * Class ReceptionCrudController
@@ -60,6 +61,14 @@ class ReceptionCrudController extends CrudController
         if ($user && $user->hasRole('role_responsable_area')) {
             CRUD::addClause('where', 'area_manager_id', $user->id);
         }
+        
+        // Si el usuario es role_responsable_compras, usar botón de editar personalizado
+        if ($user && $user->hasRole('role_responsable_compras', 'backpack')) {
+            CRUD::removeButton('update');
+            CRUD::addButton('line', 'edit_reception', 'view', 'crud::buttons.edit_reception', 'beginning');
+            CRUD::removeButton('delete');
+            CRUD::addButton('line', 'delete_reception', 'view', 'crud::buttons.delete_reception', 'end');
+        }
 
         // Columnas básicas para evitar errores
         CRUD::addColumn([
@@ -89,6 +98,19 @@ class ReceptionCrudController extends CrudController
                     $q->where('name', 'like', '%'.$searchTerm.'%');
                 });
             },
+        ]);
+        
+        // Agregar botón PDF en la lista
+        CRUD::addColumn([
+            'name' => 'pdf_button',
+            'label' => 'PDF',
+            'type' => 'custom_html',
+            'value' => function($entry) {
+                return '<a href="' . route('reception.pdf', $entry->id) . '" class="btn btn-sm" target="_blank" data-toggle="tooltip" title="Descargar Comprobante de Recepción" style="background-color: #800020; border-color: #800020; color: white !important;">
+                    <i class="la la-file-pdf" style="color: white !important;"></i> <span style="color: white !important;">PDF</span>
+                </a>';
+            },
+            'escaped' => false,
         ]);
 
         // Filtro personalizado por orden de compra usando parámetros de URL
@@ -191,6 +213,17 @@ class ReceptionCrudController extends CrudController
      */
     protected function setupUpdateOperation()
     {
+        // Verificar permisos para role_responsable_compras
+        $user = backpack_user();
+        $entry = $this->crud->getCurrentEntry();
+        
+        if ($user && $user->hasRole('role_responsable_compras', 'backpack')) {
+            // El responsable de compras solo puede editar recepciones que creó
+            if ($entry && $entry->area_manager_id != $user->id) {
+                abort(403, 'Solo puedes editar las recepciones que creaste.');
+            }
+        }
+        
         $this->setupCreateOperation();
         
         // En el update, permitir mostrar la orden de compra actual además de las que no tienen recepción
@@ -250,6 +283,9 @@ class ReceptionCrudController extends CrudController
                 });
             },
         ]);
+        
+        // Agregar botón PDF en la vista show
+        CRUD::addButton('top', 'pdf', 'view', 'crud::buttons.reception_pdf', 'end');
     }
 
     /**
@@ -634,6 +670,39 @@ class ReceptionCrudController extends CrudController
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ]);
+        }
+    }
+    
+    /**
+     * Generate PDF for a reception
+     */
+    public function generatePdf($id)
+    {
+        $reception = \App\Models\Reception::with([
+            'purchase_order.supplier',
+            'purchase_order.details.input',
+            'user'
+        ])->findOrFail($id);
+        
+        $pdf = Pdf::loadView('reception-pdf', compact('reception'));
+        
+        return $pdf->stream('comprobante-recepcion-' . $reception->number . '.pdf');
+    }
+    
+    /**
+     * Setup delete operation - restrict for role_responsable_compras
+     */
+    protected function setupDeleteOperation()
+    {
+        // Verificar permisos para role_responsable_compras
+        $user = backpack_user();
+        $entry = $this->crud->getCurrentEntry();
+        
+        if ($user && $user->hasRole('role_responsable_compras', 'backpack')) {
+            // El responsable de compras solo puede eliminar recepciones que creó
+            if ($entry && $entry->area_manager_id != $user->id) {
+                abort(403, 'Solo puedes eliminar las recepciones que creaste.');
+            }
         }
     }
 }

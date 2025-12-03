@@ -14,6 +14,9 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
+        // Ejecutar seeder de límites de autorización de compras
+        $this->call(PurchaseAuthorizationLimitSeeder::class);
+        
         // Ejecutar seeder completo que genera todos los datos
         $this->call(CompleteDataSeeder::class);
     }

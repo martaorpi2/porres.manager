@@ -29,6 +29,8 @@ class PurchaseRequest extends Model
         'selection_justification',
         'selected_by',
         'selected_at',
+        'requires_admin_approval',
+        'approval_justification',
     ];
 
     protected $casts = [
@@ -37,6 +39,7 @@ class PurchaseRequest extends Model
         'total_amount' => 'decimal:2',
         'attachments' => 'array',
         'selected_at' => 'datetime',
+        'requires_admin_approval' => 'boolean',
     ];
 
     /**
@@ -149,5 +152,38 @@ class PurchaseRequest extends Model
         }
 
         return $prefix . str_pad((string) $nextSequence, 4, '0', STR_PAD_LEFT);
+    }
+
+    /**
+     * Check if this purchase request requires admin approval
+     */
+    public function requiresAdminApproval()
+    {
+        $comprasLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_responsable_compras');
+        return $this->total_amount > $comprasLimit;
+    }
+
+    /**
+     * Check if a user can approve this purchase request
+     */
+    public function canBeApprovedBy($user)
+    {
+        if (!$user) {
+            return false;
+        }
+
+        // Si requiere aprobación de administrador, solo el admin del instituto puede aprobar
+        if ($this->requires_admin_approval) {
+            return $user->hasRole('role_admin_institucion', 'backpack');
+        }
+
+        // Si no requiere aprobación de administrador, el responsable de compras puede aprobar
+        if ($user->hasRole('role_responsable_compras', 'backpack')) {
+            $comprasLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_responsable_compras');
+            return $this->total_amount <= $comprasLimit;
+        }
+
+        // El administrador del instituto siempre puede aprobar
+        return $user->hasRole('role_admin_institucion', 'backpack');
     }
 }

@@ -39,7 +39,7 @@
     <x-backpack::menu-dropdown title="Solicitudes" icon="la la-file-alt" trigger="click">
         <x-backpack::menu-dropdown-item title="Solicitudes Generales" :link="backpack_url('general-request')" />
         <x-backpack::menu-dropdown-item title="Solicitudes de Compra" :link="backpack_url('purchase-request')" />
-        <x-backpack::menu-item title="Asignación de Productos" :link="backpack_url('product-assignment')" />
+        {{-- <x-backpack::menu-item title="Asignación de Productos" :link="backpack_url('product-assignment')" /> --}}
         @unless(backpack_user() && backpack_user()->hasRole('role_responsable_compras'))
             <x-backpack::menu-dropdown-item title="Áreas de Responsabilidad" :link="backpack_url('responsibility-area')" />
         @endunless
@@ -50,6 +50,8 @@
         <x-backpack::menu-item title="Detalle" :link="backpack_url('quote-detail')" />
     </x-backpack::menu-dropdown>--}}
     <x-backpack::menu-item title="Cotizaciones" icon="la la-calculator" :link="backpack_url('market-rate')" />
+
+    {{-- <x-backpack::menu-item title="Compras Rápidas" icon="la la-bolt" :link="backpack_url('quick-purchases')" /> --}}
 
     <x-backpack::menu-item title="Ordenes de Compra" icon="la la-shopping-cart" :link="backpack_url('purchase-order')" />
     <x-backpack::menu-item title="Ordenes de Pago" icon="la la-money-bill-wave" :link="backpack_url('payment-order')" />

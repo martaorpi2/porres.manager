@@ -3,10 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Orden de Compra - {{ $purchaseOrder->number }}</title>
+    <title>Comprobante de Devolución - {{ $devolution->id }}</title>
     <style>
         body { font-family: DejaVu Sans, sans-serif; font-size: 12px; color: #222; }
-        h1 { font-size: 18px; margin: 0 0 10px 0; }
+        h1 { font-size: 18px; margin: 0 0 10px 0; color: #dc3545; }
         .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
         .muted { color: #666; }
         .box { border: 1px solid #ccc; padding: 10px; margin-bottom: 12px; }
@@ -16,13 +16,11 @@
         .right { text-align: right; }
         .center { text-align: center; }
         .mb-4 { margin-bottom: 16px; }
-        .total-box { 
-            border: 2px solid #333; 
+        .reason-box { 
+            border: 2px solid #dc3545; 
             padding: 10px; 
-            text-align: right; 
-            font-weight: bold; 
-            font-size: 14px;
             margin: 12px 0;
+            background-color: #f8d7da;
         }
         .watermark {
             position: fixed;
@@ -45,29 +43,38 @@
 <body>
     <div class="watermark">porresManager - ISMP</div>
     <div class="header">
-        <h1>ORDEN DE COMPRA</h1>
-        <div class="muted">N.º {{ $purchaseOrder->number }}</div>
+        <h1>COMPROBANTE DE DEVOLUCIÓN</h1>
+        <div class="muted">N.º DEV-{{ str_pad($devolution->id, 4, '0', STR_PAD_LEFT) }}</div>
     </div>
 
     <div class="box">
-        <div><strong>Fecha:</strong> {{ fmt_date($purchaseOrder->date) }}</div>
-        <div><strong>Estado:</strong> {{ $purchaseOrder->status }}</div>
+        <div><strong>Fecha de Devolución:</strong> {{ fmt_date($devolution->date) }}</div>
+        <div><strong>Usuario que devolvió:</strong> {{ $devolution->user ? $devolution->user->name : 'N/A' }}</div>
     </div>
 
+    @if($devolution->reception)
     <div class="box">
-        <div><strong>Proveedor:</strong> {{ $purchaseOrder->supplier->company_name }}</div>
-        <div><strong>CUIT:</strong> {{ $purchaseOrder->supplier->cuit }}</div>
-        @if($purchaseOrder->supplier->address)
-        <div><strong>Dirección:</strong> {{ $purchaseOrder->supplier->address }}</div>
+        <div><strong>Recepción relacionada:</strong> {{ $devolution->reception->number }}</div>
+        <div><strong>Fecha de Recepción:</strong> {{ fmt_date($devolution->reception->date) }}</div>
+        <div><strong>Estado de Recepción:</strong> {{ $devolution->reception->according === 'Si' ? 'Conforme' : 'No Conforme' }}</div>
+        @if($devolution->reception->purchase_order)
+        <div><strong>Orden de Compra:</strong> {{ $devolution->reception->purchase_order->number }}</div>
+        <div><strong>Fecha de Orden:</strong> {{ fmt_date($devolution->reception->purchase_order->date) }}</div>
+        @if($devolution->reception->purchase_order->supplier)
+        <div><strong>Proveedor:</strong> {{ $devolution->reception->purchase_order->supplier->company_name }}</div>
+        <div><strong>CUIT:</strong> {{ $devolution->reception->purchase_order->supplier->cuit }}</div>
+        @endif
         @endif
     </div>
+    @endif
 
-    <div class="box">
-        <div><strong>Condiciones de pago:</strong> 30 días fecha factura</div>
-        <div><strong>Entrega estimada:</strong> {{ $purchaseOrder->date->copy()->addDays(8)->format('d/m/Y') }}</div>
+    <div class="reason-box">
+        <div><strong>Motivo de la Devolución:</strong></div>
+        <div style="margin-top: 8px;">{{ $devolution->reason }}</div>
     </div>
 
-    <div class="mb-4"><strong>Detalle de productos/servicios</strong></div>
+    @if($devolution->reception && $devolution->reception->purchase_order && $devolution->reception->purchase_order->details)
+    <div class="mb-4"><strong>Detalle de productos de la recepción</strong></div>
     <table>
         <thead>
             <tr>
@@ -79,7 +86,7 @@
             </tr>
         </thead>
         <tbody>
-            @foreach($purchaseOrder->details as $index => $detail)
+            @foreach($devolution->reception->purchase_order->details as $index => $detail)
             <tr>
                 <td class="center">{{ $index + 1 }}</td>
                 <td>{{ $detail->input->name ?? 'Producto' }}</td>
@@ -90,16 +97,13 @@
             @endforeach
         </tbody>
     </table>
-
-    <div class="total-box">
-        Total de la Orden de Compra: {{ money_format_local($purchaseOrder->total) }}
-    </div>
+    @endif
 
     <div class="box">
-        <div><strong>Observaciones:</strong> {{ $purchaseOrder->observations ?? 'Sin observaciones' }}</div>
         <div class="muted" style="margin-top: 8px; font-size: 10px;">
             Documento generado el {{ now()->format('d/m/Y H:i') }}
         </div>
     </div>
 </body>
 </html>
+

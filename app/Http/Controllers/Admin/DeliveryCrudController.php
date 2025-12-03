@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Requests\DeliveryRequest;
 use Backpack\CRUD\app\Http\Controllers\CrudController;
 use Backpack\CRUD\app\Library\CrudPanel\CrudPanelFacade as CRUD;
+use Barryvdh\DomPDF\Facade\Pdf;
 
 /**
  * Class DeliveryCrudController
@@ -39,6 +40,8 @@ class DeliveryCrudController extends CrudController
      */
     protected function setupListOperation()
     {
+        CRUD::removeButton('show');
+        
         // Cargar relaciones para evitar N+1 queries
         CRUD::addClause('with', ['reception', 'generalRequest', 'purchaseRequest', 'receivedBy', 'deliveredBy']);
         
@@ -54,6 +57,14 @@ class DeliveryCrudController extends CrudController
         } elseif ($user && $user->hasRole('role_responsable_area')) {
             // role_responsable_area puede ver todas las entregas y crearlas
             // No se aplica filtro adicional
+        }
+        
+        // Si el usuario es role_responsable_compras, usar botón de editar personalizado
+        if ($user && $user->hasRole('role_responsable_compras', 'backpack')) {
+            CRUD::removeButton('update');
+            CRUD::addButton('line', 'edit_delivery', 'view', 'crud::buttons.edit_delivery', 'beginning');
+            CRUD::removeButton('delete');
+            CRUD::addButton('line', 'delete_delivery', 'view', 'crud::buttons.delete_delivery', 'end');
         }
         
         // Columna para mostrar la solicitud relacionada (General o Purchase)
@@ -104,6 +115,19 @@ class DeliveryCrudController extends CrudController
             'entity' => 'receivedBy',
             'attribute' => 'name',
             'model' => 'App\Models\User',
+        ]);
+        
+        // Agregar botón PDF en la lista
+        CRUD::addColumn([
+            'name' => 'pdf_button',
+            'label' => 'PDF',
+            'type' => 'custom_html',
+            'value' => function($entry) {
+                return '<a href="' . route('delivery.pdf', $entry->id) . '" class="btn btn-sm" target="_blank" data-toggle="tooltip" title="Descargar Comprobante de Entrega" style="background-color: #800020; border-color: #800020; color: white !important;">
+                    <i class="la la-file-pdf" style="color: white !important;"></i> <span style="color: white !important;">PDF</span>
+                </a>';
+            },
+            'escaped' => false,
         ]);
     }
 
@@ -605,6 +629,16 @@ class DeliveryCrudController extends CrudController
         if ($user && $user->hasRole('role_personal')) {
             abort(403, 'No tienes permiso para editar entregas. Solo puedes ver las entregas que recibes.');
         }
+        
+        // Verificar permisos para role_responsable_compras
+        $entry = $this->crud->getCurrentEntry();
+        if ($user && $user->hasRole('role_responsable_compras', 'backpack')) {
+            // El responsable de compras solo puede editar entregas que creó
+            if ($entry && $entry->delivered_by != $user->id) {
+                abort(403, 'Solo puedes editar las entregas que creaste.');
+            }
+        }
+        
         // role_responsable_area puede editar entregas, no se bloquea
         
         $this->setupCreateOperation();
@@ -655,7 +689,7 @@ class DeliveryCrudController extends CrudController
     }
     
     /**
-     * Setup delete operation - block for role_personal
+     * Setup delete operation - block for role_personal and restrict for role_responsable_compras
      */
     protected function setupDeleteOperation()
     {
@@ -664,6 +698,16 @@ class DeliveryCrudController extends CrudController
         if ($user && $user->hasRole('role_personal')) {
             abort(403, 'No tienes permiso para eliminar entregas. Solo puedes ver las entregas que recibes.');
         }
+        
+        // Verificar permisos para role_responsable_compras
+        $entry = $this->crud->getCurrentEntry();
+        if ($user && $user->hasRole('role_responsable_compras', 'backpack')) {
+            // El responsable de compras solo puede eliminar entregas que creó
+            if ($entry && $entry->delivered_by != $user->id) {
+                abort(403, 'Solo puedes eliminar las entregas que creaste.');
+            }
+        }
+        
         // role_responsable_area puede eliminar entregas, no se bloquea
     }
     
@@ -1328,5 +1372,32 @@ class DeliveryCrudController extends CrudController
             'attribute' => 'name',
             'model' => 'App\Models\User',
         ]);
+        
+        // Agregar botón PDF en la vista show
+        CRUD::addButton('top', 'pdf', 'view', 'crud::buttons.delivery_pdf', 'end');
+    }
+    
+    /**
+     * Generate PDF for a delivery
+     */
+    public function generatePdf($id)
+    {
+        $delivery = \App\Models\Delivery::with([
+            'generalRequest.area',
+            'generalRequest.createdBy',
+            'generalRequest.details.product',
+            'purchaseRequest.responsibilityArea',
+            'purchaseRequest.requestingUser',
+            'purchaseRequest.details.product',
+            'reception.purchase_order.supplier',
+            'reception.purchase_order.details.input',
+            'deliveredBy',
+            'receivedBy',
+            'details.product'
+        ])->findOrFail($id);
+        
+        $pdf = Pdf::loadView('delivery-pdf', compact('delivery'));
+        
+        return $pdf->stream('comprobante-entrega-' . $delivery->number . '.pdf');
     }
 }

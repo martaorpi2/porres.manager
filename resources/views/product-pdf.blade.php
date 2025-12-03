@@ -36,9 +36,22 @@
             font-size: 10px;
             color: #666;
         }
+        .watermark {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) rotate(-45deg);
+            font-size: 60px;
+            color: rgba(0, 0, 0, 0.08);
+            font-weight: bold;
+            z-index: -1;
+            white-space: nowrap;
+            pointer-events: none;
+        }
     </style>
 </head>
 <body>
+    <div class="watermark">porresManager - ISMP</div>
     <div class="header">
         <h1>Lista de Productos</h1>
         <p>Generado el: {{ date('d/m/Y H:i:s') }}</p>

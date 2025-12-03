@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Requests\DevolutionRequest;
 use Backpack\CRUD\app\Http\Controllers\CrudController;
 use Backpack\CRUD\app\Library\CrudPanel\CrudPanelFacade as CRUD;
+use Barryvdh\DomPDF\Facade\Pdf;
 
 /**
  * Class DevolutionCrudController
@@ -43,6 +44,15 @@ class DevolutionCrudController extends CrudController
         CRUD::enableResponsiveTable();
         // Cargar relaciones para evitar N+1 queries
         CRUD::addClause('with', ['reception.purchase_order', 'user']);
+        
+        // Si el usuario es role_responsable_compras, usar botón de editar personalizado
+        $user = backpack_user();
+        if ($user && $user->hasRole('role_responsable_compras', 'backpack')) {
+            CRUD::removeButton('update');
+            CRUD::addButton('line', 'edit_devolution', 'view', 'crud::buttons.edit_devolution', 'beginning');
+            CRUD::removeButton('delete');
+            CRUD::addButton('line', 'delete_devolution', 'view', 'crud::buttons.delete_devolution', 'end');
+        }
 
         CRUD::addColumn([
             'name' => 'reception_id',
@@ -66,6 +76,19 @@ class DevolutionCrudController extends CrudController
             'model' => 'App\Models\User',
         ]);
         CRUD::column('date')->label('Fecha');
+        
+        // Agregar botón PDF en la lista
+        CRUD::addColumn([
+            'name' => 'pdf_button',
+            'label' => 'PDF',
+            'type' => 'custom_html',
+            'value' => function($entry) {
+                return '<a href="' . route('devolution.pdf', $entry->id) . '" class="btn btn-sm" target="_blank" data-toggle="tooltip" title="Descargar Comprobante de Devolución" style="background-color: #800020; border-color: #800020; color: white !important;">
+                    <i class="la la-file-pdf" style="color: white !important;"></i> <span style="color: white !important;">PDF</span>
+                </a>';
+            },
+            'escaped' => false,
+        ]);
 
         // Filtro personalizado por recepción usando parámetros de URL
         if (request()->has('recepcion')) {
@@ -132,6 +155,17 @@ class DevolutionCrudController extends CrudController
      */
     protected function setupUpdateOperation()
     {
+        // Verificar permisos para role_responsable_compras
+        $user = backpack_user();
+        $entry = $this->crud->getCurrentEntry();
+        
+        if ($user && $user->hasRole('role_responsable_compras', 'backpack')) {
+            // El responsable de compras solo puede editar devoluciones que creó
+            if ($entry && $entry->user_id != $user->id) {
+                abort(403, 'Solo puedes editar las devoluciones que creaste.');
+            }
+        }
+        
         $this->setupCreateOperation();
     }
 
@@ -159,6 +193,26 @@ class DevolutionCrudController extends CrudController
             'model' => 'App\Models\User',
         ]);
         CRUD::column('date')->label('Fecha');
+        
+        // Agregar botón PDF en la vista show
+        CRUD::addButton('top', 'pdf', 'view', 'crud::buttons.devolution_pdf', 'end');
+    }
+    
+    /**
+     * Generate PDF for a devolution
+     */
+    public function generatePdf($id)
+    {
+        $devolution = \App\Models\Devolution::with([
+            'reception.purchase_order.supplier',
+            'reception.purchase_order.details.input',
+            'reception.user',
+            'user'
+        ])->findOrFail($id);
+        
+        $pdf = Pdf::loadView('devolution-pdf', compact('devolution'));
+        
+        return $pdf->stream('comprobante-devolucion-' . $devolution->id . '.pdf');
     }
 
     /**
@@ -173,5 +227,22 @@ class DevolutionCrudController extends CrudController
         }
         
         return $this->traitStore();
+    }
+    
+    /**
+     * Setup delete operation - restrict for role_responsable_compras
+     */
+    protected function setupDeleteOperation()
+    {
+        // Verificar permisos para role_responsable_compras
+        $user = backpack_user();
+        $entry = $this->crud->getCurrentEntry();
+        
+        if ($user && $user->hasRole('role_responsable_compras', 'backpack')) {
+            // El responsable de compras solo puede eliminar devoluciones que creó
+            if ($entry && $entry->user_id != $user->id) {
+                abort(403, 'Solo puedes eliminar las devoluciones que creaste.');
+            }
+        }
     }
 }

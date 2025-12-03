@@ -23,6 +23,18 @@
             font-size: 14px;
             margin: 12px 0;
         }
+        .watermark {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) rotate(-45deg);
+            font-size: 60px;
+            color: rgba(0, 0, 0, 0.08);
+            font-weight: bold;
+            z-index: -1;
+            white-space: nowrap;
+            pointer-events: none;
+        }
     </style>
     @php
         $po = $paymentOrder->purchase_order; // related purchase order
@@ -32,6 +44,7 @@
     @endphp
 </head>
 <body>
+    <div class="watermark">porresManager - ISMP</div>
     <div class="header">
         <h1>ORDEN DE PAGO</h1>
         <div class="muted">N.º {{ $paymentOrder->payment_number }}</div>
