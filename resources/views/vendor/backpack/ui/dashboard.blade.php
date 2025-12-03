@@ -1032,7 +1032,8 @@
             </div>
         </div>
         @endif
-        <div class="col-md-{{ isset($isPersonal) && $isPersonal ? '6' : (isset($isResponsableArea) && $isResponsableArea ? '4' : '3') }}">
+        @if(isset($isPersonal) && $isPersonal || (isset($isResponsableArea) && $isResponsableArea))
+        <div class="col-md-{{ isset($isPersonal) && $isPersonal ? '6' : '4' }}">
             <div class="stat-card">
                 <div class="stat-card-icon">
                     <i class="la la-people-carry"></i>
@@ -1042,11 +1043,23 @@
                 <div class="stat-card-pending">&nbsp;</div>
             </div>
         </div>
+        @endif
     </div>
 
     @if(!isset($isPersonal) || !$isPersonal)
     <div class="row mb-4">
-        <div class="col-md-6">
+        @if((!isset($isPersonal) || !$isPersonal) && (!isset($isResponsableArea) || !$isResponsableArea))
+        <div class="col-md-4">
+            <div class="stat-card">
+                <div class="stat-card-icon">
+                    <i class="la la-people-carry"></i>
+                </div>
+                <div class="stat-card-number">{{ $stats['deliveries'] }}</div>
+                <div class="stat-card-label">Entregas</div>
+            </div>
+        </div>
+        @endif
+        <div class="col-md-{{ (!isset($isPersonal) || !$isPersonal) && (!isset($isResponsableArea) || !$isResponsableArea) ? '4' : '6' }}">
             <div class="stat-card">
                 <div class="stat-card-icon">
                     <i class="la la-truck-loading"></i>
@@ -1055,7 +1068,7 @@
                 <div class="stat-card-label">Recepciones</div>
             </div>
         </div>
-        <div class="col-md-6">
+        <div class="col-md-{{ (!isset($isPersonal) || !$isPersonal) && (!isset($isResponsableArea) || !$isResponsableArea) ? '4' : '6' }}">
             <div class="stat-card">
                 <div class="stat-card-icon">
                     <i class="la la-undo-alt"></i>
