@@ -26,7 +26,7 @@ class LocationCrudController extends CrudController
      */
     public function setup()
     {
-        // Bloquear acceso completo para role_admin_institucion
+        // Bloquear acceso completo para role_admin_institucion (pero permitir ver para role_representante_legal)
         $user = backpack_user();
         if ($user && $user->hasRole('role_admin_institucion', 'backpack')) {
             abort(403, 'No tienes permiso para acceder a ubicaciones.');
@@ -50,9 +50,10 @@ class LocationCrudController extends CrudController
         // Habilitar tabla responsiva
         CRUD::enableResponsiveTable();
         
-        // Ocultar botones de editar y eliminar para role_admin_institucion
+        // Ocultar botones de crear, editar y eliminar para role_admin_institucion y role_representante_legal
         $user = backpack_user();
-        if ($user && $user->hasRole('role_admin_institucion', 'backpack')) {
+        if ($user && ($user->hasRole('role_admin_institucion', 'backpack') || $user->hasRole('role_representante_legal', 'backpack'))) {
+            CRUD::removeButton('create');
             CRUD::removeButton('update');
             CRUD::removeButton('delete');
         }
@@ -82,6 +83,12 @@ class LocationCrudController extends CrudController
      */
     protected function setupCreateOperation()
     {
+        // Bloquear creación para role_representante_legal
+        $user = backpack_user();
+        if ($user && $user->hasRole('role_representante_legal', 'backpack')) {
+            abort(403, 'No tienes permiso para crear ubicaciones.');
+        }
+        
         CRUD::setValidation(LocationRequest::class);
         CRUD::field('name')->label('Nombre');
         CRUD::field('description')->label('Descripción');
@@ -99,6 +106,12 @@ class LocationCrudController extends CrudController
      */
     protected function setupUpdateOperation()
     {
+        // Bloquear edición para role_representante_legal
+        $user = backpack_user();
+        if ($user && $user->hasRole('role_representante_legal', 'backpack')) {
+            abort(403, 'No tienes permiso para editar ubicaciones.');
+        }
+        
         $this->setupCreateOperation();
     }
 }

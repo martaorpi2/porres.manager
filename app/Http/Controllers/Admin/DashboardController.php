@@ -32,6 +32,7 @@ class DashboardController extends Controller
         $isResponsableArea = $user->hasRole('role_responsable_area');
         $isAdminInstitucion = $user->hasRole('role_admin_institucion', 'backpack');
         $isApoderado = $user->hasRole('role_apoderado', 'backpack');
+        $isRepresentanteLegal = $user->hasRole('role_representante_legal', 'backpack');
         
         // Estadísticas generales
         if ($isPersonal) {
@@ -169,15 +170,17 @@ class DashboardController extends Controller
                 ->get();
         }
         
-        // Obtener solicitudes de compra pendientes de aprobación del administrador del instituto o apoderado
+        // Obtener solicitudes de compra pendientes de aprobación del administrador del instituto, apoderado o representante legal
         $pendingApprovalRequests = collect();
-        if ($isAdminInstitucion || $isApoderado) {
+        if ($isAdminInstitucion || $isApoderado || $isRepresentanteLegal) {
             $comprasLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_responsable_compras');
             
             if ($isAdminInstitucion) {
                 $userLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_admin_institucion');
-            } else {
+            } elseif ($isApoderado) {
                 $userLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_apoderado');
+            } else {
+                $userLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_representante_legal');
             }
             
             $pendingApprovalRequests = PurchaseRequest::with(['requestingUser', 'responsibilityArea', 'details.product'])
@@ -301,6 +304,7 @@ class DashboardController extends Controller
             'isResponsableArea',
             'isAdminInstitucion',
             'isApoderado',
+            'isRepresentanteLegal',
             'pendingApprovalRequests',
             'user'
         ));

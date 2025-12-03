@@ -47,9 +47,9 @@ class StockLevelCrudController extends CrudController
         // Cargar relación location para evitar problemas con whereHas
         CRUD::addClause('with', ['location', 'product']);
         
-        // Ocultar botones de editar y eliminar para role_admin_institucion
+        // Ocultar botones de editar y eliminar para role_admin_institucion y role_representante_legal
         $user = backpack_user();
-        if ($user && $user->hasRole('role_admin_institucion', 'backpack')) {
+        if ($user && ($user->hasRole('role_admin_institucion', 'backpack') || $user->hasRole('role_representante_legal', 'backpack'))) {
             CRUD::removeButton('update');
             CRUD::removeButton('delete');
         }
@@ -176,6 +176,11 @@ class StockLevelCrudController extends CrudController
      */
     protected function setupCreateOperation()
     {
+        // Bloquear creación para role_representante_legal
+        $user = backpack_user();
+        if ($user && $user->hasRole('role_representante_legal', 'backpack')) {
+            abort(403, 'No tienes permiso para crear stock.');
+        }
         CRUD::setValidation(StockLevelRequest::class);
         
         // Filtrar productos según el área del responsable
@@ -319,6 +324,12 @@ class StockLevelCrudController extends CrudController
      */
     protected function setupUpdateOperation()
     {
+        // Bloquear edición para role_representante_legal
+        $user = backpack_user();
+        if ($user && $user->hasRole('role_representante_legal', 'backpack')) {
+            abort(403, 'No tienes permiso para editar stock.');
+        }
+        
         $this->setupCreateOperation();
         
         // En actualización, también asignar automáticamente el usuario actual

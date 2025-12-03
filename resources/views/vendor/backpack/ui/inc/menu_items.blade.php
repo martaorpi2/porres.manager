@@ -25,6 +25,19 @@
     <x-backpack::menu-item title="Cotizaciones" icon="la la-calculator" :link="backpack_url('market-rate')" />
     <x-backpack::menu-item title="Ordenes de Compra" icon="la la-clipboard-list" :link="backpack_url('purchase-order')" />
     <x-backpack::menu-item title="Ordenes de Pago" icon="la la-money-bill-wave" :link="backpack_url('payment-order')" />
+@elseif(backpack_user() && backpack_user()->hasRole('role_representante_legal', 'backpack'))
+    {{-- Menú para usuarios con rol role_representante_legal --}}
+    <x-backpack::menu-item title="Solicitudes de Compra" icon="la la-shopping-cart" :link="backpack_url('purchase-request')" />
+    <x-backpack::menu-item title="Cotizaciones" icon="la la-calculator" :link="backpack_url('market-rate')" />
+    <x-backpack::menu-item title="Ordenes de Compra" icon="la la-clipboard-list" :link="backpack_url('purchase-order')" />
+    <x-backpack::menu-item title="Ordenes de Pago" icon="la la-money-bill-wave" :link="backpack_url('payment-order')" />
+    <x-backpack::menu-dropdown title="Inventario" icon="la la-boxes" trigger="click">
+        <x-backpack::menu-dropdown-item title="Productos" :link="backpack_url('product')" />
+        <x-backpack::menu-dropdown-item title="Categorías" :link="backpack_url('category')" />
+        <x-backpack::menu-dropdown-item title="Ubicaciones" :link="backpack_url('location')" />
+        <x-backpack::menu-item title="Stock" :link="backpack_url('stock-level')" />
+        <x-backpack::menu-item title="Movimientos" :link="backpack_url('inventory-movement')" />
+    </x-backpack::menu-dropdown>
 @else
     {{-- Menú completo para otros roles --}}
     <x-backpack::menu-dropdown title="Proveedores" icon="la la-truck" trigger="click">

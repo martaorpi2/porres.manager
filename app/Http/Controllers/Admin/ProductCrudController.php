@@ -44,9 +44,9 @@ class ProductCrudController extends CrudController
         // Habilitar tabla responsiva
         CRUD::enableResponsiveTable();
         
-        // Ocultar botones de editar y eliminar para role_admin_institucion
+        // Ocultar botones de editar y eliminar para role_admin_institucion y role_representante_legal
         $user = backpack_user();
-        if ($user && $user->hasRole('role_admin_institucion', 'backpack')) {
+        if ($user && ($user->hasRole('role_admin_institucion', 'backpack') || $user->hasRole('role_representante_legal', 'backpack'))) {
             CRUD::removeButton('update');
             CRUD::removeButton('delete');
         }
@@ -159,6 +159,11 @@ class ProductCrudController extends CrudController
      */
     protected function setupCreateOperation()
     {
+        // Bloquear creación para role_representante_legal
+        $user = backpack_user();
+        if ($user && $user->hasRole('role_representante_legal', 'backpack')) {
+            abort(403, 'No tienes permiso para crear productos.');
+        }
         CRUD::setValidation(ProductRequest::class);
         
         // Obtener categorías permitidas según el área del responsable
@@ -239,6 +244,12 @@ class ProductCrudController extends CrudController
      */
     protected function setupUpdateOperation()
     {
+        // Bloquear edición para role_representante_legal
+        $user = backpack_user();
+        if ($user && $user->hasRole('role_representante_legal', 'backpack')) {
+            abort(403, 'No tienes permiso para editar productos.');
+        }
+        
         $this->setupCreateOperation();
     }
 

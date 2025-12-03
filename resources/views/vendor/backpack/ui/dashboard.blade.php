@@ -1204,8 +1204,8 @@
         </div>
     </div>
 
-    @if((isset($isAdminInstitucion) && $isAdminInstitucion) || (isset($isApoderado) && $isApoderado) && isset($pendingApprovalRequests))
-    <!-- Solicitudes Pendientes de Aprobación (Administrador del Instituto o Apoderado) -->
+    @if((isset($isAdminInstitucion) && $isAdminInstitucion) || (isset($isApoderado) && $isApoderado) || (isset($isRepresentanteLegal) && $isRepresentanteLegal) && isset($pendingApprovalRequests))
+    <!-- Solicitudes Pendientes de Aprobación (Administrador del Instituto, Apoderado o Representante Legal) -->
     <div class="process-step" style="border-left: 4px solid #ffc107;">
         <div class="process-step-header" style="background-color: #fff3cd;">
             <div class="process-step-title">

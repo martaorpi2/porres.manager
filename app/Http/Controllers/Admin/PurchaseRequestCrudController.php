@@ -50,8 +50,8 @@ class PurchaseRequestCrudController extends CrudController
         // Filtrar solicitudes según el rol del usuario
         $user = backpack_user();
         if ($user) {
-            // Roles que pueden ver todas las solicitudes (administradores y apoderado)
-            $adminRoles = ['role_admin_sistema', 'role_admin_institucion', 'role_responsable_compras', 'role_apoderado'];
+            // Roles que pueden ver todas las solicitudes (administradores, apoderado y representante legal)
+            $adminRoles = ['role_admin_sistema', 'role_admin_institucion', 'role_responsable_compras', 'role_apoderado', 'role_representante_legal'];
             $isAdmin = false;
             foreach ($adminRoles as $role) {
                 if ($user->hasRole($role, 'backpack')) {
@@ -98,8 +98,8 @@ class PurchaseRequestCrudController extends CrudController
         // Remover botón de edición por defecto y usar el personalizado
         CRUD::removeButton('update');
         
-        // Ocultar botones de crear, editar y eliminar para role_admin_institucion y role_apoderado
-        if ($user && ($user->hasRole('role_admin_institucion', 'backpack') || $user->hasRole('role_apoderado', 'backpack'))) {
+        // Ocultar botones de crear, editar y eliminar para role_admin_institucion, role_apoderado y role_representante_legal
+        if ($user && ($user->hasRole('role_admin_institucion', 'backpack') || $user->hasRole('role_apoderado', 'backpack') || $user->hasRole('role_representante_legal', 'backpack'))) {
             CRUD::removeButton('create');
             CRUD::removeButton('delete');
             // No agregar el botón personalizado de editar para estos roles
@@ -1976,6 +1976,11 @@ class PurchaseRequestCrudController extends CrudController
                 $apoderadoLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_apoderado');
                 abort(403, 'No puedes aprobar esta solicitud de compra porque supera tu límite de autorización de $' . number_format($apoderadoLimit, 2) . '. El monto de la solicitud es $' . number_format($purchaseRequest->total_amount, 2) . '.');
             }
+            // Verificar si es representante legal y supera su límite
+            if ($user->hasRole('role_representante_legal', 'backpack')) {
+                $representanteLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_representante_legal');
+                abort(403, 'No puedes aprobar esta solicitud de compra porque supera tu límite de autorización de $' . number_format($representanteLimit, 2) . '. El monto de la solicitud es $' . number_format($purchaseRequest->total_amount, 2) . '.');
+            }
             abort(403, 'No tienes permiso para aprobar esta solicitud de compra.');
         }
         
@@ -2267,9 +2272,9 @@ class PurchaseRequestCrudController extends CrudController
     {
         CRUD::addClause('with', ['responsibilityArea', 'requestingUser', 'approvedBy', 'details.product', 'selectedMarketRate.supplier', 'selectedBy', 'convertedFromGeneralRequest', 'deliveries.details', 'purchaseOrders.paymentOrders']);
         
-        // Ocultar botón de eliminar para role_admin_institucion y role_apoderado
+        // Ocultar botón de eliminar para role_admin_institucion, role_apoderado y role_representante_legal
         $user = backpack_user();
-        if ($user && ($user->hasRole('role_admin_institucion', 'backpack') || $user->hasRole('role_apoderado', 'backpack'))) {
+        if ($user && ($user->hasRole('role_admin_institucion', 'backpack') || $user->hasRole('role_apoderado', 'backpack') || $user->hasRole('role_representante_legal', 'backpack'))) {
             CRUD::removeButton('delete');
         }
         
@@ -3102,14 +3107,24 @@ class PurchaseRequestCrudController extends CrudController
                         </div>';
                     }
                     
-                    // Si requiere aprobación de administrador y el usuario no es admin ni apoderado
+                    // Si es representante legal y supera su límite
+                    if ($user->hasRole('role_representante_legal', 'backpack')) {
+                        $representanteLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_representante_legal');
+                        return '<div class="alert alert-danger mt-3">
+                            <i class="la la-exclamation-triangle"></i> 
+                            <strong>Límite excedido:</strong> Esta solicitud ($' . number_format($entry->total_amount, 2) . ') supera tu límite de autorización de $' . number_format($representanteLimit, 2) . '. No puedes aprobar esta solicitud.
+                        </div>';
+                    }
+                    
+                    // Si requiere aprobación de administrador y el usuario no es admin, apoderado ni representante legal
                     if ($entry->requires_admin_approval) {
                         $comprasLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_responsable_compras');
                         $adminLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_admin_institucion');
                         $apoderadoLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_apoderado');
+                        $representanteLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_representante_legal');
                         return '<div class="alert alert-warning mt-3">
                             <i class="la la-exclamation-triangle"></i> 
-                            <strong>Requiere aprobación:</strong> Esta solicitud ($' . number_format($entry->total_amount, 2) . ') supera el límite de autorización del responsable de compras ($' . number_format($comprasLimit, 2) . '). Requiere aprobación del administrador del instituto (límite: $' . number_format($adminLimit, 2) . ') o apoderado (límite: $' . number_format($apoderadoLimit, 2) . ').
+                            <strong>Requiere aprobación:</strong> Esta solicitud ($' . number_format($entry->total_amount, 2) . ') supera el límite de autorización del responsable de compras ($' . number_format($comprasLimit, 2) . '). Requiere aprobación del administrador del instituto (límite: $' . number_format($adminLimit, 2) . '), apoderado (límite: $' . number_format($apoderadoLimit, 2) . ') o representante legal (límite: $' . number_format($representanteLimit, 2) . ').
                         </div>';
                     }
                     return '';
