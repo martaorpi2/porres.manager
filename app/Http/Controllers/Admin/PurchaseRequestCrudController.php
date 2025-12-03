@@ -1085,23 +1085,99 @@ class PurchaseRequestCrudController extends CrudController
     }
 
     /**
+     * Update the specified resource in storage.
+     */
+    public function update()
+    {
+        $this->crud->hasAccessOrFail('update');
+
+        // execute the FormRequest authorization and validation, if one is required
+        $request = $this->crud->validateRequest();
+
+        // register any Model Events defined on fields
+        $this->crud->registerFieldEvents();
+
+        $user = backpack_user();
+        $entry = $this->crud->getCurrentEntry();
+        
+        if (!$entry) {
+            abort(404, 'Solicitud de compra no encontrada.');
+        }
+
+        // Obtener datos para guardar
+        $dataToSave = $this->crud->getStrippedSaveRequest($request);
+
+        try {
+            // update item in the db
+            $item = $this->crud->update($this->crud->getCurrentEntryId(), $dataToSave);
+            $this->data['entry'] = $this->crud->entry = $item;
+
+            // Procesar productos seleccionados (eliminar existentes y crear nuevos)
+            $selectedProducts = $request->input('selected_products');
+            if ($selectedProducts && $selectedProducts !== '[]') {
+                \Log::info('Procesando productos en actualización:', ['selected_products' => $selectedProducts]);
+                // Eliminar productos existentes
+                $item->details()->delete();
+                // Procesar nuevos productos
+                $this->processSelectedProducts($item, $request, true);
+            }
+
+            // show a success message
+            \Alert::success(trans('backpack::crud.update_success'))->flash();
+
+            // save the redirect choice for next time
+            $this->crud->setSaveAction();
+
+            return $this->crud->performSaveAction($item->getKey());
+        } catch (\Exception $e) {
+            \Log::error('Error al actualizar PurchaseRequest: ' . $e->getMessage());
+            \Log::error('Stack trace: ' . $e->getTraceAsString());
+            \Alert::error('Error al actualizar la solicitud de compra: ' . $e->getMessage())->flash();
+            return redirect()->back()->withInput();
+        }
+    }
+
+    /**
      * Process selected products and create purchase request details
      */
-    private function processSelectedProducts($purchaseRequest, $request)
+    private function processSelectedProducts($purchaseRequest, $request, $isUpdate = false)
     {
         $selectedProducts = $request->input('selected_products');
         
-        if (!$selectedProducts) {
+        if (!$selectedProducts || $selectedProducts === '[]' || $selectedProducts === '') {
             \Log::info('No hay productos seleccionados');
             return;
         }
         
-        $products = json_decode($selectedProducts, true);
-        \Log::info('Productos seleccionados:', $products);
+        // Si ya es un array, usarlo directamente, sino decodificar JSON
+        if (is_array($selectedProducts)) {
+            $products = $selectedProducts;
+        } else {
+            $products = json_decode($selectedProducts, true);
+            if (json_last_error() !== JSON_ERROR_NONE) {
+                \Log::error('Error al decodificar JSON de productos:', [
+                    'json_error' => json_last_error_msg(),
+                    'raw_value' => $selectedProducts
+                ]);
+                return;
+            }
+        }
+        
+        if (!$products || !is_array($products) || empty($products)) {
+            \Log::warning('Productos seleccionados está vacío o no es un array válido');
+            return;
+        }
+        
+        \Log::info('Productos a procesar:', ['count' => count($products), 'products' => $products]);
         
         $totalAmount = 0;
         
         foreach ($products as $productData) {
+            if (!isset($productData['product_id'])) {
+                \Log::warning('Producto sin product_id', ['data' => $productData]);
+                continue;
+            }
+            
             $productId = $productData['product_id'];
             // Convertir a números para evitar errores de multiplicación
             $quantity = (float)($productData['quantity'] ?? 0);
@@ -1120,6 +1196,14 @@ class PurchaseRequestCrudController extends CrudController
                 ]);
                 $productId = $newProduct->id;
                 \Log::info('Nuevo producto creado:', ['id' => $newProduct->id, 'name' => $newProduct->name]);
+            } else {
+                // Validar que el producto existe
+                $productId = (int)$productId;
+                $product = \App\Models\Product::find($productId);
+                if (!$product) {
+                    \Log::warning('Producto no encontrado:', ['product_id' => $productId]);
+                    continue;
+                }
             }
             
             // Crear el detalle de la solicitud de compra
@@ -1636,14 +1720,20 @@ class PurchaseRequestCrudController extends CrudController
      */
     private function generatePurchaseOrderFromQuote($purchaseRequest)
     {
+        $request = request();
+        
         // Generar número de orden
         $ultimo = \App\Models\PurchaseOrder::max('id');
         $orderNumber = 'OC-' . date('Y') . '-' . str_pad(($ultimo + 1), 3, '0', STR_PAD_LEFT);
+        
+        // Obtener fecha de emisión del request o usar la fecha actual
+        $issueDate = $request->input('issue_date') ? \Carbon\Carbon::parse($request->input('issue_date')) : now();
         
         // Create purchase order
         $purchaseOrder = \App\Models\PurchaseOrder::create([
             'number' => $orderNumber,
             'date' => now(),
+            'issue_date' => $issueDate,
             'supplier_id' => $purchaseRequest->selectedMarketRate->supplier_id,
             'authorizing_user_id' => auth()->id(),
             'status' => 'Pendiente',
@@ -1678,6 +1768,8 @@ class PurchaseRequestCrudController extends CrudController
      */
     private function generatePurchaseOrderWithoutQuote($purchaseRequest, $supplierId)
     {
+        $request = request();
+        
         // Validar que el proveedor existe
         $supplier = \App\Models\Supplier::findOrFail($supplierId);
         
@@ -1685,10 +1777,17 @@ class PurchaseRequestCrudController extends CrudController
         $ultimo = \App\Models\PurchaseOrder::max('id');
         $orderNumber = 'OC-' . date('Y') . '-' . str_pad(($ultimo + 1), 3, '0', STR_PAD_LEFT);
         
+        // Obtener fecha de emisión del request o usar la fecha actual
+        $issueDate = $request->input('issue_date') ? \Carbon\Carbon::parse($request->input('issue_date')) : now();
+        
+        // Obtener precios del request
+        $prices = $request->input('prices', []);
+        
         // Create purchase order
         $purchaseOrder = \App\Models\PurchaseOrder::create([
             'number' => $orderNumber,
             'date' => now(),
+            'issue_date' => $issueDate,
             'supplier_id' => $supplierId,
             'authorizing_user_id' => auth()->id(),
             'status' => 'Pendiente',
@@ -1705,11 +1804,14 @@ class PurchaseRequestCrudController extends CrudController
             $input = $this->findOrCreateInputFromProduct($requestDetail->product);
             
             if ($input) {
+                // Usar el precio del formulario si está disponible, sino usar el precio estimado
+                $unitPrice = isset($prices[$requestDetail->id]) ? (float)$prices[$requestDetail->id] : ($requestDetail->estimated_unit_price ?? 0);
+                
                 \App\Models\PurchaseOrderDetail::create([
                     'purchase_order_id' => $purchaseOrder->id,
                     'input_id' => $input->id,
                     'quantity' => $requestDetail->requested_quantity,
-                    'unit_price' => $requestDetail->estimated_unit_price ?? 0,
+                    'unit_price' => $unitPrice,
                 ]);
             }
         }
@@ -1855,7 +1957,7 @@ class PurchaseRequestCrudController extends CrudController
                     $html .= '<div class="col-12">';
                     $html .= '<p class="mb-2"><strong>Productos Solicitados (' . $generalDetails->count() . '):</strong></p>';
                     $html .= '<div class="table-responsive" style="max-height: 300px; overflow-y: auto;">';
-                    $html .= '<table class="table table-sm table-bordered table-striped mb-0" style="font-size: 0.85rem;">';
+                    $html .= '<table class="table table-sm table-bordered table-striped mb-0" style="font-size: 0.95rem;">';
                     $html .= '<thead class="table-light" style="position: sticky; top: 0; z-index: 10;">';
                     $html .= '<tr>';
                     $html .= '<th style="width: 35%;">Producto</th>';
@@ -2214,10 +2316,16 @@ class PurchaseRequestCrudController extends CrudController
                             $html .= '<i class="la la-exclamation-triangle"></i> <strong>Atención:</strong> Debe seleccionar una cotización antes de generar la orden de compra.';
                             $html .= '</div>';
                         } else {
-                            // Hay 3+ cotizaciones y una seleccionada, mostrar botón
+                            // Hay 3+ cotizaciones y una seleccionada, mostrar formulario con fecha de emisión
                             $html .= '<div class="mt-3">';
                             $html .= '<form method="POST" action="' . route('purchase-request.generate-purchase-order', $entry->id) . '">';
                             $html .= csrf_field();
+                            $html .= '<div class="row mb-3">';
+                            $html .= '<div class="col-md-4">';
+                            $html .= '<label for="issue_date" class="form-label">Fecha de Emisión:</label>';
+                            $html .= '<input type="date" name="issue_date" id="issue_date" class="form-control" value="' . date('Y-m-d') . '" required>';
+                            $html .= '</div>';
+                            $html .= '</div>';
                             $html .= '<button type="submit" class="btn btn-primary" onclick="return confirm(\'¿Está seguro de generar la orden de compra?\')">';
                             $html .= '<i class="la la-shopping-cart"></i> Generar Orden de Compra';
                             $html .= '</button>';
@@ -2232,8 +2340,8 @@ class PurchaseRequestCrudController extends CrudController
                         $html .= '</div>';
                         $html .= '<form method="POST" action="' . route('purchase-request.generate-purchase-order', $entry->id) . '">';
                         $html .= csrf_field();
-                        $html .= '<div class="row">';
-                        $html .= '<div class="col-md-6">';
+                        $html .= '<div class="row mb-3">';
+                        $html .= '<div class="col-md-4">';
                         $html .= '<label for="supplier_id" class="form-label">Seleccionar Proveedor:</label>';
                         $html .= '<select name="supplier_id" id="supplier_id" class="form-control" required>';
                         $html .= '<option value="">Seleccione un proveedor...</option>';
@@ -2243,11 +2351,44 @@ class PurchaseRequestCrudController extends CrudController
                         }
                         $html .= '</select>';
                         $html .= '</div>';
-                        $html .= '<div class="col-md-6 d-flex align-items-end">';
+                        $html .= '<div class="col-md-4">';
+                        $html .= '<label for="issue_date" class="form-label">Fecha de Emisión:</label>';
+                        $html .= '<input type="date" name="issue_date" id="issue_date" class="form-control" value="' . date('Y-m-d') . '" required>';
+                        $html .= '</div>';
+                        $html .= '</div>';
+                        
+                        // Tabla para ingresar precios
+                        $html .= '<div class="table-responsive mb-3">';
+                        $html .= '<table class="table table-sm table-bordered">';
+                        $html .= '<thead class="table-light">';
+                        $html .= '<tr>';
+                        $html .= '<th>Producto</th>';
+                        $html .= '<th style="width: 15%;">Cantidad</th>';
+                        $html .= '<th style="width: 20%;">Precio Unitario</th>';
+                        $html .= '</tr>';
+                        $html .= '</thead>';
+                        $html .= '<tbody>';
+                        foreach ($entry->details as $detail) {
+                            $productName = $detail->product->name ?? 'Producto no encontrado';
+                            if (is_array($productName)) {
+                                $productName = 'Producto no encontrado';
+                            }
+                            $html .= '<tr>';
+                            $html .= '<td>' . e($productName) . '</td>';
+                            $html .= '<td>' . number_format($detail->requested_quantity) . '</td>';
+                            $html .= '<td>';
+                            $html .= '<input type="number" name="prices[' . $detail->id . ']" class="form-control form-control-sm" step="0.01" min="0" value="' . ($detail->estimated_unit_price ?? 0) . '" required>';
+                            $html .= '</td>';
+                            $html .= '</tr>';
+                        }
+                        $html .= '</tbody>';
+                        $html .= '</table>';
+                        $html .= '</div>';
+                        
+                        $html .= '<div class="text-end">';
                         $html .= '<button type="submit" class="btn btn-primary" onclick="return confirm(\'¿Está seguro de generar la orden de compra?\')">';
                         $html .= '<i class="la la-shopping-cart"></i> Generar Orden de Compra';
                         $html .= '</button>';
-                        $html .= '</div>';
                         $html .= '</div>';
                         $html .= '</form>';
                         $html .= '</div>';

@@ -288,6 +288,22 @@ class PurchaseOrderCrudController extends CrudController
             },
             'escaped' => false
         ]);
+        
+        // Agregar botón de PDF como columna personalizada
+        CRUD::addColumn([
+            'name' => 'pdf_button',
+            'label' => 'Acciones',
+            'type' => 'closure',
+            'function' => function($entry) {
+                return '<a href="' . route('purchase-order.pdf', $entry->id) . '" class="btn btn-sm btn-info" data-toggle="tooltip" title="Descargar PDF de Orden de Compra">
+                    <i class="la la-file-pdf"></i> <span>PDF</span>
+                </a>';
+            },
+            'escaped' => false
+        ]);
+        
+        // Agregar botón de PDF en la vista previa (también en top)
+        CRUD::addButton('top', 'pdf', 'view', 'crud::buttons.purchase_order_pdf', 'end');
     }
 
     /**
