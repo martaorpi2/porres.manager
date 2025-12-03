@@ -44,8 +44,19 @@ class ProductCrudController extends CrudController
         // Habilitar tabla responsiva
         CRUD::enableResponsiveTable();
         
-        // Filtrar productos según el rol del usuario
+        // Ocultar botones de editar y eliminar para role_admin_institucion
         $user = backpack_user();
+        if ($user && $user->hasRole('role_admin_institucion', 'backpack')) {
+            CRUD::removeButton('update');
+            CRUD::removeButton('delete');
+        }
+        
+        // Solo el administrador del sistema puede eliminar productos
+        if (!$user || !$user->hasRole('role_admin_sistema', 'backpack')) {
+            CRUD::removeButton('delete');
+        }
+        
+        // Filtrar productos según el rol del usuario
         if ($user && $user->hasRole('role_responsable_area', 'backpack')) {
             // Obtener las áreas de responsabilidad del usuario con sus nombres
             $userAreas = \App\Models\ResponsibilityArea::where('responsible_user_id', $user->id)->get();
@@ -229,6 +240,37 @@ class ProductCrudController extends CrudController
     protected function setupUpdateOperation()
     {
         $this->setupCreateOperation();
+    }
+
+    /**
+     * Define what happens when the Delete operation is loaded.
+     * 
+     * @see https://backpackforlaravel.com/docs/crud-operation-delete
+     * @return void
+     */
+    protected function setupDeleteOperation()
+    {
+        // Solo el administrador del sistema puede eliminar productos
+        $user = backpack_user();
+        if (!$user || !$user->hasRole('role_admin_sistema', 'backpack')) {
+            abort(403, 'Solo el administrador del sistema puede eliminar productos.');
+        }
+    }
+    
+    /**
+     * Remove the specified resource from storage.
+     */
+    public function destroy($id)
+    {
+        $this->crud->hasAccessOrFail('delete');
+        
+        // Solo el administrador del sistema puede eliminar productos
+        $user = backpack_user();
+        if (!$user || !$user->hasRole('role_admin_sistema', 'backpack')) {
+            abort(403, 'Solo el administrador del sistema puede eliminar productos.');
+        }
+        
+        return $this->crud->delete($id);
     }
 
     /**

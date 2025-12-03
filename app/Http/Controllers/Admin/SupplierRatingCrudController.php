@@ -44,6 +44,20 @@ class SupplierRatingCrudController extends CrudController
         // Habilitar tabla responsiva
         CRUD::enableResponsiveTable();
         
+        // Filtrar calificaciones para role_admin_institucion (solo sus propias calificaciones)
+        $user = backpack_user();
+        if ($user && $user->hasRole('role_admin_institucion', 'backpack')) {
+            CRUD::addClause('where', 'rated_by', $user->id);
+        }
+        
+        // Reemplazar botones de editar y eliminar con versiones personalizadas para role_admin_institucion
+        if ($user && $user->hasRole('role_admin_institucion', 'backpack')) {
+            CRUD::removeButton('update');
+            CRUD::removeButton('delete');
+            CRUD::addButton('line', 'edit_rating', 'view', 'crud::buttons.edit_supplier_rating', 'beginning');
+            CRUD::addButton('line', 'delete_rating', 'view', 'crud::buttons.delete_supplier_rating', 'end');
+        }
+        
         // Cargar relaciones para evitar N+1 queries
         CRUD::addClause('with', ['supplier', 'ratedBy', 'purchaseOrder']);
 
@@ -307,7 +321,57 @@ class SupplierRatingCrudController extends CrudController
      */
     protected function setupUpdateOperation()
     {
+        // Verificar que el usuario solo pueda editar sus propias calificaciones
+        $user = backpack_user();
+        $entry = $this->crud->getCurrentEntry();
+        
+        if ($user && $user->hasRole('role_admin_institucion', 'backpack')) {
+            if ($entry && $entry->rated_by != $user->id) {
+                abort(403, 'Solo puedes editar tus propias calificaciones.');
+            }
+        }
+        
         $this->setupCreateOperation();
+    }
+    
+    /**
+     * Update the specified resource in storage.
+     */
+    public function update()
+    {
+        $this->crud->hasAccessOrFail('update');
+        
+        // Verificar que el usuario solo pueda editar sus propias calificaciones
+        $user = backpack_user();
+        $entry = $this->crud->getCurrentEntry();
+        
+        if ($user && $user->hasRole('role_admin_institucion', 'backpack')) {
+            if ($entry && $entry->rated_by != $user->id) {
+                abort(403, 'Solo puedes editar tus propias calificaciones.');
+            }
+        }
+        
+        return $this->crud->update();
+    }
+    
+    /**
+     * Remove the specified resource from storage.
+     */
+    public function destroy($id)
+    {
+        $this->crud->hasAccessOrFail('delete');
+        
+        // Verificar que el usuario solo pueda eliminar sus propias calificaciones
+        $user = backpack_user();
+        $entry = $this->crud->getEntry($id);
+        
+        if ($user && $user->hasRole('role_admin_institucion', 'backpack')) {
+            if ($entry && $entry->rated_by != $user->id) {
+                abort(403, 'Solo puedes eliminar tus propias calificaciones.');
+            }
+        }
+        
+        return $this->crud->delete($id);
     }
 
     /**

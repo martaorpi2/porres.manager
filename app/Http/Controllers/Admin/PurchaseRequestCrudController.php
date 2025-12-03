@@ -99,6 +99,11 @@ class PurchaseRequestCrudController extends CrudController
         CRUD::removeButton('update');
         CRUD::addButton('line', 'edit_purchase_request', 'view', 'crud::buttons.edit_purchase_request', 'beginning');
         
+        // Ocultar botón de eliminar para role_admin_institucion
+        if ($user && $user->hasRole('role_admin_institucion', 'backpack')) {
+            CRUD::removeButton('delete');
+        }
+        
         // Botón para ver orden de compra (solo si existe y para usuarios que no sean role_responsable_area)
         if (!$user || !$user->hasRole('role_responsable_area', 'backpack')) {
             CRUD::addButton('line', 'view_purchase_order', 'view', 'crud::buttons.view_purchase_order', 'end');
@@ -231,24 +236,26 @@ class PurchaseRequestCrudController extends CrudController
             abort(404, 'Solicitud de compra no encontrada.');
         }
         
-        // Verificar si el usuario es administrador (puede editar cualquier solicitud)
-        $adminRoles = ['role_admin_sistema', 'role_admin_institucion', 'role_responsable_compras'];
-        $isAdmin = false;
-        foreach ($adminRoles as $role) {
-            if ($user->hasRole($role, 'backpack')) {
-                $isAdmin = true;
-                break;
-            }
-        }
+        // Verificar roles de administrador
+        $isAdminSistema = $user->hasRole('role_admin_sistema', 'backpack');
+        $isAdminInstitucion = $user->hasRole('role_admin_institucion', 'backpack');
+        $isResponsableCompras = $user->hasRole('role_responsable_compras', 'backpack');
         
         $isOwnRequest = $entry->requesting_user_id == $user->id;
         
         // Verificar si el usuario es responsable de área
         $isResponsableArea = $user && $user->hasRole('role_responsable_area', 'backpack');
         
-        // Si no es administrador, verificar restricciones
-        if (!$isAdmin) {
-            // Todos los usuarios solo pueden editar sus propias solicitudes
+        // Si es administrador del sistema o responsable de compras, puede editar cualquier solicitud
+        if ($isAdminSistema || $isResponsableCompras) {
+            // Pueden editar cualquier solicitud
+        } elseif ($isAdminInstitucion) {
+            // El administrador del instituto solo puede editar sus propias solicitudes
+            if (!$isOwnRequest) {
+                abort(403, 'Solo puedes editar las solicitudes de compra que creaste.');
+            }
+        } else {
+            // Todos los demás usuarios solo pueden editar sus propias solicitudes
             if (!$isOwnRequest) {
                 abort(403, 'Solo puedes editar las solicitudes de compra que creaste.');
             }
@@ -304,33 +311,40 @@ class PurchaseRequestCrudController extends CrudController
             
             CRUD::field('justification')->label('Justificación')->type('textarea')->default($entry->justification);
             
-            // Campo para seleccionar productos
-            $entry->load('details.product');
-            if ($entry->details && $entry->details->count() > 0) {
-                $existingProducts = $entry->details->map(function($detail) {
-                    return [
-                        'product_id' => $detail->product_id,
-                        'product_name' => $detail->product ? $detail->product->name : 'N/A',
-                        'unit' => $detail->product ? $detail->product->unit_measurement : '',
-                        'description' => $detail->product ? $detail->product->description : '',
-                        'quantity' => $detail->requested_quantity ?? 0,
-                        'price' => $detail->estimated_unit_price ?? 0,
-                        'specifications' => $detail->specifications ?? ''
-                    ];
-                })->toArray();
-                
-                CRUD::field('products_selection')->label('Productos Solicitados')->type('custom_html')
-                    ->value($this->getProductsSelectionHtml($existingProducts, $entry->responsibility_area_id));
+            // Campo para seleccionar productos - solo si no está aprobada
+            if ($entry->status !== 'Aprobada') {
+                $entry->load('details.product');
+                if ($entry->details && $entry->details->count() > 0) {
+                    $existingProducts = $entry->details->map(function($detail) {
+                        return [
+                            'product_id' => $detail->product_id,
+                            'product_name' => $detail->product ? $detail->product->name : 'N/A',
+                            'unit' => $detail->product ? $detail->product->unit_measurement : '',
+                            'description' => $detail->product ? $detail->product->description : '',
+                            'quantity' => $detail->requested_quantity ?? 0,
+                            'price' => $detail->estimated_unit_price ?? 0,
+                            'specifications' => $detail->specifications ?? ''
+                        ];
+                    })->toArray();
+                    
+                    CRUD::field('products_selection')->label('Productos Solicitados')->type('custom_html')
+                        ->value($this->getProductsSelectionHtml($existingProducts, $entry->responsibility_area_id));
+                } else {
+                    CRUD::field('products_selection')->label('Productos Solicitados')->type('custom_html')
+                        ->value($this->getProductsSelectionHtml([], $entry->responsibility_area_id));
+                }
             } else {
+                // Si está aprobada, mostrar productos como solo lectura
+                $entry->load('details.product');
                 CRUD::field('products_selection')->label('Productos Solicitados')->type('custom_html')
-                    ->value($this->getProductsSelectionHtml([], $entry->responsibility_area_id));
+                    ->value($this->getProductsReadOnlyHtml($entry));
             }
         } else {
             // Para administradores, usar todos los campos
             $this->setupCreateFields();
             
-            // Cargar productos existentes para edición
-            if ($entry) {
+            // Cargar productos existentes para edición - solo si no está aprobada
+            if ($entry && $entry->status !== 'Aprobada') {
                 // Cargar la relación con productos
                 $entry->load('details.product');
                 
@@ -352,6 +366,12 @@ class PurchaseRequestCrudController extends CrudController
                         'value' => $this->getProductsSelectionHtml($existingProducts)
                     ]);
                 }
+            } elseif ($entry && $entry->status === 'Aprobada') {
+                // Si está aprobada, mostrar productos como solo lectura
+                $entry->load('details.product');
+                CRUD::modifyField('products_selection', [
+                    'value' => $this->getProductsReadOnlyHtml($entry)
+                ]);
             }
             
             // Agregar campos adicionales para actualización
@@ -1215,6 +1235,32 @@ class PurchaseRequestCrudController extends CrudController
         if (!$entry) {
             abort(404, 'Solicitud de compra no encontrada.');
         }
+        
+        // Validar que el usuario solo pueda editar sus propias solicitudes (para role_admin_institucion)
+        $isAdminSistema = $user->hasRole('role_admin_sistema', 'backpack');
+        $isAdminInstitucion = $user->hasRole('role_admin_institucion', 'backpack');
+        $isResponsableCompras = $user->hasRole('role_responsable_compras', 'backpack');
+        $isOwnRequest = $entry->requesting_user_id == $user->id;
+        
+        // Si no es administrador del sistema ni responsable de compras, verificar restricciones
+        if (!$isAdminSistema && !$isResponsableCompras) {
+            if ($isAdminInstitucion) {
+                // El administrador del instituto solo puede editar sus propias solicitudes
+                if (!$isOwnRequest) {
+                    abort(403, 'Solo puedes editar las solicitudes de compra que creaste.');
+                }
+            } else {
+                // Todos los demás usuarios solo pueden editar sus propias solicitudes
+                if (!$isOwnRequest) {
+                    abort(403, 'Solo puedes editar las solicitudes de compra que creaste.');
+                }
+                
+                // Solo puede editar si el estado es "Pendiente"
+                if ($entry->status !== 'Pendiente') {
+                    abort(403, 'Solo puedes editar solicitudes de compra con estado "Pendiente".');
+                }
+            }
+        }
 
         // Obtener datos para guardar
         $dataToSave = $this->crud->getStrippedSaveRequest($request);
@@ -1224,14 +1270,19 @@ class PurchaseRequestCrudController extends CrudController
             $item = $this->crud->update($this->crud->getCurrentEntryId(), $dataToSave);
             $this->data['entry'] = $this->crud->entry = $item;
 
-            // Procesar productos seleccionados (eliminar existentes y crear nuevos)
-            $selectedProducts = $request->input('selected_products');
-            if ($selectedProducts && $selectedProducts !== '[]') {
-                \Log::info('Procesando productos en actualización:', ['selected_products' => $selectedProducts]);
-                // Eliminar productos existentes
-                $item->details()->delete();
-                // Procesar nuevos productos
-                $this->processSelectedProducts($item, $request, true);
+            // Procesar productos seleccionados (eliminar existentes y crear nuevos) - solo si no está aprobada
+            if ($entry->status !== 'Aprobada') {
+                $selectedProducts = $request->input('selected_products');
+                if ($selectedProducts && $selectedProducts !== '[]') {
+                    \Log::info('Procesando productos en actualización:', ['selected_products' => $selectedProducts]);
+                    // Eliminar productos existentes
+                    $item->details()->delete();
+                    // Procesar nuevos productos
+                    $this->processSelectedProducts($item, $request, true);
+                }
+            } else {
+                // Si está aprobada, no permitir modificar productos
+                \Alert::warning('No se pueden modificar los productos de una solicitud aprobada.')->flash();
             }
             
             // Verificar si requiere aprobación de administrador después de actualizar el total
@@ -1255,6 +1306,99 @@ class PurchaseRequestCrudController extends CrudController
             \Alert::error('Error al actualizar la solicitud de compra: ' . $e->getMessage())->flash();
             return redirect()->back()->withInput();
         }
+    }
+
+    /**
+     * Define what happens when the Delete operation is loaded.
+     * 
+     * @see https://backpackforlaravel.com/docs/crud-operation-delete
+     * @return void
+     */
+    protected function setupDeleteOperation()
+    {
+        // Bloquear eliminación para role_admin_institucion
+        $user = backpack_user();
+        if ($user && $user->hasRole('role_admin_institucion', 'backpack')) {
+            abort(403, 'No tienes permiso para eliminar solicitudes de compra.');
+        }
+    }
+    
+    /**
+     * Remove the specified resource from storage.
+     */
+    public function destroy($id)
+    {
+        $this->crud->hasAccessOrFail('delete');
+        
+        // Bloquear eliminación para role_admin_institucion
+        $user = backpack_user();
+        if ($user && $user->hasRole('role_admin_institucion', 'backpack')) {
+            abort(403, 'No tienes permiso para eliminar solicitudes de compra.');
+        }
+        
+        return $this->crud->delete($id);
+    }
+
+    /**
+     * Get HTML for displaying products as read-only
+     */
+    private function getProductsReadOnlyHtml($entry)
+    {
+        $entry->load('details.product');
+        
+        if (!$entry->details || $entry->details->count() === 0) {
+            return '<div class="alert alert-info">No hay productos seleccionados.</div>';
+        }
+        
+        $html = '<div class="table-responsive">';
+        $html .= '<table class="table table-bordered table-striped">';
+        $html .= '<thead class="thead-dark">';
+        $html .= '<tr>';
+        $html .= '<th>Producto</th>';
+        $html .= '<th>Unidad</th>';
+        $html .= '<th>Cantidad</th>';
+        $html .= '<th>Precio Unitario</th>';
+        $html .= '<th>Subtotal</th>';
+        $html .= '<th>Especificaciones</th>';
+        $html .= '</tr>';
+        $html .= '</thead>';
+        $html .= '<tbody>';
+        
+        $total = 0;
+        foreach ($entry->details as $detail) {
+            $productName = $detail->product ? $detail->product->name : 'N/A';
+            $unit = $detail->product ? $detail->product->unit_measurement : '';
+            $quantity = $detail->requested_quantity ?? 0;
+            $price = $detail->estimated_unit_price ?? 0;
+            $subtotal = $quantity * $price;
+            $total += $subtotal;
+            $specifications = $detail->specifications ?? '';
+            
+            $html .= '<tr>';
+            $html .= '<td>' . e($productName) . '</td>';
+            $html .= '<td>' . e($unit) . '</td>';
+            $html .= '<td class="text-right">' . number_format($quantity, 2) . '</td>';
+            $html .= '<td class="text-right">$' . number_format($price, 2) . '</td>';
+            $html .= '<td class="text-right">$' . number_format($subtotal, 2) . '</td>';
+            $html .= '<td>' . nl2br(e($specifications)) . '</td>';
+            $html .= '</tr>';
+        }
+        
+        $html .= '</tbody>';
+        $html .= '<tfoot>';
+        $html .= '<tr class="font-weight-bold">';
+        $html .= '<td colspan="4" class="text-right">Total:</td>';
+        $html .= '<td class="text-right">$' . number_format($total, 2) . '</td>';
+        $html .= '<td></td>';
+        $html .= '</tr>';
+        $html .= '</tfoot>';
+        $html .= '</table>';
+        $html .= '</div>';
+        $html .= '<div class="alert alert-warning mt-2">';
+        $html .= '<i class="la la-lock"></i> <strong>Nota:</strong> Los productos no pueden ser modificados porque la solicitud está aprobada.';
+        $html .= '</div>';
+        
+        return $html;
     }
 
     /**
@@ -1806,6 +1950,86 @@ class PurchaseRequestCrudController extends CrudController
     }
 
     /**
+     * Approve a purchase request
+     */
+    public function approvePurchaseRequest($id)
+    {
+        $purchaseRequest = \App\Models\PurchaseRequest::findOrFail($id);
+        $user = backpack_user();
+        
+        if (!$user) {
+            abort(403, 'No tienes permiso para aprobar solicitudes de compra.');
+        }
+        
+        // Verificar si el usuario puede aprobar esta solicitud
+        if (!$purchaseRequest->canBeApprovedBy($user)) {
+            // Verificar si es administrador del instituto y supera su límite
+            if ($user->hasRole('role_admin_institucion', 'backpack')) {
+                $adminLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_admin_institucion');
+                abort(403, 'No puedes aprobar esta solicitud de compra porque supera tu límite de autorización de $' . number_format($adminLimit, 2) . '. El monto de la solicitud es $' . number_format($purchaseRequest->total_amount, 2) . '.');
+            }
+            abort(403, 'No tienes permiso para aprobar esta solicitud de compra.');
+        }
+        
+        // Validar que la solicitud esté en estado pendiente
+        if ($purchaseRequest->status !== 'Pendiente') {
+            abort(403, 'Solo se pueden aprobar solicitudes con estado "Pendiente".');
+        }
+        
+        $request = request();
+        $request->validate([
+            'approval_justification' => 'required|string|max:1000',
+        ]);
+        
+        // Actualizar la solicitud como aprobada
+        $purchaseRequest->update([
+            'status' => 'Aprobada',
+            'approved_by' => $user->id,
+            'approved_date' => now(),
+            'approval_justification' => $request->input('approval_justification'),
+            'requires_admin_approval' => false,
+        ]);
+        
+        \Alert::success('Solicitud de compra aprobada exitosamente.')->flash();
+        
+        return redirect()->route('purchase-request.show', $id);
+    }
+
+    /**
+     * Reject a purchase request
+     */
+    public function rejectPurchaseRequest($id)
+    {
+        $purchaseRequest = \App\Models\PurchaseRequest::findOrFail($id);
+        $user = backpack_user();
+        
+        if (!$user) {
+            abort(403, 'No tienes permiso para rechazar solicitudes de compra.');
+        }
+        
+        // Verificar si el usuario puede aprobar/rechazar esta solicitud
+        if (!$purchaseRequest->canBeApprovedBy($user)) {
+            abort(403, 'No tienes permiso para rechazar esta solicitud de compra.');
+        }
+        
+        // Validar que la solicitud esté en estado pendiente
+        if ($purchaseRequest->status !== 'Pendiente') {
+            abort(403, 'Solo se pueden rechazar solicitudes con estado "Pendiente".');
+        }
+        
+        // Actualizar la solicitud como rechazada
+        $purchaseRequest->update([
+            'status' => 'Rechazada',
+            'approved_by' => $user->id,
+            'approved_date' => now(),
+        ]);
+        
+        \Alert::warning('Solicitud de compra rechazada.')->flash();
+        
+        return redirect()->route('purchase-request.show', $id);
+    }
+
+    /**
      * Generate purchase order from selected market rate or directly if amount <= 60000
      */
     public function generatePurchaseOrder($id)
@@ -2034,6 +2258,12 @@ class PurchaseRequestCrudController extends CrudController
     protected function setupShowOperation()
     {
         CRUD::addClause('with', ['responsibilityArea', 'requestingUser', 'approvedBy', 'details.product', 'selectedMarketRate.supplier', 'selectedBy', 'convertedFromGeneralRequest', 'deliveries.details', 'purchaseOrders.paymentOrders']);
+        
+        // Ocultar botón de eliminar para role_admin_institucion
+        $user = backpack_user();
+        if ($user && $user->hasRole('role_admin_institucion', 'backpack')) {
+            CRUD::removeButton('delete');
+        }
         
         CRUD::column('request_number')->label('Número de Solicitud');
         CRUD::column('request_date')->label('Fecha');
@@ -2777,7 +3007,7 @@ class PurchaseRequestCrudController extends CrudController
             CRUD::addButton('top', 'purchase_order_action', 'view', 'crud::buttons.purchase_order_action', 'end');
         }
         
-        // Agregar columna para botones de aprobación
+        // Agregar columna para botones de aprobación o información de aprobación
         CRUD::column('approval_actions')->label('Aprobación')->type('custom_html')
             ->value(function($entry) {
                 $user = backpack_user();
@@ -2785,29 +3015,89 @@ class PurchaseRequestCrudController extends CrudController
                     return '';
                 }
                 
-                // Solo mostrar si la solicitud está pendiente o requiere aprobación de administrador
-                if ($entry->status === 'Aprobada' || $entry->status === 'Rechazada' || $entry->status === 'Completada') {
+                // Si la solicitud está aprobada, mostrar información de aprobación
+                if ($entry->status === 'Aprobada') {
+                    $html = '<div class="card border-success mt-3">';
+                    $html .= '<div class="card-header bg-success text-white">';
+                    $html .= '<h6 class="mb-0"><i class="la la-check-circle"></i> Solicitud Aprobada</h6>';
+                    $html .= '</div>';
+                    $html .= '<div class="card-body">';
+                    
+                    if ($entry->approvedBy) {
+                        $html .= '<p class="mb-2"><strong>Aprobada por:</strong> ' . e($entry->approvedBy->name) . '</p>';
+                    }
+                    
+                    if ($entry->approved_date) {
+                        $approvedDate = $entry->approved_date instanceof \Carbon\Carbon 
+                            ? $entry->approved_date->format('d/m/Y H:i') 
+                            : \Carbon\Carbon::parse($entry->approved_date)->format('d/m/Y H:i');
+                        $html .= '<p class="mb-2"><strong>Fecha de aprobación:</strong> ' . $approvedDate . '</p>';
+                    }
+                    
+                    if ($entry->approval_justification) {
+                        $html .= '<p class="mb-0"><strong>Justificación:</strong> ' . nl2br(e($entry->approval_justification)) . '</p>';
+                    }
+                    
+                    $html .= '</div>';
+                    $html .= '</div>';
+                    
+                    return $html;
+                }
+                
+                // Si la solicitud está rechazada, mostrar información
+                if ($entry->status === 'Rechazada') {
+                    $html = '<div class="card border-danger mt-3">';
+                    $html .= '<div class="card-header bg-danger text-white">';
+                    $html .= '<h6 class="mb-0"><i class="la la-times-circle"></i> Solicitud Rechazada</h6>';
+                    $html .= '</div>';
+                    $html .= '<div class="card-body">';
+                    
+                    if ($entry->approvedBy) {
+                        $html .= '<p class="mb-2"><strong>Rechazada por:</strong> ' . e($entry->approvedBy->name) . '</p>';
+                    }
+                    
+                    if ($entry->approved_date) {
+                        $rejectedDate = $entry->approved_date instanceof \Carbon\Carbon 
+                            ? $entry->approved_date->format('d/m/Y H:i') 
+                            : \Carbon\Carbon::parse($entry->approved_date)->format('d/m/Y H:i');
+                        $html .= '<p class="mb-0"><strong>Fecha de rechazo:</strong> ' . $rejectedDate . '</p>';
+                    }
+                    
+                    $html .= '</div>';
+                    $html .= '</div>';
+                    
+                    return $html;
+                }
+                
+                // Si está completada, no mostrar nada
+                if ($entry->status === 'Completada') {
                     return '';
                 }
                 
                 // Verificar si el usuario puede aprobar esta solicitud
                 if (!$entry->canBeApprovedBy($user)) {
+                    // Si es administrador del instituto y supera su límite
+                    if ($user->hasRole('role_admin_institucion', 'backpack')) {
+                        $adminLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_admin_institucion');
+                        return '<div class="alert alert-danger mt-3">
+                            <i class="la la-exclamation-triangle"></i> 
+                            <strong>Límite excedido:</strong> Esta solicitud ($' . number_format($entry->total_amount, 2) . ') supera tu límite de autorización de $' . number_format($adminLimit, 2) . '. No puedes aprobar esta solicitud.
+                        </div>';
+                    }
+                    
                     // Si requiere aprobación de administrador y el usuario no es admin
                     if ($entry->requires_admin_approval) {
                         $comprasLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_responsable_compras');
+                        $adminLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_admin_institucion');
                         return '<div class="alert alert-warning mt-3">
                             <i class="la la-exclamation-triangle"></i> 
-                            <strong>Requiere aprobación:</strong> Esta solicitud supera el límite de autorización del responsable de compras ($' . number_format($comprasLimit, 2) . ') y requiere aprobación del administrador del instituto.
+                            <strong>Requiere aprobación:</strong> Esta solicitud ($' . number_format($entry->total_amount, 2) . ') supera el límite de autorización del responsable de compras ($' . number_format($comprasLimit, 2) . '). Requiere aprobación del administrador del instituto (límite: $' . number_format($adminLimit, 2) . ').
                         </div>';
                     }
                     return '';
                 }
                 
-                // Si la solicitud ya está aprobada, no mostrar botones
-                if ($entry->status === 'Aprobada') {
-                    return '';
-                }
-                
+                // Mostrar formulario de aprobación/rechazo
                 $html = '<div class="card border-primary mt-3">';
                 $html .= '<div class="card-header bg-primary text-white">';
                 $html .= '<h6 class="mb-0"><i class="la la-check-circle"></i> Acciones de Aprobación</h6>';

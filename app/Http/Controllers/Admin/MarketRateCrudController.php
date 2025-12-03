@@ -49,6 +49,13 @@ class MarketRateCrudController extends CrudController
         // Habilitar tabla responsiva
         CRUD::enableResponsiveTable();
         
+        // Ocultar botones de editar y eliminar para role_admin_institucion
+        $user = backpack_user();
+        if ($user && $user->hasRole('role_admin_institucion', 'backpack')) {
+            CRUD::removeButton('update');
+            CRUD::removeButton('delete');
+        }
+        
         // Cargar relaciones necesarias
         CRUD::addClause('with', ['supplier', 'quoteDetails', 'purchaseRequest']);
         

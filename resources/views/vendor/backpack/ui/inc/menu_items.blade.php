@@ -30,8 +30,10 @@
 
     <x-backpack::menu-dropdown title="Inventario" icon="la la-boxes" trigger="click">
         <x-backpack::menu-dropdown-item title="Productos" :link="backpack_url('product')" />
-        <x-backpack::menu-dropdown-item title="Categorías" :link="backpack_url('category')" />
-        <x-backpack::menu-dropdown-item title="Ubicaciones" :link="backpack_url('location')" />
+        @unless(backpack_user() && backpack_user()->hasRole('role_admin_institucion', 'backpack'))
+            <x-backpack::menu-dropdown-item title="Categorías" :link="backpack_url('category')" />
+            <x-backpack::menu-dropdown-item title="Ubicaciones" :link="backpack_url('location')" />
+        @endunless
         <x-backpack::menu-item title="Stock" :link="backpack_url('stock-level')" />
         <x-backpack::menu-item title="Movimientos" :link="backpack_url('inventory-movement')" />
     </x-backpack::menu-dropdown>

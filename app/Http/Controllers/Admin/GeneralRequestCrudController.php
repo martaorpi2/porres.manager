@@ -210,22 +210,30 @@ class GeneralRequestCrudController extends CrudController
             abort(403, 'No se puede editar una solicitud que ya fue convertida a solicitud de compra.');
         }
         
-        // Verificar si el usuario es administrador (puede editar cualquier solicitud)
-        $adminRoles = ['role_admin_sistema', 'role_admin_institucion'];
-        $isAdmin = false;
-        foreach ($adminRoles as $role) {
-            if ($user->hasRole($role, 'backpack')) {
-                $isAdmin = true;
-                break;
-            }
-        }
+        // Verificar si el usuario es administrador del sistema (puede editar cualquier solicitud)
+        $isAdminSistema = $user->hasRole('role_admin_sistema', 'backpack');
+        
+        // role_admin_institucion solo puede editar sus propias solicitudes
+        $isAdminInstitucion = $user->hasRole('role_admin_institucion', 'backpack');
         
         $isOwnRequest = $entry->created_by == $user->id;
         $isResponsableCompras = $user->hasRole('role_responsable_compras', 'backpack');
         $canOnlyChangeStatus = false;
         
-        // Si es responsable de compras, solo puede editar sus propias solicitudes
-        if ($isResponsableCompras) {
+        // Si es administrador del sistema, puede editar cualquier solicitud
+        if ($isAdminSistema) {
+            // Puede editar cualquier solicitud
+        } elseif ($isAdminInstitucion) {
+            // El administrador del instituto solo puede editar sus propias solicitudes
+            if (!$isOwnRequest) {
+                abort(403, 'Solo puedes editar las solicitudes generales que creaste.');
+            }
+            // Solo puede editar si el estado es "creada"
+            if ($entry->status !== 'creada') {
+                abort(403, 'Solo puedes editar solicitudes con estado "creada".');
+            }
+        } elseif ($isResponsableCompras) {
+            // Si es responsable de compras, solo puede editar sus propias solicitudes
             if (!$isOwnRequest) {
                 abort(403, 'Solo puedes editar las solicitudes generales que creaste.');
             }
@@ -233,8 +241,8 @@ class GeneralRequestCrudController extends CrudController
             if ($entry->status !== 'creada') {
                 abort(403, 'Solo puedes editar solicitudes con estado "creada".');
             }
-        } elseif (!$isAdmin) {
-            // Todos los usuarios (incluyendo responsables de área) solo pueden editar sus propias solicitudes
+        } else {
+            // Todos los demás usuarios solo pueden editar sus propias solicitudes
             if (!$isOwnRequest) {
                 abort(403, 'Solo puedes editar las solicitudes que creaste.');
             }
@@ -630,38 +638,45 @@ class GeneralRequestCrudController extends CrudController
             abort(403, 'No se puede editar una solicitud que ya fue convertida a solicitud de compra.');
         }
         
-        // Verificar si el usuario es administrador (puede editar cualquier solicitud)
-        $adminRoles = ['role_admin_sistema', 'role_admin_institucion'];
-        $isAdmin = false;
-        foreach ($adminRoles as $role) {
-            if ($user && $user->hasRole($role, 'backpack')) {
-                $isAdmin = true;
-                break;
-            }
-        }
+        // Verificar si el usuario es administrador del sistema (puede editar cualquier solicitud)
+        $isAdminSistema = $user && $user->hasRole('role_admin_sistema', 'backpack');
+        
+        // role_admin_institucion solo puede editar sus propias solicitudes
+        $isAdminInstitucion = $user && $user->hasRole('role_admin_institucion', 'backpack');
         
         $isOwnRequest = $entry->created_by == $user->id;
         $isResponsableCompras = $user && $user->hasRole('role_responsable_compras', 'backpack');
-        $canOnlyChangeStatus = false;
         
-        // Si es responsable de compras, solo puede editar sus propias solicitudes
-        if ($isResponsableCompras) {
-            if (!$isOwnRequest) {
-                abort(403, 'Solo puedes editar las solicitudes generales que creaste.');
-            }
-            // Si es el creador, solo puede editar si el estado es "creada"
-            if ($entry->status !== 'creada') {
-                abort(403, 'Solo puedes editar solicitudes con estado "creada".');
-            }
-        } elseif (!$isAdmin) {
-            // Todos los usuarios (incluyendo responsables de área) solo pueden editar sus propias solicitudes
-            if (!$isOwnRequest) {
-                abort(403, 'Solo puedes editar las solicitudes que creaste.');
-            }
-            
-            // Si es el creador, solo puede editar si el estado es "creada"
-            if ($entry->status !== 'creada') {
-                abort(403, 'Solo puedes editar solicitudes con estado "creada".');
+        // Si es administrador del sistema, puede editar cualquier solicitud
+        if (!$isAdminSistema) {
+            if ($isAdminInstitucion) {
+                // El administrador del instituto solo puede editar sus propias solicitudes
+                if (!$isOwnRequest) {
+                    abort(403, 'Solo puedes editar las solicitudes generales que creaste.');
+                }
+                // Solo puede editar si el estado es "creada"
+                if ($entry->status !== 'creada') {
+                    abort(403, 'Solo puedes editar solicitudes con estado "creada".');
+                }
+            } elseif ($isResponsableCompras) {
+                // Si es responsable de compras, solo puede editar sus propias solicitudes
+                if (!$isOwnRequest) {
+                    abort(403, 'Solo puedes editar las solicitudes generales que creaste.');
+                }
+                // Si es el creador, solo puede editar si el estado es "creada"
+                if ($entry->status !== 'creada') {
+                    abort(403, 'Solo puedes editar solicitudes con estado "creada".');
+                }
+            } else {
+                // Todos los demás usuarios solo pueden editar sus propias solicitudes
+                if (!$isOwnRequest) {
+                    abort(403, 'Solo puedes editar las solicitudes que creaste.');
+                }
+                
+                // Si es el creador, solo puede editar si el estado es "creada"
+                if ($entry->status !== 'creada') {
+                    abort(403, 'Solo puedes editar solicitudes con estado "creada".');
+                }
             }
         }
 

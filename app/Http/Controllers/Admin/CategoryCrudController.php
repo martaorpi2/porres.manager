@@ -26,6 +26,12 @@ class CategoryCrudController extends CrudController
      */
     public function setup()
     {
+        // Bloquear acceso completo para role_admin_institucion
+        $user = backpack_user();
+        if ($user && $user->hasRole('role_admin_institucion', 'backpack')) {
+            abort(403, 'No tienes permiso para acceder a categorías.');
+        }
+        
         CRUD::setModel(\App\Models\Category::class);
         CRUD::setRoute(config('backpack.base.route_prefix') . '/category');
         CRUD::setEntityNameStrings('categoria', 'categorias');
@@ -43,6 +49,13 @@ class CategoryCrudController extends CrudController
         
         // Habilitar tabla responsiva
         CRUD::enableResponsiveTable();
+        
+        // Ocultar botones de editar y eliminar para role_admin_institucion
+        $user = backpack_user();
+        if ($user && $user->hasRole('role_admin_institucion', 'backpack')) {
+            CRUD::removeButton('update');
+            CRUD::removeButton('delete');
+        }
 
         CRUD::column('name')->label('Nombre');
 

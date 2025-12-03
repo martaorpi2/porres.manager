@@ -47,8 +47,19 @@ class StockLevelCrudController extends CrudController
         // Cargar relación location para evitar problemas con whereHas
         CRUD::addClause('with', ['location', 'product']);
         
-        // Si el usuario tiene rol role_responsable_area, solo mostrar stock de sus áreas
+        // Ocultar botones de editar y eliminar para role_admin_institucion
         $user = backpack_user();
+        if ($user && $user->hasRole('role_admin_institucion', 'backpack')) {
+            CRUD::removeButton('update');
+            CRUD::removeButton('delete');
+        }
+        
+        // Solo el administrador del sistema puede eliminar stock
+        if (!$user || !$user->hasRole('role_admin_sistema', 'backpack')) {
+            CRUD::removeButton('delete');
+        }
+        
+        // Si el usuario tiene rol role_responsable_area, solo mostrar stock de sus áreas
         
         // Debug: Log para verificar usuario
         \Log::info('StockLevelCrudController - setupListOperation', [
@@ -420,36 +431,26 @@ class StockLevelCrudController extends CrudController
      */
     protected function setupDeleteOperation()
     {
-        // Si el usuario tiene rol role_responsable_area, verificar que solo pueda eliminar stock de sus áreas
+        // Solo el administrador del sistema puede eliminar stock
         $user = backpack_user();
-        if ($user && $user->hasRole('role_responsable_area', 'backpack')) {
-            $entry = $this->crud->getCurrentEntry();
-            if ($entry && $entry->location) {
-                // Obtener las áreas de responsabilidad del usuario
-                $userAreas = \App\Models\ResponsibilityArea::where('responsible_user_id', $user->id)->pluck('name');
-                
-                // Mapear nombres de áreas a nombres de ubicaciones
-                $areaLocationMap = [
-                    'Informática' => 'Informática',
-                    'Mantenimiento' => 'Mantenimiento',
-                    'Salud' => 'Insumos de Salud',
-                    'Insumos Generales' => 'Insumos Generales',
-                ];
-                
-                $locationNames = [];
-                foreach ($userAreas as $areaName) {
-                    if (isset($areaLocationMap[$areaName])) {
-                        $locationNames[] = $areaLocationMap[$areaName];
-                    } else {
-                        $locationNames[] = $areaName;
-                    }
-                }
-                
-                // Verificar que la ubicación del stock pertenezca a una de sus áreas
-                if (!in_array($entry->location->name, $locationNames)) {
-                    abort(403, 'No tienes permiso para eliminar el stock de esta ubicación. Solo puedes eliminar el stock de tus áreas de responsabilidad.');
-                }
-            }
+        if (!$user || !$user->hasRole('role_admin_sistema', 'backpack')) {
+            abort(403, 'Solo el administrador del sistema puede eliminar stock.');
         }
+    }
+    
+    /**
+     * Remove the specified resource from storage.
+     */
+    public function destroy($id)
+    {
+        $this->crud->hasAccessOrFail('delete');
+        
+        // Solo el administrador del sistema puede eliminar stock
+        $user = backpack_user();
+        if (!$user || !$user->hasRole('role_admin_sistema', 'backpack')) {
+            abort(403, 'Solo el administrador del sistema puede eliminar stock.');
+        }
+        
+        return $this->crud->delete($id);
     }
 }

@@ -45,8 +45,14 @@ class DeliveryCrudController extends CrudController
         // Cargar relaciones para evitar N+1 queries
         CRUD::addClause('with', ['reception', 'generalRequest', 'purchaseRequest', 'receivedBy', 'deliveredBy']);
         
-        // Si el usuario tiene rol role_personal, solo mostrar entregas donde él es el receptor
+        // Ocultar botones de editar y eliminar para role_admin_institucion
         $user = backpack_user();
+        if ($user && $user->hasRole('role_admin_institucion', 'backpack')) {
+            CRUD::removeButton('update');
+            CRUD::removeButton('delete');
+        }
+        
+        // Si el usuario tiene rol role_personal, solo mostrar entregas donde él es el receptor
         if ($user && $user->hasRole('role_personal')) {
             CRUD::addClause('where', 'received_by', $user->id);
             

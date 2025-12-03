@@ -42,6 +42,13 @@ class PermissionCrudController extends CrudController
     {
         CRUD::removeButton('show');
         
+        // Ocultar botones de editar y eliminar para role_admin_institucion
+        $user = backpack_user();
+        if ($user && $user->hasRole('role_admin_institucion', 'backpack')) {
+            CRUD::removeButton('update');
+            CRUD::removeButton('delete');
+        }
+        
         // Configurar botones para mostrarse inline
         CRUD::setOperationSetting('lineButtonsAsDropdown', false);
         CRUD::setOperationSetting('lineButtonsAsDropdownMinimum', 999);

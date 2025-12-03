@@ -45,8 +45,14 @@ class DevolutionCrudController extends CrudController
         // Cargar relaciones para evitar N+1 queries
         CRUD::addClause('with', ['reception.purchase_order', 'user']);
         
-        // Si el usuario es role_responsable_compras, usar botón de editar personalizado
+        // Ocultar botones de editar y eliminar para role_admin_institucion
         $user = backpack_user();
+        if ($user && $user->hasRole('role_admin_institucion', 'backpack')) {
+            CRUD::removeButton('update');
+            CRUD::removeButton('delete');
+        }
+        
+        // Si el usuario es role_responsable_compras, usar botón de editar personalizado
         if ($user && $user->hasRole('role_responsable_compras', 'backpack')) {
             CRUD::removeButton('update');
             CRUD::addButton('line', 'edit_devolution', 'view', 'crud::buttons.edit_devolution', 'beginning');
