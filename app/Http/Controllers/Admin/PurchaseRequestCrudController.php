@@ -1806,6 +1806,10 @@ class PurchaseRequestCrudController extends CrudController
                 }
                 
                 $generalRequest = $entry->convertedFromGeneralRequest;
+                // Cargar los detalles de productos con entregas
+                $generalRequest->load('details.product', 'deliveries.details');
+                $generalDetails = $generalRequest->details;
+                
                 $html = '<div class="card border-info">';
                 $html .= '<div class="card-header bg-info text-white">';
                 $html .= '<h6 class="mb-0"><i class="la la-file-alt"></i> Solicitud General de Origen</h6>';
@@ -1813,9 +1817,9 @@ class PurchaseRequestCrudController extends CrudController
                 $html .= '<div class="card-body">';
                 $html .= '<div class="row">';
                 $html .= '<div class="col-md-6">';
-                $html .= '<p><strong>Número:</strong> ' . e($generalRequest->number ?? 'N/A') . '</p>';
-                $html .= '<p><strong>Título:</strong> ' . e($generalRequest->title ?? 'N/A') . '</p>';
-                $html .= '<p><strong>Estado:</strong> ';
+                $html .= '<p class="mb-1"><strong>Número:</strong> ' . e($generalRequest->number ?? 'N/A') . '</p>';
+                $html .= '<p class="mb-1"><strong>Título:</strong> ' . e($generalRequest->title ?? 'N/A') . '</p>';
+                $html .= '<p class="mb-1"><strong>Estado:</strong> ';
                 $status = $generalRequest->status ?? 'N/A';
                 $statusClass = strtolower(str_replace([' ', '_'], '-', $status));
                 $statusColors = [
@@ -1831,26 +1835,113 @@ class PurchaseRequestCrudController extends CrudController
                 $html .= '</p>';
                 $html .= '</div>';
                 $html .= '<div class="col-md-6">';
-                $html .= '<p><strong>Área:</strong> ' . e($generalRequest->area->name ?? 'N/A') . '</p>';
-                $html .= '<p><strong>Creada por:</strong> ' . e($generalRequest->createdBy->name ?? 'N/A') . '</p>';
-                $html .= '<p><strong>Fecha de creación:</strong> ' . ($generalRequest->created_at ? $generalRequest->created_at->format('d/m/Y H:i') : 'N/A') . '</p>';
+                $html .= '<p class="mb-1"><strong>Área:</strong> ' . e($generalRequest->area->name ?? 'N/A') . '</p>';
+                $html .= '<p class="mb-1"><strong>Creada por:</strong> ' . e($generalRequest->createdBy->name ?? 'N/A') . '</p>';
+                $html .= '<p class="mb-1"><strong>Fecha de creación:</strong> ' . ($generalRequest->created_at ? $generalRequest->created_at->format('d/m/Y H:i') : 'N/A') . '</p>';
                 $html .= '</div>';
                 $html .= '</div>';
                 if ($generalRequest->description) {
                     $html .= '<div class="row mt-2">';
                     $html .= '<div class="col-12">';
-                    $html .= '<p><strong>Descripción:</strong></p>';
-                    $html .= '<p class="text-muted">' . nl2br(e($generalRequest->description)) . '</p>';
+                    $html .= '<p class="mb-1"><strong>Descripción:</strong></p>';
+                    $html .= '<p class="text-muted small mb-2">' . nl2br(e($generalRequest->description)) . '</p>';
                     $html .= '</div>';
                     $html .= '</div>';
                 }
-                $html .= '<div class="row mt-2">';
-                $html .= '<div class="col-12">';
-                $html .= '<a href="' . backpack_url('general-request/' . $generalRequest->id . '/show') . '" class="btn btn-sm btn-primary">';
-                $html .= '<i class="la la-eye"></i> Ver Solicitud General';
-                $html .= '</a>';
-                $html .= '</div>';
-                $html .= '</div>';
+                
+                // Mostrar productos de la solicitud general
+                if ($generalDetails->isNotEmpty()) {
+                    $html .= '<div class="row mt-3">';
+                    $html .= '<div class="col-12">';
+                    $html .= '<p class="mb-2"><strong>Productos Solicitados (' . $generalDetails->count() . '):</strong></p>';
+                    $html .= '<div class="table-responsive" style="max-height: 300px; overflow-y: auto;">';
+                    $html .= '<table class="table table-sm table-bordered table-striped mb-0" style="font-size: 0.85rem;">';
+                    $html .= '<thead class="table-light" style="position: sticky; top: 0; z-index: 10;">';
+                    $html .= '<tr>';
+                    $html .= '<th style="width: 35%;">Producto</th>';
+                    $html .= '<th style="width: 15%;" class="text-center">Solicitado</th>';
+                    $html .= '<th style="width: 15%;" class="text-center">Entregado</th>';
+                    $html .= '<th style="width: 15%;" class="text-center">Pendiente</th>';
+                    $html .= '<th style="width: 10%;" class="text-center">Estado</th>';
+                    $html .= '<th style="width: 10%;">Especificaciones</th>';
+                    $html .= '</tr>';
+                    $html .= '</thead>';
+                    $html .= '<tbody>';
+                    
+                    foreach ($generalDetails as $detail) {
+                        $productName = $detail->product->name ?? 'Producto no encontrado';
+                        if (is_array($productName)) {
+                            $productName = 'Producto no encontrado';
+                        }
+                        $unit = $detail->product->unit_measurement ?? '';
+                        if (is_array($unit)) {
+                            $unit = '';
+                        }
+                        $requestedQuantity = $detail->requested_quantity ?? 0;
+                        
+                        // Calcular cantidad entregada
+                        $deliveredQuantity = 0;
+                        if ($generalRequest->deliveries) {
+                            foreach ($generalRequest->deliveries as $delivery) {
+                                $deliveryDetail = $delivery->details->where('product_id', $detail->product_id)->first();
+                                if ($deliveryDetail) {
+                                    $deliveredQuantity += $deliveryDetail->delivered_quantity ?? 0;
+                                }
+                            }
+                        }
+                        
+                        $pendingQuantity = max(0, $requestedQuantity - $deliveredQuantity);
+                        
+                        // Determinar estado de entrega
+                        $deliveryStatus = 'Pendiente';
+                        $deliveryStatusColor = 'secondary';
+                        $deliveryStatusIcon = 'clock';
+                        if ($deliveredQuantity == 0) {
+                            $deliveryStatus = 'Pendiente';
+                            $deliveryStatusColor = 'secondary';
+                            $deliveryStatusIcon = 'clock';
+                        } elseif ($deliveredQuantity >= $requestedQuantity) {
+                            $deliveryStatus = 'Completo';
+                            $deliveryStatusColor = 'success';
+                            $deliveryStatusIcon = 'check-circle';
+                        } else {
+                            $deliveryStatus = 'Parcial';
+                            $deliveryStatusColor = 'warning';
+                            $deliveryStatusIcon = 'exclamation-triangle';
+                        }
+                        
+                        $specifications = $detail->specifications ?? '';
+                        if (is_array($specifications)) {
+                            $specifications = '';
+                        }
+                        
+                        $html .= '<tr>';
+                        $html .= '<td><small><strong>' . e($productName) . '</strong>';
+                        if ($unit) {
+                            $html .= '<br><span class="text-muted">(' . e($unit) . ')</span>';
+                        }
+                        $html .= '</small></td>';
+                        $html .= '<td class="text-center"><small><strong>' . number_format($requestedQuantity) . '</strong></small></td>';
+                        $html .= '<td class="text-center"><small>' . number_format($deliveredQuantity) . '</small></td>';
+                        $html .= '<td class="text-center"><small>' . number_format($pendingQuantity) . '</small></td>';
+                        $html .= '<td class="text-center"><small><span class="badge bg-' . $deliveryStatusColor . '" title="' . $deliveryStatus . '"><i class="la la-' . $deliveryStatusIcon . '"></i> ' . $deliveryStatus . '</span></small></td>';
+                        $html .= '<td><small class="text-muted">' . ($specifications ? e(substr($specifications, 0, 40)) . (strlen($specifications) > 40 ? '...' : '') : '-') . '</small></td>';
+                        $html .= '</tr>';
+                    }
+                    
+                    $html .= '</tbody>';
+                    $html .= '</table>';
+                    $html .= '</div>';
+                    $html .= '</div>';
+                    $html .= '</div>';
+                } else {
+                    $html .= '<div class="row mt-2">';
+                    $html .= '<div class="col-12">';
+                    $html .= '<p class="text-muted small mb-0"><em>No hay productos en esta solicitud general.</em></p>';
+                    $html .= '</div>';
+                    $html .= '</div>';
+                }
+                
                 $html .= '</div>';
                 $html .= '</div>';
                 
