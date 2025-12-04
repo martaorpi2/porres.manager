@@ -120,10 +120,14 @@
   .stat-card {
       background: white;
       border-radius: 8px;
-      padding: 20px;
+      padding: 12px 15px;
       text-align: center;
       box-shadow: 0 2px 4px rgba(0,0,0,0.1);
       transition: transform 0.2s;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
   }
 
   .stat-card:hover {
@@ -132,30 +136,34 @@
   }
 
   .stat-card-icon {
-      font-size: 40px;
-      color: #871f1f;
-      margin-bottom: 10px;
-  }
-
-  .stat-card-number {
-      font-size: 32px;
-      font-weight: bold;
+      font-size: 28px;
       color: #871f1f;
       margin-bottom: 5px;
   }
 
+  .stat-card-number {
+      font-size: 24px;
+      font-weight: bold;
+      color: #871f1f;
+      margin-bottom: 3px;
+      line-height: 1.2;
+  }
+
   .stat-card-label {
       color: #6c757d;
-      font-size: 14px;
+      font-size: 12px;
       text-transform: uppercase;
       font-weight: bold;
+      line-height: 1.3;
+      margin-bottom: 3px;
   }
 
   .stat-card-pending {
-      font-size: 14px;
+      font-size: 11px;
       color: #871f1f;
-      margin-top: 5px;
+      margin-top: 2px;
       font-weight: 500;
+      line-height: 1.2;
   }
 
   .supplier-rating-card {
@@ -987,7 +995,7 @@
         </div>
     </div>
 
-    <div class="row mb-4">
+    <div class="row mb-3">
         <div class="col-md-{{ isset($isPersonal) && $isPersonal ? '6' : (isset($isResponsableArea) && $isResponsableArea ? '4' : '3') }}">
             <div class="stat-card">
                 <div class="stat-card-icon">
@@ -1047,7 +1055,7 @@
     </div>
 
     @if(!isset($isPersonal) || !$isPersonal)
-    <div class="row mb-4">
+    <div class="row mb-3">
         @if((!isset($isPersonal) || !$isPersonal) && (!isset($isResponsableArea) || !$isResponsableArea))
         <div class="col-md-4">
             <div class="stat-card">
@@ -1082,12 +1090,12 @@
 
     @if((isset($isResponsableArea) && $isResponsableArea) || (!isset($isPersonal) || !$isPersonal))
     <!-- Tipos de Compras -->
-    <div class="row mb-4">
+    <div class="row mb-2">
         <div class="col-md-12">
-            <h2 class="section-title">Tipos de Compras</h2>
+            <h2 class="section-title" style="margin-bottom: 15px;">Tipos de Compras</h2>
         </div>
     </div>
-    <div class="row mb-4">
+    <div class="row mb-3">
         <div class="col-md-4">
             <div class="stat-card" style="border-left: 4px solid #6c757d;">
                 <div class="stat-card-icon" style="color: #6c757d;">
