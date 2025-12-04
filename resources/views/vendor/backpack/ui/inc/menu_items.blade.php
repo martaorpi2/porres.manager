@@ -22,12 +22,16 @@
 @elseif(backpack_user() && backpack_user()->hasRole('role_apoderado', 'backpack'))
     {{-- Menú para usuarios con rol role_apoderado --}}
     <x-backpack::menu-item title="Solicitudes de Compra" icon="la la-shopping-cart" :link="backpack_url('purchase-request')" />
+    <x-backpack::menu-item title="Compras Rápidas" icon="la la-bolt" :link="backpack_url('quick-purchases')" />
+    <x-backpack::menu-item title="Compras Directas" icon="la la-hand-pointer" :link="backpack_url('direct-purchases')" />
     <x-backpack::menu-item title="Cotizaciones" icon="la la-calculator" :link="backpack_url('market-rate')" />
     <x-backpack::menu-item title="Ordenes de Compra" icon="la la-clipboard-list" :link="backpack_url('purchase-order')" />
     <x-backpack::menu-item title="Ordenes de Pago" icon="la la-money-bill-wave" :link="backpack_url('payment-order')" />
 @elseif(backpack_user() && backpack_user()->hasRole('role_representante_legal', 'backpack'))
     {{-- Menú para usuarios con rol role_representante_legal --}}
     <x-backpack::menu-item title="Solicitudes de Compra" icon="la la-shopping-cart" :link="backpack_url('purchase-request')" />
+    <x-backpack::menu-item title="Compras Rápidas" icon="la la-bolt" :link="backpack_url('quick-purchases')" />
+    <x-backpack::menu-item title="Compras Directas" icon="la la-hand-pointer" :link="backpack_url('direct-purchases')" />
     <x-backpack::menu-item title="Cotizaciones" icon="la la-calculator" :link="backpack_url('market-rate')" />
     <x-backpack::menu-item title="Ordenes de Compra" icon="la la-clipboard-list" :link="backpack_url('purchase-order')" />
     <x-backpack::menu-item title="Ordenes de Pago" icon="la la-money-bill-wave" :link="backpack_url('payment-order')" />
@@ -72,7 +76,8 @@
     </x-backpack::menu-dropdown>--}}
     <x-backpack::menu-item title="Cotizaciones" icon="la la-calculator" :link="backpack_url('market-rate')" />
 
-    {{-- <x-backpack::menu-item title="Compras Rápidas" icon="la la-bolt" :link="backpack_url('quick-purchases')" /> --}}
+    <x-backpack::menu-item title="Compras Rápidas" icon="la la-bolt" :link="backpack_url('quick-purchases')" />
+    <x-backpack::menu-item title="Compras Directas" icon="la la-hand-pointer" :link="backpack_url('direct-purchases')" />
 
     <x-backpack::menu-item title="Ordenes de Compra" icon="la la-shopping-cart" :link="backpack_url('purchase-order')" />
     <x-backpack::menu-item title="Ordenes de Pago" icon="la la-money-bill-wave" :link="backpack_url('payment-order')" />

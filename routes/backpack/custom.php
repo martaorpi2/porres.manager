@@ -54,7 +54,12 @@ Route::group([
     Route::post('purchase-request/{id}/generate-purchase-order', 'PurchaseRequestCrudController@generatePurchaseOrder')->name('purchase-request.generate-purchase-order');
     Route::post('purchase-request/{id}/approve', 'PurchaseRequestCrudController@approvePurchaseRequest')->name('purchase-request.approve');
     Route::post('purchase-request/{id}/reject', 'PurchaseRequestCrudController@rejectPurchaseRequest')->name('purchase-request.reject');
+    Route::post('purchase-request/{id}/mark-direct-purchase', 'PurchaseRequestCrudController@markAsDirectPurchase')->name('purchase-request.mark-direct-purchase');
+    Route::post('purchase-request/{id}/request-direct-purchase-authorization', 'PurchaseRequestCrudController@requestDirectPurchaseAuthorization')->name('purchase-request.request-direct-purchase-authorization');
+    Route::post('purchase-request/{id}/approve-direct-purchase', 'PurchaseRequestCrudController@approveDirectPurchase')->name('purchase-request.approve-direct-purchase');
+    Route::post('purchase-request/{id}/reject-direct-purchase-authorization', 'PurchaseRequestCrudController@rejectDirectPurchaseAuthorization')->name('purchase-request.reject-direct-purchase-authorization');
     Route::get('quick-purchases', 'PurchaseRequestCrudController@quickPurchases')->name('quick-purchases');
+    Route::get('direct-purchases', 'PurchaseRequestCrudController@directPurchases')->name('direct-purchases');
     Route::get('api/purchase-request/{id}', 'PurchaseRequestCrudController@getPurchaseRequestData')->name('api.purchase-request.data');
     Route::get('api/suppliers', 'PurchaseRequestCrudController@getSuppliers')->name('api.suppliers');
     Route::crud('general-request', 'GeneralRequestCrudController');

@@ -1219,7 +1219,11 @@
                 <div class="process-item-card" onclick="window.location='{{ backpack_url('purchase-request/' . $purchaseRequest->id . '/show') }}'" style="border-left: 3px solid #ffc107; cursor: pointer;">
                     <div class="process-item-title">
                         {{ $purchaseRequest->request_number }}
-                        <span class="badge bg-warning text-dark" style="margin-left: 10px;">Requiere Aprobación</span>
+                        @if($purchaseRequest->is_direct_purchase)
+                            <span class="badge bg-info text-white" style="margin-left: 10px;">Compra Directa</span>
+                        @else
+                            <span class="badge bg-warning text-dark" style="margin-left: 10px;">Requiere Aprobación</span>
+                        @endif
                     </div>
                     <div class="process-item-meta">
                         <span><i class="la la-user"></i> {{ $purchaseRequest->requestingUser->name ?? 'N/A' }}</span>
@@ -1231,6 +1235,9 @@
                     </div>
                     <div class="process-item-meta">
                         <span><i class="la la-box"></i> {{ $purchaseRequest->details->count() }} productos</span>
+                        @if($purchaseRequest->is_direct_purchase && $purchaseRequest->directPurchaseSupplier)
+                            <span><i class="la la-truck"></i> {{ $purchaseRequest->directPurchaseSupplier->company_name }}</span>
+                        @endif
                         <span class="process-item-status status-pendiente">{{ $purchaseRequest->status }}</span>
                     </div>
                 </div>

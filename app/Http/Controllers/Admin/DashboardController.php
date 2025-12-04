@@ -183,11 +183,27 @@ class DashboardController extends Controller
                 $userLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_representante_legal');
             }
             
-            $pendingApprovalRequests = PurchaseRequest::with(['requestingUser', 'responsibilityArea', 'details.product'])
+            $pendingApprovalRequests = PurchaseRequest::with(['requestingUser', 'responsibilityArea', 'details.product', 'directPurchaseSupplier'])
                 ->where('status', 'Pendiente')
-                ->where('requires_admin_approval', true)
-                ->where('total_amount', '<=', $userLimit)
-                ->where('total_amount', '>', $comprasLimit)
+                ->where(function($query) use ($userLimit, $comprasLimit) {
+                    // Solicitudes normales que requieren aprobación de administrador
+                    $query->where(function($q) use ($userLimit, $comprasLimit) {
+                        $q->where('requires_admin_approval', true)
+                          ->where('total_amount', '<=', $userLimit)
+                          ->where('total_amount', '>', $comprasLimit);
+                    })
+                    // O compras directas pendientes de autorización
+                    ->orWhere(function($q) use ($userLimit) {
+                        $q->where('is_direct_purchase', true)
+                          ->where('direct_purchase_authorization_requested', true)
+                          ->whereNull('direct_purchase_authorized_by')
+                          ->where(function($subQ) {
+                              $subQ->where('direct_purchase_authorization_rejected', false)
+                                   ->orWhereNull('direct_purchase_authorization_rejected');
+                          })
+                          ->where('total_amount', '<=', $userLimit);
+                    });
+                })
                 ->orderBy('created_at', 'desc')
                 ->limit(10)
                 ->get();

@@ -34,8 +34,23 @@
         $currentEntry->load('marketRates');
         $quotationsCount = $currentEntry->marketRates->count();
         
-        // Puede generar si: monto <= 60000 O tiene 3+ cotizaciones
-        $canGenerate = ($totalAmount <= $threshold) || ($quotationsCount >= 3);
+        // Verificar si es compra directa autorizada
+        $isDirectPurchaseAuthorized = $currentEntry->is_direct_purchase 
+                                   && $currentEntry->direct_purchase_authorized_by 
+                                   && $currentEntry->direct_purchase_supplier_id
+                                   && !$currentEntry->direct_purchase_authorization_rejected;
+        
+        // Verificar que la solicitud esté aprobada
+        $isApproved = $currentEntry->status === 'Aprobada';
+        
+        // Para compras directas autorizadas, puede generar si está aprobada
+        // Para compras normales, puede generar si: (monto <= 60000 O tiene 3+ cotizaciones) Y está aprobada Y tiene cotización seleccionada
+        if ($isDirectPurchaseAuthorized) {
+            $canGenerate = $isApproved;
+        } else {
+            $hasSelectedQuote = $currentEntry->selected_market_rate_id != null;
+            $canGenerate = $isApproved && (($totalAmount <= $threshold && $hasSelectedQuote) || ($quotationsCount >= 3 && $hasSelectedQuote));
+        }
     }
 @endphp
 

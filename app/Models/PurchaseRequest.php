@@ -31,6 +31,17 @@ class PurchaseRequest extends Model
         'selected_at',
         'requires_admin_approval',
         'approval_justification',
+        'is_direct_purchase',
+        'direct_purchase_justification',
+        'direct_purchase_supplier_id',
+        'direct_purchase_authorization_requested',
+        'direct_purchase_authorization_requested_by',
+        'direct_purchase_authorization_requested_at',
+        'direct_purchase_authorized_by',
+        'direct_purchase_authorized_at',
+        'direct_purchase_authorization_rejected',
+        'direct_purchase_authorization_rejection_reason',
+        'purchase_type',
     ];
 
     protected $casts = [
@@ -40,6 +51,11 @@ class PurchaseRequest extends Model
         'attachments' => 'array',
         'selected_at' => 'datetime',
         'requires_admin_approval' => 'boolean',
+        'is_direct_purchase' => 'boolean',
+        'direct_purchase_authorization_requested' => 'boolean',
+        'direct_purchase_authorization_requested_at' => 'datetime',
+        'direct_purchase_authorized_at' => 'datetime',
+        'direct_purchase_authorization_rejected' => 'boolean',
     ];
 
     /**
@@ -128,6 +144,30 @@ class PurchaseRequest extends Model
     public function supplierSuggestions()
     {
         return $this->hasMany(SupplierSuggestion::class);
+    }
+
+    /**
+     * Get the supplier for direct purchase.
+     */
+    public function directPurchaseSupplier()
+    {
+        return $this->belongsTo(Supplier::class, 'direct_purchase_supplier_id');
+    }
+
+    /**
+     * Get the user who requested authorization for direct purchase.
+     */
+    public function directPurchaseAuthorizationRequestedBy()
+    {
+        return $this->belongsTo(User::class, 'direct_purchase_authorization_requested_by');
+    }
+
+    /**
+     * Get the user who authorized the direct purchase.
+     */
+    public function directPurchaseAuthorizedBy()
+    {
+        return $this->belongsTo(User::class, 'direct_purchase_authorized_by');
     }
 
     /**
