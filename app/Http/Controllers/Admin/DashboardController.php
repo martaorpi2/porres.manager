@@ -72,6 +72,9 @@ class DashboardController extends Controller
                     ->count(),
                 'purchase_requests' => 0,
                 'purchase_requests_pending' => 0,
+                'purchase_requests_normal' => 0,
+                'purchase_requests_direct' => 0,
+                'purchase_requests_quick' => 0,
                 'purchase_orders' => 0,
                 'purchase_orders_pending' => 0,
                 'payment_orders' => 0,
@@ -106,6 +109,17 @@ class DashboardController extends Controller
                 'general_requests_delivered' => (clone $userRequestsQuery)->whereHas('deliveries')->count(),
                 'purchase_requests' => PurchaseRequest::where('requesting_user_id', $user->id)->count(),
                 'purchase_requests_pending' => PurchaseRequest::where('requesting_user_id', $user->id)->where('status', 'Pendiente')->count(),
+                'purchase_requests_normal' => PurchaseRequest::where('requesting_user_id', $user->id)
+                    ->whereIn('status', ['Aprobada', 'Completada'])
+                    ->where(function($q) {
+                        $q->where('purchase_type', 'normal')->orWhereNull('purchase_type');
+                    })->count(),
+                'purchase_requests_direct' => PurchaseRequest::where('requesting_user_id', $user->id)
+                    ->whereIn('status', ['Aprobada', 'Completada'])
+                    ->where('purchase_type', 'directa')->count(),
+                'purchase_requests_quick' => PurchaseRequest::where('requesting_user_id', $user->id)
+                    ->whereIn('status', ['Aprobada', 'Completada'])
+                    ->where('purchase_type', 'rapida')->count(),
                 'purchase_orders' => 0,
                 'purchase_orders_pending' => 0,
                 'payment_orders' => 0,
@@ -122,6 +136,14 @@ class DashboardController extends Controller
                 'general_requests_delivered' => GeneralRequest::whereHas('deliveries')->count(),
                 'purchase_requests' => PurchaseRequest::count(),
                 'purchase_requests_pending' => PurchaseRequest::where('status', 'Pendiente')->count(),
+                'purchase_requests_normal' => PurchaseRequest::whereIn('status', ['Aprobada', 'Completada'])
+                    ->where(function($q) {
+                        $q->where('purchase_type', 'normal')->orWhereNull('purchase_type');
+                    })->count(),
+                'purchase_requests_direct' => PurchaseRequest::whereIn('status', ['Aprobada', 'Completada'])
+                    ->where('purchase_type', 'directa')->count(),
+                'purchase_requests_quick' => PurchaseRequest::whereIn('status', ['Aprobada', 'Completada'])
+                    ->where('purchase_type', 'rapida')->count(),
                 'purchase_orders' => PurchaseOrder::count(),
                 'purchase_orders_pending' => PurchaseOrder::where('status', 'Pendiente')->count(),
                 'payment_orders' => PaymentOrder::count(),

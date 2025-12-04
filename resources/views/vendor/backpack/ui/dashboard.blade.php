@@ -1080,6 +1080,47 @@
     </div>
     @endif
 
+    @if((isset($isResponsableArea) && $isResponsableArea) || (!isset($isPersonal) || !$isPersonal))
+    <!-- Tipos de Compras -->
+    <div class="row mb-4">
+        <div class="col-md-12">
+            <h2 class="section-title">Tipos de Compras</h2>
+        </div>
+    </div>
+    <div class="row mb-4">
+        <div class="col-md-4">
+            <div class="stat-card" style="border-left: 4px solid #6c757d;">
+                <div class="stat-card-icon" style="color: #6c757d;">
+                    <i class="la la-shopping-bag"></i>
+                </div>
+                <div class="stat-card-number" style="color: #6c757d;">{{ $stats['purchase_requests_normal'] ?? 0 }}</div>
+                <div class="stat-card-label">Compras Normales</div>
+                <div class="stat-card-pending">&nbsp;</div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="stat-card" style="border-left: 4px solid #17a2b8;">
+                <div class="stat-card-icon" style="color: #17a2b8;">
+                    <i class="la la-hand-pointer"></i>
+                </div>
+                <div class="stat-card-number" style="color: #17a2b8;">{{ $stats['purchase_requests_direct'] ?? 0 }}</div>
+                <div class="stat-card-label">Compras Directas</div>
+                <div class="stat-card-pending">&nbsp;</div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="stat-card" style="border-left: 4px solid #ffc107;">
+                <div class="stat-card-icon" style="color: #ffc107;">
+                    <i class="la la-bolt"></i>
+                </div>
+                <div class="stat-card-number" style="color: #ffc107;">{{ $stats['purchase_requests_quick'] ?? 0 }}</div>
+                <div class="stat-card-label">Compras Rápidas</div>
+                <div class="stat-card-pending">&nbsp;</div>
+            </div>
+        </div>
+    </div>
+    @endif
+
     <!-- Proveedores con Calificaciones -->
     @if(isset($suppliersWithRatings) && $suppliersWithRatings->count() > 0)
     <div class="row mb-4">
