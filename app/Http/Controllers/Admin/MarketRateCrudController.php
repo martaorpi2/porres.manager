@@ -107,6 +107,15 @@ class MarketRateCrudController extends CrudController
         // Obtener purchase_request_id de la URL si existe
         $purchaseRequestId = request()->get('purchase_request_id');
         
+        // Validar que la solicitud de compra no esté aprobada si se proporciona el ID
+        if ($purchaseRequestId) {
+            $purchaseRequest = \App\Models\PurchaseRequest::find($purchaseRequestId);
+            if ($purchaseRequest && $purchaseRequest->status === 'Aprobada') {
+                \Alert::error('No se pueden agregar cotizaciones a una solicitud de compra que ya está aprobada.')->flash();
+                return redirect()->back();
+            }
+        }
+        
         // Cargar productos de la solicitud de compra si se proporciona el ID
         $purchaseRequestProducts = [];
         if ($purchaseRequestId) {
@@ -135,7 +144,7 @@ class MarketRateCrudController extends CrudController
             'model' => 'App\Models\Supplier',
         ]);
         
-        // Campo para seleccionar solicitud de compra
+        // Campo para seleccionar solicitud de compra (solo solicitudes no aprobadas)
         CRUD::field([
             'name' => 'purchase_request_id',
             'label' => 'Solicitud de Compra',
@@ -144,6 +153,12 @@ class MarketRateCrudController extends CrudController
             'attribute' => 'request_number',
             'model' => 'App\Models\PurchaseRequest',
             'default' => $purchaseRequestId,
+            'options' => function ($query) {
+                // Filtrar solo solicitudes que no estén aprobadas o completadas
+                return $query->where('status', '!=', 'Aprobada')
+                             ->where('status', '!=', 'Completada')
+                             ->get();
+            },
         ]);
         
         // Campo informativo para mostrar información sobre las cotizaciones
@@ -377,6 +392,15 @@ class MarketRateCrudController extends CrudController
             }
         }
 
+        // Validar que la solicitud de compra no esté aprobada
+        if (isset($dataToSave['purchase_request_id']) && !empty($dataToSave['purchase_request_id'])) {
+            $purchaseRequest = \App\Models\PurchaseRequest::find($dataToSave['purchase_request_id']);
+            if ($purchaseRequest && $purchaseRequest->status === 'Aprobada') {
+                \Alert::error('No se pueden agregar cotizaciones a una solicitud de compra que ya está aprobada.')->flash();
+                return redirect()->back()->withInput();
+            }
+        }
+
         // insert item in the db
         $item = $this->crud->create($dataToSave);
         $this->data['entry'] = $this->crud->entry = $item;
@@ -406,8 +430,28 @@ class MarketRateCrudController extends CrudController
         // register any Model Events defined on fields
         $this->crud->registerFieldEvents();
 
+        // Obtener la cotización actual
+        $currentEntry = $this->crud->getCurrentEntry();
+        
+        // Validar que la solicitud de compra asociada no esté aprobada
+        if ($currentEntry && $currentEntry->purchaseRequest) {
+            if ($currentEntry->purchaseRequest->status === 'Aprobada') {
+                \Alert::error('No se pueden editar cotizaciones de una solicitud de compra que ya está aprobada.')->flash();
+                return redirect()->back();
+            }
+        }
+
         // Obtener datos para guardar
         $dataToSave = $this->crud->getStrippedSaveRequest($request);
+
+        // Validar también si se está cambiando la solicitud de compra a una aprobada
+        if (isset($dataToSave['purchase_request_id']) && !empty($dataToSave['purchase_request_id'])) {
+            $purchaseRequest = \App\Models\PurchaseRequest::find($dataToSave['purchase_request_id']);
+            if ($purchaseRequest && $purchaseRequest->status === 'Aprobada') {
+                \Alert::error('No se puede asociar una cotización a una solicitud de compra que ya está aprobada.')->flash();
+                return redirect()->back()->withInput();
+            }
+        }
 
         // update item in the db
         $item = $this->crud->update($this->crud->getCurrentEntry()->getKey(), $dataToSave);

@@ -2497,7 +2497,7 @@ class PurchaseRequestCrudController extends CrudController
      */
     protected function setupShowOperation()
     {
-        CRUD::addClause('with', ['responsibilityArea', 'requestingUser', 'approvedBy', 'details.product', 'selectedMarketRate.supplier', 'selectedBy', 'convertedFromGeneralRequest', 'deliveries.details', 'purchaseOrders.paymentOrders', 'directPurchaseSupplier', 'directPurchaseAuthorizationRequestedBy', 'directPurchaseAuthorizedBy']);
+        CRUD::addClause('with', ['responsibilityArea', 'requestingUser', 'approvedBy', 'details.product', 'selectedMarketRate.supplier', 'selectedBy', 'convertedFromGeneralRequest', 'deliveries.details', 'purchaseOrders.paymentOrders', 'directPurchaseSupplier', 'directPurchaseAuthorizationRequestedBy', 'directPurchaseAuthorizedBy', 'marketRates']);
         
         // Ocultar botón de eliminar para role_admin_institucion, role_apoderado y role_representante_legal
         $user = backpack_user();
@@ -2903,6 +2903,20 @@ class PurchaseRequestCrudController extends CrudController
                     $html .= '</tbody>';
                     $html .= '</table>';
                     $html .= '</div>';
+                    
+                    // Botón para descargar planilla comparativa (solo si hay más de una cotización)
+                    $quotationsCount = $marketRates->count();
+                    if ($quotationsCount > 1) {
+                        $user = backpack_user();
+                        // Solo mostrar si el usuario no es role_responsable_area
+                        if (!$user || !$user->hasRole('role_responsable_area', 'backpack')) {
+                            $html .= '<div class="mt-3">';
+                            $html .= '<a href="' . route('purchase-request.comparative-excel', $entry->id) . '" class="btn btn-success">';
+                            $html .= '<i class="la la-file-excel"></i> Descargar Planilla Comparativa';
+                            $html .= '</a>';
+                            $html .= '</div>';
+                        }
+                    }
                 }
                 
                 // Lógica para mostrar botón de generar orden según el monto
@@ -2916,7 +2930,7 @@ class PurchaseRequestCrudController extends CrudController
                 $entry->load('marketRates');
                 $quotationsCount = $entry->marketRates->count();
                 
-                // Botón para agregar nueva cotización (solo responsable de compras)
+                // Botón para agregar nueva cotización (solo responsable de compras y solo si la solicitud no está aprobada)
                 $user = backpack_user();
                 $adminRoles = ['role_admin_sistema', 'role_admin_institucion', 'role_responsable_compras'];
                 $canCreateQuotation = false;
@@ -2927,7 +2941,8 @@ class PurchaseRequestCrudController extends CrudController
                     }
                 }
                 
-                if ($canCreateQuotation) {
+                // Solo mostrar el botón si tiene permiso Y la solicitud no está aprobada
+                if ($canCreateQuotation && $entry->status !== 'Aprobada' && $entry->status !== 'Completada') {
                     $html .= '<div class="mt-3">';
                     $html .= '<a href="' . backpack_url('market-rate/create?purchase_request_id=' . $entry->id) . '" class="btn btn-success">';
                     $html .= '<i class="la la-plus"></i> Agregar Nueva Cotización';

@@ -2,6 +2,12 @@
 
 Este documento describe las capacidades, restricciones y límites de cada rol en el sistema de gestión de solicitudes y compras.
 
+## 🔐 Credenciales de Acceso
+
+**IMPORTANTE:** La contraseña de todos los usuarios del sistema es: **`password`**
+
+Esto aplica tanto para usuarios de prueba como para usuarios creados mediante seeders.
+
 ---
 
 ## 1. Personal (role_personal)
@@ -85,10 +91,15 @@ Este documento describe las capacidades, restricciones y límites de cada rol en
 - ✅ Ver todas las órdenes de compra
 - ✅ Ver todas las órdenes de pago
 - ✅ Acceso completo a proveedores, inventario, stock, etc.
+- ✅ **Marcar solicitudes como compra directa** (único proveedor por especialidad)
+- ✅ **Justificar compras directas** con proveedor y razón
+- ✅ **Generar órdenes de compra para compras directas autorizadas** (sin requerir cotizaciones)
+- ✅ **Descargar planilla comparativa** cuando hay más de una cotización
 
 ### Restricciones
 - ❌ No puede ver el menú de "Áreas de Responsabilidad" (solo administradores)
 - ❌ No puede aprobar solicitudes que superen su límite de monto
+- ❌ No puede aprobar compras directas (solo puede marcarlas y justificarlas)
 
 ### Límites
 - **Límite de aprobación: $360,000.00**
@@ -117,23 +128,27 @@ Este documento describe las capacidades, restricciones y límites de cada rol en
 - ✅ Editar **solo sus propias** solicitudes de compra (solo si estado = "Pendiente")
 - ✅ Editar **solo sus propias** solicitudes generales (solo si estado = "creada")
 - ✅ Aprobar solicitudes de compra (hasta su límite de monto)
+- ✅ **Aprobar compras directas** (hasta su límite de monto)
+- ✅ **Rechazar compras directas** con justificación
 - ✅ Modificar proveedores
 - ✅ Calificar proveedores
 - ✅ Editar/eliminar **solo sus propias** calificaciones de proveedores
 - ✅ Ver productos, stock, movimientos de inventario
 - ✅ Ver todas las órdenes de compra y pago
 - ✅ Ver cotizaciones
+- ✅ Ver solicitudes pendientes de aprobación en el dashboard (incluye compras directas)
 
 ### Restricciones
 - ❌ **NO puede crear** solicitudes de compra, órdenes de compra ni órdenes de pago
 - ❌ **NO puede eliminar** solicitudes de compra
 - ❌ **NO puede editar/eliminar** en ningún CRUD excepto:
   - Aprobar solicitudes de compra
+  - Aprobar/rechazar compras directas
   - Editar sus propias solicitudes de compra/generales
   - Modificar y calificar proveedores
   - Editar/eliminar sus propias calificaciones
 - ❌ **NO puede ver** categorías ni ubicaciones (menú bloqueado)
-- ❌ **NO puede aprobar** solicitudes que superen su límite de monto
+- ❌ **NO puede aprobar** solicitudes que superen su límite de monto (incluye compras directas)
 - ❌ No puede editar solicitudes de compra que no sean suyas
 - ❌ No puede editar solicitudes generales que no sean suyas
 
@@ -164,15 +179,17 @@ Este documento describe las capacidades, restricciones y límites de cada rol en
 - ✅ Ver todas las órdenes de compra
 - ✅ Ver todas las órdenes de pago
 - ✅ Aprobar solicitudes de compra (hasta su límite de monto)
+- ✅ **Aprobar compras directas** (hasta su límite de monto)
+- ✅ **Rechazar compras directas** con justificación
 - ✅ Ver el dashboard completo (mismo que administrador)
-- ✅ Ver solicitudes pendientes de aprobación en el dashboard
+- ✅ Ver solicitudes pendientes de aprobación en el dashboard (incluye compras directas)
 
 ### Restricciones
 - ❌ **NO puede crear** solicitudes de compra, órdenes de compra ni órdenes de pago
 - ❌ **NO puede editar** nada
 - ❌ **NO puede eliminar** nada
 - ❌ **NO puede ver** inventario
-- ❌ **NO puede aprobar** solicitudes que superen su límite de monto
+- ❌ **NO puede aprobar** solicitudes que superen su límite de monto (incluye compras directas)
 
 ### Límites
 - **Límite de aprobación: $600,000.00**
@@ -202,15 +219,17 @@ Este documento describe las capacidades, restricciones y límites de cada rol en
   - Stock
   - Movimientos de inventario
 - ✅ Aprobar solicitudes de compra (hasta su límite de monto)
+- ✅ **Aprobar compras directas** (hasta su límite de monto)
+- ✅ **Rechazar compras directas** con justificación
 - ✅ Ver el dashboard completo (mismo que administrador)
-- ✅ Ver solicitudes pendientes de aprobación en el dashboard
+- ✅ Ver solicitudes pendientes de aprobación en el dashboard (incluye compras directas)
 
 ### Restricciones
 - ❌ **NO puede crear** solicitudes de compra, órdenes de compra ni órdenes de pago
 - ❌ **NO puede editar** nada
 - ❌ **NO puede eliminar** nada
 - ❌ **NO puede crear/editar/eliminar** en inventario (solo lectura)
-- ❌ **NO puede aprobar** solicitudes que superen su límite de monto
+- ❌ **NO puede aprobar** solicitudes que superen su límite de monto (incluye compras directas)
 
 ### Límites
 - **Límite de aprobación: $11,700,000.00**
@@ -240,7 +259,7 @@ Este documento describe las capacidades, restricciones y límites de cada rol en
 
 ## Flujo de Aprobación de Solicitudes de Compra
 
-1. **Solicitud creada** → Estado: "Pendiente"
+1. **Solicitud creada** → Estado: "Pendiente", `purchase_type`: "normal"
 2. **Si monto ≤ $360,000.00**:
    - Puede ser aprobada por: **Responsable de Compras**
 3. **Si monto > $360,000.00 y ≤ $500,000.00**:
@@ -251,6 +270,36 @@ Este documento describe las capacidades, restricciones y límites de cada rol en
    - Requiere aprobación de: **Representante Legal**
 6. **Si monto > $11,700,000.00**:
    - Requiere aprobación de nivel superior (no implementado en el sistema actual)
+
+---
+
+## Tipos de Compra (purchase_type)
+
+El sistema maneja tres tipos de compra que se establecen automáticamente:
+
+### 1. Compra Normal (`normal`)
+- **Valor por defecto** al crear una solicitud
+- Requiere cotizaciones según el monto:
+  - **≤ $60,000**: Requiere 1 cotización
+  - **> $60,000**: Requiere exactamente 3 cotizaciones
+- Se convierte automáticamente a "Compra Rápida" si al generar la orden el monto es ≤ $60,000
+
+### 2. Compra Rápida (`rapida`)
+- Se establece automáticamente cuando se genera una orden de compra con monto **≤ $60,000**
+- Requiere **1 sola cotización** y un proveedor seleccionado
+- Mensaje: "Esta solicitud tiene un monto de $X, por lo que no se requiere cotización. Puede generar la orden de compra directamente seleccionando un proveedor y subiendo su cotización."
+
+### 3. Compra Directa (`directa`)
+- Se establece cuando el **Responsable de Compras** marca una solicitud como compra directa
+- **Flujo completo:**
+  1. Responsable de Compras marca la solicitud como compra directa
+  2. Debe seleccionar un proveedor único y justificar la elección
+  3. Se solicita automáticamente autorización a nivel superior (Administrador, Apoderado o Representante Legal)
+  4. El nivel superior puede aprobar o rechazar la compra directa
+  5. Si se aprueba, el Responsable de Compras puede generar la orden **sin requerir cotizaciones**
+  6. El campo `purchase_type` se actualiza a "directa"
+- **Respeto de límites:** Las compras directas también respetan los límites de autorización por monto
+- **Dashboard:** Las compras directas pendientes aparecen en el dashboard de los usuarios con capacidad de aprobación
 
 ---
 
@@ -348,13 +397,72 @@ Este documento describe las capacidades, restricciones y límites de cada rol en
 4. ✅ **Resultado esperado**: Los productos aparecen como solo lectura
 5. Ve mensaje: "Los productos no pueden ser modificados porque la solicitud está aprobada"
 
+### Caso 9: Compra Rápida (monto ≤ $60,000)
+1. Usuario crea una solicitud de compra con monto $50,000.00
+2. Responsable de Compras sube 1 cotización
+3. Responsable de Compras selecciona la cotización
+4. Responsable de Compras genera la orden de compra
+5. ✅ **Resultado esperado**: 
+   - El campo `purchase_type` se actualiza automáticamente a "rapida"
+   - La orden se genera exitosamente
+   - Mensaje: "Esta solicitud tiene un monto de $50,000.00, por lo que no se requiere cotización. Puede generar la orden de compra directamente seleccionando un proveedor y subiendo su cotización."
+
+### Caso 10: Compra Directa - Flujo completo
+1. Responsable de Compras crea una solicitud de compra con monto $400,000.00
+2. Responsable de Compras marca la solicitud como compra directa
+3. ✅ **Resultado esperado**: Aparece modal para seleccionar proveedor y justificar
+4. Responsable de Compras selecciona un proveedor y completa la justificación
+5. ✅ **Resultado esperado**: 
+   - La solicitud se marca como compra directa
+   - Se solicita automáticamente autorización
+   - El campo `purchase_type` permanece como "normal" hasta que se apruebe
+6. Administrador del Instituto ve la solicitud en su dashboard
+7. Administrador del Instituto aprueba la compra directa
+8. ✅ **Resultado esperado**: 
+   - El campo `purchase_type` se actualiza a "directa"
+   - El Responsable de Compras puede generar la orden sin cotizaciones
+   - El botón "Generar OC" se habilita
+
+### Caso 11: Compra Directa - Rechazo
+1. Responsable de Compras marca una solicitud como compra directa
+2. Administrador del Instituto rechaza la compra directa con justificación
+3. ✅ **Resultado esperado**: 
+   - La solicitud vuelve a estado normal
+   - Se registra la razón del rechazo
+   - El Responsable de Compras debe seguir el proceso normal con cotizaciones
+
+### Caso 12: Compra Directa - Límite de autorización
+1. Responsable de Compras marca una solicitud de $900,000.00 como compra directa
+2. Administrador del Instituto intenta aprobar
+3. ❌ **Resultado esperado**: No puede aprobar (supera su límite de $500,000.00)
+4. Apoderado intenta aprobar
+5. ❌ **Resultado esperado**: No puede aprobar (supera su límite de $600,000.00)
+6. Representante Legal aprueba
+7. ✅ **Resultado esperado**: Aprobación exitosa (dentro de su límite de $11,700,000.00)
+
+### Caso 13: Planilla Comparativa
+1. Responsable de Compras sube 3 cotizaciones a una solicitud
+2. Responsable de Compras ve el show de la solicitud
+3. ✅ **Resultado esperado**: Aparece botón "Descargar Planilla Comparativa"
+4. Si solo hay 1 cotización
+5. ❌ **Resultado esperado**: No aparece el botón de planilla comparativa
+
+### Caso 14: Actualización de monto total al seleccionar cotización
+1. Responsable de Compras crea una solicitud con monto estimado $900,000.00
+2. Responsable de Compras sube cotizaciones
+3. Responsable de Compras selecciona una cotización con monto total $370,000.00
+4. ✅ **Resultado esperado**: 
+   - El `total_amount` de la solicitud se actualiza a $370,000.00
+   - Se recalcula `requires_admin_approval` según el nuevo monto
+   - Si el nuevo monto es ≤ $360,000, el Responsable de Compras puede aprobar directamente
+
 ---
 
 ## Notas Importantes
 
 1. **Solicitudes de Compra Aprobadas**: Una vez aprobada, los productos no pueden ser modificados por ningún usuario.
 
-2. **Dashboard de Aprobaciones**: Los usuarios con capacidad de aprobar (Administrador del Instituto, Apoderado, Representante Legal) ven una sección destacada en el dashboard con las solicitudes pendientes de aprobación que pueden aprobar según su límite.
+2. **Dashboard de Aprobaciones**: Los usuarios con capacidad de aprobar (Administrador del Instituto, Apoderado, Representante Legal) ven una sección destacada en el dashboard con las solicitudes pendientes de aprobación que pueden aprobar según su límite. Esto incluye compras directas pendientes de autorización.
 
 3. **Filtrado de Proveedores**: Los responsables de área solo ven proveedores relacionados con los rubros de su área.
 
@@ -363,6 +471,25 @@ Este documento describe las capacidades, restricciones y límites de cada rol en
 5. **Stock por Ubicación**: El stock se calcula y muestra por ubicación, no como total general.
 
 6. **Sugerencias de Proveedores**: Los responsables de área pueden sugerir proveedores, pero no pueden subir cotizaciones (solo el sector de compras).
+
+7. **Compras Directas**: 
+   - Solo el Responsable de Compras puede marcar una solicitud como compra directa
+   - Las compras directas también respetan los límites de autorización por monto
+   - Una vez aprobada una compra directa, se puede generar la orden sin requerir cotizaciones
+   - El campo `purchase_type` se actualiza a "directa" cuando se aprueba
+
+8. **Compras Rápidas**: 
+   - Se establecen automáticamente cuando se genera una orden con monto ≤ $60,000
+   - Requieren solo 1 cotización
+   - El campo `purchase_type` se actualiza a "rapida" al generar la orden
+
+9. **Actualización de Monto Total**: 
+   - Cuando se selecciona una cotización, el `total_amount` de la solicitud se actualiza con el monto total de la cotización seleccionada
+   - Esto puede cambiar el nivel de aprobación requerido
+
+10. **Planilla Comparativa**: 
+    - Solo aparece cuando hay más de una cotización cargada
+    - Permite comparar todas las cotizaciones en formato Excel
 
 ---
 
@@ -377,9 +504,13 @@ Este documento describe las capacidades, restricciones y límites de cada rol en
 | Editar Solicitud Compra | ❌ | ✅ (propias, estado="Pendiente", campos limitados) | ✅ | ✅ (propias, estado="Pendiente") | ❌ | ❌ |
 | Eliminar Solicitud Compra | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ |
 | Aprobar Solicitud Compra | ❌ | ❌ | ✅ (≤$360k) | ✅ (≤$500k) | ✅ (≤$600k) | ✅ (≤$11.7M) |
+| Marcar Compra Directa | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ |
+| Aprobar Compra Directa | ❌ | ❌ | ❌ | ✅ (≤$500k) | ✅ (≤$600k) | ✅ (≤$11.7M) |
+| Rechazar Compra Directa | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ |
 | Crear Cotización | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ |
 | Crear Orden Compra | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ |
 | Crear Orden Pago | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ |
+| Descargar Planilla Comparativa | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ |
 | Ver Inventario | ❌ | ✅ (limitado) | ✅ | ✅ (sin categorías/ubicaciones) | ❌ | ✅ (solo lectura) |
 | Editar Inventario | ❌ | ✅ (limitado) | ✅ | ❌ | ❌ | ❌ |
 | Eliminar Productos/Stock | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
@@ -388,6 +519,20 @@ Este documento describe las capacidades, restricciones y límites de cada rol en
 
 ---
 
-*Documento generado el: {{ date('Y-m-d') }}*
-*Versión del sistema: 1.0*
+---
+
+## 🔐 Información de Acceso
+
+**Contraseña de todos los usuarios:** `password`
+
+Esta contraseña aplica para:
+- Usuarios creados mediante seeders
+- Usuarios de prueba
+- Todos los roles del sistema
+
+---
+
+*Documento actualizado: 2025-01-XX*
+*Versión del sistema: 2.0*
+*Última actualización: Incluye funcionalidades de Compras Directas, Compras Rápidas y Planilla Comparativa*
 

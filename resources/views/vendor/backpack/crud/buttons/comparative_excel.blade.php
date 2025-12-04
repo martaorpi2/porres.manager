@@ -9,7 +9,7 @@
         $entryId = $entry->getKey();
     }
     
-    // Método 2: CRUD getCurrentEntry (para show)
+    // Método 2: CRUD getCurrentEntry (para show) - este es el método principal para show
     if (!$currentEntry && isset($crud) && method_exists($crud, 'getCurrentEntry')) {
         $currentEntry = $crud->getCurrentEntry();
         if ($currentEntry && method_exists($currentEntry, 'getKey')) {
@@ -28,7 +28,10 @@
     // Verificar si hay más de una cotización
     $hasMultipleQuotations = false;
     if ($currentEntry) {
-        $currentEntry->load('marketRates');
+        // Asegurar que la relación esté cargada
+        if (!$currentEntry->relationLoaded('marketRates')) {
+            $currentEntry->load('marketRates');
+        }
         $quotationsCount = $currentEntry->marketRates->count();
         $hasMultipleQuotations = $quotationsCount > 1;
     }
