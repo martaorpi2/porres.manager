@@ -126,6 +126,21 @@ class PurchaseRequestCrudController extends CrudController
         if (!$user || !$user->hasRole('role_responsable_area', 'backpack')) {
             CRUD::addButton('line', 'view_purchase_order', 'view', 'crud::buttons.view_purchase_order', 'end');
         }
+        
+        // Filtro personalizado para solicitudes pendientes
+        // Solo aplicar si el parámetro está explícitamente en la URL actual
+        // No aplicar si viene de una restauración automática de Backpack desde localStorage
+        // Backpack agrega 'persistent-table=true' cuando restaura desde localStorage
+        $hasPendientes = request()->query('pendientes') == '1';
+        $isPersistentRestore = request()->query('persistent-table') == 'true';
+        
+        // Solo aplicar el filtro si:
+        // 1. El parámetro pendientes está presente
+        // 2. NO es una restauración automática desde localStorage (sin persistent-table)
+        // Esto asegura que cuando el usuario accede desde el menú, se muestre todo
+        if ($hasPendientes && !$isPersistentRestore) {
+            CRUD::addClause('where', 'status', 'Pendiente');
+        }
     }
 
     /**
@@ -142,23 +157,43 @@ class PurchaseRequestCrudController extends CrudController
         $existingProducts = [];
         
         if ($convertedFrom) {
-            $generalRequest = \App\Models\GeneralRequest::with('details.product')->find($convertedFrom);
+            // Cargar la solicitud general con detalles, productos y entregas
+            $generalRequest = \App\Models\GeneralRequest::with(['details.product', 'deliveries.details'])->find($convertedFrom);
             
             // Cargar productos de la solicitud general para pre-cargarlos en el formulario
+            // Solo mostrar productos con cantidades faltantes (no totalmente entregados)
             // Los precios se establecen en 0, ya que el sector de compras los asignará después
             if ($generalRequest && $generalRequest->details) {
                 foreach ($generalRequest->details as $detail) {
                     if ($detail->product) {
-                        $existingProducts[] = [
-                            'product_id' => $detail->product_id,
-                            'product_name' => $detail->product->name ?? 'Producto no encontrado',
-                            'name' => $detail->product->name ?? 'Producto no encontrado',
-                            'unit' => $detail->product->unit_measurement ?? 'unidad',
-                            'description' => $detail->product->description ?? '',
-                            'quantity' => $detail->requested_quantity ?? 1,
-                            'price' => 0, // Precio inicial en 0, el sector de compras lo asignará
-                            'specifications' => $detail->specifications ?? ''
-                        ];
+                        // Calcular cantidad entregada
+                        $deliveredQuantity = 0;
+                        if ($generalRequest->deliveries) {
+                            foreach ($generalRequest->deliveries as $delivery) {
+                                $deliveryDetail = $delivery->details->where('product_id', $detail->product_id)->first();
+                                if ($deliveryDetail) {
+                                    $deliveredQuantity += $deliveryDetail->delivered_quantity ?? 0;
+                                }
+                            }
+                        }
+                        
+                        // Calcular cantidad faltante
+                        $requestedQuantity = $detail->requested_quantity ?? 0;
+                        $pendingQuantity = max(0, $requestedQuantity - $deliveredQuantity);
+                        
+                        // Solo incluir productos con cantidad faltante > 0
+                        if ($pendingQuantity > 0) {
+                            $existingProducts[] = [
+                                'product_id' => $detail->product_id,
+                                'product_name' => $detail->product->name ?? 'Producto no encontrado',
+                                'name' => $detail->product->name ?? 'Producto no encontrado',
+                                'unit' => $detail->product->unit_measurement ?? 'unidad',
+                                'description' => $detail->product->description ?? '',
+                                'quantity' => $pendingQuantity, // Usar cantidad faltante en lugar de solicitada
+                                'price' => 0, // Precio inicial en 0, el sector de compras lo asignará
+                                'specifications' => $detail->specifications ?? ''
+                            ];
+                        }
                     }
                 }
             }
@@ -201,15 +236,17 @@ class PurchaseRequestCrudController extends CrudController
             // Mostrar información de la solicitud general
             $generalRequestInfo = '';
             if ($convertedFrom) {
-                $generalRequest = \App\Models\GeneralRequest::find($convertedFrom);
+                $generalRequest = \App\Models\GeneralRequest::with(['deliveries.details'])->find($convertedFrom);
                 if ($generalRequest) {
                     $productsCount = count($existingProducts);
+                    $hasDeliveries = $generalRequest->deliveries && $generalRequest->deliveries->isNotEmpty();
+                    $deliveryNote = $hasDeliveries ? ' Solo se muestran los productos con cantidades faltantes (no totalmente entregados).' : '';
                     $generalRequestInfo = '<div class="alert alert-info">
                         <h5><i class="la la-info-circle"></i> Conversión desde Solicitud General</h5>
                         <p><strong>Número:</strong> ' . ($generalRequest->number ?? 'N/A') . '</p>
                         <p><strong>Título:</strong> ' . ($generalRequest->title ?? 'N/A') . '</p>
                         <p><strong>Descripción:</strong> ' . ($generalRequest->description ?? 'N/A') . '</p>
-                        <p><strong>Productos:</strong> ' . $productsCount . ' producto(s) cargado(s) desde la solicitud general. Puede editarlos o eliminarlos antes de guardar.</p>
+                        <p><strong>Productos:</strong> ' . $productsCount . ' producto(s) con cantidades faltantes cargado(s) desde la solicitud general.' . $deliveryNote . ' Puede editarlos o eliminarlos antes de guardar.</p>
                     </div>';
                 }
             }
@@ -532,8 +569,53 @@ class PurchaseRequestCrudController extends CrudController
                                 option.setAttribute("data-description", product.description || "");
                                 select.appendChild(option);
                             });
+                            
+                            // Después de cargar productos, verificar si hay productos pre-seleccionados en la URL
+                            loadPreSelectedProducts(data);
                         })
                         .catch(error => console.error("Error loading products:", error));
+                }
+                
+                // Función para cargar productos pre-seleccionados desde la URL
+                function loadPreSelectedProducts(productsData) {
+                    const urlParams = new URLSearchParams(window.location.search);
+                    const selectedProductsParam = urlParams.get(\'selected_products\');
+                    
+                    if (selectedProductsParam) {
+                        try {
+                            const selectedProducts = JSON.parse(decodeURIComponent(selectedProductsParam));
+                            
+                            if (Array.isArray(selectedProducts) && selectedProducts.length > 0) {
+                                // Crear un mapa de productos por ID para búsqueda rápida
+                                const productsMap = {};
+                                productsData.forEach(product => {
+                                    productsMap[product.id] = product;
+                                });
+                                
+                                // Agregar cada producto pre-seleccionado a la lista
+                                selectedProducts.forEach(productData => {
+                                    const product = productsMap[productData.product_id];
+                                    if (product) {
+                                        const quantity = productData.quantity || 1;
+                                        const price = productData.price || productData.unit_price || 0;
+                                        const specs = productData.specifications || "";
+                                        
+                                        addProductToList(
+                                            product.id,
+                                            product.name + " (" + product.unit_measurement + ")",
+                                            product.unit_measurement,
+                                            product.description || "",
+                                            quantity,
+                                            price,
+                                            specs
+                                        );
+                                    }
+                                });
+                            }
+                        } catch (error) {
+                            console.error("Error parsing pre-selected products:", error);
+                        }
+                    }
                 }
                 
                 // Función para agregar producto
@@ -1155,7 +1237,8 @@ class PurchaseRequestCrudController extends CrudController
     private function replicateProductsFromGeneralRequest($purchaseRequest)
     {
         try {
-            $generalRequest = \App\Models\GeneralRequest::with('details.product')
+            // Cargar la solicitud general con detalles, productos y entregas
+            $generalRequest = \App\Models\GeneralRequest::with(['details.product', 'deliveries.details'])
                 ->find($purchaseRequest->converted_from_general_request_id);
 
             if (!$generalRequest) {
@@ -1180,6 +1263,7 @@ class PurchaseRequestCrudController extends CrudController
             $replicatedCount = 0;
 
             // Replicar cada detalle de la solicitud general
+            // Solo incluir productos con cantidades faltantes (no totalmente entregados)
             foreach ($generalRequest->details as $generalDetail) {
                 if (!$generalDetail->product) {
                     \Log::warning('Producto no encontrado en detalle de solicitud general', [
@@ -1188,14 +1272,38 @@ class PurchaseRequestCrudController extends CrudController
                     continue;
                 }
 
-                // Crear el detalle en la solicitud de compra
-                // Los precios se establecen en 0, ya que el sector de compras los asignará después
-                $requestedQuantity = (float)($generalDetail->requested_quantity ?? 0);
+                // Calcular cantidad entregada
+                $deliveredQuantity = 0;
+                if ($generalRequest->deliveries) {
+                    foreach ($generalRequest->deliveries as $delivery) {
+                        $deliveryDetail = $delivery->details->where('product_id', $generalDetail->product_id)->first();
+                        if ($deliveryDetail) {
+                            $deliveredQuantity += $deliveryDetail->delivered_quantity ?? 0;
+                        }
+                    }
+                }
                 
+                // Calcular cantidad faltante
+                $requestedQuantity = (float)($generalDetail->requested_quantity ?? 0);
+                $pendingQuantity = max(0, $requestedQuantity - $deliveredQuantity);
+                
+                // Solo replicar productos con cantidad faltante > 0
+                if ($pendingQuantity <= 0) {
+                    \Log::info('Producto omitido porque ya está totalmente entregado', [
+                        'general_request_detail_id' => $generalDetail->id,
+                        'product_id' => $generalDetail->product_id,
+                        'requested_quantity' => $requestedQuantity,
+                        'delivered_quantity' => $deliveredQuantity
+                    ]);
+                    continue;
+                }
+
+                // Crear el detalle en la solicitud de compra con la cantidad faltante
+                // Los precios se establecen en 0, ya que el sector de compras los asignará después
                 $purchaseRequestDetail = \App\Models\PurchaseRequestDetail::create([
                     'purchase_request_id' => $purchaseRequest->id,
                     'product_id' => $generalDetail->product_id,
-                    'requested_quantity' => $requestedQuantity,
+                    'requested_quantity' => $pendingQuantity, // Usar cantidad faltante en lugar de solicitada
                     'specifications' => $generalDetail->specifications,
                     'justification' => $generalDetail->justification,
                     'estimated_unit_price' => 0, // Precio inicial en 0, el sector de compras lo asignará
@@ -1206,11 +1314,14 @@ class PurchaseRequestCrudController extends CrudController
                 $totalAmount += $purchaseRequestDetail->estimated_total;
                 $replicatedCount++;
 
-                \Log::info('Producto replicado desde solicitud general', [
+                \Log::info('Producto replicado desde solicitud general (solo cantidad faltante)', [
                     'general_request_detail_id' => $generalDetail->id,
                     'purchase_request_detail_id' => $purchaseRequestDetail->id,
                     'product_id' => $generalDetail->product_id,
-                    'product_name' => $generalDetail->product->name ?? 'N/A'
+                    'product_name' => $generalDetail->product->name ?? 'N/A',
+                    'requested_quantity' => $requestedQuantity,
+                    'delivered_quantity' => $deliveredQuantity,
+                    'pending_quantity' => $pendingQuantity
                 ]);
             }
 

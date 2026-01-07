@@ -15,7 +15,7 @@ class StockLevelCrudController extends CrudController
 {
     use \Backpack\CRUD\app\Http\Controllers\Operations\ListOperation;
     use \Backpack\CRUD\app\Http\Controllers\Operations\CreateOperation { store as traitStore; }
-    use \Backpack\CRUD\app\Http\Controllers\Operations\UpdateOperation;
+    use \Backpack\CRUD\app\Http\Controllers\Operations\UpdateOperation { update as traitUpdate; }
     use \Backpack\CRUD\app\Http\Controllers\Operations\DeleteOperation;
     use \Backpack\CRUD\app\Http\Controllers\Operations\ShowOperation;
 
@@ -394,12 +394,14 @@ class StockLevelCrudController extends CrudController
      */
     public function update()
     {
+        $this->crud->hasAccessOrFail('update');
+        
         // Si el usuario tiene rol role_responsable_area, verificar que solo pueda actualizar stock de sus áreas
         $user = backpack_user();
         if ($user && $user->hasRole('role_responsable_area', 'backpack')) {
-            $locationId = request()->input('location_id');
-            if ($locationId) {
-                $location = \App\Models\Location::find($locationId);
+            $entry = $this->crud->getCurrentEntry();
+            if ($entry) {
+                $location = $entry->location;
                 if ($location) {
                     // Obtener las áreas de responsabilidad del usuario
                     $userAreas = \App\Models\ResponsibilityArea::where('responsible_user_id', $user->id)->pluck('name');
@@ -427,6 +429,35 @@ class StockLevelCrudController extends CrudController
                     }
                 }
             }
+            
+            // También verificar la nueva ubicación si se está cambiando
+            $locationId = request()->input('location_id');
+            if ($locationId) {
+                $newLocation = \App\Models\Location::find($locationId);
+                if ($newLocation) {
+                    $userAreas = \App\Models\ResponsibilityArea::where('responsible_user_id', $user->id)->pluck('name');
+                    
+                    $areaLocationMap = [
+                        'Informática' => 'Informática',
+                        'Mantenimiento' => 'Mantenimiento',
+                        'Salud' => 'Insumos de Salud',
+                        'Insumos Generales' => 'Insumos Generales',
+                    ];
+                    
+                    $locationNames = [];
+                    foreach ($userAreas as $areaName) {
+                        if (isset($areaLocationMap[$areaName])) {
+                            $locationNames[] = $areaLocationMap[$areaName];
+                        } else {
+                            $locationNames[] = $areaName;
+                        }
+                    }
+                    
+                    if (!in_array($newLocation->name, $locationNames)) {
+                        abort(403, 'No tienes permiso para modificar el stock de esta ubicación. Solo puedes modificar el stock de tus áreas de responsabilidad.');
+                    }
+                }
+            }
         }
         
         // Asegurar que el last_updated_by esté asignado antes de actualizar
@@ -434,7 +465,8 @@ class StockLevelCrudController extends CrudController
             request()->merge(['last_updated_by' => $user->id]);
         }
         
-        return parent::update();
+        // Llamar al método del trait
+        return $this->traitUpdate();
     }
     
     /**

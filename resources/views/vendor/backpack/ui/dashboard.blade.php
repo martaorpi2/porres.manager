@@ -9,6 +9,23 @@
       --bs-primary-rgb: 135, 31, 31 !important;
   }
 
+  /* Estilos para el modal de alertas de stock */
+  #stockAlertsModal {
+    z-index: 1050 !important;
+  }
+  
+  #stockAlertsModal .modal-dialog {
+    z-index: 1051 !important;
+  }
+  
+  #stockAlertsModal .modal-content {
+    z-index: 1052 !important;
+  }
+  
+  .modal-backdrop.show {
+    z-index: 1040 !important;
+  }
+
   /* Dashboard Process Flow Styles */
   .process-flow-container {
       background: #f8f9fa;
@@ -943,6 +960,111 @@
 @push('after_scripts')
   @basset('https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.6.0/highlight.min.js')
   <script>hljs.highlightAll();</script>
+  
+  @if(isset($isResponsableArea) && $isResponsableArea && isset($stockAlerts) && $stockAlerts->isNotEmpty() && !empty($stockAlertsHtml))
+  <script>
+    // Función para crear solicitud de compra para un producto específico
+    function createPurchaseRequestForProduct(productId, quantity, unit, event) {
+      if (event) {
+        event.stopPropagation();
+      }
+      
+      // Crear el array de productos en el formato esperado
+      var products = [{
+        product_id: productId,
+        quantity: Math.ceil(quantity), // Redondear hacia arriba
+        price: 0,
+        specifications: 'Solicitud generada automáticamente por alerta de stock mínimo. Déficit: ' + quantity + ' ' + unit
+      }];
+      
+      // Codificar como JSON y pasar como parámetro
+      var productsJson = encodeURIComponent(JSON.stringify(products));
+      var url = '{{ backpack_url("purchase-request/create") }}?selected_products=' + productsJson;
+      
+      window.location.href = url;
+    }
+    
+    // Función para crear solicitud de compra para todos los productos
+    function createPurchaseRequestForAll() {
+      var products = [];
+      
+      @foreach($stockAlerts as $alert)
+      products.push({
+        product_id: {{ $alert['product']->id }},
+        quantity: Math.ceil({{ $alert['deficit'] }}),
+        price: 0,
+        specifications: 'Solicitud generada automáticamente por alerta de stock mínimo. Déficit: {{ number_format($alert['deficit'], 2) }} {{ $alert['product']->unit_measurement ?? 'unidades' }}'
+      });
+      @endforeach
+      
+      if (products.length === 0) {
+        alert('No hay productos para crear la solicitud');
+        return;
+      }
+      
+      // Codificar como JSON y pasar como parámetro
+      var productsJson = encodeURIComponent(JSON.stringify(products));
+      var url = '{{ backpack_url("purchase-request/create") }}?selected_products=' + productsJson;
+      
+      window.location.href = url;
+    }
+  </script>
+  <script>
+    $(document).ready(function() {
+      // Esperar a que SweetAlert esté cargado
+      setTimeout(function() {
+        var $contentDiv = $('#stockAlertsHtmlContent');
+        
+        if ($contentDiv.length === 0) {
+          console.error('No se encontró el div con el contenido de alertas');
+          return;
+        }
+        
+        var alertsHtml = $contentDiv.html();
+        
+        // Verificar que el HTML no esté vacío
+        if (!alertsHtml || alertsHtml.trim() === '') {
+          console.error('El HTML de alertas está vacío');
+          console.log('Stock alerts count:', {{ $stockAlerts->count() ?? 0 }});
+          console.log('Div encontrado pero vacío');
+          return;
+        }
+        
+        console.log('Mostrando alertas, HTML length:', alertsHtml.length);
+        console.log('Primeros 200 caracteres:', alertsHtml.substring(0, 200));
+        
+        swal({
+          title: 'Alertas de Stock Mínimo',
+          html: alertsHtml,
+          icon: 'warning',
+          width: '800px',
+          buttons: {
+            cancel: {
+              text: 'Cerrar',
+              value: null,
+              visible: true,
+              className: 'bg-secondary',
+              closeModal: true
+            },
+            confirm: {
+              text: 'Crear Solicitud de Compra (Todos)',
+              value: true,
+              visible: true,
+              className: 'bg-primary'
+            }
+          },
+          dangerMode: false,
+          allowOutsideClick: true,
+          allowEscapeKey: true
+        }).then(function(value) {
+          if (value) {
+            createPurchaseRequestForAll();
+          }
+        });
+      }, 500);
+    });
+  </script>
+  @endif
 @endpush
 
 @section('content')
@@ -1003,7 +1125,15 @@
                 </div>
                 <div class="stat-card-number">{{ $stats['general_requests'] }}</div>
                 <div class="stat-card-label">{{ isset($isPersonal) && $isPersonal ? 'Mis Solicitudes Generales' : (isset($isResponsableArea) && $isResponsableArea ? 'Solicitudes Generales' : 'Solicitudes Generales') }}</div>
-                <div class="stat-card-pending">{{ $stats['general_requests_delivered'] }} Entregadas</div>
+                <div class="stat-card-pending">
+                    {{ $stats['general_requests_delivered'] }} Entregadas
+                    @if(isset($isResponsableArea) && $isResponsableArea && isset($stats['general_requests_pending_delivery']) && $stats['general_requests_pending_delivery'] > 0)
+                        <br>
+                        <a href="{{ backpack_url('general-request?sin_entregas=1') }}" style="color: #ffc107; text-decoration: none; font-weight: bold; display: inline-block; margin-top: 3px;">
+                            <i class="la la-clock"></i> {{ $stats['general_requests_pending_delivery'] }} Pendientes
+                        </a>
+                    @endif
+                </div>
             </div>
         </div>
         @if((isset($isResponsableArea) && $isResponsableArea) || (!isset($isPersonal) || !$isPersonal))
@@ -1012,9 +1142,21 @@
                 <div class="stat-card-icon">
                     <i class="la la-shopping-cart"></i>
                 </div>
-                <div class="stat-card-number">{{ $stats['purchase_requests'] }}</div>
-                <div class="stat-card-label">{{ isset($isResponsableArea) && $isResponsableArea ? 'Mis Solicitudes de Compra' : 'Solicitudes de Compra' }}</div>
-                <div class="stat-card-pending">{{ $stats['purchase_requests_pending'] }} Pendientes</div>
+                @if(isset($isResponsableCompras) && $isResponsableCompras && isset($stats['purchase_requests_pending']) && $stats['purchase_requests_pending'] > 0)
+                    <div class="stat-card-number" style="font-size: 2.5rem; font-weight: bold;">
+                        <a href="{{ backpack_url('purchase-request?pendientes=1') }}" style="color: inherit; text-decoration: none;">
+                            {{ $stats['purchase_requests_pending'] }}
+                        </a>
+                    </div>
+                    <div class="stat-card-label">{{ isset($isResponsableArea) && $isResponsableArea ? 'Mis Solicitudes de Compra' : 'Solicitudes de Compra' }}</div>
+                    <div class="stat-card-pending" style="font-size: 0.85rem; color: #6c757d;">
+                        Total: {{ $stats['purchase_requests'] }}
+                    </div>
+                @else
+                    <div class="stat-card-number">{{ $stats['purchase_requests'] }}</div>
+                    <div class="stat-card-label">{{ isset($isResponsableArea) && $isResponsableArea ? 'Mis Solicitudes de Compra' : 'Solicitudes de Compra' }}</div>
+                    <div class="stat-card-pending">{{ $stats['purchase_requests_pending'] }} Pendientes</div>
+                @endif
             </div>
         </div>
         @endif
@@ -1184,6 +1326,62 @@
             </div>
         </div>
         @endforeach
+    </div>
+    @endif
+
+    @if(isset($isResponsableArea) && $isResponsableArea && isset($stockAlerts) && $stockAlerts->isNotEmpty())
+    <!-- Alertas de Stock Mínimo (Responsable de Área) -->
+    <div class="row mb-4">
+        <div class="col-md-12 d-flex justify-content-between align-items-center">
+            <h3 class="section-title mb-0">Alertas de Stock</h3>
+            <button type="button" class="btn btn-primary" onclick="createPurchaseRequestForAll()">
+                <i class="la la-shopping-cart"></i> Crear Solicitud de Compra (Todos)
+            </button>
+        </div>
+    </div>
+    <div class="process-step" style="border-left: 4px solid #dc3545;">
+        <div class="process-step-header" style="background-color: #f8d7da;">
+            <div class="process-step-title">
+                <i class="la la-exclamation-circle process-step-icon" style="color: #721c24;"></i>
+                <span style="color: #721c24; font-weight: bold;">Productos con Stock por Debajo del Mínimo</span>
+            </div>
+            <span class="process-step-count" style="background-color: #dc3545; color: white;">{{ $stockAlerts->count() }}</span>
+        </div>
+        <div class="process-step-content">
+            @foreach($stockAlerts as $alert)
+                <div class="process-item-card" style="border-left: 3px solid #dc3545;">
+                    <div class="process-item-title" onclick="window.location='{{ backpack_url('stock-level') }}'" style="cursor: pointer;">
+                        <i class="la la-box" style="color: #dc3545;"></i> {{ $alert['product']->name }}
+                    </div>
+                    <div class="process-item-meta">
+                        <span style="color: #dc3545; font-weight: bold;">
+                            <i class="la la-arrow-down"></i> Stock actual: {{ number_format($alert['current_stock'], 0) }}
+                        </span>
+                        <span style="color: #856404;">
+                            <i class="la la-exclamation-triangle"></i> Stock mínimo: {{ number_format($alert['minimum_stock'], 0) }}
+                        </span>
+                    </div>
+                    <div class="process-item-meta">
+                        <span style="color: #dc3545; font-weight: bold;">
+                            <i class="la la-minus-circle"></i> Déficit: {{ number_format($alert['deficit'], 0) }} {{ $alert['product']->unit_measurement ?? 'unidades' }}
+                        </span>
+                    </div>
+                    @if($alert['locations']->isNotEmpty())
+                    <div class="process-item-meta">
+                        <span><i class="la la-map-marker"></i> Ubicaciones:</span>
+                        @foreach($alert['locations'] as $location)
+                            <span class="badge bg-secondary">{{ $location['name'] }}: {{ number_format($location['quantity'], 0) }}</span>
+                        @endforeach
+                    </div>
+                    @endif
+                    <div class="process-item-meta mt-2">
+                        <button type="button" class="btn btn-sm btn-success" onclick="createPurchaseRequestForProduct({{ $alert['product']->id }}, {{ $alert['deficit'] }}, '{{ $alert['product']->unit_measurement ?? 'unidades' }}', event)">
+                            <i class="la la-shopping-cart"></i> Crear Solicitud de Compra
+                        </button>
+                    </div>
+                </div>
+            @endforeach
+        </div>
     </div>
     @endif
 
@@ -1719,6 +1917,11 @@
             </div>
         </div>
     </div>
+    @endif
+
+    @if(isset($isResponsableArea) && $isResponsableArea && isset($stockAlerts) && $stockAlerts->isNotEmpty() && !empty($stockAlertsHtml))
+    <!-- Contenedor oculto para el HTML de alertas (usado por SweetAlert) -->
+    <div id="stockAlertsHtmlContent" style="display: none !important; visibility: hidden; position: absolute; left: -9999px;">{!! $stockAlertsHtml !!}</div>
     @endif
 </div>
 @endsection

@@ -139,6 +139,21 @@ class GeneralRequestCrudController extends CrudController
                 CRUD::addClause('where', 'status', $estado);
             }
         }
+
+        // Filtro personalizado para solicitudes sin entregas
+        // Solo aplicar si el parámetro está explícitamente en la URL actual
+        // No aplicar si viene de una restauración automática de Backpack desde localStorage
+        // Backpack agrega 'persistent-table=true' cuando restaura desde localStorage
+        $hasSinEntregas = request()->query('sin_entregas') == '1';
+        $isPersistentRestore = request()->query('persistent-table') == 'true';
+        
+        // Solo aplicar el filtro si:
+        // 1. El parámetro sin_entregas está presente
+        // 2. NO es una restauración automática desde localStorage (sin persistent-table)
+        // Esto asegura que cuando el usuario accede desde el menú, se muestre todo
+        if ($hasSinEntregas && !$isPersistentRestore) {
+            CRUD::addClause('whereDoesntHave', 'deliveries');
+        }
     }
 
     protected function setupCreateOperation()
@@ -381,6 +396,61 @@ class GeneralRequestCrudController extends CrudController
         document.addEventListener("DOMContentLoaded", function() {
             const existingProducts = ' . $existingProductsJson . ';
             
+            // Obtener referencia al campo de área
+            const areaField = document.querySelector("select[name=\'area_id\']");
+            
+            // Función para cargar productos
+            function loadProducts() {
+                const areaId = areaField ? areaField.value : null;
+                let url = "' . backpack_url('api/productos') . '";
+                if (areaId) {
+                    url += "?area_id=" + areaId;
+                }
+                
+                fetch(url)
+                    .then(response => {
+                        if (!response.ok) {
+                            throw new Error("Error al cargar productos: " + response.status);
+                        }
+                        return response.json();
+                    })
+                    .then(data => {
+                        const select = document.getElementById("product-select");
+                        if (!select) {
+                            console.error("No se encontró el select de productos");
+                            return;
+                        }
+                        const currentValue = select.value; // Guardar selección actual
+                        select.innerHTML = \'<option value="">Seleccionar un producto...</option>\';
+                        if (data && data.length > 0) {
+                            data.forEach(product => {
+                                const option = document.createElement("option");
+                                option.value = product.id;
+                                option.textContent = product.name + " (" + product.unit_measurement + ")";
+                                option.setAttribute("data-unit", product.unit_measurement);
+                                option.setAttribute("data-description", product.description || "");
+                                option.setAttribute("data-stock", product.stock_total || 0);
+                                option.setAttribute("data-minimum-stock", product.minimum_stock || 0);
+                                select.appendChild(option);
+                            });
+                        } else {
+                            console.warn("No se recibieron productos del servidor");
+                        }
+                        // Restaurar selección si existía
+                        if (currentValue) {
+                            select.value = currentValue;
+                            updateStockInfo();
+                        }
+                    })
+                    .catch(error => {
+                        console.error("Error loading products:", error);
+                        const select = document.getElementById("product-select");
+                        if (select) {
+                            select.innerHTML = \'<option value="">Error al cargar productos</option>\';
+                        }
+                    });
+            }
+            
             // Cargar productos existentes
             loadProducts();
             
@@ -404,25 +474,52 @@ class GeneralRequestCrudController extends CrudController
             document.getElementById("add-new-product-btn").addEventListener("click", showNewProductModal);
             document.getElementById("product-select").addEventListener("change", updateStockInfo);
             
-            // Función para cargar productos
-            function loadProducts() {
-                fetch("' . backpack_url('api/productos') . '")
-                    .then(response => response.json())
-                    .then(data => {
-                        const select = document.getElementById("product-select");
-                        select.innerHTML = \'<option value="">Seleccionar un producto...</option>\';
-                        data.forEach(product => {
-                            const option = document.createElement("option");
-                            option.value = product.id;
-                            option.textContent = product.name + " (" + product.unit_measurement + ")";
-                            option.setAttribute("data-unit", product.unit_measurement);
-                            option.setAttribute("data-description", product.description || "");
-                            option.setAttribute("data-stock", product.stock_total || 0);
-                            option.setAttribute("data-minimum-stock", product.minimum_stock || 0);
-                            select.appendChild(option);
-                        });
-                    })
-                    .catch(error => console.error("Error loading products:", error));
+            // Escuchar cambios en el campo de área para recargar productos con stock correcto
+            if (areaField) {
+                areaField.addEventListener("change", function() {
+                    loadProducts();
+                    // Actualizar stock de productos ya seleccionados
+                    updateSelectedProductsStock();
+                });
+            }
+            
+            // Función para actualizar el stock de productos ya seleccionados
+            function updateSelectedProductsStock() {
+                const areaId = areaField ? areaField.value : null;
+                if (!areaId) return;
+                
+                const selectedProductsList = document.getElementById("selected-products-list");
+                const productRows = selectedProductsList.querySelectorAll("[data-product-id]");
+                
+                productRows.forEach(row => {
+                    const productId = row.getAttribute("data-product-id");
+                    if (productId) {
+                        fetch("' . backpack_url('api/productos') . '?area_id=" + areaId)
+                            .then(response => response.json())
+                            .then(data => {
+                                const product = data.find(p => p.id == productId);
+                                if (product) {
+                                    const stockBadge = row.querySelector(".stock-badge");
+                                    if (stockBadge) {
+                                        const stock = parseInt(product.stock_total) || 0;
+                                        const minimumStock = parseInt(product.minimum_stock) || 0;
+                                        
+                                        if (stock > minimumStock) {
+                                            stockBadge.className = "badge bg-success stock-badge";
+                                            stockBadge.textContent = stock + " unidades";
+                                        } else if (stock > 0) {
+                                            stockBadge.className = "badge bg-warning stock-badge";
+                                            stockBadge.textContent = stock + " unidades (Stock bajo)";
+                                        } else {
+                                            stockBadge.className = "badge bg-danger stock-badge";
+                                            stockBadge.textContent = "Sin stock";
+                                        }
+                                    }
+                                }
+                            })
+                            .catch(error => console.error("Error updating stock:", error));
+                    }
+                });
             }
             
             // Función para actualizar información de stock
@@ -484,15 +581,39 @@ class GeneralRequestCrudController extends CrudController
                 productDiv.className = "selected-product-item border p-3 mb-2";
                 productDiv.setAttribute("data-product-id", productId);
                 
+                // Obtener stock del producto seleccionado
+                const select = document.getElementById("product-select");
+                const selectedOption = select.querySelector(`option[value="${productId}"]`);
+                let stock = 0;
+                let minimumStock = 0;
+                if (selectedOption) {
+                    stock = parseInt(selectedOption.getAttribute("data-stock")) || 0;
+                    minimumStock = parseInt(selectedOption.getAttribute("data-minimum-stock")) || 0;
+                }
+                
+                // Determinar badge de stock
+                let stockBadge = "";
+                if (stock > minimumStock) {
+                    stockBadge = `<span class="badge bg-success stock-badge">${stock} unidades</span>`;
+                } else if (stock > 0) {
+                    stockBadge = `<span class="badge bg-warning stock-badge">${stock} unidades (Stock bajo)</span>`;
+                } else {
+                    stockBadge = `<span class="badge bg-danger stock-badge">Sin stock</span>`;
+                }
+                
                 productDiv.innerHTML = `
                     <div class="row">
-                        <div class="col-md-4">
+                        <div class="col-md-3">
                             <strong>${productName}</strong>
                             ${description ? `<br><small class="text-muted">${description}</small>` : ""}
                         </div>
                         <div class="col-md-2">
                             <label>Cantidad:</label>
                             <input type="number" class="form-control product-quantity" value="${quantity}" min="1">
+                        </div>
+                        <div class="col-md-2">
+                            <label>Stock:</label>
+                            <div>${stockBadge}</div>
                         </div>
                         <div class="col-md-3">
                             <label>Especificaciones:</label>
@@ -873,6 +994,9 @@ class GeneralRequestCrudController extends CrudController
         
         CRUD::removeButton('delete');
         CRUD::addButton('line', 'delete', 'view', 'crud::buttons.delete_general_request', 'end');
+        
+        // Agregar botón para convertir a solicitud de compra también en la vista de detalle
+        CRUD::addButton('line', 'convert_to_purchase', 'view', 'crud::buttons.convert_to_purchase', 'end');
         
         CRUD::column('number')->label('Número');
         CRUD::column('createdBy.name')->label('Solicitante');

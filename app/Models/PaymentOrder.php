@@ -26,6 +26,7 @@ class PaymentOrder extends Model
 
     protected $casts = [
         'date' => 'date',
+        'payment_date' => 'date',
     ];
 
     /*

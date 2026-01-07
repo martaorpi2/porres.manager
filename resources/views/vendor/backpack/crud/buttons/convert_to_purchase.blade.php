@@ -9,6 +9,22 @@
     $user = backpack_user();
     $isPersonal = $user && $user->hasRole('role_personal', 'backpack');
     
+    // Verificar si el usuario es role_responsable_area (puede convertir solicitudes de su área)
+    $isResponsableArea = $user && $user->hasRole('role_responsable_area', 'backpack');
+    $canAccessThisRequest = false;
+    
+    if ($isResponsableArea) {
+        // Verificar si la solicitud pertenece a un área donde el usuario es responsable
+        $userAreas = \App\Models\ResponsibilityArea::where('responsible_user_id', $user->id)->pluck('id');
+        if ($entry->area_id && $userAreas->contains($entry->area_id)) {
+            $canAccessThisRequest = true;
+        }
+        // También puede convertir si él creó la solicitud
+        if ($entry->created_by == $user->id) {
+            $canAccessThisRequest = true;
+        }
+    }
+    
     // Verificar si hay productos sin suficiente stock
     $hasInsufficientStock = false;
     if ($entry->details && $entry->details->count() > 0) {
@@ -33,9 +49,13 @@
         $hasInsufficientStock = true;
     }
     
+    // Para role_responsable_area, permitir convertir si tiene acceso a la solicitud (aunque tenga stock suficiente)
+    // Para otros roles, solo si hay productos sin suficiente stock
+    $canConvertByStock = $hasInsufficientStock || ($isResponsableArea && $canAccessThisRequest);
+    
     // Solo mostrar el botón si no está convertida, no está totalmente entregada, tiene acceso, 
-    // hay productos sin suficiente stock y el usuario NO es role_personal
-    $canConvert = $hasAccess && $notConverted && !$isFullyDelivered && $hasInsufficientStock && !$isPersonal;
+    // (hay productos sin suficiente stock O es responsable de área con acceso) y el usuario NO es role_personal
+    $canConvert = $hasAccess && $notConverted && !$isFullyDelivered && $canConvertByStock && !$isPersonal;
 @endphp
 
 @if ($canConvert)

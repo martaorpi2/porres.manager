@@ -11,6 +11,9 @@ use App\Models\Reception;
 use App\Models\Devolution;
 use App\Models\Delivery;
 use App\Models\Supplier;
+use App\Models\StockLevel;
+use App\Models\Product;
+use App\Models\Location;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -30,6 +33,7 @@ class DashboardController extends Controller
         
         $isPersonal = $user->hasRole('role_personal');
         $isResponsableArea = $user->hasRole('role_responsable_area');
+        $isResponsableCompras = $user->hasRole('role_responsable_compras', 'backpack');
         $isAdminInstitucion = $user->hasRole('role_admin_institucion', 'backpack');
         $isApoderado = $user->hasRole('role_apoderado', 'backpack');
         $isRepresentanteLegal = $user->hasRole('role_representante_legal', 'backpack');
@@ -107,6 +111,7 @@ class DashboardController extends Controller
                 'general_requests' => $userRequestsQuery->count(),
                 'general_requests_pending' => (clone $userRequestsQuery)->where('status', 'creada')->count(),
                 'general_requests_delivered' => (clone $userRequestsQuery)->whereHas('deliveries')->count(),
+                'general_requests_pending_delivery' => (clone $userRequestsQuery)->whereDoesntHave('deliveries')->count(),
                 'purchase_requests' => PurchaseRequest::where('requesting_user_id', $user->id)->count(),
                 'purchase_requests_pending' => PurchaseRequest::where('requesting_user_id', $user->id)->where('status', 'Pendiente')->count(),
                 'purchase_requests_normal' => PurchaseRequest::where('requesting_user_id', $user->id)
@@ -327,6 +332,54 @@ class DashboardController extends Controller
                 ->take(8);
         }
 
+        // Obtener alertas de stock mínimo para responsables de área
+        $stockAlerts = collect();
+        $stockAlertsHtml = '';
+        if ($isResponsableArea) {
+            $stockAlerts = $this->getStockMinimumAlerts($user);
+            
+            // Generar HTML para las alertas
+            if ($stockAlerts->isNotEmpty()) {
+                \Log::info('Generando HTML para alertas de stock', ['count' => $stockAlerts->count()]);
+                
+                $stockAlertsHtml = '<div style="text-align: left; max-height: 400px; overflow-y: auto;">';
+                $stockAlertsHtml .= '<div class="alert alert-warning" style="margin-bottom: 15px;">';
+                $stockAlertsHtml .= '<i class="la la-info-circle"></i> <strong>Atención:</strong> Tienes <strong>' . $stockAlerts->count() . '</strong> producto(s) con stock por debajo del mínimo requerido.';
+                $stockAlertsHtml .= '</div>';
+                $stockAlertsHtml .= '<table class="table table-sm table-hover" style="font-size: 0.9em;">';
+                $stockAlertsHtml .= '<thead style="background-color: #f8d7da;"><tr>';
+                $stockAlertsHtml .= '<th>Producto</th><th>Stock Actual</th><th>Stock Mín.</th><th>Déficit</th><th>Ubicaciones</th>';
+                $stockAlertsHtml .= '</tr></thead><tbody>';
+                
+                foreach ($stockAlerts as $alert) {
+                    $stockAlertsHtml .= '<tr>';
+                    $stockAlertsHtml .= '<td><strong>' . e($alert['product']->name) . '</strong>';
+                    if ($alert['product']->description) {
+                        $stockAlertsHtml .= '<br><small class="text-muted">' . e(\Str::limit($alert['product']->description, 40)) . '</small>';
+                    }
+                    $stockAlertsHtml .= '</td>';
+                    $stockAlertsHtml .= '<td><span class="badge bg-danger">' . number_format($alert['current_stock'], 0) . '</span></td>';
+                    $stockAlertsHtml .= '<td><span class="badge bg-warning text-dark">' . number_format($alert['minimum_stock'], 0) . '</span></td>';
+                    $stockAlertsHtml .= '<td><span class="badge bg-danger">' . number_format($alert['deficit'], 0) . ' ' . e($alert['product']->unit_measurement ?? 'unidades') . '</span></td>';
+                    $stockAlertsHtml .= '<td>';
+                    if ($alert['locations']->isNotEmpty()) {
+                        foreach ($alert['locations'] as $location) {
+                            $stockAlertsHtml .= '<span class="badge bg-secondary" style="margin: 2px;">' . e($location['name']) . ': ' . number_format($location['quantity'], 0) . '</span>';
+                        }
+                    } else {
+                        $stockAlertsHtml .= '<span class="text-muted">Sin stock</span>';
+                    }
+                    $stockAlertsHtml .= '</td>';
+                    $stockAlertsHtml .= '</tr>';
+                }
+                
+                $stockAlertsHtml .= '</tbody></table>';
+                $stockAlertsHtml .= '</div>';
+                
+                \Log::info('HTML de alertas generado', ['length' => strlen($stockAlertsHtml)]);
+            }
+        }
+
         return view('vendor.backpack.ui.dashboard', compact(
             'stats',
             'generalRequests',
@@ -340,10 +393,13 @@ class DashboardController extends Controller
             'suppliersWithRatings',
             'isPersonal',
             'isResponsableArea',
+            'isResponsableCompras',
             'isAdminInstitucion',
             'isApoderado',
             'isRepresentanteLegal',
             'pendingApprovalRequests',
+            'stockAlerts',
+            'stockAlertsHtml',
             'user'
         ));
     }
@@ -551,6 +607,144 @@ class DashboardController extends Controller
         }
 
         return $flows;
+    }
+
+    /**
+     * Obtener el mapeo de áreas de responsabilidad a ubicaciones
+     */
+    private function getAreaLocationMap()
+    {
+        return [
+            'Informática' => 'Informática',
+            'Mantenimiento' => 'Mantenimiento',
+            'Salud' => 'Insumos de Salud',
+            'Insumos Generales' => 'Insumos Generales',
+        ];
+    }
+
+    /**
+     * Obtener alertas de stock mínimo para un responsable de área
+     */
+    private function getStockMinimumAlerts($user)
+    {
+        // Obtener las áreas de responsabilidad del usuario
+        $userAreas = \App\Models\ResponsibilityArea::where('responsible_user_id', $user->id)
+            ->where('is_active', true)
+            ->pluck('name');
+        
+        if ($userAreas->isEmpty()) {
+            return collect();
+        }
+
+        // Mapear nombres de áreas a nombres de ubicaciones
+        $areaLocationMap = $this->getAreaLocationMap();
+        $locationNames = [];
+        
+        foreach ($userAreas as $areaName) {
+            if (isset($areaLocationMap[$areaName])) {
+                $locationNames[] = $areaLocationMap[$areaName];
+            } else {
+                // Si no hay mapeo, usar el nombre del área directamente
+                $locationNames[] = $areaName;
+            }
+        }
+
+        // Obtener IDs de ubicaciones
+        $locationIds = Location::whereIn('name', $locationNames)->pluck('id');
+        
+        if ($locationIds->isEmpty()) {
+            return collect();
+        }
+
+        // Mapeo de áreas a categorías permitidas (igual que en ProductCrudController)
+        $areaCategoryMap = [
+            'Informática' => ['Equipos Informáticos', 'Software'],
+            'Salud' => ['Material Médico', 'Reactivos'],
+            'Insumos de Salud' => ['Material Médico', 'Reactivos'],
+            'Mantenimiento' => ['Herramientas', 'Repuestos'],
+            'Insumos Generales' => ['Material de Oficina', 'Limpieza', 'Insumos Generales'],
+        ];
+        
+        // Obtener todas las categorías permitidas para las áreas del usuario
+        $allowedCategoryNames = collect();
+        foreach ($userAreas as $areaName) {
+            if (isset($areaCategoryMap[$areaName])) {
+                $allowedCategoryNames = $allowedCategoryNames->merge($areaCategoryMap[$areaName]);
+            }
+        }
+        
+        // Obtener los IDs de las categorías permitidas
+        $allowedCategoryIds = \App\Models\Category::whereIn('name', $allowedCategoryNames->unique())
+            ->pluck('id');
+        
+        // Construir la consulta de productos
+        $productsQuery = Product::where('minimum_stock', '>', 0);
+        
+        // Filtrar por categorías si hay categorías permitidas
+        if ($allowedCategoryIds->isNotEmpty()) {
+            $productsQuery->whereIn('category_id', $allowedCategoryIds);
+        } else {
+            // Si no hay categorías relacionadas, no mostrar ningún producto
+            return collect();
+        }
+        
+        // Obtener productos con sus niveles de stock filtrados por ubicaciones
+        $products = $productsQuery->with(['stockLevels' => function($query) use ($locationIds) {
+                $query->whereIn('location_id', $locationIds)
+                    ->with('location');
+            }])
+            ->get();
+
+        \Log::info('Productos encontrados con stock mínimo', [
+            'total_products' => $products->count(),
+            'location_ids' => $locationIds->toArray()
+        ]);
+
+        $alerts = collect();
+
+        foreach ($products as $product) {
+            // Calcular el stock total en las ubicaciones del responsable
+            $totalStock = $product->stockLevels->sum('quantity');
+            
+            \Log::info('Verificando producto', [
+                'product_id' => $product->id,
+                'product_name' => $product->name,
+                'total_stock' => $totalStock,
+                'minimum_stock' => $product->minimum_stock,
+                'stock_levels_count' => $product->stockLevels->count()
+            ]);
+            
+            // Verificar si el stock está por debajo del mínimo (usando comparación numérica)
+            if ((float)$totalStock < (float)$product->minimum_stock) {
+                // Obtener las ubicaciones donde está el stock
+                $locations = $product->stockLevels->map(function($stockLevel) {
+                    return [
+                        'name' => $stockLevel->location->name ?? 'N/A',
+                        'quantity' => $stockLevel->quantity
+                    ];
+                });
+
+                $alerts->push([
+                    'product' => $product,
+                    'current_stock' => $totalStock,
+                    'minimum_stock' => $product->minimum_stock,
+                    'deficit' => $product->minimum_stock - $totalStock,
+                    'locations' => $locations,
+                ]);
+                
+                \Log::info('Alerta agregada para producto', [
+                    'product_id' => $product->id,
+                    'product_name' => $product->name,
+                    'current_stock' => $totalStock,
+                    'minimum_stock' => $product->minimum_stock
+                ]);
+            }
+        }
+
+        \Log::info('Total de alertas generadas', ['count' => $alerts->count()]);
+
+        // Ordenar por déficit (mayor déficit primero)
+        return $alerts->sortByDesc('deficit')->values();
     }
 }
 

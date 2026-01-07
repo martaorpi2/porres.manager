@@ -210,6 +210,27 @@ class PaymentOrderCrudController extends CrudController
                 'placeholder' => 'Ingrese observaciones adicionales...'
             ],
         ]);
+        CRUD::addField([
+            'name' => 'payment_method',
+            'label' => 'Forma de Pago',
+            'type' => 'text',
+            'attributes' => [
+                'placeholder' => 'Ej: Transferencia, Cheque, Efectivo, etc.'
+            ],
+        ]);
+        CRUD::addField([
+            'name' => 'bank',
+            'label' => 'Banco',
+            'type' => 'text',
+            'attributes' => [
+                'placeholder' => 'Ej: Banco Nación, Banco Provincia, etc.'
+            ],
+        ]);
+        CRUD::addField([
+            'name' => 'payment_date',
+            'label' => 'Fecha de Pago',
+            'type' => 'date',
+        ]);
         /**
          * Fields can be defined using the fluent syntax:
          * - CRUD::field('price')->type('number');
@@ -257,6 +278,14 @@ class PaymentOrderCrudController extends CrudController
             'entity' => 'user',
             'attribute' => 'name',
             'model' => 'App\Models\User',
+        ]);
+        
+        CRUD::column('payment_method')->label('Forma de Pago');
+        CRUD::column('bank')->label('Banco');
+        CRUD::addColumn([
+            'name' => 'payment_date',
+            'label' => 'Fecha de Pago',
+            'type' => 'date',
         ]);
 
         // Mostrar información de la orden de compra relacionada

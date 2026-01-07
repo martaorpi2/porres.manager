@@ -60,9 +60,9 @@
     </div>
 
     <div class="box">
-        <div><strong>Forma de pago:</strong> —</div>
-        <div><strong>Banco:</strong> —</div>
-        <div><strong>Fecha de pago:</strong> —</div>
+        <div><strong>Forma de pago:</strong> {{ $paymentOrder->payment_method ?? '—' }}</div>
+        <div><strong>Banco:</strong> {{ $paymentOrder->bank ?? '—' }}</div>
+        <div><strong>Fecha de pago:</strong> {{ $paymentOrder->payment_date ? fmt_date($paymentOrder->payment_date) : '—' }}</div>
     </div>
 
     <div class="mb-4"><strong>Aplicación a Órdenes de Compra</strong></div>

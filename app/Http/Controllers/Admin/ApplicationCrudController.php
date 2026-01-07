@@ -671,25 +671,62 @@ class ApplicationCrudController extends CrudController
 
     /**
      * API endpoint para obtener productos con stock
+     * Si se proporciona area_id, calcula el stock solo de la ubicación del área
      */
     public function getProductos()
     {
-        $productos = \App\Models\Product::with(['category', 'stockLevels'])
-            ->get()
-            ->map(function($producto) {
-                $stockTotal = $producto->stockLevels->sum('quantity');
-                return [
-                    'id' => $producto->id,
-                    'name' => $producto->name,
-                    'description' => $producto->description,
-                    'category_name' => $producto->category->name ?? 'Sin categoría',
-                    'unit_measurement' => $producto->unit_measurement,
-                    'stock_total' => $stockTotal,
-                    'minimum_stock' => $producto->minimum_stock,
+        $areaId = request()->get('area_id');
+        $location = null;
+        
+        // Si se proporciona un área, obtener la ubicación correspondiente
+        if ($areaId) {
+            $area = \App\Models\ResponsibilityArea::find($areaId);
+            if ($area) {
+                // Mapeo entre nombres de áreas y nombres de ubicaciones
+                $areaLocationMap = [
+                    'Informática' => 'Informática',
+                    'Mantenimiento' => 'Mantenimiento',
+                    'Salud' => 'Insumos de Salud',
+                    'Insumos Generales' => 'Insumos Generales',
                 ];
-            });
+                
+                $areaName = $area->name;
+                $locationName = $areaLocationMap[$areaName] ?? $areaName;
+                $location = \App\Models\Location::where('name', $locationName)->first();
+            }
+        }
+        
+        try {
+            $productos = \App\Models\Product::with(['category', 'stockLevels'])
+                ->get()
+                ->map(function($producto) use ($location) {
+                    // Calcular stock según la ubicación si se proporcionó área
+                    if ($location) {
+                        $stockTotal = (int) \App\Models\StockLevel::where('product_id', $producto->id)
+                            ->where('location_id', $location->id)
+                            ->sum('quantity');
+                    } else {
+                        // Si no hay ubicación, sumar todas (comportamiento anterior)
+                        $stockTotal = $producto->stockLevels->sum('quantity');
+                    }
+                    
+                    return [
+                        'id' => $producto->id,
+                        'name' => $producto->name,
+                        'description' => $producto->description,
+                        'category_name' => $producto->category->name ?? 'Sin categoría',
+                        'unit_measurement' => $producto->unit_measurement,
+                        'stock_total' => $stockTotal,
+                        'minimum_stock' => $producto->minimum_stock,
+                    ];
+                })
+                ->values(); // Asegurar que sea un array indexado
 
-        return response()->json($productos);
+            return response()->json($productos);
+        } catch (\Exception $e) {
+            \Log::error('Error en getProductos: ' . $e->getMessage());
+            return response()->json(['error' => 'Error al cargar productos'], 500);
+        }
     }
 
     /**
