@@ -401,11 +401,30 @@ class MarketRateCrudController extends CrudController
             }
         }
 
+        // Procesar los items de cotización primero para calcular el total
+        $selectedItems = $request->input('selected_quote_items');
+        $calculatedTotal = 0;
+        
+        if ($selectedItems) {
+            $items = json_decode($selectedItems, true);
+            if (is_array($items)) {
+                foreach ($items as $itemData) {
+                    $quantity = floatval($itemData['quantity'] ?? 0);
+                    $unitPrice = floatval($itemData['unit_price'] ?? 0);
+                    $calculatedTotal += $quantity * $unitPrice;
+                }
+            }
+        }
+        
+        // Actualizar el total_amount con el valor calculado antes de guardar
+        // Siempre establecer el total_amount calculado, incluso si es 0
+        $dataToSave['total_amount'] = $calculatedTotal;
+        
         // insert item in the db
         $item = $this->crud->create($dataToSave);
         $this->data['entry'] = $this->crud->entry = $item;
 
-        // Procesar los items de cotización seleccionados
+        // Procesar los items de cotización seleccionados (esto también actualizará el total_amount)
         $this->processSelectedQuoteItems($item, $request);
 
         // show a success message
@@ -538,6 +557,18 @@ class MarketRateCrudController extends CrudController
             document.getElementById("product-select").addEventListener("change", updateProductInfo);
             document.getElementById("item-quantity").addEventListener("input", calculateSubtotal);
             document.getElementById("item-price").addEventListener("input", calculateSubtotal);
+            
+            // Asegurar que el total_amount se actualice antes de enviar el formulario
+            const form = document.querySelector("form");
+            if (form) {
+                form.addEventListener("submit", function(e) {
+                    updateTotalAmount();
+                    // Pequeño delay para asegurar que el valor se actualice
+                    setTimeout(function() {
+                        // Continuar con el envío normal
+                    }, 100);
+                });
+            }
             
             // Cargar items existentes si hay
             const existingItems = ' . $existingItemsJson . ';
@@ -730,9 +761,26 @@ class MarketRateCrudController extends CrudController
                 document.getElementById("total-amount-display").textContent = `$${total.toFixed(2)}`;
                 
                 // Actualizar también el campo de monto total del formulario
-                const totalAmountField = document.querySelector("input[name=\'total_amount\']");
+                // Intentar múltiples selectores para asegurar que encontremos el campo
+                let totalAmountField = document.querySelector("input[name=\'total_amount\']");
+                if (!totalAmountField) {
+                    totalAmountField = document.querySelector("input[name=\'total_amount\']");
+                }
+                if (!totalAmountField) {
+                    // Buscar por ID si existe
+                    totalAmountField = document.getElementById("total_amount");
+                }
+                if (!totalAmountField) {
+                    // Buscar cualquier input con name que contenga total_amount
+                    totalAmountField = document.querySelector("input[name*=\'total_amount\']");
+                }
                 if (totalAmountField) {
                     totalAmountField.value = total.toFixed(2);
+                    // Disparar evento change para asegurar que el valor se registre
+                    totalAmountField.dispatchEvent(new Event(\'change\', { bubbles: true }));
+                    totalAmountField.dispatchEvent(new Event(\'input\', { bubbles: true }));
+                } else {
+                    console.warn("No se encontró el campo total_amount para actualizar");
                 }
             }
         });
@@ -754,32 +802,54 @@ class MarketRateCrudController extends CrudController
         
         if (!$selectedItems) {
             Log::info('No hay items de cotización seleccionados');
+            // Si no hay items, asegurar que el total_amount sea 0
+            $marketRate->update(['total_amount' => 0]);
             return;
         }
         
         $items = json_decode($selectedItems, true);
+        
+        if (!is_array($items) || empty($items)) {
+            Log::warning('Items de cotización no válidos o vacíos:', ['selectedItems' => $selectedItems]);
+            $marketRate->update(['total_amount' => 0]);
+            return;
+        }
+        
         Log::info('Items de cotización seleccionados:', $items);
         
         $totalAmount = 0;
         
         foreach ($items as $itemData) {
-            $productId = $itemData['product_id'];
-            $quantity = $itemData['quantity'];
-            $unitPrice = $itemData['unit_price'];
+            $productId = $itemData['product_id'] ?? null;
+            $quantity = floatval($itemData['quantity'] ?? 0);
+            $unitPrice = floatval($itemData['unit_price'] ?? 0);
+            
+            if (!$productId || $quantity <= 0 || $unitPrice < 0) {
+                Log::warning('Item de cotización inválido, omitiendo:', $itemData);
+                continue;
+            }
             
             // Crear el detalle de la cotización
-            $detail = \App\Models\QuoteDetail::create([
-                'market_rate_id' => $marketRate->id,
-                'product_id' => $productId,
-                'quantity' => $quantity,
-                'unit_price' => $unitPrice,
-            ]);
-            
-            $totalAmount += $quantity * $unitPrice;
-            Log::info('Detalle de cotización creado:', ['id' => $detail->id, 'product_id' => $productId, 'quantity' => $quantity, 'unit_price' => $unitPrice]);
+            try {
+                $detail = \App\Models\QuoteDetail::create([
+                    'market_rate_id' => $marketRate->id,
+                    'product_id' => $productId,
+                    'quantity' => $quantity,
+                    'unit_price' => $unitPrice,
+                ]);
+                
+                $totalAmount += $quantity * $unitPrice;
+                Log::info('Detalle de cotización creado:', ['id' => $detail->id, 'product_id' => $productId, 'quantity' => $quantity, 'unit_price' => $unitPrice]);
+            } catch (\Exception $e) {
+                Log::error('Error al crear detalle de cotización:', [
+                    'error' => $e->getMessage(),
+                    'item_data' => $itemData
+                ]);
+            }
         }
         
-        // Actualizar el monto total de la cotización
+        // Actualizar el monto total de la cotización (siempre, incluso si es 0)
+        $marketRate->refresh();
         $marketRate->update(['total_amount' => $totalAmount]);
         Log::info('Monto total actualizado:', ['market_rate_id' => $marketRate->id, 'total_amount' => $totalAmount]);
     }

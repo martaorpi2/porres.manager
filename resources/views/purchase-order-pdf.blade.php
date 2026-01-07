@@ -51,7 +51,6 @@
 
     <div class="box">
         <div><strong>Fecha:</strong> {{ fmt_date($purchaseOrder->date) }}</div>
-        <div><strong>Estado:</strong> {{ $purchaseOrder->status }}</div>
     </div>
 
     <div class="box">
@@ -63,8 +62,8 @@
     </div>
 
     <div class="box">
-        <div><strong>Condiciones de pago:</strong> 30 días fecha factura</div>
-        <div><strong>Entrega estimada:</strong> {{ $purchaseOrder->date->copy()->addDays(8)->format('d/m/Y') }}</div>
+        <div><strong>Condiciones de pago:</strong> {{ $purchaseOrder->payment_conditions ?? '30 días fecha factura' }}</div>
+        <div><strong>Entrega estimada:</strong> {{ $purchaseOrder->estimated_delivery_date ? fmt_date($purchaseOrder->estimated_delivery_date) : ($purchaseOrder->date ? $purchaseOrder->date->copy()->addDays(8)->format('d/m/Y') : 'N/A') }}</div>
     </div>
 
     <div class="mb-4"><strong>Detalle de productos/servicios</strong></div>

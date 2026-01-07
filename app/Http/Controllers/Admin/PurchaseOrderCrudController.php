@@ -161,6 +161,15 @@ class PurchaseOrderCrudController extends CrudController
         CRUD::field('issue_date')->label('Fecha de Emisión');
         CRUD::field('estimated_delivery_date')->label('Fecha Estimada de Entrega');
         CRUD::addField([
+            'name' => 'payment_conditions',
+            'label' => 'Condiciones de Pago',
+            'type' => 'text',
+            'default' => '30 días fecha factura',
+            'attributes' => [
+                'placeholder' => 'Ej: 30 días fecha factura, Contado, etc.'
+            ],
+        ]);
+        CRUD::addField([
             'name' => 'status',
             'label' => 'Estado',
             'type' => 'enum',
@@ -239,6 +248,32 @@ class PurchaseOrderCrudController extends CrudController
             'model' => 'App\Models\User',
         ]);
 
+        // Mostrar la solicitud de compra asociada
+        CRUD::addColumn([
+            'name' => 'purchase_request_id',
+            'label' => 'Solicitud de Compra',
+            'type' => 'closure',
+            'function' => function($entry) {
+                if ($entry->purchaseRequest) {
+                    $statusBadge = match($entry->purchaseRequest->status) {
+                        'Pendiente' => 'bg-warning',
+                        'Aprobada' => 'bg-success',
+                        'Rechazada' => 'bg-danger',
+                        'En Proceso' => 'bg-info',
+                        'Completada' => 'bg-primary',
+                        default => 'bg-secondary'
+                    };
+                    return '<a href="' . backpack_url('purchase-request/' . $entry->purchaseRequest->id . '/show') . '" class="text-primary">' . 
+                           e($entry->purchaseRequest->request_number ?? 'N/A') . 
+                           '</a><br><small><span class="badge ' . $statusBadge . '">' . 
+                           e($entry->purchaseRequest->status ?? 'Sin estado') . 
+                           '</span></small>';
+                }
+                return '<span class="text-muted">Sin solicitud asociada</span>';
+            },
+            'escaped' => false
+        ]);
+
         // Agregar columna calculada para el total
         CRUD::addColumn([
             'name' => 'total',
@@ -312,6 +347,112 @@ class PurchaseOrderCrudController extends CrudController
         
         // Agregar botón de PDF en la vista previa (también en top)
         CRUD::addButton('top', 'pdf', 'view', 'crud::buttons.purchase_order_pdf', 'end');
+        
+        // Agregar botón para crear orden de pago desde esta orden de compra
+        CRUD::addColumn([
+            'name' => 'create_payment_order',
+            'label' => 'Acciones',
+            'type' => 'closure',
+            'function' => function($entry) {
+                $user = backpack_user();
+                // Verificar que el usuario no sea role_responsable_area
+                if ($user && $user->hasRole('role_responsable_area', 'backpack')) {
+                    return '';
+                }
+                
+                // Verificar permisos para crear órdenes de pago
+                $canCreate = true;
+                if ($user && ($user->hasRole('role_admin_institucion', 'backpack') || 
+                             $user->hasRole('role_apoderado', 'backpack') || 
+                             $user->hasRole('role_representante_legal', 'backpack'))) {
+                    $canCreate = false;
+                }
+                
+                if (!$canCreate) {
+                    return '';
+                }
+                
+                $html = '<div class="mt-3">';
+                $html .= '<a href="' . backpack_url('payment-order/create?purchase_order_id=' . $entry->id) . '" class="btn btn-success">';
+                $html .= '<i class="la la-money-bill-wave"></i> Crear Orden de Pago';
+                $html .= '</a>';
+                $html .= '</div>';
+                
+                return $html;
+            },
+            'escaped' => false
+        ]);
+        
+        // Mostrar órdenes de pago asociadas
+        CRUD::addColumn([
+            'name' => 'payment_orders_table',
+            'label' => 'Órdenes de Pago Asociadas',
+            'type' => 'custom_html',
+            'value' => function($entry) {
+                $entry->load('paymentOrders');
+                $paymentOrders = $entry->paymentOrders;
+                
+                if ($paymentOrders->isEmpty()) {
+                    return '<div class="alert alert-info">No hay órdenes de pago asociadas a esta orden de compra.</div>';
+                }
+                
+                $html = '<div class="table-responsive">';
+                $html .= '<table class="table table-striped table-bordered">';
+                $html .= '<thead class="thead-dark">';
+                $html .= '<tr>';
+                $html .= '<th>Número</th>';
+                $html .= '<th>Fecha</th>';
+                $html .= '<th>Monto</th>';
+                $html .= '<th>Estado</th>';
+                $html .= '<th>Acciones</th>';
+                $html .= '</tr>';
+                $html .= '</thead>';
+                $html .= '<tbody>';
+                
+                $totalPaid = 0;
+                foreach ($paymentOrders as $paymentOrder) {
+                    $totalPaid += $paymentOrder->total_amount ?? 0;
+                    $statusBadge = match($paymentOrder->status) {
+                        'Pendiente' => 'bg-warning',
+                        'Aprobada' => 'bg-success',
+                        'Rechazada' => 'bg-danger',
+                        default => 'bg-secondary'
+                    };
+                    
+                    $html .= '<tr>';
+                    $html .= '<td><strong>' . e($paymentOrder->payment_number ?? 'N/A') . '</strong></td>';
+                    $html .= '<td>' . ($paymentOrder->date ? $paymentOrder->date->format('d/m/Y') : 'N/A') . '</td>';
+                    $html .= '<td><strong>$' . number_format($paymentOrder->total_amount ?? 0, 2) . '</strong></td>';
+                    $html .= '<td><span class="badge ' . $statusBadge . '">' . e($paymentOrder->status ?? 'N/A') . '</span></td>';
+                    $html .= '<td>';
+                    $html .= '<a href="' . backpack_url('payment-order/' . $paymentOrder->id . '/show') . '" class="btn btn-sm btn-info">';
+                    $html .= '<i class="la la-eye"></i> Ver';
+                    $html .= '</a>';
+                    $html .= '</td>';
+                    $html .= '</tr>';
+                }
+                
+                $html .= '</tbody>';
+                $html .= '<tfoot class="table-light">';
+                $html .= '<tr>';
+                $html .= '<th colspan="2" class="text-end">Total Pagado:</th>';
+                $html .= '<th><strong>$' . number_format($totalPaid, 2) . '</strong></th>';
+                $html .= '<th colspan="2">';
+                $remaining = $entry->total - $totalPaid;
+                if ($remaining > 0) {
+                    $html .= '<span class="badge bg-warning">Pendiente: $' . number_format($remaining, 2) . '</span>';
+                } else {
+                    $html .= '<span class="badge bg-success">Completado</span>';
+                }
+                $html .= '</th>';
+                $html .= '</tr>';
+                $html .= '</tfoot>';
+                $html .= '</table>';
+                $html .= '</div>';
+                
+                return $html;
+            }
+        ]);
     }
 
     /**

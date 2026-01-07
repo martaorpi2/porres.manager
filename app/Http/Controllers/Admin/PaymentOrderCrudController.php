@@ -138,6 +138,19 @@ class PaymentOrderCrudController extends CrudController
     protected function setupCreateOperation()
     {
         CRUD::setValidation(PaymentOrderRequest::class);
+        
+        // Obtener purchase_order_id de la URL si existe
+        $purchaseOrderId = request()->get('purchase_order_id');
+        $purchaseOrder = null;
+        $defaultTotal = 0;
+        
+        if ($purchaseOrderId) {
+            $purchaseOrder = \App\Models\PurchaseOrder::with('details')->find($purchaseOrderId);
+            if ($purchaseOrder) {
+                $defaultTotal = $purchaseOrder->total ?? 0;
+            }
+        }
+        
         $ultimo = \App\Models\PaymentOrder::max('id');
         $nro = 'OP-'.date('Y').'-'.str_pad(($ultimo + 1), 3, '0', STR_PAD_LEFT);
         CRUD::addField([
@@ -150,7 +163,7 @@ class PaymentOrderCrudController extends CrudController
             ],
         ]);
         CRUD::field('date')->label('Fecha');
-        CRUD::field('total_amount')->label('Monto Total');
+        CRUD::field('total_amount')->label('Monto Total')->default($defaultTotal);
         CRUD::addField([
             'name' => 'status',
             'label' => 'Estado',
@@ -163,7 +176,23 @@ class PaymentOrderCrudController extends CrudController
             'entity' => 'purchase_order',
             'attribute' => 'number',
             'model' => 'App\Models\PurchaseOrder',
+            'default' => $purchaseOrderId,
+            'attributes' => $purchaseOrderId ? ['readonly' => 'readonly'] : [],
         ]);
+        
+        // Mostrar información de la orden de compra si viene desde ahí
+        if ($purchaseOrder) {
+            CRUD::addField([
+                'name' => 'purchase_order_info',
+                'label' => 'Información de la Orden de Compra',
+                'type' => 'custom_html',
+                'value' => '<div class="alert alert-info">
+                    <strong>Orden de Compra:</strong> ' . e($purchaseOrder->number) . '<br>
+                    <strong>Proveedor:</strong> ' . e($purchaseOrder->supplier->company_name ?? 'N/A') . '<br>
+                    <strong>Total de la Orden:</strong> $' . number_format($purchaseOrder->total ?? 0, 2) . '
+                </div>',
+            ]);
+        }
         CRUD::addField([
             'name' => 'authorizing_user_id',
             'label' => 'Autoriza',

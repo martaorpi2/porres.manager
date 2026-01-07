@@ -1824,10 +1824,27 @@ class PurchaseRequestCrudController extends CrudController
     public function selectMarketRate($id, $marketRateId)
     {
         $purchaseRequest = \App\Models\PurchaseRequest::findOrFail($id);
-        $marketRate = \App\Models\MarketRate::findOrFail($marketRateId);
+        $marketRate = \App\Models\MarketRate::with('quoteDetails')->findOrFail($marketRateId);
         
-        // Actualizar el monto total de la solicitud con el monto de la cotización seleccionada
-        $newTotalAmount = $marketRate->total_amount ?? $purchaseRequest->total_amount;
+        // Calcular el monto total de la cotización desde los detalles si no está disponible
+        $newTotalAmount = $marketRate->total_amount;
+        if (!$newTotalAmount || $newTotalAmount == 0) {
+            // Recalcular desde los detalles de la cotización
+            $newTotalAmount = $marketRate->quoteDetails->sum(function($detail) {
+                return ($detail->quantity ?? 0) * ($detail->unit_price ?? 0);
+            });
+            
+            // Si se calculó un monto, actualizar la cotización
+            if ($newTotalAmount > 0) {
+                $marketRate->update(['total_amount' => $newTotalAmount]);
+            }
+        }
+        
+        // Si aún no hay monto, mantener el de la solicitud de compra
+        if (!$newTotalAmount || $newTotalAmount == 0) {
+            $newTotalAmount = $purchaseRequest->total_amount ?? 0;
+        }
+        
         $comprasLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_responsable_compras');
         $requiresAdminApproval = $newTotalAmount > $comprasLimit;
         
@@ -1882,12 +1899,29 @@ class PurchaseRequestCrudController extends CrudController
         }
         
         $purchaseRequest = \App\Models\PurchaseRequest::findOrFail($id);
-        $marketRate = \App\Models\MarketRate::findOrFail($marketRateId);
+        $marketRate = \App\Models\MarketRate::with('quoteDetails')->findOrFail($marketRateId);
         
         $request = request();
         
-        // Actualizar el monto total de la solicitud con el monto de la cotización seleccionada
-        $newTotalAmount = $marketRate->total_amount ?? $purchaseRequest->total_amount;
+        // Calcular el monto total de la cotización desde los detalles si no está disponible
+        $newTotalAmount = $marketRate->total_amount;
+        if (!$newTotalAmount || $newTotalAmount == 0) {
+            // Recalcular desde los detalles de la cotización
+            $newTotalAmount = $marketRate->quoteDetails->sum(function($detail) {
+                return ($detail->quantity ?? 0) * ($detail->unit_price ?? 0);
+            });
+            
+            // Si se calculó un monto, actualizar la cotización
+            if ($newTotalAmount > 0) {
+                $marketRate->update(['total_amount' => $newTotalAmount]);
+            }
+        }
+        
+        // Si aún no hay monto, mantener el de la solicitud de compra
+        if (!$newTotalAmount || $newTotalAmount == 0) {
+            $newTotalAmount = $purchaseRequest->total_amount ?? 0;
+        }
+        
         $comprasLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_responsable_compras');
         $requiresAdminApproval = $newTotalAmount > $comprasLimit;
         
@@ -2336,6 +2370,7 @@ class PurchaseRequestCrudController extends CrudController
             'authorizing_user_id' => auth()->id(),
             'status' => 'Pendiente',
             'purchase_request_id' => $purchaseRequest->id,
+            'payment_conditions' => '30 días fecha factura', // Valor por defecto
         ]);
         
         // Create purchase order details from quote
@@ -2393,6 +2428,7 @@ class PurchaseRequestCrudController extends CrudController
             'authorizing_user_id' => auth()->id(),
             'status' => 'Pendiente',
             'purchase_request_id' => $purchaseRequest->id,
+            'payment_conditions' => '30 días fecha factura', // Valor por defecto
         ]);
         
         // Create purchase order details from purchase request details
@@ -2819,6 +2855,59 @@ class PurchaseRequestCrudController extends CrudController
                 return $html;
             });
 
+        // Agregar campo para mostrar órdenes de compra asociadas
+        CRUD::column('purchase_orders_table')->label('Órdenes de Compra Asociadas')->type('custom_html')
+            ->value(function($entry) {
+                $entry->load('purchaseOrders.supplier', 'purchaseOrders.details');
+                $purchaseOrders = $entry->purchaseOrders;
+                
+                if ($purchaseOrders->isEmpty()) {
+                    return '<div class="alert alert-info">No hay órdenes de compra asociadas a esta solicitud.</div>';
+                }
+                
+                $html = '<div class="table-responsive">';
+                $html .= '<table class="table table-striped table-bordered">';
+                $html .= '<thead class="thead-dark">';
+                $html .= '<tr>';
+                $html .= '<th>Número</th>';
+                $html .= '<th>Fecha</th>';
+                $html .= '<th>Proveedor</th>';
+                $html .= '<th>Estado</th>';
+                $html .= '<th>Total</th>';
+                $html .= '<th>Acciones</th>';
+                $html .= '</tr>';
+                $html .= '</thead>';
+                $html .= '<tbody>';
+                
+                foreach ($purchaseOrders as $purchaseOrder) {
+                    $statusBadge = match($purchaseOrder->status) {
+                        'Pendiente' => 'bg-warning',
+                        'Aprobada' => 'bg-success',
+                        'Recibida' => 'bg-info',
+                        default => 'bg-secondary'
+                    };
+                    
+                    $html .= '<tr>';
+                    $html .= '<td><strong>' . e($purchaseOrder->number ?? 'N/A') . '</strong></td>';
+                    $html .= '<td>' . ($purchaseOrder->date ? $purchaseOrder->date->format('d/m/Y') : 'N/A') . '</td>';
+                    $html .= '<td>' . e($purchaseOrder->supplier->company_name ?? 'N/A') . '</td>';
+                    $html .= '<td><span class="badge ' . $statusBadge . '">' . e($purchaseOrder->status ?? 'N/A') . '</span></td>';
+                    $html .= '<td><strong>$' . number_format($purchaseOrder->total ?? 0, 2) . '</strong></td>';
+                    $html .= '<td>';
+                    $html .= '<a href="' . backpack_url('purchase-order/' . $purchaseOrder->id . '/show') . '" class="btn btn-sm btn-info">';
+                    $html .= '<i class="la la-eye"></i> Ver';
+                    $html .= '</a>';
+                    $html .= '</td>';
+                    $html .= '</tr>';
+                }
+                
+                $html .= '</tbody>';
+                $html .= '</table>';
+                $html .= '</div>';
+                
+                return $html;
+            });
+
         // Agregar campo para mostrar cotizaciones disponibles (oculto para responsables de área)
         CRUD::column('market_rates_table')->label('Cotizaciones Disponibles')->type('custom_html')
             ->value(function($entry) {
@@ -2959,26 +3048,36 @@ class PurchaseRequestCrudController extends CrudController
                     
                     if ($isDirectPurchaseAuthorized) {
                         // Para compras directas autorizadas, mostrar formulario para generar orden sin cotizaciones
-                        $html .= '<div class="mt-3">';
-                        $html .= '<div class="alert alert-success">';
-                        $html .= '<i class="la la-check-circle"></i> <strong>Compra Directa Autorizada:</strong> Esta compra directa ha sido autorizada. Puede proceder a generar la orden de compra sin necesidad de cotizaciones.';
-                        $html .= '</div>';
-                        $html .= '<form method="POST" action="' . route('purchase-request.generate-purchase-order', $entry->id) . '">';
-                        $html .= csrf_field();
-                        $html .= '<div class="row mb-3">';
-                        $html .= '<div class="col-md-4">';
-                        $html .= '<label for="issue_date" class="form-label">Fecha de Emisión:</label>';
-                        $html .= '<input type="date" name="issue_date" id="issue_date" class="form-control" value="' . date('Y-m-d') . '" required>';
-                        $html .= '</div>';
-                        $html .= '</div>';
-                        $html .= '<button type="submit" class="btn btn-primary" onclick="return confirm(\'¿Está seguro de generar la orden de compra?\')">';
-                        $html .= '<i class="la la-shopping-cart"></i> Generar Orden de Compra';
-                        $html .= '</button>';
-                        $html .= '</form>';
-                        $html .= '</div>';
+                        if ($entry->status !== 'Aprobada') {
+                            $html .= '<div class="mt-3 alert alert-warning">';
+                            $html .= '<i class="la la-exclamation-triangle"></i> <strong>Atención:</strong> La solicitud debe estar aprobada antes de generar la orden de compra.';
+                            $html .= '</div>';
+                        } else {
+                            $html .= '<div class="mt-3">';
+                            $html .= '<div class="alert alert-success">';
+                            $html .= '<i class="la la-check-circle"></i> <strong>Compra Directa Autorizada:</strong> Esta compra directa ha sido autorizada. Puede proceder a generar la orden de compra sin necesidad de cotizaciones.';
+                            $html .= '</div>';
+                            $html .= '<form method="POST" action="' . route('purchase-request.generate-purchase-order', $entry->id) . '">';
+                            $html .= csrf_field();
+                            $html .= '<div class="row mb-3">';
+                            $html .= '<div class="col-md-4">';
+                            $html .= '<label for="issue_date" class="form-label">Fecha de Emisión:</label>';
+                            $html .= '<input type="date" name="issue_date" id="issue_date" class="form-control" value="' . date('Y-m-d') . '" required>';
+                            $html .= '</div>';
+                            $html .= '</div>';
+                            $html .= '<button type="submit" class="btn btn-primary" onclick="return confirm(\'¿Está seguro de generar la orden de compra?\')">';
+                            $html .= '<i class="la la-shopping-cart"></i> Generar Orden de Compra';
+                            $html .= '</button>';
+                            $html .= '</form>';
+                            $html .= '</div>';
+                        }
                     } elseif ($totalAmount > $threshold) {
                         // Para montos mayores a 60000, se requieren OBLIGATORIAMENTE 3 cotizaciones y una seleccionada
-                        if ($quotationsCount < 3) {
+                        if ($entry->status !== 'Aprobada') {
+                            $html .= '<div class="mt-3 alert alert-warning">';
+                            $html .= '<i class="la la-exclamation-triangle"></i> <strong>Atención:</strong> La solicitud debe estar aprobada antes de generar la orden de compra.';
+                            $html .= '</div>';
+                        } elseif ($quotationsCount < 3) {
                             // Mostrar mensaje de error indicando que es obligatorio tener 3 cotizaciones
                             $html .= '<div class="mt-3 alert alert-danger">';
                             $html .= '<i class="la la-exclamation-triangle"></i> <strong>No se puede generar la orden de compra:</strong> Para solicitudes mayores a $' . number_format($threshold, 2) . ' se requieren <strong>OBLIGATORIAMENTE 3 cotizaciones</strong>. Actualmente hay ' . $quotationsCount . ' cotización(es). Debe agregar ' . (3 - $quotationsCount) . ' cotización(es) más antes de poder generar la orden de compra.';
@@ -3025,24 +3124,31 @@ class PurchaseRequestCrudController extends CrudController
                                 $html .= '<i class="la la-exclamation-triangle"></i> <strong>Atención:</strong> Tiene una cotización cargada. Debe seleccionarla antes de generar la orden de compra.';
                                 $html .= '</div>';
                             } elseif ($quotationsCount == 1 && $entry->selected_market_rate_id) {
-                                // Hay una cotización y está seleccionada, mostrar formulario para generar orden
-                                $html .= '<div class="alert alert-success">';
-                                $html .= '<i class="la la-check-circle"></i> <strong>Listo para generar orden:</strong> Tiene una cotización cargada y seleccionada. Puede proceder a generar la orden de compra.';
-                                $html .= '</div>';
-                                $html .= '<form method="POST" action="' . route('purchase-request.generate-purchase-order', $entry->id) . '">';
-                                $html .= csrf_field();
-                                $html .= '<div class="row mb-3">';
-                                $html .= '<div class="col-md-4">';
-                                $html .= '<label for="issue_date" class="form-label">Fecha de Emisión:</label>';
-                                $html .= '<input type="date" name="issue_date" id="issue_date" class="form-control" value="' . date('Y-m-d') . '" required>';
-                                $html .= '</div>';
-                                $html .= '</div>';
-                                $html .= '<div class="text-end">';
-                                $html .= '<button type="submit" class="btn btn-primary" onclick="return confirm(\'¿Está seguro de generar la orden de compra?\')">';
-                                $html .= '<i class="la la-shopping-cart"></i> Generar Orden de Compra';
-                                $html .= '</button>';
-                                $html .= '</div>';
-                                $html .= '</form>';
+                                // Hay una cotización y está seleccionada, verificar que esté aprobada
+                                if ($entry->status !== 'Aprobada') {
+                                    $html .= '<div class="alert alert-warning">';
+                                    $html .= '<i class="la la-exclamation-triangle"></i> <strong>Atención:</strong> La solicitud debe estar aprobada antes de generar la orden de compra.';
+                                    $html .= '</div>';
+                                } else {
+                                    // Hay una cotización y está seleccionada, mostrar formulario para generar orden
+                                    $html .= '<div class="alert alert-success">';
+                                    $html .= '<i class="la la-check-circle"></i> <strong>Listo para generar orden:</strong> Tiene una cotización cargada y seleccionada. Puede proceder a generar la orden de compra.';
+                                    $html .= '</div>';
+                                    $html .= '<form method="POST" action="' . route('purchase-request.generate-purchase-order', $entry->id) . '">';
+                                    $html .= csrf_field();
+                                    $html .= '<div class="row mb-3">';
+                                    $html .= '<div class="col-md-4">';
+                                    $html .= '<label for="issue_date" class="form-label">Fecha de Emisión:</label>';
+                                    $html .= '<input type="date" name="issue_date" id="issue_date" class="form-control" value="' . date('Y-m-d') . '" required>';
+                                    $html .= '</div>';
+                                    $html .= '</div>';
+                                    $html .= '<div class="text-end">';
+                                    $html .= '<button type="submit" class="btn btn-primary" onclick="return confirm(\'¿Está seguro de generar la orden de compra?\')">';
+                                    $html .= '<i class="la la-shopping-cart"></i> Generar Orden de Compra';
+                                    $html .= '</button>';
+                                    $html .= '</div>';
+                                    $html .= '</form>';
+                                }
                             } else {
                                 // Hay más de una cotización (no debería pasar para montos <= 60000, pero por si acaso)
                                 $html .= '<div class="alert alert-warning">';

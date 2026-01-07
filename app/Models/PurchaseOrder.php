@@ -29,6 +29,19 @@ class PurchaseOrder extends Model
         'issue_date' => 'date',
         'estimated_delivery_date' => 'date',
     ];
+    
+    protected $fillable = [
+        'number',
+        'date',
+        'issue_date',
+        'estimated_delivery_date',
+        'payment_conditions',
+        'status',
+        'supplier_id',
+        'authorizing_user_id',
+        'purchase_request_id',
+        'observations',
+    ];
 
     /*
     |--------------------------------------------------------------------------
