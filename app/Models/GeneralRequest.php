@@ -118,4 +118,37 @@ class GeneralRequest extends Model
         return $query->where('analysis_status', 'aprobada')
                      ->whereNotNull('analyzed_by');
     }
+
+    /**
+     * Get the age of the request in human readable format.
+     */
+    public function getAgeAttribute()
+    {
+        return $this->created_at->diffForHumans();
+    }
+
+    /**
+     * Get the age of the request in days.
+     */
+    public function getAgeInDaysAttribute()
+    {
+        return $this->created_at->diffInDays(now());
+    }
+
+    /**
+     * Get the age badge color based on days.
+     */
+    public function getAgeBadgeColorAttribute()
+    {
+        $days = $this->age_in_days;
+        if ($days < 3) {
+            return 'success'; // Verde
+        } elseif ($days < 7) {
+            return 'warning'; // Amarillo
+        } elseif ($days < 15) {
+            return 'info'; // Azul/Naranja
+        } else {
+            return 'danger'; // Rojo
+        }
+    }
 }

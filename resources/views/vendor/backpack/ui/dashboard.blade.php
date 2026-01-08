@@ -1118,24 +1118,36 @@
     </div>
 
     <div class="row mb-3">
+        @if(!isset($isResponsableCompras) || !$isResponsableCompras || (isset($isResponsableCompras) && $isResponsableCompras && $stats['general_requests'] > 0))
         <div class="col-md-{{ isset($isPersonal) && $isPersonal ? '6' : (isset($isResponsableArea) && $isResponsableArea ? '4' : '3') }}">
             <div class="stat-card">
                 <div class="stat-card-icon">
                     <i class="la la-file-alt"></i>
                 </div>
                 <div class="stat-card-number">{{ $stats['general_requests'] }}</div>
-                <div class="stat-card-label">{{ isset($isPersonal) && $isPersonal ? 'Mis Solicitudes Generales' : (isset($isResponsableArea) && $isResponsableArea ? 'Solicitudes Generales' : 'Solicitudes Generales') }}</div>
+                <div class="stat-card-label">{{ isset($isPersonal) && $isPersonal ? 'Mis Solicitudes Generales' : (isset($isResponsableArea) && $isResponsableArea ? 'Solicitudes Generales' : (isset($isResponsableCompras) && $isResponsableCompras ? 'Mis Solicitudes Generales' : 'Solicitudes Generales')) }}</div>
                 <div class="stat-card-pending">
                     {{ $stats['general_requests_delivered'] }} Entregadas
                     @if(isset($isResponsableArea) && $isResponsableArea && isset($stats['general_requests_pending_delivery']) && $stats['general_requests_pending_delivery'] > 0)
                         <br>
-                        <a href="{{ backpack_url('general-request?sin_entregas=1') }}" style="color: #ffc107; text-decoration: none; font-weight: bold; display: inline-block; margin-top: 3px;">
+                        <a href="{{ backpack_url('general-request?sin_entregas=1&explicit=1') }}" style="color: #ffc107; text-decoration: none; font-weight: bold; display: inline-block; margin-top: 3px;">
                             <i class="la la-clock"></i> {{ $stats['general_requests_pending_delivery'] }} Pendientes
                         </a>
+                    @endif
+                    @if(isset($generalRequestsAgeStats) && isset($generalRequestsAgeStats['has_pending']) && $generalRequestsAgeStats['has_pending'] && ($isPersonal || $isResponsableArea))
+                        <br>
+                        <small style="color: #6c757d; font-size: 0.85rem;">
+                            <i class="la la-hourglass-half"></i> 
+                            Más antigua: {{ (int)$generalRequestsAgeStats['max_days'] }} día(s)
+                            @if($generalRequestsAgeStats['average_days'] >= 0)
+                                | Promedio: {{ (int)$generalRequestsAgeStats['average_days'] }} día(s)
+                            @endif
+                        </small>
                     @endif
                 </div>
             </div>
         </div>
+        @endif
         @if((isset($isResponsableArea) && $isResponsableArea) || (!isset($isPersonal) || !$isPersonal))
         <div class="col-md-{{ isset($isPersonal) && $isPersonal ? '6' : (isset($isResponsableArea) && $isResponsableArea ? '4' : '3') }}">
             <div class="stat-card">
@@ -1151,11 +1163,33 @@
                     <div class="stat-card-label">{{ isset($isResponsableArea) && $isResponsableArea ? 'Mis Solicitudes de Compra' : 'Solicitudes de Compra' }}</div>
                     <div class="stat-card-pending" style="font-size: 0.85rem; color: #6c757d;">
                         Total: {{ $stats['purchase_requests'] }}
+                        @if(isset($purchaseRequestsAgeStats) && isset($purchaseRequestsAgeStats['has_pending']) && $purchaseRequestsAgeStats['has_pending'])
+                            <br>
+                            <small style="color: #6c757d;">
+                                <i class="la la-hourglass-half"></i> 
+                                Más antigua: {{ (int)$purchaseRequestsAgeStats['max_days'] }} día(s)
+                                @if($purchaseRequestsAgeStats['average_days'] >= 0)
+                                    | Promedio: {{ (int)$purchaseRequestsAgeStats['average_days'] }} día(s)
+                                @endif
+                            </small>
+                        @endif
                     </div>
                 @else
                     <div class="stat-card-number">{{ $stats['purchase_requests'] }}</div>
                     <div class="stat-card-label">{{ isset($isResponsableArea) && $isResponsableArea ? 'Mis Solicitudes de Compra' : 'Solicitudes de Compra' }}</div>
-                    <div class="stat-card-pending">{{ $stats['purchase_requests_pending'] }} Pendientes</div>
+                    <div class="stat-card-pending">
+                        {{ $stats['purchase_requests_pending'] }} Pendientes
+                        @if(isset($purchaseRequestsAgeStats) && $purchaseRequestsAgeStats['max_days'] > 0)
+                            <br>
+                            <small style="color: #6c757d; font-size: 0.85rem;">
+                                <i class="la la-hourglass-half"></i> 
+                                Más antigua: {{ (int)$purchaseRequestsAgeStats['max_days'] }} día(s)
+                                @if($purchaseRequestsAgeStats['average_days'] > 0)
+                                    | Promedio: {{ (int)$purchaseRequestsAgeStats['average_days'] }} día(s)
+                                @endif
+                            </small>
+                        @endif
+                    </div>
                 @endif
             </div>
         </div>
@@ -1393,6 +1427,7 @@
     </div>
 
     <!-- Paso 1: Solicitudes Generales -->
+    @if(!isset($isResponsableCompras) || !$isResponsableCompras || (isset($isResponsableCompras) && $isResponsableCompras && $generalRequests->count() > 0))
     <div class="process-step">
         <div class="process-step-header">
             <div class="process-step-title">
@@ -1443,6 +1478,15 @@
                     <div class="process-item-meta">
                         <span><i class="la la-user"></i> {{ $generalRequest->createdBy->name ?? 'N/A' }}</span>
                         <span><i class="la la-calendar"></i> {{ $generalRequest->created_at->format('d/m/Y') }}</span>
+                        @if(($generalRequest->status == 'creada' || $generalRequest->status == 'pendiente_analisis') && (isset($isPersonal) || isset($isResponsableArea)))
+                            @php
+                                $ageDays = (int) floor($generalRequest->age_in_days);
+                                $badgeColor = $generalRequest->age_badge_color;
+                            @endphp
+                            <span class="badge bg-{{ $badgeColor }}" style="margin-left: 5px;" title="Antigüedad: {{ $generalRequest->age }}">
+                                <i class="la la-hourglass-half"></i> {{ $ageDays }} día(s)
+                            </span>
+                        @endif
                     </div>
                 </div>
             @empty
@@ -1450,6 +1494,7 @@
             @endforelse
         </div>
     </div>
+    @endif
 
     @if((isset($isAdminInstitucion) && $isAdminInstitucion) || (isset($isApoderado) && $isApoderado) || (isset($isRepresentanteLegal) && $isRepresentanteLegal) && isset($pendingApprovalRequests))
     <!-- Solicitudes Pendientes de Aprobación (Administrador del Instituto, Apoderado o Representante Legal) -->
@@ -1479,6 +1524,13 @@
                     <div class="process-item-meta">
                         <span><i class="la la-calendar"></i> {{ $purchaseRequest->request_date->format('d/m/Y') ?? 'N/A' }}</span>
                         <span><i class="la la-dollar-sign"></i> ${{ number_format($purchaseRequest->total_amount, 2) }}</span>
+                        @php
+                            $ageDays = (int) floor($purchaseRequest->age_in_days);
+                            $badgeColor = $purchaseRequest->age_badge_color;
+                        @endphp
+                        <span class="badge bg-{{ $badgeColor }}" style="margin-left: 5px;" title="Antigüedad: {{ $purchaseRequest->age }}">
+                            <i class="la la-hourglass-half"></i> {{ $ageDays }} día(s)
+                        </span>
                     </div>
                     <div class="process-item-meta">
                         <span><i class="la la-box"></i> {{ $purchaseRequest->details->count() }} productos</span>
@@ -1516,6 +1568,15 @@
                     <div class="process-item-meta">
                         <span><i class="la la-user"></i> {{ $purchaseRequest->requestingUser->name ?? 'N/A' }}</span>
                         <span><i class="la la-calendar"></i> {{ $purchaseRequest->request_date->format('d/m/Y') ?? 'N/A' }}</span>
+                        @if($purchaseRequest->status == 'Pendiente')
+                            @php
+                                $ageDays = (int) floor($purchaseRequest->age_in_days);
+                                $badgeColor = $purchaseRequest->age_badge_color;
+                            @endphp
+                            <span class="badge bg-{{ $badgeColor }}" style="margin-left: 5px;" title="Antigüedad: {{ $purchaseRequest->age }}">
+                                <i class="la la-hourglass-half"></i> {{ $ageDays }} día(s)
+                            </span>
+                        @endif
                     </div>
                 </div>
             @empty

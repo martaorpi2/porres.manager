@@ -56,10 +56,10 @@ class GeneralRequestCrudController extends CrudController
 
         // Filtrar solicitudes según el rol del usuario
         $user = backpack_user();
+        $isAdmin = false;
         if ($user) {
             // Roles que pueden ver todas las solicitudes (administradores)
             $adminRoles = ['role_admin_sistema', 'role_admin_institucion', 'role_responsable_compras'];
-            $isAdmin = false;
             foreach ($adminRoles as $role) {
                 if ($user->hasRole($role, 'backpack')) {
                     $isAdmin = true;
@@ -78,27 +78,31 @@ class GeneralRequestCrudController extends CrudController
                         $query->whereIn('name', ['Informática', 'Insumos de Salud', 'Salud']);
                     });
                 }
-                // Para role_responsable_area, mostrar solicitudes aprobadas por analista o directas
+                // Para role_responsable_area, mostrar solicitudes de su área Y las que él crea
                 elseif ($user->hasRole('role_responsable_area', 'backpack')) {
                     $userAreas = \App\Models\ResponsibilityArea::where('responsible_user_id', $user->id)->pluck('id');
                     
-                    if ($userAreas->isNotEmpty()) {
-                        CRUD::addClause(function($query) use ($user, $userAreas) {
-                            $query->where(function($q) use ($user, $userAreas) {
-                                // Solicitudes de sus áreas que están aprobadas por analista o no requieren análisis
-                                $q->whereIn('area_id', $userAreas)
-                                  ->where(function($subQ) {
-                                      $subQ->where('analysis_status', 'aprobada')
-                                           ->orWhere('analysis_status', 'no_requerido');
-                                  })
-                                  ->where('status', '!=', 'pendiente_analisis')
-                                  ->where('status', '!=', 'rechazada_analista');
-                            });
+                    CRUD::addClause(function($query) use ($user, $userAreas) {
+                        $query->where(function($q) use ($user, $userAreas) {
+                            // Siempre incluir las solicitudes que el usuario creó
+                            $q->where('created_by', $user->id);
+                            
+                            // También incluir solicitudes de sus áreas (si tiene áreas asignadas)
+                            if ($userAreas->isNotEmpty()) {
+                                $q->orWhere(function($areaQ) use ($userAreas) {
+                                    $areaQ->whereIn('area_id', $userAreas)
+                                          ->where(function($subQ) {
+                                              // Incluir solicitudes aprobadas por analista, no requeridas, o sin análisis aún
+                                              $subQ->where('analysis_status', 'aprobada')
+                                                   ->orWhere('analysis_status', 'no_requerido')
+                                                   ->orWhereNull('analysis_status')
+                                                   ->orWhere('analysis_status', 'pendiente');
+                                          })
+                                          ->where('status', '!=', 'rechazada_analista');
+                                });
+                            }
                         });
-                    } else {
-                        // Si no tiene áreas asignadas, solo sus propias solicitudes
-                        CRUD::addClause('where', 'created_by', $user->id);
-                    }
+                    });
                 } else {
                     // Para todos los demás usuarios, solo mostrar sus propias solicitudes
                     CRUD::addClause('where', 'created_by', $user->id);
@@ -151,10 +155,15 @@ class GeneralRequestCrudController extends CrudController
         }
 
         // Filtro personalizado por creado por usando parámetros de URL
+        // Solo aplicar si el usuario es admin, o si el valor coincide con el usuario actual
         if (request()->has('creado_por')) {
             $creadoPor = request()->get('creado_por');
             if ($creadoPor) {
-                CRUD::addClause('where', 'created_by', $creadoPor);
+                // Si el usuario es admin, aplicar el filtro normalmente
+                // Si no es admin, solo aplicar si el valor coincide con el usuario actual
+                if ($isAdmin || ($user && $creadoPor == $user->id)) {
+                    CRUD::addClause('where', 'created_by', $creadoPor);
+                }
             }
         }
 
@@ -185,17 +194,17 @@ class GeneralRequestCrudController extends CrudController
         }
 
         // Filtro personalizado para solicitudes sin entregas
-        // Solo aplicar si el parámetro está explícitamente en la URL actual
-        // No aplicar si viene de una restauración automática de Backpack desde localStorage
-        // Backpack agrega 'persistent-table=true' cuando restaura desde localStorage
+        // Solo aplicar si el parámetro 'explicit=1' está presente (indica acción explícita del usuario desde el dashboard)
+        // Backpack puede restaurar parámetros desde localStorage, pero sin 'explicit=1' no se aplicará el filtro
+        // Esto asegura que cuando el usuario accede desde el menú, se muestren todas las solicitudes
         $hasSinEntregas = request()->query('sin_entregas') == '1';
-        $isPersistentRestore = request()->query('persistent-table') == 'true';
+        $isExplicit = request()->query('explicit') == '1';
         
         // Solo aplicar el filtro si:
-        // 1. El parámetro sin_entregas está presente
-        // 2. NO es una restauración automática desde localStorage (sin persistent-table)
-        // Esto asegura que cuando el usuario accede desde el menú, se muestre todo
-        if ($hasSinEntregas && !$isPersistentRestore) {
+        // 1. El parámetro sin_entregas está presente en la URL
+        // 2. Y tiene explicit=1 (acción explícita del usuario desde el dashboard)
+        // Si no tiene explicit=1, no se aplica el filtro, incluso si Backpack restauró sin_entregas=1 desde localStorage
+        if ($hasSinEntregas && $isExplicit) {
             CRUD::addClause('whereDoesntHave', 'deliveries');
         }
     }
@@ -906,19 +915,30 @@ class GeneralRequestCrudController extends CrudController
             $item = $this->crud->create($dataToSave);
             $this->data['entry'] = $this->crud->entry = $item;
 
-            // Determinar si requiere análisis según el área
-            if ($this->requiresAnalystApproval($item->area_id)) {
-                // Estado inicial: pendiente de análisis
+            // Si el usuario es responsable de área, mantener el estado como 'creada'
+            $isResponsableArea = $user && $user->hasRole('role_responsable_area', 'backpack');
+            
+            if ($isResponsableArea) {
+                // Responsable de área: mantener estado 'creada'
                 $item->update([
-                    'status' => 'pendiente_analisis',
-                    'analysis_status' => 'pendiente'
-                ]);
-            } else {
-                // Para otras áreas, va directo a revisión del responsable
-                $item->update([
-                    'status' => 'revisada_area',
+                    'status' => 'creada',
                     'analysis_status' => 'no_requerido'
                 ]);
+            } else {
+                // Para otros usuarios, determinar si requiere análisis según el área
+                if ($this->requiresAnalystApproval($item->area_id)) {
+                    // Estado inicial: pendiente de análisis
+                    $item->update([
+                        'status' => 'pendiente_analisis',
+                        'analysis_status' => 'pendiente'
+                    ]);
+                } else {
+                    // Para otras áreas, va directo a revisión del responsable
+                    $item->update([
+                        'status' => 'revisada_area',
+                        'analysis_status' => 'no_requerido'
+                    ]);
+                }
             }
 
             // Procesar productos seleccionados

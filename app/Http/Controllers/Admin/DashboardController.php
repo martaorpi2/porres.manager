@@ -165,6 +165,7 @@ class DashboardController extends Controller
         if ($isPersonal) {
             $generalRequestsQuery->where('created_by', $user->id);
         } elseif ($isResponsableArea) {
+            // Responsable de área: ver solicitudes de su área Y las que él solicita
             $userAreas = \App\Models\ResponsibilityArea::where('responsible_user_id', $user->id)->pluck('id');
             $generalRequestsQuery->where(function($query) use ($user, $userAreas) {
                 $query->where('created_by', $user->id);
@@ -172,11 +173,15 @@ class DashboardController extends Controller
                     $query->orWhereIn('area_id', $userAreas);
                 }
             });
+        } elseif ($isResponsableCompras) {
+            // Responsable de compras: solo sus propias solicitudes generales
+            $generalRequestsQuery->where('created_by', $user->id);
         }
         
         $generalRequests = $generalRequestsQuery
             ->orderBy('created_at', 'desc')
             ->orderBy('id', 'desc')
+            ->limit(12)
             ->get();
 
         // Obtener solicitudes de compra recientes
@@ -193,7 +198,7 @@ class DashboardController extends Controller
         if (!$isPersonal) {
             $purchaseRequests = $purchaseRequestsQuery
                 ->orderBy('created_at', 'desc')
-                ->limit(10)
+                ->limit(12)
                 ->get();
         }
         
@@ -231,8 +236,8 @@ class DashboardController extends Controller
                           ->where('total_amount', '<=', $userLimit);
                     });
                 })
-                ->orderBy('created_at', 'desc')
-                ->limit(10)
+                ->orderBy('created_at', 'asc') // Ordenar por más antiguas primero
+                ->limit(12)
                 ->get();
         }
 
@@ -241,7 +246,7 @@ class DashboardController extends Controller
         if (!$isPersonal && !$isResponsableArea) {
             $purchaseOrders = PurchaseOrder::with(['supplier', 'user', 'details', 'receptions'])
                 ->orderBy('created_at', 'desc')
-                ->limit(10)
+                ->limit(12)
                 ->get();
         }
 
@@ -250,7 +255,7 @@ class DashboardController extends Controller
         if (!$isPersonal && !$isResponsableArea) {
             $paymentOrders = PaymentOrder::with(['purchase_order.supplier', 'user'])
                 ->orderBy('created_at', 'desc')
-                ->limit(10)
+                ->limit(12)
                 ->get();
         }
 
@@ -265,7 +270,7 @@ class DashboardController extends Controller
         if (!$isPersonal) {
             $receptions = $receptionsQuery
                 ->orderBy('created_at', 'desc')
-                ->limit(10)
+                ->limit(12)
                 ->get();
         }
 
@@ -274,7 +279,7 @@ class DashboardController extends Controller
         if (!$isPersonal && !$isResponsableArea) {
             $devolutions = Devolution::with(['reception.purchase_order.supplier', 'user'])
                 ->orderBy('created_at', 'desc')
-                ->limit(10)
+                ->limit(12)
                 ->get();
         }
 
@@ -299,7 +304,7 @@ class DashboardController extends Controller
         
         $deliveries = $deliveriesQuery
             ->orderBy('created_at', 'desc')
-            ->limit(10)
+            ->limit(12)
             ->get();
 
         // Obtener el flujo completo de procesos (trazabilidad completa)
@@ -380,6 +385,77 @@ class DashboardController extends Controller
             }
         }
 
+        // Calcular estadísticas de antigüedad para solicitudes generales pendientes
+        $generalRequestsAgeStats = [
+            'average_days' => 0,
+            'max_days' => 0,
+        ];
+        
+        // Solo calcular si NO es responsable de compras (o si es personal/responsable área)
+        if (!$isResponsableCompras || $isPersonal || $isResponsableArea) {
+            // Incluir solicitudes con estado 'creada' o 'pendiente_analisis' como pendientes
+            $generalRequestsPendingQuery = GeneralRequest::whereIn('status', ['creada', 'pendiente_analisis']);
+            if ($isPersonal) {
+                $generalRequestsPendingQuery->where('created_by', $user->id);
+            } elseif ($isResponsableArea) {
+                // Responsable de área: ver solicitudes de su área Y las que él solicita
+                $userAreas = \App\Models\ResponsibilityArea::where('responsible_user_id', $user->id)->pluck('id');
+                $generalRequestsPendingQuery->where(function($query) use ($user, $userAreas) {
+                    $query->where('created_by', $user->id);
+                    if ($userAreas->isNotEmpty()) {
+                        $query->orWhereIn('area_id', $userAreas);
+                    }
+                });
+            } elseif ($isResponsableCompras) {
+                // Responsable de compras: solo sus propias solicitudes generales
+                $generalRequestsPendingQuery->where('created_by', $user->id);
+            }
+            
+            $generalRequestsPending = $generalRequestsPendingQuery->get();
+            $hasPendingRequests = $generalRequestsPending->count() > 0;
+            $generalRequestsAgeStats = [
+                'average_days' => $hasPendingRequests
+                    ? round($generalRequestsPending->avg(function($req) { return floor($req->created_at->diffInDays(now())); }))
+                    : 0,
+                'max_days' => $hasPendingRequests
+                    ? (int) floor($generalRequestsPending->max(function($req) { return $req->created_at->diffInDays(now()); }))
+                    : 0,
+                'has_pending' => $hasPendingRequests,
+            ];
+        }
+
+        // Calcular estadísticas de antigüedad para solicitudes de compra pendientes
+        $purchaseRequestsPendingQuery = PurchaseRequest::where('status', 'Pendiente');
+        if ($isResponsableArea) {
+            // Responsable de área: solo sus propias solicitudes de compra
+            $purchaseRequestsPendingQuery->where('requesting_user_id', $user->id);
+        } elseif ($isPersonal) {
+            // Personal: solo sus propias solicitudes de compra
+            $purchaseRequestsPendingQuery->where('requesting_user_id', $user->id);
+        } elseif ($isResponsableCompras) {
+            // Responsable de compras: ver TODAS las solicitudes de compra pendientes
+            // No filtrar por usuario
+        }
+        // Para otros roles (admin, apoderado, etc.): ver todas
+        
+        $purchaseRequestsPending = $purchaseRequestsPendingQuery->get();
+        $hasPendingPurchaseRequests = $purchaseRequestsPending->count() > 0;
+        $purchaseRequestsAgeStats = [
+            'average_days' => $hasPendingPurchaseRequests
+                ? round($purchaseRequestsPending->avg(function($req) { 
+                    $date = $req->created_at ?? $req->request_date;
+                    return floor($date->diffInDays(now())); 
+                }))
+                : 0,
+            'max_days' => $hasPendingPurchaseRequests
+                ? (int) floor($purchaseRequestsPending->max(function($req) { 
+                    $date = $req->created_at ?? $req->request_date;
+                    return $date->diffInDays(now()); 
+                }))
+                : 0,
+            'has_pending' => $hasPendingPurchaseRequests,
+        ];
+
         return view('vendor.backpack.ui.dashboard', compact(
             'stats',
             'generalRequests',
@@ -400,7 +476,9 @@ class DashboardController extends Controller
             'pendingApprovalRequests',
             'stockAlerts',
             'stockAlertsHtml',
-            'user'
+            'user',
+            'generalRequestsAgeStats',
+            'purchaseRequestsAgeStats'
         ));
     }
 
@@ -661,7 +739,7 @@ class DashboardController extends Controller
             'Informática' => ['Equipos Informáticos', 'Software'],
             'Salud' => ['Material Médico', 'Reactivos'],
             'Insumos de Salud' => ['Material Médico', 'Reactivos'],
-            'Mantenimiento' => ['Herramientas', 'Repuestos'],
+            'Mantenimiento' => ['Herramientas', 'Repuestos', 'Limpieza'],
             'Insumos Generales' => ['Material de Oficina', 'Limpieza', 'Insumos Generales'],
         ];
         

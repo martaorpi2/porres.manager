@@ -256,4 +256,39 @@ class PurchaseRequest extends Model
 
         return false;
     }
+
+    /**
+     * Get the age of the request in human readable format.
+     */
+    public function getAgeAttribute()
+    {
+        $date = $this->created_at ?? $this->request_date;
+        return $date->diffForHumans();
+    }
+
+    /**
+     * Get the age of the request in days.
+     */
+    public function getAgeInDaysAttribute()
+    {
+        $date = $this->created_at ?? $this->request_date;
+        return $date->diffInDays(now());
+    }
+
+    /**
+     * Get the age badge color based on days.
+     */
+    public function getAgeBadgeColorAttribute()
+    {
+        $days = $this->age_in_days;
+        if ($days < 3) {
+            return 'success'; // Verde
+        } elseif ($days < 7) {
+            return 'warning'; // Amarillo
+        } elseif ($days < 15) {
+            return 'info'; // Azul/Naranja
+        } else {
+            return 'danger'; // Rojo
+        }
+    }
 }

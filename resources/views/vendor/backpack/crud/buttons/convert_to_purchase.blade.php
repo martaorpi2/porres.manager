@@ -9,18 +9,15 @@
     $user = backpack_user();
     $isPersonal = $user && $user->hasRole('role_personal', 'backpack');
     
-    // Verificar si el usuario es role_responsable_area (puede convertir solicitudes de su área)
+    // Verificar si el usuario es role_responsable_area (puede convertir solo solicitudes de su área)
     $isResponsableArea = $user && $user->hasRole('role_responsable_area', 'backpack');
     $canAccessThisRequest = false;
     
     if ($isResponsableArea) {
-        // Verificar si la solicitud pertenece a un área donde el usuario es responsable
+        // Solo puede convertir si la solicitud pertenece a un área donde el usuario es responsable
+        // NO puede convertir solicitudes que él creó para otras áreas
         $userAreas = \App\Models\ResponsibilityArea::where('responsible_user_id', $user->id)->pluck('id');
         if ($entry->area_id && $userAreas->contains($entry->area_id)) {
-            $canAccessThisRequest = true;
-        }
-        // También puede convertir si él creó la solicitud
-        if ($entry->created_by == $user->id) {
             $canAccessThisRequest = true;
         }
     }

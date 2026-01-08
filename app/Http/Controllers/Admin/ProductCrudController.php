@@ -67,7 +67,7 @@ class ProductCrudController extends CrudController
                     'Informática' => ['Equipos Informáticos', 'Software'],
                     'Salud' => ['Material Médico', 'Reactivos'],
                     'Insumos de Salud' => ['Material Médico', 'Reactivos'],
-                    'Mantenimiento' => ['Herramientas', 'Repuestos'],
+                    'Mantenimiento' => ['Herramientas', 'Repuestos', 'Limpieza'],
                     'Insumos Generales' => ['Material de Oficina', 'Limpieza', 'Insumos Generales'],
                 ];
                 
@@ -179,7 +179,7 @@ class ProductCrudController extends CrudController
                     'Informática' => ['Equipos Informáticos', 'Software'],
                     'Salud' => ['Material Médico', 'Reactivos'],
                     'Insumos de Salud' => ['Material Médico', 'Reactivos'],
-                    'Mantenimiento' => ['Herramientas', 'Repuestos'],
+                    'Mantenimiento' => ['Herramientas', 'Repuestos', 'Limpieza'],
                     'Insumos Generales' => ['Material de Oficina', 'Limpieza', 'Insumos Generales'],
                 ];
                 
@@ -303,7 +303,7 @@ class ProductCrudController extends CrudController
                     'Informática' => ['Equipos Informáticos', 'Software'],
                     'Salud' => ['Material Médico', 'Reactivos'],
                     'Insumos de Salud' => ['Material Médico', 'Reactivos'],
-                    'Mantenimiento' => ['Herramientas', 'Repuestos'],
+                    'Mantenimiento' => ['Herramientas', 'Repuestos', 'Limpieza'],
                     'Insumos Generales' => ['Material de Oficina', 'Limpieza', 'Insumos Generales'],
                 ];
                 
@@ -413,7 +413,7 @@ class ProductCrudController extends CrudController
                     'Informática' => ['Equipos Informáticos', 'Software'],
                     'Salud' => ['Material Médico', 'Reactivos'],
                     'Insumos de Salud' => ['Material Médico', 'Reactivos'],
-                    'Mantenimiento' => ['Herramientas', 'Repuestos'],
+                    'Mantenimiento' => ['Herramientas', 'Repuestos', 'Limpieza'],
                     'Insumos Generales' => ['Material de Oficina', 'Limpieza', 'Insumos Generales'],
                 ];
                 
