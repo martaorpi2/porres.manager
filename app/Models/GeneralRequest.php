@@ -21,6 +21,11 @@ class GeneralRequest extends Model
         'attachments',
         'status',
         'is_converted',
+        'analyzed_by',
+        'analyzed_at',
+        'analysis_status',
+        'analysis_notes',
+        'rejected_reason',
     ];
 
     protected $casts = [
@@ -86,5 +91,31 @@ class GeneralRequest extends Model
     public function getDetailsCountAttribute()
     {
         return $this->details()->count() . ' productos';
+    }
+
+    /**
+     * Get the user who analyzed this request.
+     */
+    public function analyzedBy()
+    {
+        return $this->belongsTo(User::class, 'analyzed_by');
+    }
+
+    /**
+     * Scope a query to only include requests pending analysis.
+     */
+    public function scopePendingAnalysis($query)
+    {
+        return $query->where('analysis_status', 'pendiente')
+                     ->where('status', 'pendiente_analisis');
+    }
+
+    /**
+     * Scope a query to only include requests approved by analyst.
+     */
+    public function scopeApprovedByAnalyst($query)
+    {
+        return $query->where('analysis_status', 'aprobada')
+                     ->whereNotNull('analyzed_by');
     }
 }

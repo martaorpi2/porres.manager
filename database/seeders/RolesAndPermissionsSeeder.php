@@ -23,6 +23,7 @@ class RolesAndPermissionsSeeder extends Seeder
             'solicitud.ver',
             'solicitud.aprobar',
             'solicitud.entregar',
+            'solicitud.analizar',
             
             // Compras
             'compra.crear',
@@ -63,6 +64,7 @@ class RolesAndPermissionsSeeder extends Seeder
         $roleConsejo = Role::firstOrCreate(['name' => 'role_consejo', 'guard_name' => 'backpack']);
         $roleTesoreria = Role::firstOrCreate(['name' => 'role_tesoreria', 'guard_name' => 'backpack']);
         $roleContabilidad = Role::firstOrCreate(['name' => 'role_contabilidad', 'guard_name' => 'backpack']);
+        $roleAnalistaArea = Role::firstOrCreate(['name' => 'role_analista_area', 'guard_name' => 'backpack']);
         $roleAdminSistema = Role::firstOrCreate(['name' => 'role_admin_sistema', 'guard_name' => 'backpack']);
 
         // Asignar permisos a roles (usando guard backpack)
@@ -146,6 +148,19 @@ class RolesAndPermissionsSeeder extends Seeder
         $roleContabilidad->givePermissionTo([
             Permission::findByName('finanzas.ver', 'backpack'),
             Permission::findByName('reportes.exportar', 'backpack'),
+        ]);
+
+        // Analista de área - puede ver y analizar solicitudes de Informática e Insumos de Salud
+        $roleAnalistaArea->givePermissionTo([
+            Permission::findByName('solicitud.ver', 'backpack'),
+            Permission::findByName('solicitud.analizar', 'backpack'),
+        ]);
+        
+        // También asignar al rol web para compatibilidad
+        $roleAnalistaAreaWeb = Role::firstOrCreate(['name' => 'role_analista_area', 'guard_name' => 'web']);
+        $roleAnalistaAreaWeb->givePermissionTo([
+            Permission::findByName('solicitud.ver', 'web'),
+            Permission::findByName('solicitud.analizar', 'web'),
         ]);
 
         // Administrador del sistema - todos los permisos del guard backpack

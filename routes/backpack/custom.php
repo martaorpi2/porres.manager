@@ -62,6 +62,8 @@ Route::group([
     Route::get('api/suppliers', 'PurchaseRequestCrudController@getSuppliers')->name('api.suppliers');
     Route::crud('general-request', 'GeneralRequestCrudController');
     Route::get('general-request-converted', 'GeneralRequestCrudController@showConverted')->name('general-request.converted');
+    Route::post('general-request/{id}/approve-by-analyst', 'GeneralRequestCrudController@approveByAnalyst')->name('general-request.approve-by-analyst');
+    Route::post('general-request/{id}/reject-by-analyst', 'GeneralRequestCrudController@rejectByAnalyst')->name('general-request.reject-by-analyst');
     
     // Product Assignment Routes
     Route::crud('product-assignment', 'ProductAssignmentController');

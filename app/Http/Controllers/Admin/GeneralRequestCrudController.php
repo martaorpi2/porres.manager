@@ -21,6 +21,31 @@ class GeneralRequestCrudController extends CrudController
         CRUD::setEntityNameStrings('solicitud general', 'solicitudes generales');
     }
 
+    /**
+     * Determinar si un área requiere análisis previo
+     */
+    private function requiresAnalystApproval($areaId)
+    {
+        if (!$areaId) {
+            return false;
+        }
+        
+        $area = \App\Models\ResponsibilityArea::find($areaId);
+        
+        if (!$area) {
+            return false;
+        }
+        
+        // Áreas que requieren análisis previo
+        $areasRequiringAnalysis = [
+            'Informática',
+            'Insumos de Salud',
+            'Salud'
+        ];
+        
+        return in_array($area->name, $areasRequiringAnalysis);
+    }
+
     protected function setupListOperation()
     {
         // Habilitar tabla responsiva
@@ -43,13 +68,32 @@ class GeneralRequestCrudController extends CrudController
             }
             
             if (!$isAdmin) {
-                // Para role_responsable_area, mostrar solicitudes de su área o que él creó
-                if ($user->hasRole('role_responsable_area', 'backpack')) {
+                // Para role_analista_area, mostrar solo solicitudes pendientes de análisis
+                if ($user->hasRole('role_analista_area', 'backpack')) {
+                    CRUD::addClause('where', 'status', 'pendiente_analisis');
+                    CRUD::addClause('where', 'analysis_status', 'pendiente');
+                    
+                    // Filtrar solo por áreas que requieren análisis
+                    CRUD::addClause('whereHas', 'area', function($query) {
+                        $query->whereIn('name', ['Informática', 'Insumos de Salud', 'Salud']);
+                    });
+                }
+                // Para role_responsable_area, mostrar solicitudes aprobadas por analista o directas
+                elseif ($user->hasRole('role_responsable_area', 'backpack')) {
                     $userAreas = \App\Models\ResponsibilityArea::where('responsible_user_id', $user->id)->pluck('id');
+                    
                     if ($userAreas->isNotEmpty()) {
                         CRUD::addClause(function($query) use ($user, $userAreas) {
-                            $query->where('created_by', $user->id)
-                                ->orWhereIn('area_id', $userAreas);
+                            $query->where(function($q) use ($user, $userAreas) {
+                                // Solicitudes de sus áreas que están aprobadas por analista o no requieren análisis
+                                $q->whereIn('area_id', $userAreas)
+                                  ->where(function($subQ) {
+                                      $subQ->where('analysis_status', 'aprobada')
+                                           ->orWhere('analysis_status', 'no_requerido');
+                                  })
+                                  ->where('status', '!=', 'pendiente_analisis')
+                                  ->where('status', '!=', 'rechazada_analista');
+                            });
                         });
                     } else {
                         // Si no tiene áreas asignadas, solo sus propias solicitudes
@@ -862,6 +906,21 @@ class GeneralRequestCrudController extends CrudController
             $item = $this->crud->create($dataToSave);
             $this->data['entry'] = $this->crud->entry = $item;
 
+            // Determinar si requiere análisis según el área
+            if ($this->requiresAnalystApproval($item->area_id)) {
+                // Estado inicial: pendiente de análisis
+                $item->update([
+                    'status' => 'pendiente_analisis',
+                    'analysis_status' => 'pendiente'
+                ]);
+            } else {
+                // Para otras áreas, va directo a revisión del responsable
+                $item->update([
+                    'status' => 'revisada_area',
+                    'analysis_status' => 'no_requerido'
+                ]);
+            }
+
             // Procesar productos seleccionados
             $this->processSelectedProducts($item, $request);
 
@@ -1204,8 +1263,71 @@ class GeneralRequestCrudController extends CrudController
                 return '';
             });
         
-        // Agregar botón para registrar entrega solo para role_responsable_area y solo si la solicitud es de su área
+        // Agregar botones de análisis solo para analistas y solo si requiere análisis
         $user = backpack_user();
+        if ($user && $user->hasRole('role_analista_area', 'backpack')) {
+            CRUD::column('analyst_actions')->label('Acciones de Análisis')
+                ->type('custom_html')
+                ->value(function($entry) {
+                    // Verificar que requiere análisis y está pendiente
+                    $controller = new \App\Http\Controllers\Admin\GeneralRequestCrudController();
+                    $reflection = new \ReflectionClass($controller);
+                    $method = $reflection->getMethod('requiresAnalystApproval');
+                    $method->setAccessible(true);
+                    $requiresAnalysis = $method->invoke($controller, $entry->area_id);
+                    
+                    if (!$requiresAnalysis || $entry->analysis_status !== 'pendiente') {
+                        return '';
+                    }
+                    
+                    return '
+                        <div class="card mb-3" style="border-left: 4px solid #007bff;">
+                            <div class="card-body">
+                                <h5 class="card-title">
+                                    <i class="la la-clipboard-check"></i> Análisis de Solicitud
+                                </h5>
+                                <p class="card-text">Esta solicitud requiere tu análisis antes de ser enviada al responsable de área.</p>
+                                <form method="POST" action="'.backpack_url('general-request/'.$entry->id.'/approve-by-analyst').'" style="display:inline-block; margin-right:10px;">
+                                    '.csrf_field().'
+                                    <button type="submit" class="btn btn-success" onclick="return confirm(\'¿Estás seguro de aprobar esta solicitud?\')">
+                                        <i class="la la-check"></i> Aprobar Solicitud
+                                    </button>
+                                </form>
+                                <button type="button" class="btn btn-danger" data-toggle="modal" data-target="#rejectModal'.$entry->id.'">
+                                    <i class="la la-times"></i> Rechazar Solicitud
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <!-- Modal para rechazar -->
+                        <div class="modal fade" id="rejectModal'.$entry->id.'" tabindex="-1">
+                            <div class="modal-dialog">
+                                <div class="modal-content">
+                                    <form method="POST" action="'.backpack_url('general-request/'.$entry->id.'/reject-by-analyst').'">
+                                        '.csrf_field().'
+                                        <div class="modal-header">
+                                            <h5 class="modal-title">Rechazar Solicitud</h5>
+                                            <button type="button" class="close" data-dismiss="modal">&times;</button>
+                                        </div>
+                                        <div class="modal-body">
+                                            <div class="form-group">
+                                                <label>Motivo del rechazo <span class="text-danger">*</span></label>
+                                                <textarea name="rejection_reason" class="form-control" rows="4" required placeholder="Ingresa el motivo del rechazo..."></textarea>
+                                            </div>
+                                        </div>
+                                        <div class="modal-footer">
+                                            <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancelar</button>
+                                            <button type="submit" class="btn btn-danger">Rechazar Solicitud</button>
+                                        </div>
+                                    </form>
+                                </div>
+                            </div>
+                        </div>
+                    ';
+                });
+        }
+
+        // Agregar botón para registrar entrega solo para role_responsable_area y solo si la solicitud es de su área
         if ($user && $user->hasRole('role_responsable_area', 'backpack')) {
             CRUD::column('register_delivery_button')->label('Acciones')->type('custom_html')
                 ->value(function($entry) use ($user) {
@@ -1286,5 +1408,74 @@ class GeneralRequestCrudController extends CrudController
             });
         
         return $this->crud->list();
+    }
+
+    /**
+     * Aprobar solicitud desde el analista
+     */
+    public function approveByAnalyst($id)
+    {
+        $user = backpack_user();
+        
+        if (!$user->hasRole('role_analista_area', 'backpack')) {
+            abort(403, 'Solo los analistas pueden aprobar solicitudes.');
+        }
+        
+        $request = \App\Models\GeneralRequest::findOrFail($id);
+        
+        if (!$this->requiresAnalystApproval($request->area_id)) {
+            abort(403, 'Esta solicitud no requiere análisis.');
+        }
+        
+        if ($request->analysis_status !== 'pendiente') {
+            abort(403, 'Esta solicitud ya fue procesada.');
+        }
+        
+        $request->update([
+            'analysis_status' => 'aprobada',
+            'analyzed_by' => $user->id,
+            'analyzed_at' => now(),
+            'status' => 'revisada_area'
+        ]);
+        
+        \Alert::success('Solicitud aprobada exitosamente.')->flash();
+        return redirect()->back();
+    }
+
+    /**
+     * Rechazar solicitud desde el analista
+     */
+    public function rejectByAnalyst($id, \Illuminate\Http\Request $request)
+    {
+        $user = backpack_user();
+        
+        if (!$user->hasRole('role_analista_area', 'backpack')) {
+            abort(403, 'Solo los analistas pueden rechazar solicitudes.');
+        }
+        
+        $generalRequest = \App\Models\GeneralRequest::findOrFail($id);
+        
+        if (!$this->requiresAnalystApproval($generalRequest->area_id)) {
+            abort(403, 'Esta solicitud no requiere análisis.');
+        }
+        
+        if ($generalRequest->analysis_status !== 'pendiente') {
+            abort(403, 'Esta solicitud ya fue procesada.');
+        }
+        
+        $request->validate([
+            'rejection_reason' => 'required|string|min:10'
+        ]);
+        
+        $generalRequest->update([
+            'analysis_status' => 'rechazada',
+            'analyzed_by' => $user->id,
+            'analyzed_at' => now(),
+            'rejected_reason' => $request->input('rejection_reason'),
+            'status' => 'rechazada_analista'
+        ]);
+        
+        \Alert::success('Solicitud rechazada.')->flash();
+        return redirect()->back();
     }
 }
