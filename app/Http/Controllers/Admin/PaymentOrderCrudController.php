@@ -3,10 +3,12 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Requests\PaymentOrderRequest;
+use App\Models\PaymentOrder;
 use Backpack\CRUD\app\Http\Controllers\CrudController;
 use Backpack\CRUD\app\Library\CrudPanel\CrudPanelFacade as CRUD;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Response;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Class PaymentOrderCrudController
@@ -18,7 +20,6 @@ class PaymentOrderCrudController extends CrudController
     use \Backpack\CRUD\app\Http\Controllers\Operations\ListOperation;
     use \Backpack\CRUD\app\Http\Controllers\Operations\CreateOperation;
     use \Backpack\CRUD\app\Http\Controllers\Operations\UpdateOperation;
-    use \Backpack\CRUD\app\Http\Controllers\Operations\DeleteOperation;
     use \Backpack\CRUD\app\Http\Controllers\Operations\ShowOperation;
 
     /**
@@ -50,17 +51,22 @@ class PaymentOrderCrudController extends CrudController
         // Habilitar tabla responsiva
         CRUD::enableResponsiveTable();
         
-        // Ocultar botones de crear, editar y eliminar para role_admin_institucion, role_apoderado y role_representante_legal
+        // Las órdenes de pago no se eliminan; solo se pueden anular (solo la administradora).
+        CRUD::removeButton('delete');
+
+        // Ocultar botones de crear y editar para role_admin_institucion, role_apoderado y role_representante_legal
         $user = backpack_user();
         if ($user && ($user->hasRole('role_admin_institucion', 'backpack') || $user->hasRole('role_apoderado', 'backpack') || $user->hasRole('role_representante_legal', 'backpack'))) {
             CRUD::removeButton('create');
             CRUD::removeButton('update');
-            CRUD::removeButton('delete');
         }
-        
-        // Habilitar el botón show para ver detalles
-        // CRUD::removeButton('show');
-        
+
+        // Reemplazar botón Editar por uno que se oculta cuando está anulada
+        CRUD::removeButton('update');
+        CRUD::addButton('line', 'update', 'view', 'crud::buttons.payment_order_update', 'end');
+        // Botón Anular: solo administradora (role_admin_institucion), solo si no está anulada
+        CRUD::addButton('line', 'anular', 'view', 'crud::buttons.payment_order_anular', 'end');
+
         CRUD::column('payment_number')->label('Número');
         CRUD::column('date')->label('Fecha');
         CRUD::column('total_amount')->label('Monto Total');
@@ -130,6 +136,44 @@ class PaymentOrderCrudController extends CrudController
     }
 
     /**
+     * Al crear una orden de pago, asigna un número consecutivo dentro de una transacción.
+     *
+     * @return \Illuminate\Http\RedirectResponse
+     */
+    public function store()
+    {
+        $this->crud->hasAccessOrFail('create');
+
+        $purchaseOrderId = request()->input('purchase_order_id');
+        if ($purchaseOrderId) {
+            $po = \App\Models\PurchaseOrder::with(['purchaseRequest', 'receptions'])->find($purchaseOrderId);
+            if ($po) {
+                $isInternet = $po->purchaseRequest && ($po->purchaseRequest->purchase_type === 'internet');
+                $hasConformeReception = $po->receptions->contains('according', 'Si');
+                if (!$isInternet && !$hasConformeReception) {
+                    \Alert::error('La orden de pago solo puede generarse cuando exista una recepción conforme para esta orden de compra.')->flash();
+                    return redirect()->back()->withInput();
+                }
+            }
+        }
+
+        return DB::transaction(function () {
+            $request = $this->crud->validateRequest();
+            $this->crud->registerFieldEvents();
+
+            $request->merge(['payment_number' => PaymentOrder::getNextPaymentNumber()]);
+
+            $item = $this->crud->create($this->crud->getStrippedSaveRequest($request));
+            $this->data['entry'] = $this->crud->entry = $item;
+
+            \Alert::success(trans('backpack::crud.insert_success'))->flash();
+            $this->crud->setSaveAction();
+
+            return $this->crud->performSaveAction($item->getKey());
+        });
+    }
+
+    /**
      * Define what happens when the Create operation is loaded.
      * 
      * @see https://backpackforlaravel.com/docs/crud-operation-create
@@ -151,15 +195,14 @@ class PaymentOrderCrudController extends CrudController
             }
         }
         
-        $ultimo = \App\Models\PaymentOrder::max('id');
-        $nro = 'OP-'.date('Y').'-'.str_pad(($ultimo + 1), 3, '0', STR_PAD_LEFT);
+        $nro = PaymentOrder::getNextPaymentNumberPreview();
         CRUD::addField([
             'name'  => 'payment_number',
             'label' => 'Número',
             'type'  => 'text',
-            'default' => $nro, 
+            'default' => $nro,
             'attributes' => [
-                'readonly' => 'readonly', 
+                'readonly' => 'readonly',
             ],
         ]);
         CRUD::field('date')->label('Fecha');
@@ -249,6 +292,31 @@ class PaymentOrderCrudController extends CrudController
     }
 
     /**
+     * No se puede editar una orden de pago anulada.
+     */
+    public function edit($id)
+    {
+        $entry = PaymentOrder::findOrFail($id);
+        if ($entry->status === 'Anulada') {
+            abort(403, 'No se puede editar una orden de pago anulada.');
+        }
+        return parent::edit($id);
+    }
+
+    /**
+     * No se puede actualizar una orden de pago anulada.
+     */
+    public function update()
+    {
+        $id = request()->input($this->crud->model->getKeyName());
+        $entry = PaymentOrder::find($id);
+        if ($entry && $entry->status === 'Anulada') {
+            abort(403, 'No se puede editar una orden de pago anulada.');
+        }
+        return parent::update();
+    }
+
+    /**
      * Define what happens when the Show operation is loaded.
      * 
      * @see https://backpackforlaravel.com/docs/crud-operation-show
@@ -286,6 +354,31 @@ class PaymentOrderCrudController extends CrudController
             'name' => 'payment_date',
             'label' => 'Fecha de Pago',
             'type' => 'date',
+        ]);
+
+        // Información de anulación (si está anulada)
+        CRUD::addColumn([
+            'name' => 'annulment_info',
+            'label' => 'Anulación',
+            'type' => 'closure',
+            'function' => function ($entry) {
+                if ($entry->status !== 'Anulada') {
+                    $user = backpack_user();
+                    if ($user && $user->hasRole('role_admin_institucion', 'backpack')) {
+                        return '<a href="' . backpack_url('payment-order/' . $entry->id . '/anular') . '" class="btn btn-sm btn-warning"><i class="la la-ban"></i> Anular orden de pago</a>';
+                    }
+                    return '—';
+                }
+                $html = '<div class="alert alert-secondary mb-0">';
+                $html .= '<p class="mb-1"><strong>Anulada el:</strong> ' . ($entry->annulled_at ? $entry->annulled_at->format('d/m/Y H:i') : '—') . '</p>';
+                $html .= '<p class="mb-1"><strong>Motivo:</strong> ' . e($entry->annulment_reason ?? '—') . '</p>';
+                if ($entry->annulledBy) {
+                    $html .= '<p class="mb-0"><strong>Anulada por:</strong> ' . e($entry->annulledBy->name) . '</p>';
+                }
+                $html .= '</div>';
+                return $html;
+            },
+            'escaped' => false,
         ]);
 
         // Mostrar información de la orden de compra relacionada
@@ -385,11 +478,71 @@ class PaymentOrderCrudController extends CrudController
     }
 
     /**
+     * Muestra el formulario para anular una orden de pago (solo administradora).
+     */
+    public function showAnularForm($id)
+    {
+        $paymentOrder = PaymentOrder::with('purchase_order')->findOrFail($id);
+        $user = backpack_user();
+
+        if (!$user || !$user->hasRole('role_admin_institucion', 'backpack')) {
+            abort(403, 'Solo la administradora puede anular órdenes de pago.');
+        }
+
+        if ($paymentOrder->status === 'Anulada') {
+            \Alert::warning('Esta orden de pago ya está anulada.')->flash();
+            return redirect()->to(backpack_url('payment-order/' . $paymentOrder->id . '/show'));
+        }
+
+        $this->data['paymentOrder'] = $paymentOrder;
+        $this->data['title'] = 'Anular orden de pago ' . $paymentOrder->payment_number;
+        $this->data['crud'] = $this->crud;
+
+        return view('vendor.backpack.crud.payment_order_anular_form', $this->data);
+    }
+
+    /**
+     * Procesa la anulación de una orden de pago (solo administradora, motivo obligatorio).
+     */
+    public function anular($id)
+    {
+        $paymentOrder = PaymentOrder::findOrFail($id);
+        $user = backpack_user();
+
+        if (!$user || !$user->hasRole('role_admin_institucion', 'backpack')) {
+            abort(403, 'Solo la administradora puede anular órdenes de pago.');
+        }
+
+        if ($paymentOrder->status === 'Anulada') {
+            \Alert::warning('Esta orden de pago ya está anulada.')->flash();
+            return redirect()->to(backpack_url('payment-order/' . $paymentOrder->id . '/show'));
+        }
+
+        $validated = request()->validate([
+            'annulment_reason' => 'required|string|min:10|max:2000',
+        ], [
+            'annulment_reason.required' => 'El motivo de la anulación es obligatorio.',
+            'annulment_reason.min' => 'El motivo debe tener al menos 10 caracteres.',
+            'annulment_reason.max' => 'El motivo no puede superar 2000 caracteres.',
+        ]);
+
+        $paymentOrder->update([
+            'status' => 'Anulada',
+            'annulled_at' => now(),
+            'annulment_reason' => $validated['annulment_reason'],
+            'annulled_by_id' => $user->id,
+        ]);
+
+        \Alert::success('La orden de pago ha sido anulada correctamente.')->flash();
+        return redirect()->to(backpack_url('payment-order/' . $paymentOrder->id . '/show'));
+    }
+
+    /**
      * Generate PDF for a payment order
      */
     public function generatePdf($id)
     {
-        $paymentOrder = \App\Models\PaymentOrder::with(['purchase_order.supplier', 'purchase_order.details.supplier'])->findOrFail($id);
+        $paymentOrder = PaymentOrder::with(['purchase_order.supplier', 'purchase_order.details.supplier'])->findOrFail($id);
 
         $pdf = Pdf::loadView('payment-order-pdf', compact('paymentOrder'));
 

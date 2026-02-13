@@ -125,7 +125,7 @@ class PaymentOrderRequest extends FormRequest
                 },
             ],
             'date' => 'required|date',
-            'status' => 'required|in:Pendiente,Aprobada,Ejecutada',
+            'status' => 'required|in:Pendiente,Aprobada,Ejecutada,Anulada',
             'authorizing_user_id' => 'required|exists:users,id',
         ];
     }
@@ -162,7 +162,7 @@ class PaymentOrderRequest extends FormRequest
             'date.required' => 'El campo fecha es obligatorio.',
             'date.date' => 'El campo fecha debe ser una fecha válida.',
             'status.required' => 'El campo estado es obligatorio.',
-            'status.in' => 'El campo estado debe ser: Pendiente, Aprobada o Ejecutada.',
+            'status.in' => 'El campo estado debe ser: Pendiente, Aprobada, Ejecutada o Anulada.',
             'authorizing_user_id.required' => 'El campo usuario autorizador es obligatorio.',
             'authorizing_user_id.exists' => 'El usuario autorizador seleccionado no existe.',
         ];

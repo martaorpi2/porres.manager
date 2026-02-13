@@ -93,6 +93,24 @@ class ReceptionCrudController extends CrudController
         CRUD::column('date')->label('Fecha');
         CRUD::column('according')->label('Conforme');
         CRUD::addColumn([
+            'name' => 'corroborado_arca',
+            'label' => 'ARCA',
+            'type' => 'closure',
+            'function' => function ($entry) {
+                return $entry->corroborado_por_arca_at ? '<span class="badge bg-success">Sí</span>' : '<span class="badge bg-secondary">No</span>';
+            },
+            'escaped' => false,
+        ]);
+        CRUD::addColumn([
+            'name' => 'comprobante_valido',
+            'label' => 'Comp. válido',
+            'type' => 'closure',
+            'function' => function ($entry) {
+                return $entry->comprobante_valido_at ? '<span class="badge bg-success">Sí</span>' : '<span class="badge bg-secondary">No</span>';
+            },
+            'escaped' => false,
+        ]);
+        CRUD::addColumn([
             'name' => 'area_manager_id',
             'label' => 'Responsable',
             'type' => 'select',
@@ -185,15 +203,33 @@ class ReceptionCrudController extends CrudController
         ]);
         CRUD::field('date')->label('Fecha');
         CRUD::addField([
-            'name' => 'according',
-            'label' => 'Conforme',
+            'name' => 'conformidad_estado',
+            'label' => 'Conformidad de estado',
             'type' => 'select_from_array',
-            'options' => [
-                'Si' => 'Si',
-                'No' => 'No'
-            ],
-            'default' => 'Si',
-            'allows_null' => false,
+            'options' => ['Si' => 'Sí', 'No' => 'No'],
+            'default' => 'No',
+            'hint' => 'Estado de la mercadería recibida',
+        ]);
+        CRUD::addField([
+            'name' => 'conformidad_cantidad',
+            'label' => 'Conformidad de cantidad',
+            'type' => 'select_from_array',
+            'options' => ['Si' => 'Sí', 'No' => 'No'],
+            'default' => 'No',
+            'hint' => 'Cantidad recibida conforme',
+        ]);
+        CRUD::addField([
+            'name' => 'conformidad_factura',
+            'label' => 'Conformidad de factura recibida',
+            'type' => 'select_from_array',
+            'options' => ['Si' => 'Sí', 'No' => 'No'],
+            'default' => 'No',
+            'hint' => 'Factura recibida conforme',
+        ]);
+        CRUD::addField([
+            'name' => 'according_info',
+            'type' => 'custom_html',
+            'value' => '<p class="text-muted small">Si las tres conformidades son <strong>Sí</strong>, la recepción queda <strong>conforme</strong> y se generará automáticamente la Orden de Pago.</p>',
         ]);
         
         // Campo oculto para asignar automáticamente el usuario actual
@@ -257,6 +293,54 @@ class ReceptionCrudController extends CrudController
                 return $query->get();
             },
         ]);
+
+        // Corroborado por ARCA (solo Tesorería) y Comprobante válido (solo Contabilidad, una vez corroborado por ARCA)
+        CRUD::addField([
+            'name' => 'corroborado_arca_info',
+            'type' => 'custom_html',
+            'value' => function () {
+                $e = $this->crud->getCurrentEntry();
+                if (!$e || !$e->corroborado_por_arca_at) return '';
+                $by = $e->corroboradoPorArcaBy ? e($e->corroboradoPorArcaBy->name) : '';
+                return '<div class="alert alert-success mb-0"><strong>Corroborado por ARCA</strong> el ' . $e->corroborado_por_arca_at->format('d/m/Y H:i') . ($by ? ' por ' . $by : '') . '</div>';
+            },
+        ])->onlyOnForms();
+        CRUD::addField([
+            'name' => 'marcar_corroborado_arca',
+            'label' => 'Marcar como corroborado por ARCA',
+            'type' => 'checkbox',
+            'hint' => 'Solo el área de tesorería (ARCA) puede corroborar.',
+        ])->onlyOnForms();
+        CRUD::modifyField('marcar_corroborado_arca', [
+            'visible' => function () {
+                $u = backpack_user();
+                $e = $this->crud->getCurrentEntry();
+                return $u && $u->hasRole('role_tesoreria', 'backpack') && $e && !$e->corroborado_por_arca_at;
+            },
+        ]);
+        CRUD::addField([
+            'name' => 'comprobante_valido_info',
+            'type' => 'custom_html',
+            'value' => function () {
+                $e = $this->crud->getCurrentEntry();
+                if (!$e || !$e->comprobante_valido_at) return '';
+                $by = $e->comprobanteValidoBy ? e($e->comprobanteValidoBy->name) : '';
+                return '<div class="alert alert-success mb-0"><strong>Comprobante válido</strong> (factura) el ' . $e->comprobante_valido_at->format('d/m/Y H:i') . ($by ? ' por ' . $by : '') . '</div>';
+            },
+        ])->onlyOnForms();
+        CRUD::addField([
+            'name' => 'marcar_comprobante_valido',
+            'label' => 'Marcar como comprobante válido (factura)',
+            'type' => 'checkbox',
+            'hint' => 'Solo contabilidad puede marcar, una vez corroborado por ARCA.',
+        ])->onlyOnForms();
+        CRUD::modifyField('marcar_comprobante_valido', [
+            'visible' => function () {
+                $u = backpack_user();
+                $e = $this->crud->getCurrentEntry();
+                return $u && $u->hasRole('role_contabilidad', 'backpack') && $e && $e->corroborado_por_arca_at && !$e->comprobante_valido_at;
+            },
+        ]);
     }
 
     protected function setupShowOperation()
@@ -275,7 +359,30 @@ class ReceptionCrudController extends CrudController
             },
         ]);
         CRUD::column('date')->label('Fecha');
+        CRUD::column('conformidad_estado')->label('Conformidad estado');
+        CRUD::column('conformidad_cantidad')->label('Conformidad cantidad');
+        CRUD::column('conformidad_factura')->label('Conformidad factura recibida');
         CRUD::column('according')->label('Conforme');
+        CRUD::addColumn([
+            'name' => 'corroborado_arca_show',
+            'label' => 'Corroborado por ARCA',
+            'type' => 'closure',
+            'function' => function ($entry) {
+                if (!$entry->corroborado_por_arca_at) return '—';
+                $by = $entry->corroboradoPorArcaBy ? e($entry->corroboradoPorArcaBy->name) : '';
+                return $entry->corroborado_por_arca_at->format('d/m/Y H:i') . ($by ? ' por ' . $by : '');
+            },
+        ]);
+        CRUD::addColumn([
+            'name' => 'comprobante_valido_show',
+            'label' => 'Comprobante válido',
+            'type' => 'closure',
+            'function' => function ($entry) {
+                if (!$entry->comprobante_valido_at) return '—';
+                $by = $entry->comprobanteValidoBy ? e($entry->comprobanteValidoBy->name) : '';
+                return $entry->comprobante_valido_at->format('d/m/Y H:i') . ($by ? ' por ' . $by : '');
+            },
+        ]);
         CRUD::addColumn([
             'name' => 'area_manager_id',
             'label' => 'Responsable',
@@ -322,6 +429,10 @@ class ReceptionCrudController extends CrudController
             }
         }
         
+        // Conforme = Si solo cuando las tres conformidades son Si
+        $according = ($request->input('conformidad_estado') === 'Si' && $request->input('conformidad_cantidad') === 'Si' && $request->input('conformidad_factura') === 'Si') ? 'Si' : 'No';
+        $request->merge(['according' => $according]);
+        
         // Insert the entry
         $entry = $this->crud->create($this->crud->getStrippedSaveRequest($request));
         $this->data['entry'] = $this->crud->entry = $entry;
@@ -332,6 +443,11 @@ class ReceptionCrudController extends CrudController
         // Actualizar estado de detalles de solicitud general si la recepción está conforme
         if ($entry->according === 'Si') {
             $this->updateGeneralRequestDetailsStatus($entry);
+        }
+        
+        // Si está todo conforme, generar OP automáticamente (si la OC aún no tiene ninguna)
+        if ($entry->according === 'Si') {
+            $this->createPaymentOrderForConformeReception($entry);
         }
 
         // Show a success message
@@ -376,12 +492,37 @@ class ReceptionCrudController extends CrudController
             }
         }
         
+        // Conforme = Si solo cuando las tres conformidades son Si
+        $according = ($request->input('conformidad_estado') === 'Si' && $request->input('conformidad_cantidad') === 'Si' && $request->input('conformidad_factura') === 'Si') ? 'Si' : 'No';
+        $request->merge(['according' => $according]);
+
+        $marcarArca = $request->input('marcar_corroborado_arca');
+        $marcarComprobante = $request->input('marcar_comprobante_valido');
+        $request->request->remove('marcar_corroborado_arca');
+        $request->request->remove('marcar_comprobante_valido');
+        
         // Update the entry
         $entry = $this->crud->update(
             $this->crud->getCurrentEntryId(),
             $this->crud->getStrippedSaveRequest($request)
         );
         $this->data['entry'] = $this->crud->entry = $entry;
+
+        $entry = Reception::find($entry->id);
+        if ($marcarArca && $user && $user->hasRole('role_tesoreria', 'backpack') && $entry && !$entry->corroborado_por_arca_at) {
+            $entry->update([
+                'corroborado_por_arca_at' => now(),
+                'corroborado_por_arca_by_id' => $user->id,
+            ]);
+            \Alert::success('Marcado como corroborado por ARCA.')->flash();
+        }
+        if ($marcarComprobante && $user && $user->hasRole('role_contabilidad', 'backpack') && $entry && $entry->corroborado_por_arca_at && !$entry->comprobante_valido_at) {
+            $entry->update([
+                'comprobante_valido_at' => now(),
+                'comprobante_valido_by_id' => $user->id,
+            ]);
+            \Alert::success('Marcado como comprobante válido (factura).')->flash();
+        }
 
         // Process stock level deduction (es una actualización)
         // Solo procesar si la recepción fue creada recientemente (mismo timestamp)
@@ -392,6 +533,11 @@ class ReceptionCrudController extends CrudController
         if ($entry->according === 'Si') {
             $this->updateGeneralRequestDetailsStatus($entry);
         }
+        
+        // Si está todo conforme, generar OP automáticamente (si la OC aún no tiene ninguna)
+        if ($entry->according === 'Si') {
+            $this->createPaymentOrderForConformeReception($entry);
+        }
 
         // Show a success message
         \Alert::success(trans('backpack::crud.update_success'))->flash();
@@ -400,6 +546,32 @@ class ReceptionCrudController extends CrudController
         $this->crud->setSaveAction();
 
         return $this->crud->performSaveAction($entry->getKey());
+    }
+
+    /**
+     * Si la recepción está conforme (las 3 conformidades Si) y la OC no tiene aún OP, genera una automáticamente.
+     */
+    protected function createPaymentOrderForConformeReception(Reception $reception)
+    {
+        $reception->load('purchase_order.paymentOrders');
+        $po = $reception->purchase_order;
+        if (!$po || $po->paymentOrders->isNotEmpty()) {
+            return;
+        }
+        $po->load('details');
+        $totalAmount = $po->total;
+        $paymentOrder = DB::transaction(function () use ($po, $totalAmount) {
+            $paymentNumber = \App\Models\PaymentOrder::getNextPaymentNumber();
+            return \App\Models\PaymentOrder::create([
+                'payment_number' => $paymentNumber,
+                'date' => now(),
+                'total_amount' => $totalAmount,
+                'status' => 'Pendiente',
+                'purchase_order_id' => $po->id,
+                'authorizing_user_id' => auth()->id(),
+            ]);
+        });
+        \Alert::success('Recepción conforme. Se generó automáticamente la Orden de Pago ' . $paymentOrder->payment_number . '.')->flash();
     }
 
     /**
@@ -686,6 +858,8 @@ class ReceptionCrudController extends CrudController
     {
         $reception = \App\Models\Reception::with([
             'purchase_order.supplier',
+            'corroboradoPorArcaBy',
+            'comprobanteValidoBy',
             'purchase_order.details.input',
             'purchase_order.details.supplier',
             'user'

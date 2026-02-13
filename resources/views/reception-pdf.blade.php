@@ -56,7 +56,16 @@
 
     <div class="box">
         <div><strong>Fecha de Recepción:</strong> {{ fmt_date($reception->date) }}</div>
+        <div><strong>Conformidad de estado:</strong> {{ ($reception->conformidad_estado ?? '') === 'Si' ? 'Sí' : 'No' }}</div>
+        <div><strong>Conformidad de cantidad:</strong> {{ ($reception->conformidad_cantidad ?? '') === 'Si' ? 'Sí' : 'No' }}</div>
+        <div><strong>Conformidad de factura recibida:</strong> {{ ($reception->conformidad_factura ?? '') === 'Si' ? 'Sí' : 'No' }}</div>
         <div><strong>Estado:</strong> {{ $reception->according === 'Si' ? 'Conforme' : 'No Conforme' }}</div>
+        @if($reception->corroborado_por_arca_at)
+        <div><strong>Corroborado por ARCA:</strong> {{ $reception->corroborado_por_arca_at->format('d/m/Y H:i') }}{{ $reception->corroboradoPorArcaBy ? ' por ' . $reception->corroboradoPorArcaBy->name : '' }}</div>
+        @endif
+        @if($reception->comprobante_valido_at)
+        <div><strong>Comprobante válido (factura):</strong> {{ $reception->comprobante_valido_at->format('d/m/Y H:i') }}{{ $reception->comprobanteValidoBy ? ' por ' . $reception->comprobanteValidoBy->name : '' }}</div>
+        @endif
         <div><strong>Responsable:</strong> {{ $reception->user ? $reception->user->name : 'N/A' }}</div>
     </div>
 

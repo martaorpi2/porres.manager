@@ -24,6 +24,11 @@ class Reception extends Model
     // protected $fillable = [];
     // protected $hidden = [];
 
+    protected $casts = [
+        'corroborado_por_arca_at' => 'datetime',
+        'comprobante_valido_at' => 'datetime',
+    ];
+
     /*
     |--------------------------------------------------------------------------
     | FUNCTIONS
@@ -42,6 +47,16 @@ class Reception extends Model
     public function user()
     {
         return $this->belongsTo(\App\Models\User::class, 'area_manager_id');
+    }
+
+    public function corroboradoPorArcaBy()
+    {
+        return $this->belongsTo(\App\Models\User::class, 'corroborado_por_arca_by_id');
+    }
+
+    public function comprobanteValidoBy()
+    {
+        return $this->belongsTo(\App\Models\User::class, 'comprobante_valido_by_id');
     }
 
     public function devolutions()

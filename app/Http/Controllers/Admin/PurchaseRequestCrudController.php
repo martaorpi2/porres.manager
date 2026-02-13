@@ -81,6 +81,7 @@ class PurchaseRequestCrudController extends CrudController
                     'normal' => '<span class="badge bg-secondary">Normal</span>',
                     'rapida' => '<span class="badge bg-success">Rápida</span>',
                     'directa' => '<span class="badge bg-info">Directa</span>',
+                    'internet' => '<span class="badge bg-primary">Por internet</span>',
                 ];
                 return $badges[$type] ?? $badges['normal'];
             },
@@ -515,7 +516,17 @@ class PurchaseRequestCrudController extends CrudController
         
         // Campos ocultos con valores por defecto
         CRUD::field('status')->type('hidden')->default('Pendiente');
-        CRUD::field('purchase_type')->type('hidden')->default('normal');
+        CRUD::addField([
+            'name' => 'purchase_type',
+            'label' => 'Tipo de compra',
+            'type' => 'select_from_array',
+            'options' => [
+                'normal' => 'Normal',
+                'internet' => 'Por internet (Mercado Libre, etc.) — la OP se genera al aprobar un nivel superior',
+            ],
+            'default' => 'normal',
+            'hint' => 'Marque "Por internet" si la compra es por Mercado Libre u otro canal online; en ese caso la orden de pago se genera automáticamente al aprobar la solicitud (nivel superior por monto).',
+        ]);
         CRUD::field('total_amount')->type('hidden')->default(0);
         
         // Campo oculto para conversión desde solicitud general (se establecerá dinámicamente)
@@ -2632,7 +2643,9 @@ class PurchaseRequestCrudController extends CrudController
             }
         }
 
-        $purchaseRequest->update(['status' => 'Completada', 'purchase_type' => 'normal']);
+        $newType = ($purchaseRequest->purchase_type === 'internet') ? 'internet' : 'normal';
+        $purchaseRequest->update(['status' => 'Completada', 'purchase_type' => $newType]);
+        $this->createPaymentOrderIfInternetApprovedByAdmin($purchaseOrder, $purchaseRequest);
         \Alert::success('Orden de compra generada exitosamente (varios proveedores): ' . $purchaseOrder->number)->flash();
         return redirect()->route('purchase-order.show', $purchaseOrder->id);
     }
@@ -2680,14 +2693,14 @@ class PurchaseRequestCrudController extends CrudController
             }
         }
         
-        // Update purchase request status and type (compra normal porque viene de cotización)
+        // Update purchase request status and type (preservar 'internet' si aplica)
+        $newType = ($purchaseRequest->purchase_type === 'internet') ? 'internet' : 'normal';
         $purchaseRequest->update([
             'status' => 'Completada',
-            'purchase_type' => 'normal'
+            'purchase_type' => $newType
         ]);
-        
+        $this->createPaymentOrderIfInternetApprovedByAdmin($purchaseOrder, $purchaseRequest);
         \Alert::success('Orden de compra generada exitosamente: ' . $purchaseOrder->number)->flash();
-        
         return redirect()->route('purchase-order.show', $purchaseOrder->id);
     }
     
@@ -2746,18 +2759,16 @@ class PurchaseRequestCrudController extends CrudController
             }
         }
         
-        // Determinar el tipo de compra
-        $purchaseType = 'normal';
+        // Determinar el tipo de compra (preservar 'internet' si ya estaba marcada)
+        $purchaseType = ($purchaseRequest->purchase_type === 'internet') ? 'internet' : 'normal';
         $totalAmount = $purchaseRequest->total_amount ?? 0;
         $threshold = 60000;
-        
-        // Si es compra directa, mantener como directa
-        if ($purchaseRequest->is_direct_purchase && $purchaseRequest->direct_purchase_authorized_by) {
-            $purchaseType = 'directa';
-        }
-        // Si el monto es <= 60000, es compra rápida
-        elseif ($totalAmount <= $threshold) {
-            $purchaseType = 'rapida';
+        if ($purchaseType !== 'internet') {
+            if ($purchaseRequest->is_direct_purchase && $purchaseRequest->direct_purchase_authorized_by) {
+                $purchaseType = 'directa';
+            } elseif ($totalAmount <= $threshold) {
+                $purchaseType = 'rapida';
+            }
         }
         
         // Update purchase request status and type
@@ -2765,12 +2776,34 @@ class PurchaseRequestCrudController extends CrudController
             'status' => 'Completada',
             'purchase_type' => $purchaseType
         ]);
-        
+        $this->createPaymentOrderIfInternetApprovedByAdmin($purchaseOrder, $purchaseRequest);
         \Alert::success('Orden de compra generada exitosamente: ' . $purchaseOrder->number)->flash();
-        
         return redirect()->route('purchase-order.show', $purchaseOrder->id);
     }
     
+    /**
+     * Para compras por internet aprobadas por nivel superior (por monto), se genera automáticamente la OP.
+     */
+    private function createPaymentOrderIfInternetApprovedByAdmin($purchaseOrder, $purchaseRequest)
+    {
+        if (($purchaseRequest->purchase_type ?? '') !== 'internet' || !$purchaseRequest->requires_admin_approval) {
+            return;
+        }
+        \Illuminate\Support\Facades\DB::transaction(function () use ($purchaseOrder, $purchaseRequest) {
+            $purchaseOrder->load('details');
+            $totalAmount = $purchaseOrder->total;
+            $paymentNumber = \App\Models\PaymentOrder::getNextPaymentNumber();
+            \App\Models\PaymentOrder::create([
+                'payment_number' => $paymentNumber,
+                'date' => now(),
+                'total_amount' => $totalAmount,
+                'status' => 'Pendiente',
+                'purchase_order_id' => $purchaseOrder->id,
+                'authorizing_user_id' => auth()->id(),
+            ]);
+        });
+    }
+
     /**
      * Count quotations for a purchase request
      */

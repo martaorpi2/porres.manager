@@ -94,6 +94,8 @@ class SupplierCrudController extends CrudController
         CRUD::column('company_name')->label('Nombre');
         CRUD::column('cuit')->label('Cuit');
         CRUD::column('address')->label('Dirección');
+        CRUD::column('cvu')->label('CVU');
+        CRUD::column('alias')->label('Alias');
         CRUD::addColumn([
             'name' => 'supplier_heading_id',
             'label' => 'Rubro',
@@ -193,6 +195,8 @@ class SupplierCrudController extends CrudController
         CRUD::field('company_name')->label('Nombre');
         CRUD::field('cuit')->label('Cuit');
         CRUD::field('address')->label('Dirección');
+        CRUD::field('cvu')->label('CVU')->attributes(['placeholder' => 'Ej: 0000003100123456789012']);
+        CRUD::field('alias')->label('Alias CBU/CVU')->attributes(['placeholder' => 'Ej: proveedor.cbu.alias']);
         
         // Filtrar rubros según el área del responsable
         $user = backpack_user();

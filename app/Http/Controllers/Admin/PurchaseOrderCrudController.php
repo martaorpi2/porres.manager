@@ -363,36 +363,36 @@ class PurchaseOrderCrudController extends CrudController
         // Agregar botón de PDF en la vista previa (también en top)
         CRUD::addButton('top', 'pdf', 'view', 'crud::buttons.purchase_order_pdf', 'end');
         
-        // Agregar botón para crear orden de pago desde esta orden de compra
+        // Botón Crear Orden de Pago: para compras por internet siempre; para el resto solo cuando hay recepción conforme
         CRUD::addColumn([
             'name' => 'create_payment_order',
             'label' => 'Acciones',
             'type' => 'closure',
             'function' => function($entry) {
                 $user = backpack_user();
-                // Verificar que el usuario no sea role_responsable_area
                 if ($user && $user->hasRole('role_responsable_area', 'backpack')) {
                     return '';
                 }
-                
-                // Verificar permisos para crear órdenes de pago
                 $canCreate = true;
-                if ($user && ($user->hasRole('role_admin_institucion', 'backpack') || 
-                             $user->hasRole('role_apoderado', 'backpack') || 
+                if ($user && ($user->hasRole('role_admin_institucion', 'backpack') ||
+                             $user->hasRole('role_apoderado', 'backpack') ||
                              $user->hasRole('role_representante_legal', 'backpack'))) {
                     $canCreate = false;
                 }
-                
                 if (!$canCreate) {
                     return '';
                 }
-                
+                $entry->load(['purchaseRequest', 'receptions']);
+                $isInternet = $entry->purchaseRequest && ($entry->purchaseRequest->purchase_type === 'internet');
+                $hasConformeReception = $entry->receptions->contains('according', 'Si');
+                if (!$isInternet && !$hasConformeReception) {
+                    return '<div class="mt-3"><span class="text-muted"><i class="la la-info-circle"></i> La orden de pago se genera cuando exista una recepción conforme.</span></div>';
+                }
                 $html = '<div class="mt-3">';
                 $html .= '<a href="' . backpack_url('payment-order/create?purchase_order_id=' . $entry->id) . '" class="btn btn-success">';
                 $html .= '<i class="la la-money-bill-wave"></i> Crear Orden de Pago';
                 $html .= '</a>';
                 $html .= '</div>';
-                
                 return $html;
             },
             'escaped' => false

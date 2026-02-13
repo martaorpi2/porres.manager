@@ -46,6 +46,9 @@
 </head>
 <body>
     <div class="watermark">porresManager - ISMP</div>
+    @if(($paymentOrder->status ?? '') === 'Anulada')
+    <div class="watermark" style="color: rgba(200, 0, 0, 0.25); font-size: 72px;">ANULADA</div>
+    @endif
     <div class="header">
         <h1>ORDEN DE PAGO</h1>
         <div class="muted">N.º {{ $paymentOrder->payment_number }}</div>
@@ -62,6 +65,15 @@
         @if($singleSupplier->address ?? null)
         <div><strong>Dirección:</strong> {{ $singleSupplier->address }}</div>
         @endif
+        @if(!empty($singleSupplier->cvu) || !empty($singleSupplier->alias))
+        <div><strong>CVU/Alias:</strong> {{ implode(' — ', array_filter([$singleSupplier->cvu ?? null, $singleSupplier->alias ?? null])) }}</div>
+        @endif
+        @elseif($suppliers->isNotEmpty())
+        @foreach($suppliers as $sup)
+        @if(!empty($sup->cvu) || !empty($sup->alias))
+        <div><strong>CVU/Alias {{ $sup->company_name }}:</strong> {{ implode(' — ', array_filter([$sup->cvu ?? null, $sup->alias ?? null])) }}</div>
+        @endif
+        @endforeach
         @endif
     </div>
 
@@ -97,6 +109,10 @@
 
     <div class="box">
         <div><strong>Estado:</strong> {{ $paymentOrder->status }}</div>
+        @if(($paymentOrder->status ?? '') === 'Anulada' && !empty($paymentOrder->annulment_reason))
+        <div class="mb-4"><strong>Motivo de anulación:</strong> {{ $paymentOrder->annulment_reason }}</div>
+        <div><strong>Anulada el:</strong> {{ $paymentOrder->annulled_at ? \Carbon\Carbon::parse($paymentOrder->annulled_at)->format('d/m/Y H:i') : '—' }}</div>
+        @endif
         <div><strong>Observaciones:</strong> {{ $paymentOrder->observations ?? '' }}</div>
     </div>
 </body>

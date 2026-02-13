@@ -26,6 +26,8 @@ Route::group([
     Route::get('purchase-order/{id}/pdf', 'PurchaseOrderCrudController@generatePdf')->name('purchase-order.pdf');
     Route::crud('payment-order', 'PaymentOrderCrudController');
     Route::get('payment-order/{id}/pdf', 'PaymentOrderCrudController@generatePdf')->name('payment-order.pdf');
+    Route::get('payment-order/{id}/anular', 'PaymentOrderCrudController@showAnularForm')->name('payment-order.anular');
+    Route::post('payment-order/{id}/anular', 'PaymentOrderCrudController@anular')->name('payment-order.anular.store');
     Route::crud('sector', 'SectorCrudController');
     Route::crud('product', 'ProductCrudController');
     Route::get('product/export/excel', 'ProductCrudController@exportExcel')->name('product.export.excel');
