@@ -1030,9 +1030,9 @@ a:hover {
                     <label for="orden_compra" class="form-label">Orden de Compra:</label>
                     <select name="orden_compra" id="orden_compra" class="form-control select2" onchange="this.form.submit()">
                       <option value="">Todas las órdenes</option>
-                      @foreach(\App\Models\PurchaseOrder::all() as $orden)
+                      @foreach(\App\Models\PurchaseOrder::with('details.supplier')->get() as $orden)
                         <option value="{{ $orden->id }}" {{ request('orden_compra') == $orden->id ? 'selected' : '' }}>
-                          {{ $orden->number }} - {{ $orden->supplier->company_name ?? 'Sin proveedor' }}
+                          {{ $orden->number }} - {{ $orden->supplier_display_name }}
                         </option>
                       @endforeach
                     </select>
@@ -1089,9 +1089,9 @@ a:hover {
                     <label for="orden_compra" class="form-label">Orden de Compra:</label>
                     <select name="orden_compra" id="orden_compra" class="form-control select2" onchange="this.form.submit()">
                       <option value="">Todas las órdenes</option>
-                      @foreach(\App\Models\PurchaseOrder::all() as $orden)
+                      @foreach(\App\Models\PurchaseOrder::with('details.supplier')->get() as $orden)
                         <option value="{{ $orden->id }}" {{ request('orden_compra') == $orden->id ? 'selected' : '' }}>
-                          {{ $orden->number }} - {{ $orden->supplier->company_name ?? 'Sin proveedor' }}
+                          {{ $orden->number }} - {{ $orden->supplier_display_name }}
                         </option>
                       @endforeach
                     </select>

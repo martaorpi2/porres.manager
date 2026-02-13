@@ -74,12 +74,12 @@ class PurchaseOrderCrudController extends CrudController
         //CRUD::column('estimated_delivery_date')->label('Fecha Estimada de Entrega');
         CRUD::column('status')->label('Estado');
         CRUD::addColumn([
-            'name' => 'supplier_id',
-            'label' => 'Proveedor',
-            'type' => 'select',
-            'entity' => 'supplier',
-            'attribute' => 'company_name',
-            'model' => 'App\Models\Supplier',
+            'name' => 'supplier_display_name',
+            'label' => 'Proveedor(es)',
+            'type' => 'closure',
+            'function' => function ($entry) {
+                return e($entry->supplier_display_name);
+            },
         ]);
         CRUD::addColumn([
             'name' => 'authorizing_user_id',
@@ -123,13 +123,20 @@ class PurchaseOrderCrudController extends CrudController
             }
         }
 
-        // Filtro personalizado por proveedor usando parámetros de URL
+        // Filtro personalizado por proveedor (orden o detalles)
         if (request()->has('proveedor')) {
             $proveedorId = request()->get('proveedor');
             if ($proveedorId) {
-                CRUD::addClause('where', 'supplier_id', $proveedorId);
+                CRUD::addClause('where', function ($query) use ($proveedorId) {
+                    $query->where('supplier_id', $proveedorId)
+                        ->orWhereHas('details', function ($q) use ($proveedorId) {
+                            $q->where('supplier_id', $proveedorId);
+                        });
+                });
             }
         }
+
+        CRUD::addClause('with', ['details.supplier']);
         
         /**
          * Columns can be defined using the fluent syntax:
@@ -174,10 +181,9 @@ class PurchaseOrderCrudController extends CrudController
             'label' => 'Estado',
             'type' => 'enum',
         ]);
-        CRUD::field('supplier_id')->label('Proveedor');
         CRUD::addField([
             'name' => 'supplier_id',
-            'label' => 'Proveedor',
+            'label' => 'Proveedor (por defecto para los ítems si se replican desde solicitud)',
             'type' => 'select',
             'entity' => 'supplier',
             'attribute' => 'company_name',
@@ -214,7 +220,13 @@ class PurchaseOrderCrudController extends CrudController
      */
     protected function setupUpdateOperation()
     {
-		$this->setupCreateOperation();
+        $this->setupCreateOperation();
+        CRUD::addField([
+            'name' => 'details_suppliers_edit',
+            'label' => 'Proveedor por línea',
+            'type' => 'view',
+            'view' => 'vendor.backpack.crud.fields.edit_oc_details_suppliers',
+        ]);
     }
 
     /**
@@ -231,12 +243,12 @@ class PurchaseOrderCrudController extends CrudController
         CRUD::column('status')->label('Estado');
         
         CRUD::addColumn([
-            'name' => 'supplier_id',
-            'label' => 'Proveedor',
-            'type' => 'select',
-            'entity' => 'supplier',
-            'attribute' => 'company_name',
-            'model' => 'App\Models\Supplier',
+            'name' => 'supplier_display_name',
+            'label' => 'Proveedor(es)',
+            'type' => 'closure',
+            'function' => function ($entry) {
+                return e($entry->supplier_display_name);
+            },
         ]);
         
         CRUD::addColumn([
@@ -284,13 +296,13 @@ class PurchaseOrderCrudController extends CrudController
             }
         ]);
 
-        // Mostrar detalles de la orden de compra
+        // Mostrar detalles de la orden de compra (con proveedor por línea)
         CRUD::addColumn([
             'name' => 'details',
             'label' => 'Detalles de la Orden',
             'type' => 'closure',
             'function' => function($entry) {
-                $details = $entry->details()->with('input')->get();
+                $details = $entry->details()->with(['input', 'supplier'])->get();
                 if ($details->isEmpty()) {
                     return '<div class="alert alert-info">No hay detalles de productos</div>';
                 }
@@ -304,8 +316,9 @@ class PurchaseOrderCrudController extends CrudController
                 $html .= '<table class="table table-sm table-bordered mb-0">';
                 $html .= '<thead class="table-light">';
                 $html .= '<tr>';
-                $html .= '<th style="width: 40%;">Producto</th>';
-                $html .= '<th style="width: 20%;">Cantidad</th>';
+                $html .= '<th style="width: 25%;">Producto</th>';
+                $html .= '<th style="width: 20%;">Proveedor</th>';
+                $html .= '<th style="width: 15%;">Cantidad</th>';
                 $html .= '<th style="width: 20%;">Precio Unit.</th>';
                 $html .= '<th style="width: 20%;">Subtotal</th>';
                 $html .= '</tr>';
@@ -313,8 +326,10 @@ class PurchaseOrderCrudController extends CrudController
                 $html .= '<tbody>';
                 
                 foreach ($details as $detail) {
+                    $supplierName = $detail->supplier ? e($detail->supplier->company_name) : '<span class="text-muted">—</span>';
                     $html .= '<tr>';
                     $html .= '<td><strong>' . e($detail->input->name) . '</strong><br><small class="text-muted">' . e($detail->input->description ?? 'Sin descripción') . '</small></td>';
+                    $html .= '<td>' . $supplierName . '</td>';
                     $html .= '<td><span class="badge bg-info">' . $detail->quantity . '</span> <small class="text-muted">' . e($detail->input->unit) . '</small></td>';
                     $html .= '<td class="text-end"><strong>$' . number_format($detail->unit_price, 2) . '</strong></td>';
                     $html .= '<td class="text-end"><span class="badge bg-success">$' . number_format($detail->subtotal, 2) . '</span></td>';
@@ -487,6 +502,28 @@ class PurchaseOrderCrudController extends CrudController
     }
 
     /**
+     * Update the specified resource in the database.
+     * Incluye guardado de proveedor por línea (detail_supplier).
+     */
+    public function update()
+    {
+        $this->crud->hasAccessOrFail('update');
+        $request = $this->crud->validateRequest();
+        $this->crud->registerFieldEvents();
+        $id = $request->get($this->crud->model->getKeyName());
+        $item = $this->crud->update($id, $this->crud->getStrippedSaveRequest($request));
+        $this->data['entry'] = $this->crud->entry = $item;
+
+        foreach ($request->input('detail_supplier', []) as $detailId => $supplierId) {
+            PurchaseOrderDetail::where('id', $detailId)->where('purchase_order_id', $id)->update(['supplier_id' => $supplierId]);
+        }
+
+        \Alert::success(trans('backpack::crud.update_success'))->flash();
+        $this->crud->setSaveAction();
+        return $this->crud->performSaveAction($item->getKey());
+    }
+
+    /**
      * Replicar productos desde la solicitud de compra a la orden de compra
      */
     protected function replicateProductsFromPurchaseRequest($purchaseOrder)
@@ -535,9 +572,10 @@ class PurchaseOrderCrudController extends CrudController
                     continue;
                 }
 
-                // Crear el detalle en la orden de compra
+                // Crear el detalle en la orden de compra (con proveedor: orden o por defecto)
                 $orderDetail = PurchaseOrderDetail::create([
                     'purchase_order_id' => $purchaseOrder->id,
+                    'supplier_id' => $purchaseOrder->supplier_id,
                     'input_id' => $input->id,
                     'quantity' => $requestDetail->requested_quantity,
                     'unit_price' => $requestDetail->estimated_unit_price ?? 0,
@@ -616,7 +654,7 @@ class PurchaseOrderCrudController extends CrudController
      */
     public function generatePdf($id)
     {
-        $purchaseOrder = \App\Models\PurchaseOrder::with(['supplier', 'details.input'])->findOrFail($id);
+        $purchaseOrder = \App\Models\PurchaseOrder::with(['supplier', 'details.input', 'details.supplier'])->findOrFail($id);
         
         $pdf = Pdf::loadView('purchase-order-pdf', compact('purchaseOrder'));
         

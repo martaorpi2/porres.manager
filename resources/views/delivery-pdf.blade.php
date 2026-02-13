@@ -79,8 +79,8 @@
     <div class="box">
         <div><strong>Recepción relacionada:</strong> {{ $delivery->reception->number }}</div>
         <div><strong>Fecha de Recepción:</strong> {{ fmt_date($delivery->reception->date) }}</div>
-        @if($delivery->reception->purchase_order && $delivery->reception->purchase_order->supplier)
-        <div><strong>Proveedor:</strong> {{ $delivery->reception->purchase_order->supplier->company_name }}</div>
+        @if($delivery->reception->purchase_order)
+        <div><strong>Proveedor(es):</strong> {{ $delivery->reception->purchase_order->supplier_display_name }}</div>
         @endif
     </div>
     @endif

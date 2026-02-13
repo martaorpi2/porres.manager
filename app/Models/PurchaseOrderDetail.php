@@ -14,6 +14,14 @@ class PurchaseOrderDetail extends Model
     protected $table = 'oc_details';
     protected $guarded = ['id'];
 
+    protected $fillable = [
+        'purchase_order_id',
+        'supplier_id',
+        'input_id',
+        'quantity',
+        'unit_price',
+    ];
+
     /*
     |--------------------------------------------------------------------------
     | RELATIONS
@@ -22,6 +30,11 @@ class PurchaseOrderDetail extends Model
     public function purchaseOrder()
     {
         return $this->belongsTo(PurchaseOrder::class, 'purchase_order_id');
+    }
+
+    public function supplier()
+    {
+        return $this->belongsTo(\App\Models\Supplier::class, 'supplier_id');
     }
 
     public function input()

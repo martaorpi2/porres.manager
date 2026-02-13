@@ -60,9 +60,9 @@
         @if($devolution->reception->purchase_order)
         <div><strong>Orden de Compra:</strong> {{ $devolution->reception->purchase_order->number }}</div>
         <div><strong>Fecha de Orden:</strong> {{ fmt_date($devolution->reception->purchase_order->date) }}</div>
-        @if($devolution->reception->purchase_order->supplier)
-        <div><strong>Proveedor:</strong> {{ $devolution->reception->purchase_order->supplier->company_name }}</div>
-        <div><strong>CUIT:</strong> {{ $devolution->reception->purchase_order->supplier->cuit }}</div>
+        <div><strong>Proveedor(es):</strong> {{ $devolution->reception->purchase_order->supplier_display_name }}</div>
+        @if($devolution->reception->purchase_order->suppliers->count() === 1)
+        <div><strong>CUIT:</strong> {{ $devolution->reception->purchase_order->suppliers->first()->cuit }}</div>
         @endif
         @endif
     </div>

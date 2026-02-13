@@ -134,6 +134,36 @@ class PurchaseOrder extends Model
         return $this->details->sum('subtotal');
     }
 
+    /**
+     * Proveedores únicos de la orden (desde los detalles). Compatible con órdenes de un solo o varios proveedores.
+     */
+    public function getSuppliersAttribute()
+    {
+        $details = $this->relationLoaded('details') ? $this->details : $this->details()->with('supplier')->get();
+        $suppliers = $details->pluck('supplier')->filter()->unique('id')->values();
+        if ($suppliers->isEmpty() && $this->supplier_id && $this->relationLoaded('supplier')) {
+            $suppliers = collect([$this->supplier]);
+        } elseif ($suppliers->isEmpty() && $this->supplier_id) {
+            $suppliers = collect([\App\Models\Supplier::find($this->supplier_id)])->filter();
+        }
+        return $suppliers;
+    }
+
+    /**
+     * Nombre(s) de proveedor para mostrar en listados (un nombre, o "Varios (N)").
+     */
+    public function getSupplierDisplayNameAttribute()
+    {
+        $suppliers = $this->suppliers;
+        if ($suppliers->isEmpty()) {
+            return 'Sin proveedor';
+        }
+        if ($suppliers->count() === 1) {
+            return $suppliers->first()->company_name ?? 'Sin nombre';
+        }
+        return 'Varios (' . $suppliers->count() . ' proveedores)';
+    }
+
     /*
     |--------------------------------------------------------------------------
     | MUTATORS

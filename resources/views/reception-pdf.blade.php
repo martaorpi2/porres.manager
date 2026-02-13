@@ -63,11 +63,14 @@
     <div class="box">
         <div><strong>Orden de Compra:</strong> {{ $reception->purchase_order->number ?? 'N/A' }}</div>
         <div><strong>Fecha de Orden:</strong> {{ $reception->purchase_order ? fmt_date($reception->purchase_order->date) : 'N/A' }}</div>
-        @if($reception->purchase_order && $reception->purchase_order->supplier)
-        <div><strong>Proveedor:</strong> {{ $reception->purchase_order->supplier->company_name }}</div>
-        <div><strong>CUIT:</strong> {{ $reception->purchase_order->supplier->cuit }}</div>
-        @if($reception->purchase_order->supplier->address)
-        <div><strong>Dirección:</strong> {{ $reception->purchase_order->supplier->address }}</div>
+        @if($reception->purchase_order)
+        <div><strong>Proveedor(es):</strong> {{ $reception->purchase_order->supplier_display_name }}</div>
+        @if($reception->purchase_order->suppliers->count() === 1)
+        @php $sup = $reception->purchase_order->suppliers->first(); @endphp
+        <div><strong>CUIT:</strong> {{ $sup->cuit }}</div>
+        @if($sup->address)
+        <div><strong>Dirección:</strong> {{ $sup->address }}</div>
+        @endif
         @endif
         @endif
     </div>

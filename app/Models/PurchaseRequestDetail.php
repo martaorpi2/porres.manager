@@ -14,6 +14,7 @@ class PurchaseRequestDetail extends Model
     protected $fillable = [
         'purchase_request_id',
         'product_id',
+        'selected_market_rate_id',
         'product_description',
         'requested_quantity',
         'specifications',
@@ -42,6 +43,14 @@ class PurchaseRequestDetail extends Model
     public function product()
     {
         return $this->belongsTo(Product::class);
+    }
+
+    /**
+     * Cotización seleccionada para este producto (al generar OC con varios proveedores).
+     */
+    public function selectedMarketRate()
+    {
+        return $this->belongsTo(\App\Models\MarketRate::class, 'selected_market_rate_id');
     }
 
     /**

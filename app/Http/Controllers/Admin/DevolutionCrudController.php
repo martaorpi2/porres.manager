@@ -212,6 +212,7 @@ class DevolutionCrudController extends CrudController
         $devolution = \App\Models\Devolution::with([
             'reception.purchase_order.supplier',
             'reception.purchase_order.details.input',
+            'reception.purchase_order.details.supplier',
             'reception.user',
             'user'
         ])->findOrFail($id);

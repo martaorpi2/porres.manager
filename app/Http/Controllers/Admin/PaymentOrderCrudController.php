@@ -188,7 +188,7 @@ class PaymentOrderCrudController extends CrudController
                 'type' => 'custom_html',
                 'value' => '<div class="alert alert-info">
                     <strong>Orden de Compra:</strong> ' . e($purchaseOrder->number) . '<br>
-                    <strong>Proveedor:</strong> ' . e($purchaseOrder->supplier->company_name ?? 'N/A') . '<br>
+                    <strong>Proveedor:</strong> ' . e($purchaseOrder->supplier_display_name) . '<br>
                     <strong>Total de la Orden:</strong> $' . number_format($purchaseOrder->total ?? 0, 2) . '
                 </div>',
             ]);
@@ -304,7 +304,7 @@ class PaymentOrderCrudController extends CrudController
                     $html .= '<div class="row">';
                     $html .= '<div class="col-md-6">';
                     $html .= '<p class="mb-1"><strong>Número:</strong> ' . e($purchaseOrder->number) . '</p>';
-                    $html .= '<p class="mb-1"><strong>Proveedor:</strong> ' . e($purchaseOrder->supplier->company_name) . '</p>';
+                    $html .= '<p class="mb-1"><strong>Proveedor:</strong> ' . e($purchaseOrder->supplier_display_name) . '</p>';
                     $html .= '</div>';
                     $html .= '<div class="col-md-6">';
                     $html .= '<p class="mb-1"><strong>Fecha:</strong> ' . $purchaseOrder->date->format('d/m/Y') . '</p>';
@@ -389,7 +389,7 @@ class PaymentOrderCrudController extends CrudController
      */
     public function generatePdf($id)
     {
-        $paymentOrder = \App\Models\PaymentOrder::with(['purchase_order.supplier'])->findOrFail($id);
+        $paymentOrder = \App\Models\PaymentOrder::with(['purchase_order.supplier', 'purchase_order.details.supplier'])->findOrFail($id);
 
         $pdf = Pdf::loadView('payment-order-pdf', compact('paymentOrder'));
 

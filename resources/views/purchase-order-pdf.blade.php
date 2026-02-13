@@ -53,13 +53,23 @@
         <div><strong>Fecha:</strong> {{ fmt_date($purchaseOrder->date) }}</div>
     </div>
 
+    @php
+        $suppliers = $purchaseOrder->suppliers;
+        $singleSupplier = $suppliers->count() === 1 ? $suppliers->first() : null;
+    @endphp
+    @if($singleSupplier)
     <div class="box">
-        <div><strong>Proveedor:</strong> {{ $purchaseOrder->supplier->company_name }}</div>
-        <div><strong>CUIT:</strong> {{ $purchaseOrder->supplier->cuit }}</div>
-        @if($purchaseOrder->supplier->address)
-        <div><strong>Dirección:</strong> {{ $purchaseOrder->supplier->address }}</div>
+        <div><strong>Proveedor:</strong> {{ $singleSupplier->company_name }}</div>
+        <div><strong>CUIT:</strong> {{ $singleSupplier->cuit }}</div>
+        @if($singleSupplier->address)
+        <div><strong>Dirección:</strong> {{ $singleSupplier->address }}</div>
         @endif
     </div>
+    @elseif($suppliers->isNotEmpty())
+    <div class="box">
+        <div><strong>Proveedores:</strong> Esta orden incluye ítems de {{ $suppliers->count() }} proveedor(es). Ver detalle por línea abajo.</div>
+    </div>
+    @endif
 
     <div class="box">
         <div><strong>Condiciones de pago:</strong> {{ $purchaseOrder->payment_conditions ?? '30 días fecha factura' }}</div>
@@ -72,6 +82,9 @@
             <tr>
                 <th class="center">Ítem</th>
                 <th>Descripción</th>
+                @if($suppliers->count() > 1)
+                <th>Proveedor</th>
+                @endif
                 <th class="center">Cantidad</th>
                 <th class="right">Precio Unitario</th>
                 <th class="right">Subtotal</th>
@@ -82,6 +95,9 @@
             <tr>
                 <td class="center">{{ $index + 1 }}</td>
                 <td>{{ $detail->input->name ?? 'Producto' }}</td>
+                @if($suppliers->count() > 1)
+                <td>{{ $detail->supplier->company_name ?? '—' }}</td>
+                @endif
                 <td class="center">{{ $detail->quantity }}</td>
                 <td class="right">{{ money_format_local($detail->unit_price) }}</td>
                 <td class="right">{{ money_format_local($detail->subtotal) }}</td>

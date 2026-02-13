@@ -38,7 +38,8 @@
     </style>
     @php
         $po = $paymentOrder->purchase_order; // related purchase order
-        $supplier = $po?->supplier;
+        $suppliers = $po ? $po->suppliers : collect();
+        $singleSupplier = $suppliers->count() === 1 ? $suppliers->first() : null;
         function money_format_local($value) { return '$ ' . number_format((float)$value, 2, ',', '.'); }
         function fmt_date($d) { return $d ? \Carbon\Carbon::parse($d)->format('d/m/Y') : ''; }
     @endphp
@@ -55,8 +56,13 @@
     </div>
 
     <div class="box">
-        <div><strong>Proveedor:</strong> {{ $supplier?->company_name }}</div>
-        <div><strong>CUIT:</strong> {{ $supplier?->cuit }}</div>
+        <div><strong>Proveedor(es):</strong> {{ $po ? $po->supplier_display_name : 'N/A' }}</div>
+        @if($singleSupplier)
+        <div><strong>CUIT:</strong> {{ $singleSupplier->cuit }}</div>
+        @if($singleSupplier->address ?? null)
+        <div><strong>Dirección:</strong> {{ $singleSupplier->address }}</div>
+        @endif
+        @endif
     </div>
 
     <div class="box">

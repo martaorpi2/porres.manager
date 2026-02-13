@@ -1601,7 +1601,7 @@
                 <div class="process-item-card" onclick="window.location='{{ backpack_url('purchase-order/' . $purchaseOrder->id . '/show') }}'">
                     <div class="process-item-title">{{ $purchaseOrder->number ?? 'N/A' }}</div>
                     <div class="process-item-meta">
-                        <span><i class="la la-truck"></i> {{ $purchaseOrder->supplier->name ?? 'N/A' }}</span>
+                        <span><i class="la la-truck"></i> {{ $purchaseOrder->supplier_display_name }}</span>
                         <span class="process-item-status status-{{ strtolower(str_replace(' ', '-', $purchaseOrder->status ?? 'Pendiente')) }}">{{ $purchaseOrder->status ?? 'Pendiente' }}</span>
                     </div>
                     <div class="process-item-meta">
@@ -1629,7 +1629,7 @@
                 <div class="process-item-card" onclick="window.location='{{ backpack_url('payment-order/' . $paymentOrder->id . '/show') }}'">
                     <div class="process-item-title">{{ $paymentOrder->payment_number ?? 'N/A' }}</div>
                     <div class="process-item-meta">
-                        <span><i class="la la-truck"></i> {{ $paymentOrder->purchase_order->supplier->name ?? 'N/A' }}</span>
+                        <span><i class="la la-truck"></i> {{ $paymentOrder->purchase_order->supplier_display_name }}</span>
                         <span><i class="la la-clipboard-list"></i> {{ $paymentOrder->purchase_order->number ?? 'N/A' }}</span>
                     </div>
                     <div class="process-item-meta">
@@ -1660,7 +1660,7 @@
                     <div class="process-item-title">{{ $reception->number ?? 'REC-' . $reception->id }}</div>
                     <div class="process-item-meta">
                         <span><i class="la la-clipboard-list"></i> {{ $reception->purchase_order->number ?? 'N/A' }}</span>
-                        <span><i class="la la-truck"></i> {{ $reception->purchase_order->supplier->name ?? 'N/A' }}</span>
+                        <span><i class="la la-truck"></i> {{ $reception->purchase_order->supplier_display_name }}</span>
                     </div>
                     <div class="process-item-meta">
                         <span><i class="la la-calendar"></i> {{ $reception->created_at->format('d/m/Y') }}</span>
@@ -1836,7 +1836,7 @@
                                         </a>
                                         <br>
                                         <small class="text-muted">
-                                            Proveedor: {{ $po->supplier->name ?? 'N/A' }} | 
+                                            Proveedor: {{ $po->supplier_display_name }} | 
                                             Estado: {{ $po->status ?? 'N/A' }}
                                             @if($po->date)
                                                 | Fecha: {{ $po->date->format('d/m/Y') }}

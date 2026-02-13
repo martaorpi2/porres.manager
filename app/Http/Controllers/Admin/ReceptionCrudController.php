@@ -687,6 +687,7 @@ class ReceptionCrudController extends CrudController
         $reception = \App\Models\Reception::with([
             'purchase_order.supplier',
             'purchase_order.details.input',
+            'purchase_order.details.supplier',
             'user'
         ])->findOrFail($id);
         

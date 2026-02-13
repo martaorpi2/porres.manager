@@ -1397,6 +1397,7 @@ class DeliveryCrudController extends CrudController
             'purchaseRequest.details.product',
             'reception.purchase_order.supplier',
             'reception.purchase_order.details.input',
+            'reception.purchase_order.details.supplier',
             'deliveredBy',
             'receivedBy',
             'details.product'

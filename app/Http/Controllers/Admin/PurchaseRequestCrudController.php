@@ -2464,7 +2464,51 @@ class PurchaseRequestCrudController extends CrudController
     }
 
     /**
+     * Asignar cotización por producto (para generar una OC con varios proveedores)
+     */
+    public function assignQuotations($id)
+    {
+        $user = backpack_user();
+        if ($user && $user->hasRole('role_responsable_area', 'backpack')) {
+            abort(403, 'Los responsables de área no pueden asignar cotizaciones.');
+        }
+
+        $purchaseRequest = \App\Models\PurchaseRequest::with(['details.product', 'marketRates.quoteDetails'])->findOrFail($id);
+        if ($purchaseRequest->status === 'Completada') {
+            \Alert::error('No se puede modificar la asignación: la solicitud ya está completada.')->flash();
+            return redirect()->back();
+        }
+
+        $detailQuotes = request()->input('detail_quote', []);
+        $marketRateIds = $purchaseRequest->marketRates->pluck('id')->toArray();
+        $quoteDetailsByRate = $purchaseRequest->marketRates->keyBy('id')->map->quoteDetails->keyBy('product_id');
+
+        foreach ($purchaseRequest->details as $detail) {
+            $marketRateId = isset($detailQuotes[$detail->id]) ? (int) $detailQuotes[$detail->id] : null;
+            if ($marketRateId === null) {
+                \App\Models\PurchaseRequestDetail::where('id', $detail->id)->update(['selected_market_rate_id' => null]);
+                continue;
+            }
+            if (!in_array($marketRateId, $marketRateIds)) {
+                \Alert::error('Cotización inválida para el producto ' . ($detail->product->name ?? '') . '.')->flash();
+                return redirect()->back();
+            }
+            $quoteDetail = $purchaseRequest->marketRates->firstWhere('id', $marketRateId)
+                ->quoteDetails->firstWhere('product_id', $detail->product_id);
+            if (!$quoteDetail) {
+                \Alert::error('La cotización seleccionada no incluye el producto: ' . ($detail->product->name ?? '') . '.')->flash();
+                return redirect()->back();
+            }
+            \App\Models\PurchaseRequestDetail::where('id', $detail->id)->update(['selected_market_rate_id' => $marketRateId]);
+        }
+
+        \Alert::success('Asignación por producto guardada correctamente.')->flash();
+        return redirect()->back();
+    }
+
+    /**
      * Generate purchase order from selected market rate or directly if amount <= 60000
+     * Si todos los detalles tienen asignada una cotización (selected_market_rate_id), genera una OC con varios proveedores.
      */
     public function generatePurchaseOrder($id)
     {
@@ -2478,6 +2522,8 @@ class PurchaseRequestCrudController extends CrudController
             'selectedMarketRate.supplier',
             'selectedMarketRate.quoteDetails.product',
             'details.product',
+            'details.selectedMarketRate.supplier',
+            'details.selectedMarketRate.quoteDetails.product',
             'responsibilityArea'
         ])->findOrFail($id);
         
@@ -2501,44 +2547,94 @@ class PurchaseRequestCrudController extends CrudController
         
         $totalAmount = $purchaseRequest->total_amount ?? 0;
         $threshold = 60000;
-        
-        // Si el monto es mayor a 60000, se requiere EXACTAMENTE 3 cotizaciones
+        $quotationsCount = $this->countQuotationsForPurchaseRequest($purchaseRequest);
+        $allDetailsHaveAssignment = $purchaseRequest->details->isNotEmpty()
+            && $purchaseRequest->details->every(fn ($d) => !empty($d->selected_market_rate_id));
+
+        // Flujo: asignación por producto (una OC con varios proveedores)
+        if ($allDetailsHaveAssignment) {
+            if ($totalAmount > $threshold && $quotationsCount < 3) {
+                \Alert::error('Para solicitudes mayores a $' . number_format($threshold, 2) . ' se requieren al menos 3 cotizaciones.')->flash();
+                return redirect()->back();
+            }
+            $productsWithFewer = $purchaseRequest->getProductsWithFewerThanThreeQuotations();
+            if ($totalAmount > $threshold && $productsWithFewer->isNotEmpty()) {
+                \Alert::error('Cada producto debe estar en al menos 3 cotizaciones. Productos faltantes: ' . $productsWithFewer->pluck('name')->implode(', ') . '.')->flash();
+                return redirect()->back();
+            }
+            return $this->generatePurchaseOrderFromPerProductAssignment($purchaseRequest);
+        }
+
+        // Flujo clásico: una cotización para toda la solicitud
         if ($totalAmount > $threshold) {
-            // Validar que haya exactamente 3 cotizaciones (obligatorio)
-            $quotationsCount = $this->countQuotationsForPurchaseRequest($purchaseRequest);
-            
             if ($quotationsCount < 3) {
                 \Alert::error('Para solicitudes de compra mayores a $' . number_format($threshold, 2) . ' se requieren OBLIGATORIAMENTE 3 cotizaciones. Actualmente hay ' . $quotationsCount . ' cotización(es). Debe agregar ' . (3 - $quotationsCount) . ' cotización(es) más antes de generar la orden de compra.')->flash();
                 return redirect()->back();
             }
-
-            // Validar que cada producto de la solicitud esté cotizado en al menos 3 cotizaciones distintas
             $productsWithFewerQuotations = $purchaseRequest->getProductsWithFewerThanThreeQuotations();
             if ($productsWithFewerQuotations->isNotEmpty()) {
                 $names = $productsWithFewerQuotations->pluck('name')->implode(', ');
                 \Alert::error('No se puede generar la orden: los siguientes productos deben estar cotizados en al menos 3 cotizaciones distintas: ' . $names . '. Agregue estos productos a más cotizaciones antes de generar la orden de compra.')->flash();
                 return redirect()->back();
             }
-            
-            // Validar que haya una cotización seleccionada
             if (!$purchaseRequest->selected_market_rate_id) {
-                \Alert::error('Debe seleccionar una cotización antes de generar la orden de compra.')->flash();
+                \Alert::error('Debe seleccionar una cotización antes de generar la orden de compra, o asignar una cotización por producto en la sección inferior.')->flash();
                 return redirect()->back();
             }
-            
-            // Generar orden desde cotización seleccionada
-            return $this->generatePurchaseOrderFromQuote($purchaseRequest);
-        } else {
-            // Si el monto es <= 60000, se requiere una sola cotización seleccionada
-            // Verificar que haya una cotización seleccionada
-            if (!$purchaseRequest->selected_market_rate_id) {
-                \Alert::error('Debe seleccionar una cotización antes de generar la orden de compra. Para solicitudes con monto menor o igual a $60,000 se requiere una cotización.')->flash();
-                return redirect()->back();
-            }
-            
-            // Generar orden desde cotización seleccionada
             return $this->generatePurchaseOrderFromQuote($purchaseRequest);
         }
+        if (!$purchaseRequest->selected_market_rate_id) {
+            \Alert::error('Debe seleccionar una cotización antes de generar la orden de compra, o asignar una cotización por producto en la sección inferior.')->flash();
+            return redirect()->back();
+        }
+        return $this->generatePurchaseOrderFromQuote($purchaseRequest);
+    }
+
+    /**
+     * Generar una sola OC con líneas de distintas cotizaciones (varios proveedores)
+     */
+    private function generatePurchaseOrderFromPerProductAssignment($purchaseRequest)
+    {
+        $request = request();
+        $ultimo = \App\Models\PurchaseOrder::max('id');
+        $orderNumber = 'OC-' . date('Y') . '-' . str_pad(($ultimo + 1), 3, '0', STR_PAD_LEFT);
+        $issueDate = $request->input('issue_date') ? \Carbon\Carbon::parse($request->input('issue_date')) : now();
+
+        $purchaseOrder = \App\Models\PurchaseOrder::create([
+            'number' => $orderNumber,
+            'date' => now(),
+            'issue_date' => $issueDate,
+            'supplier_id' => null,
+            'authorizing_user_id' => auth()->id(),
+            'status' => 'Pendiente',
+            'purchase_request_id' => $purchaseRequest->id,
+            'payment_conditions' => '30 días fecha factura',
+        ]);
+
+        foreach ($purchaseRequest->details as $requestDetail) {
+            $marketRate = $requestDetail->selectedMarketRate;
+            if (!$marketRate || !$requestDetail->product) {
+                continue;
+            }
+            $quoteDetail = $marketRate->quoteDetails->firstWhere('product_id', $requestDetail->product_id);
+            if (!$quoteDetail) {
+                continue;
+            }
+            $input = $this->findOrCreateInputFromProduct($quoteDetail->product);
+            if ($input) {
+                \App\Models\PurchaseOrderDetail::create([
+                    'purchase_order_id' => $purchaseOrder->id,
+                    'supplier_id' => $marketRate->supplier_id,
+                    'input_id' => $input->id,
+                    'quantity' => $quoteDetail->quantity,
+                    'unit_price' => $quoteDetail->unit_price,
+                ]);
+            }
+        }
+
+        $purchaseRequest->update(['status' => 'Completada', 'purchase_type' => 'normal']);
+        \Alert::success('Orden de compra generada exitosamente (varios proveedores): ' . $purchaseOrder->number)->flash();
+        return redirect()->route('purchase-order.show', $purchaseOrder->id);
     }
     
     /**
@@ -2555,19 +2651,20 @@ class PurchaseRequestCrudController extends CrudController
         // Obtener fecha de emisión del request o usar la fecha actual
         $issueDate = $request->input('issue_date') ? \Carbon\Carbon::parse($request->input('issue_date')) : now();
         
-        // Create purchase order
+        $supplierId = $purchaseRequest->selectedMarketRate->supplier_id;
+        // Create purchase order (supplier_id opcional a nivel orden cuando hay varios proveedores por línea)
         $purchaseOrder = \App\Models\PurchaseOrder::create([
             'number' => $orderNumber,
             'date' => now(),
             'issue_date' => $issueDate,
-            'supplier_id' => $purchaseRequest->selectedMarketRate->supplier_id,
+            'supplier_id' => $supplierId,
             'authorizing_user_id' => auth()->id(),
             'status' => 'Pendiente',
             'purchase_request_id' => $purchaseRequest->id,
             'payment_conditions' => '30 días fecha factura', // Valor por defecto
         ]);
         
-        // Create purchase order details from quote
+        // Create purchase order details from quote (cada línea con su proveedor)
         foreach ($purchaseRequest->selectedMarketRate->quoteDetails as $quoteDetail) {
             // Buscar o crear el Input correspondiente al Product
             $input = $this->findOrCreateInputFromProduct($quoteDetail->product);
@@ -2575,6 +2672,7 @@ class PurchaseRequestCrudController extends CrudController
             if ($input) {
                 \App\Models\PurchaseOrderDetail::create([
                     'purchase_order_id' => $purchaseOrder->id,
+                    'supplier_id' => $supplierId,
                     'input_id' => $input->id,
                     'quantity' => $quoteDetail->quantity,
                     'unit_price' => $quoteDetail->unit_price,
@@ -2625,7 +2723,7 @@ class PurchaseRequestCrudController extends CrudController
             'payment_conditions' => '30 días fecha factura', // Valor por defecto
         ]);
         
-        // Create purchase order details from purchase request details
+        // Create purchase order details from purchase request details (cada línea con el mismo proveedor)
         foreach ($purchaseRequest->details as $requestDetail) {
             if (!$requestDetail->product) {
                 continue;
@@ -2640,6 +2738,7 @@ class PurchaseRequestCrudController extends CrudController
                 
                 \App\Models\PurchaseOrderDetail::create([
                     'purchase_order_id' => $purchaseOrder->id,
+                    'supplier_id' => $supplierId,
                     'input_id' => $input->id,
                     'quantity' => $requestDetail->requested_quantity,
                     'unit_price' => $unitPrice,
@@ -2727,7 +2826,7 @@ class PurchaseRequestCrudController extends CrudController
      */
     protected function setupShowOperation()
     {
-        CRUD::addClause('with', ['responsibilityArea', 'requestingUser', 'approvedBy', 'details.product', 'selectedMarketRate.supplier', 'selectedBy', 'convertedFromGeneralRequest', 'deliveries.details', 'purchaseOrders.paymentOrders', 'directPurchaseSupplier', 'directPurchaseAuthorizationRequestedBy', 'directPurchaseAuthorizedBy', 'marketRates']);
+        CRUD::addClause('with', ['responsibilityArea', 'requestingUser', 'approvedBy', 'details.product', 'details.selectedMarketRate.supplier', 'selectedMarketRate.supplier', 'selectedBy', 'convertedFromGeneralRequest', 'deliveries.details', 'purchaseOrders.paymentOrders', 'directPurchaseSupplier', 'directPurchaseAuthorizationRequestedBy', 'directPurchaseAuthorizedBy', 'marketRates']);
         
         // Ocultar botón de eliminar para role_admin_institucion, role_apoderado y role_representante_legal
         $user = backpack_user();
@@ -3350,7 +3449,7 @@ class PurchaseRequestCrudController extends CrudController
                     $html .= '<tr>';
                     $html .= '<td><strong>' . e($purchaseOrder->number ?? 'N/A') . '</strong></td>';
                     $html .= '<td>' . ($purchaseOrder->date ? $purchaseOrder->date->format('d/m/Y') : 'N/A') . '</td>';
-                    $html .= '<td>' . e($purchaseOrder->supplier->company_name ?? 'N/A') . '</td>';
+                    $html .= '<td>' . e($purchaseOrder->supplier_display_name) . '</td>';
                     $html .= '<td><span class="badge ' . $statusBadge . '">' . e($purchaseOrder->status ?? 'N/A') . '</span></td>';
                     $html .= '<td><strong>$' . number_format($purchaseOrder->total ?? 0, 2) . '</strong></td>';
                     $html .= '<td>';
@@ -3466,6 +3565,39 @@ class PurchaseRequestCrudController extends CrudController
                             $html .= '</div>';
                         }
                     }
+
+                    // Asignar cotización por producto (para OC con varios proveedores)
+                    $entry->load(['details.product', 'details.selectedMarketRate.supplier']);
+                    if ($quotationsCount >= 2 && $entry->status === 'Aprobada' && $entry->status !== 'Completada') {
+                        $html .= '<div class="card mt-3 border-info">';
+                        $html .= '<div class="card-header bg-info text-white"><strong><i class="la la-link"></i> Asignar cotización por producto</strong></div>';
+                        $html .= '<div class="card-body">';
+                        $html .= '<p class="text-muted small">Asigne para cada producto qué cotización usar. Luego puede generar <strong>una sola orden de compra</strong> con ítems de distintos proveedores.</p>';
+                        $html .= '<form method="POST" action="' . route('purchase-request.assign-quotations', $entry->id) . '">';
+                        $html .= csrf_field();
+                        $html .= '<div class="table-responsive"><table class="table table-sm table-bordered">';
+                        $html .= '<thead><tr><th>Producto</th><th>Cantidad</th><th>Cotización a usar</th></tr></thead><tbody>';
+                        foreach ($entry->details as $detail) {
+                            $productName = $detail->product ? $detail->product->name : 'Producto #' . $detail->id;
+                            $ratesWithProduct = $marketRates->filter(function ($mr) use ($detail) {
+                                return $mr->quoteDetails->contains('product_id', $detail->product_id);
+                            });
+                            $html .= '<tr><td>' . e($productName) . '</td><td>' . (int)$detail->requested_quantity . '</td><td>';
+                            $html .= '<select name="detail_quote[' . $detail->id . ']" class="form-control form-control-sm">';
+                            $html .= '<option value="">— Sin asignar —</option>';
+                            foreach ($ratesWithProduct as $mr) {
+                                $qd = $mr->quoteDetails->firstWhere('product_id', $detail->product_id);
+                                $price = $qd ? number_format($qd->unit_price, 2) : '—';
+                                $supplierName = $mr->supplier ? $mr->supplier->company_name : 'Proveedor';
+                                $selected = $detail->selected_market_rate_id == $mr->id ? ' selected' : '';
+                                $html .= '<option value="' . $mr->id . '"' . $selected . '>' . e($supplierName) . ' — $' . $price . '/u</option>';
+                            }
+                            $html .= '</select></td></tr>';
+                        }
+                        $html .= '</tbody></table></div>';
+                        $html .= '<button type="submit" class="btn btn-info btn-sm"><i class="la la-save"></i> Guardar asignación</button>';
+                        $html .= '</form></div></div>';
+                    }
                 }
                 
                 // Lógica para mostrar botón de generar orden según el monto
@@ -3550,15 +3682,18 @@ class PurchaseRequestCrudController extends CrudController
                                 $html .= '<div class="mt-3 alert alert-danger">';
                                 $html .= '<i class="la la-exclamation-triangle"></i> <strong>No se puede generar la orden de compra:</strong> Los siguientes productos deben estar cotizados en <strong>al menos 3 cotizaciones distintas</strong>: ' . e($productNames) . '. Agregue estos productos a más cotizaciones antes de poder generar la orden.';
                                 $html .= '</div>';
-                            } elseif (!$entry->selected_market_rate_id) {
-                                $html .= '<div class="mt-3 alert alert-warning">';
-                                $html .= '<i class="la la-exclamation-triangle"></i> <strong>Atención:</strong> Debe seleccionar una cotización antes de generar la orden de compra.';
-                                $html .= '</div>';
                             } else {
-                                // Hay 3 cotizaciones, todos los productos con 3+ cotizaciones y una seleccionada, mostrar formulario
+                                $allDetailsAssigned = $entry->details->isNotEmpty() && $entry->details->every(fn ($d) => !empty($d->selected_market_rate_id));
+                                $canGenerateWithQuote = $entry->selected_market_rate_id || $allDetailsAssigned;
+                                if (!$canGenerateWithQuote) {
+                                    $html .= '<div class="mt-3 alert alert-warning">';
+                                    $html .= '<i class="la la-exclamation-triangle"></i> <strong>Atención:</strong> Debe seleccionar una cotización para toda la solicitud, o asignar una cotización por producto en la sección de arriba.';
+                                    $html .= '</div>';
+                                } else {
+                                // Hay 3 cotizaciones, todos los productos con 3+ cotizaciones y (una seleccionada o asignación por producto), mostrar formulario
                                 $html .= '<div class="mt-3">';
                                 $html .= '<div class="alert alert-success">';
-                                $html .= '<i class="la la-check-circle"></i> <strong>Listo para generar orden:</strong> Tiene 3 cotizaciones cargadas, todos los productos cotizados al menos 3 veces y una cotización seleccionada. Puede proceder a generar la orden de compra.';
+                                $html .= '<i class="la la-check-circle"></i> <strong>Listo para generar orden:</strong> ' . ($allDetailsAssigned ? 'Tiene asignada una cotización por producto. Se generará una OC con varios proveedores.' : 'Tiene una cotización seleccionada.') . ' Puede proceder a generar la orden de compra.';
                             $html .= '</div>';
                             $html .= '<form method="POST" action="' . route('purchase-request.generate-purchase-order', $entry->id) . '">';
                             $html .= csrf_field();
@@ -3573,6 +3708,7 @@ class PurchaseRequestCrudController extends CrudController
                             $html .= '</button>';
                             $html .= '</form>';
                             $html .= '</div>';
+                                }
                             }
                         }
                     } else {
@@ -3619,10 +3755,26 @@ class PurchaseRequestCrudController extends CrudController
                                     $html .= '</form>';
                                 }
                             } else {
-                                // Hay más de una cotización (no debería pasar para montos <= 60000, pero por si acaso)
-                                $html .= '<div class="alert alert-warning">';
-                                $html .= '<i class="la la-exclamation-triangle"></i> <strong>Atención:</strong> Para solicitudes con monto menor o igual a $60,000 solo se requiere una cotización. Tiene ' . $quotationsCount . ' cotización(es). Debe seleccionar una para generar la orden de compra.';
-                                $html .= '</div>';
+                                // Hay más de una cotización: puede seleccionar una global o asignar por producto
+                                $allDetailsAssignedLow = $entry->details->isNotEmpty() && $entry->details->every(fn ($d) => !empty($d->selected_market_rate_id));
+                                if ($entry->selected_market_rate_id || $allDetailsAssignedLow) {
+                                    $html .= '<div class="alert alert-success">';
+                                    $html .= '<i class="la la-check-circle"></i> <strong>Listo para generar orden:</strong> ' . ($allDetailsAssignedLow ? 'Tiene asignada una cotización por producto.' : 'Tiene una cotización seleccionada.') . ' Puede proceder a generar la orden de compra.';
+                                    $html .= '</div>';
+                                    $html .= '<form method="POST" action="' . route('purchase-request.generate-purchase-order', $entry->id) . '">';
+                                    $html .= csrf_field();
+                                    $html .= '<div class="row mb-3"><div class="col-md-4">';
+                                    $html .= '<label for="issue_date" class="form-label">Fecha de Emisión:</label>';
+                                    $html .= '<input type="date" name="issue_date" id="issue_date" class="form-control" value="' . date('Y-m-d') . '" required>';
+                                    $html .= '</div></div>';
+                                    $html .= '<button type="submit" class="btn btn-primary" onclick="return confirm(\'¿Está seguro de generar la orden de compra?\')">';
+                                    $html .= '<i class="la la-shopping-cart"></i> Generar Orden de Compra';
+                                    $html .= '</button></form>';
+                                } else {
+                                    $html .= '<div class="alert alert-warning">';
+                                    $html .= '<i class="la la-exclamation-triangle"></i> <strong>Atención:</strong> Tiene ' . $quotationsCount . ' cotización(es). Seleccione una para toda la solicitud o asigne una cotización por producto en la sección de arriba.';
+                                    $html .= '</div>';
+                                }
                             }
                         }
                         $html .= '</div>';

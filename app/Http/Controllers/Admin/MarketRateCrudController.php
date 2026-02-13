@@ -48,6 +48,9 @@ class MarketRateCrudController extends CrudController
     {
         // Habilitar tabla responsiva
         CRUD::enableResponsiveTable();
+
+        // No mostrar botón de agregar cotización en el listado (las cotizaciones se agregan desde la solicitud de compra)
+        CRUD::removeButton('create');
         
         // Ocultar botones de editar y eliminar solo para apoderado y representante_legal (admin_institucion y responsable_compras pueden editar)
         $user = backpack_user();

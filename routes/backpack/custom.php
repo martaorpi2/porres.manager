@@ -51,6 +51,7 @@ Route::group([
     Route::post('purchase-request/{id}/select-market-rate/{marketRateId}', 'PurchaseRequestCrudController@storeMarketRateSelection')->name('purchase-request.store-market-rate-selection');
     Route::get('purchase-request/{id}/suggest-supplier', 'PurchaseRequestCrudController@showSuggestSupplierForm')->name('purchase-request.suggest-supplier');
     Route::post('purchase-request/{id}/suggest-supplier', 'PurchaseRequestCrudController@storeSupplierSuggestion')->name('purchase-request.store-supplier-suggestion');
+    Route::post('purchase-request/{id}/assign-quotations', 'PurchaseRequestCrudController@assignQuotations')->name('purchase-request.assign-quotations');
     Route::post('purchase-request/{id}/generate-purchase-order', 'PurchaseRequestCrudController@generatePurchaseOrder')->name('purchase-request.generate-purchase-order');
     Route::post('purchase-request/{id}/approve', 'PurchaseRequestCrudController@approvePurchaseRequest')->name('purchase-request.approve');
     Route::post('purchase-request/{id}/reject', 'PurchaseRequestCrudController@rejectPurchaseRequest')->name('purchase-request.reject');
