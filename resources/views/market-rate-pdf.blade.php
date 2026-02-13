@@ -59,6 +59,12 @@
 
     <div class="box">
         <div><strong>Fecha de Cotización:</strong> {{ fmt_date($marketRate->date) }}</div>
+        @if($marketRate->delivery_date)
+        <div><strong>Fecha de entrega:</strong> {{ fmt_date($marketRate->delivery_date) }}</div>
+        @endif
+        @if($marketRate->payment_method)
+        <div><strong>Forma de pago:</strong> {{ $marketRate->payment_method }}</div>
+        @endif
         <div><strong>Monto Total:</strong> {{ money_format_local($marketRate->total_amount) }}</div>
     </div>
 
@@ -121,8 +127,12 @@
         <div><strong>Condiciones Generales:</strong></div>
         <div>• Precios válidos por 30 días desde la fecha de emisión</div>
         <div>• Los precios incluyen IVA</div>
+        @if($marketRate->delivery_date)
+        <div>• Fecha de entrega: {{ fmt_date($marketRate->delivery_date) }}</div>
+        @else
         <div>• Entrega según disponibilidad de stock</div>
-        <div>• Forma de pago: 30 días fecha factura</div>
+        @endif
+        <div>• Forma de pago: {{ $marketRate->payment_method ?: '30 días fecha factura' }}</div>
         <div class="muted" style="margin-top: 8px; font-size: 10px;">
             Documento generado el {{ now()->format('d/m/Y H:i') }}
         </div>

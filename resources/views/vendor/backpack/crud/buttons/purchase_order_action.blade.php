@@ -45,11 +45,13 @@
         
         // Para compras directas autorizadas, puede generar si está aprobada
         // Para compras normales, puede generar si: (monto <= 60000 O tiene 3+ cotizaciones) Y está aprobada Y tiene cotización seleccionada
+        // Para monto > 60000 además cada producto debe estar cotizado en al menos 3 cotizaciones distintas
         if ($isDirectPurchaseAuthorized) {
             $canGenerate = $isApproved;
         } else {
             $hasSelectedQuote = $currentEntry->selected_market_rate_id != null;
-            $canGenerate = $isApproved && (($totalAmount <= $threshold && $hasSelectedQuote) || ($quotationsCount >= 3 && $hasSelectedQuote));
+            $allProductsHaveThreeQuotations = $totalAmount <= $threshold || $currentEntry->getProductsWithFewerThanThreeQuotations()->isEmpty();
+            $canGenerate = $isApproved && (($totalAmount <= $threshold && $hasSelectedQuote) || ($quotationsCount >= 3 && $hasSelectedQuote && $allProductsHaveThreeQuotations));
         }
     }
 @endphp

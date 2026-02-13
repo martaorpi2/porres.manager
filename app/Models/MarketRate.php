@@ -25,11 +25,14 @@ class MarketRate extends Model
         'supplier_id',
         'purchase_request_id',
         'date',
+        'delivery_date',
+        'payment_method',
         'total_amount',
         'is_selected',
     ];
     protected $casts = [
         'date' => 'date',
+        'delivery_date' => 'date',
         'total_amount' => 'decimal:2',
         'is_selected' => 'boolean',
     ];

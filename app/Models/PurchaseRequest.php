@@ -291,4 +291,34 @@ class PurchaseRequest extends Model
             return 'danger'; // Rojo
         }
     }
+
+    /**
+     * Obtiene los productos de esta solicitud que están cotizados en menos de 3 cotizaciones distintas.
+     * Para montos > 60000 cada producto debe aparecer en al menos 3 cotizaciones.
+     *
+     * @return \Illuminate\Support\Collection<int, Product>
+     */
+    public function getProductsWithFewerThanThreeQuotations()
+    {
+        $marketRateIds = $this->marketRates()->pluck('id');
+        if ($marketRateIds->isEmpty()) {
+            return $this->details()->with('product')->get()->pluck('product')->filter();
+        }
+
+        $productIdsWithEnoughQuotations = \App\Models\QuoteDetail::whereIn('market_rate_id', $marketRateIds)
+            ->select('product_id')
+            ->selectRaw('COUNT(DISTINCT market_rate_id) as quote_count')
+            ->groupBy('product_id')
+            ->having('quote_count', '>=', 3)
+            ->pluck('product_id');
+
+        $allProductIdsInRequest = $this->details()->pluck('product_id')->unique()->values();
+        $productIdsWithFewer = $allProductIdsInRequest->diff($productIdsWithEnoughQuotations);
+
+        if ($productIdsWithFewer->isEmpty()) {
+            return collect();
+        }
+
+        return \App\Models\Product::whereIn('id', $productIdsWithFewer)->get();
+    }
 }

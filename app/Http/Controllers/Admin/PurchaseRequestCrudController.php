@@ -195,6 +195,7 @@ class PurchaseRequestCrudController extends CrudController
                                 'quantity' => $pendingQuantity, // Usar cantidad faltante en lugar de solicitada
                                 'price' => 0, // Precio inicial en 0, el sector de compras lo asignará
                                 'specifications' => $detail->specifications ?? '',
+                                'product_description' => $detail->product_description ?? '',
                                 'minimum_stock' => $detail->product->minimum_stock ?? 0,
                                 'stock_total' => $stockTotal
                             ];
@@ -383,7 +384,8 @@ class PurchaseRequestCrudController extends CrudController
                             'description' => $detail->product ? $detail->product->description : '',
                             'quantity' => $detail->requested_quantity ?? 0,
                             'price' => $detail->estimated_unit_price ?? 0,
-                            'specifications' => $detail->specifications ?? ''
+                            'specifications' => $detail->specifications ?? '',
+                            'product_description' => $detail->product_description ?? ''
                         ];
                     })->toArray();
                     
@@ -417,7 +419,8 @@ class PurchaseRequestCrudController extends CrudController
                             'description' => $detail->product ? $detail->product->description : '',
                             'quantity' => $detail->requested_quantity ?? 0,
                             'price' => $detail->estimated_unit_price ?? 0,
-                            'specifications' => $detail->specifications ?? ''
+                            'specifications' => $detail->specifications ?? '',
+                            'product_description' => $detail->product_description ?? ''
                         ];
                     })->toArray();
                     
@@ -603,7 +606,7 @@ class PurchaseRequestCrudController extends CrudController
                                     if (product) {
                                         const quantity = productData.quantity || 1;
                                         const price = productData.price || productData.unit_price || 0;
-                                        const specs = productData.specifications || "";
+                                        const specs = productData.specifications || productData.product_description || "";
                                         
                                         addProductToList(
                                             product.id,
@@ -644,7 +647,7 @@ class PurchaseRequestCrudController extends CrudController
                     const unit = selectedOption.getAttribute("data-unit");
                     const description = selectedOption.getAttribute("data-description");
                     
-                    addProductToList(productId, productName, unit, description, quantity.value);
+                    addProductToList(productId, productName, unit, description, quantity.value, 0, "");
                     
                     // Limpiar campos
                     select.value = "";
@@ -673,8 +676,8 @@ class PurchaseRequestCrudController extends CrudController
                                 <input type="number" class="form-control product-price" step="0.01" min="0" value="${price}">
                             </div>
                             <div class="col-md-3">
-                                <label>Especificaciones:</label>
-                                <textarea class="form-control product-specs" rows="2">${specifications}</textarea>
+                                <label>Descripción / Especificaciones:</label>
+                                <textarea class="form-control product-specs" rows="2" placeholder="Describa el producto o indique especificaciones...">${specifications}</textarea>
                             </div>
                             <div class="col-md-1">
                                 <button type="button" class="btn btn-danger btn-sm remove-product">
@@ -740,7 +743,7 @@ class PurchaseRequestCrudController extends CrudController
                     const productUnit = prompt("Unidad del producto (ej: kg, litros, unidades):");
                     if (!productUnit) return;
                     
-                    const productDescription = prompt("Descripción del producto (opcional):") || "";
+                    const productDescription = prompt("Descripción / Especificaciones (opcional):") || "";
                     
                     // Agregar como producto temporal con ID negativo
                     const tempId = "new_" + Date.now();
@@ -755,7 +758,7 @@ class PurchaseRequestCrudController extends CrudController
                     };
                     
                     // Agregar a la lista de productos seleccionados
-                    addProductToList(tempId, productName, productUnit, productDescription, 1);
+                    addProductToList(tempId, productName, productUnit, productDescription, 1, 0, productDescription);
                 }
             });
             </script>
@@ -877,6 +880,7 @@ class PurchaseRequestCrudController extends CrudController
             // Cargar productos existentes en la lista
             if (existingProducts && existingProducts.length > 0) {
                 existingProducts.forEach(product => {
+                    const specs = product.specifications || product.product_description || "";
                     addProductToList(
                         product.product_id, 
                         product.product_name + " (" + product.unit + ")", 
@@ -884,7 +888,7 @@ class PurchaseRequestCrudController extends CrudController
                         product.description, 
                         product.quantity,
                         product.price,
-                        product.specifications,
+                        specs,
                         product.minimum_stock || 0,
                         product.stock_total || 0
                     );
@@ -986,8 +990,8 @@ class PurchaseRequestCrudController extends CrudController
                             <input type="number" class="form-control product-price" step="0.01" min="0" value="${price}">
                         </div>
                         <div class="col-md-3">
-                            <label>Especificaciones:</label>
-                            <textarea class="form-control product-specs" rows="2">${specifications}</textarea>
+                            <label>Descripción / Especificaciones:</label>
+                            <textarea class="form-control product-specs" rows="2" placeholder="Describa el producto o indique especificaciones...">${specifications}</textarea>
                         </div>
                         <div class="col-md-1">
                             <button type="button" class="btn btn-danger btn-sm remove-product">
@@ -1077,7 +1081,7 @@ class PurchaseRequestCrudController extends CrudController
                 const productUnit = prompt("Unidad del producto (ej: kg, litros, unidades):");
                 if (!productUnit) return;
                 
-                const productDescription = prompt("Descripción del producto (opcional):") || "";
+                const productDescription = prompt("Descripción / Especificaciones (opcional):") || "";
                 
                 // Agregar como producto temporal con ID negativo
                 const tempId = "new_" + Date.now();
@@ -1092,7 +1096,7 @@ class PurchaseRequestCrudController extends CrudController
                 };
                 
                 // Agregar a la lista de productos seleccionados
-                addProductToList(tempId, productName, productUnit, productDescription, 1);
+                addProductToList(tempId, productName, productUnit, productDescription, 1, 0, productDescription, 0, 0);
             }
         });
         </script>
@@ -1557,7 +1561,7 @@ class PurchaseRequestCrudController extends CrudController
         $html .= '<th>Cantidad</th>';
         $html .= '<th>Precio Unitario</th>';
         $html .= '<th>Subtotal</th>';
-        $html .= '<th>Especificaciones</th>';
+        $html .= '<th>Descripción / Especificaciones</th>';
         $html .= '</tr>';
         $html .= '</thead>';
         $html .= '<tbody>';
@@ -1570,7 +1574,7 @@ class PurchaseRequestCrudController extends CrudController
             $price = $detail->estimated_unit_price ?? 0;
             $subtotal = $quantity * $price;
             $total += $subtotal;
-            $specifications = $detail->specifications ?? '';
+            $descSpecs = $detail->specifications ?? $detail->product_description ?? '';
             
             $html .= '<tr>';
             $html .= '<td>' . e($productName) . '</td>';
@@ -1578,7 +1582,7 @@ class PurchaseRequestCrudController extends CrudController
             $html .= '<td class="text-right">' . number_format($quantity, 2) . '</td>';
             $html .= '<td class="text-right">$' . number_format($price, 2) . '</td>';
             $html .= '<td class="text-right">$' . number_format($subtotal, 2) . '</td>';
-            $html .= '<td>' . nl2br(e($specifications)) . '</td>';
+            $html .= '<td><small>' . ($descSpecs ? nl2br(e($descSpecs)) : '-') . '</small></td>';
             $html .= '</tr>';
         }
         
@@ -1645,6 +1649,8 @@ class PurchaseRequestCrudController extends CrudController
             $quantity = (float)($productData['quantity'] ?? 0);
             $price = (float)($productData['price'] ?? 0);
             $specifications = $productData['specifications'] ?? '';
+            // Unificado: descripción/especificaciones se guarda en ambos campos para compatibilidad
+            $productDescription = $productData['product_description'] ?? $specifications;
             
             // Si es un producto nuevo (ID que empieza con "new_")
             if (strpos($productId, 'new_') === 0) {
@@ -1672,6 +1678,7 @@ class PurchaseRequestCrudController extends CrudController
             $detail = \App\Models\PurchaseRequestDetail::create([
                 'purchase_request_id' => $purchaseRequest->id,
                 'product_id' => $productId,
+                'product_description' => $productDescription,
                 'requested_quantity' => $quantity,
                 'specifications' => $specifications,
                 'estimated_unit_price' => $price,
@@ -2504,6 +2511,14 @@ class PurchaseRequestCrudController extends CrudController
                 \Alert::error('Para solicitudes de compra mayores a $' . number_format($threshold, 2) . ' se requieren OBLIGATORIAMENTE 3 cotizaciones. Actualmente hay ' . $quotationsCount . ' cotización(es). Debe agregar ' . (3 - $quotationsCount) . ' cotización(es) más antes de generar la orden de compra.')->flash();
                 return redirect()->back();
             }
+
+            // Validar que cada producto de la solicitud esté cotizado en al menos 3 cotizaciones distintas
+            $productsWithFewerQuotations = $purchaseRequest->getProductsWithFewerThanThreeQuotations();
+            if ($productsWithFewerQuotations->isNotEmpty()) {
+                $names = $productsWithFewerQuotations->pluck('name')->implode(', ');
+                \Alert::error('No se puede generar la orden: los siguientes productos deben estar cotizados en al menos 3 cotizaciones distintas: ' . $names . '. Agregue estos productos a más cotizaciones antes de generar la orden de compra.')->flash();
+                return redirect()->back();
+            }
             
             // Validar que haya una cotización seleccionada
             if (!$purchaseRequest->selected_market_rate_id) {
@@ -2922,12 +2937,12 @@ class PurchaseRequestCrudController extends CrudController
                 $html .= '<table class="table table-sm table-bordered mb-0">';
                 $html .= '<thead class="table-light">';
                 $html .= '<tr>';
-                $html .= '<th style="width: 30%;">Producto</th>';
+                $html .= '<th style="width: 28%;">Producto</th>';
                 $html .= '<th style="width: 12%;" class="text-center">Cantidad Solicitada</th>';
                 $html .= '<th style="width: 12%;" class="text-center">Cantidad Recibida</th>';
                 $html .= '<th style="width: 12%;" class="text-center">Estado Recepción</th>';
-                $html .= '<th style="width: 24%;">Especificaciones</th>';
-                $html .= '<th style="width: 10%;" class="text-center">Estado</th>';
+                $html .= '<th style="width: 24%;">Descripción / Especificaciones</th>';
+                $html .= '<th style="width: 12%;" class="text-center">Estado</th>';
                 $html .= '</tr>';
                 $html .= '</thead>';
                 $html .= '<tbody>';
@@ -2977,11 +2992,11 @@ class PurchaseRequestCrudController extends CrudController
                     $html .= '<i class="la la-' . $deliveryStatusIcon . '"></i> ' . $deliveryStatus;
                     $html .= '</span>';
                     $html .= '</td>';
-                    $specifications = $detail->specifications ?? 'Sin especificaciones';
-                    if (is_array($specifications)) {
-                        $specifications = 'Sin especificaciones';
+                    $descSpecs = $detail->specifications ?? $detail->product_description ?? '';
+                    if (is_array($descSpecs)) {
+                        $descSpecs = '';
                     }
-                    $html .= '<td><small>' . $specifications . '</small></td>';
+                    $html .= '<td><small>' . ($descSpecs ? e($descSpecs) : '-') . '</small></td>';
                     $status = $detail->status ?? 'Pendiente';
                     if (is_array($status)) {
                         $status = 'Pendiente';
@@ -3527,15 +3542,23 @@ class PurchaseRequestCrudController extends CrudController
                             $html .= '<div class="mt-3 alert alert-danger">';
                             $html .= '<i class="la la-exclamation-triangle"></i> <strong>No se puede generar la orden de compra:</strong> Para solicitudes mayores a $' . number_format($threshold, 2) . ' se requieren <strong>OBLIGATORIAMENTE 3 cotizaciones</strong>. Actualmente hay ' . $quotationsCount . ' cotización(es). Debe agregar ' . (3 - $quotationsCount) . ' cotización(es) más antes de poder generar la orden de compra.';
                             $html .= '</div>';
-                        } elseif (!$entry->selected_market_rate_id) {
-                            $html .= '<div class="mt-3 alert alert-warning">';
-                            $html .= '<i class="la la-exclamation-triangle"></i> <strong>Atención:</strong> Debe seleccionar una cotización antes de generar la orden de compra.';
-                            $html .= '</div>';
                         } else {
-                            // Hay 3 cotizaciones y una seleccionada, mostrar formulario con fecha de emisión
-                            $html .= '<div class="mt-3">';
-                            $html .= '<div class="alert alert-success">';
-                            $html .= '<i class="la la-check-circle"></i> <strong>Listo para generar orden:</strong> Tiene 3 cotizaciones cargadas y una seleccionada. Puede proceder a generar la orden de compra.';
+                            // Validar que cada producto esté cotizado en al menos 3 cotizaciones distintas
+                            $productsWithFewerQuotations = $entry->getProductsWithFewerThanThreeQuotations();
+                            if ($productsWithFewerQuotations->isNotEmpty()) {
+                                $productNames = $productsWithFewerQuotations->pluck('name')->implode(', ');
+                                $html .= '<div class="mt-3 alert alert-danger">';
+                                $html .= '<i class="la la-exclamation-triangle"></i> <strong>No se puede generar la orden de compra:</strong> Los siguientes productos deben estar cotizados en <strong>al menos 3 cotizaciones distintas</strong>: ' . e($productNames) . '. Agregue estos productos a más cotizaciones antes de poder generar la orden.';
+                                $html .= '</div>';
+                            } elseif (!$entry->selected_market_rate_id) {
+                                $html .= '<div class="mt-3 alert alert-warning">';
+                                $html .= '<i class="la la-exclamation-triangle"></i> <strong>Atención:</strong> Debe seleccionar una cotización antes de generar la orden de compra.';
+                                $html .= '</div>';
+                            } else {
+                                // Hay 3 cotizaciones, todos los productos con 3+ cotizaciones y una seleccionada, mostrar formulario
+                                $html .= '<div class="mt-3">';
+                                $html .= '<div class="alert alert-success">';
+                                $html .= '<i class="la la-check-circle"></i> <strong>Listo para generar orden:</strong> Tiene 3 cotizaciones cargadas, todos los productos cotizados al menos 3 veces y una cotización seleccionada. Puede proceder a generar la orden de compra.';
                             $html .= '</div>';
                             $html .= '<form method="POST" action="' . route('purchase-request.generate-purchase-order', $entry->id) . '">';
                             $html .= csrf_field();
@@ -3550,6 +3573,7 @@ class PurchaseRequestCrudController extends CrudController
                             $html .= '</button>';
                             $html .= '</form>';
                             $html .= '</div>';
+                            }
                         }
                     } else {
                         // Para montos <= 60000, se puede generar sin cotización (pero necesita proveedor)
@@ -3983,6 +4007,7 @@ class PurchaseRequestCrudController extends CrudController
                 return [
                     'id' => $detail->id,
                     'product_id' => $detail->product_id,
+                    'product_description' => $detail->product_description,
                     'product' => $detail->product ? [
                         'id' => $detail->product->id,
                         'name' => $detail->product->name,

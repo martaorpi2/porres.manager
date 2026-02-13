@@ -18,6 +18,26 @@ class MarketRateRequest extends FormRequest
     }
 
     /**
+     * Normalizar total_amount: aceptar coma o punto como decimal (ej. 191885,88 o 191885.88).
+     */
+    protected function prepareForValidation()
+    {
+        $amount = $this->input('total_amount');
+        if ($amount !== null && $amount !== '') {
+            if (is_string($amount)) {
+                $amount = trim($amount);
+                // Si hay coma, formato europeo (ej. 191.885,88 o 191885,88): quitar puntos de miles, coma = decimal
+                if (str_contains($amount, ',')) {
+                    $amount = str_replace('.', '', $amount);
+                    $amount = str_replace(',', '.', $amount);
+                }
+                // Si solo hay punto, puede ser US (191885.88) o miles (191.885) - asumir decimal
+            }
+            $this->merge(['total_amount' => $amount]);
+        }
+    }
+
+    /**
      * Get the validation rules that apply to the request.
      *
      * @return array
@@ -28,7 +48,9 @@ class MarketRateRequest extends FormRequest
             'supplier_id' => 'required|exists:suppliers,id',
             'purchase_request_id' => 'required|exists:purchase_requests,id',
             'date' => 'required|date',
-            'total_amount' => 'required|numeric|min:0',
+            'delivery_date' => 'nullable|date',
+            'payment_method' => 'nullable|string|max:255',
+            'total_amount' => 'nullable|numeric|min:0',
             'is_selected' => 'boolean',
         ];
     }
@@ -44,6 +66,8 @@ class MarketRateRequest extends FormRequest
             'supplier_id' => 'proveedor',
             'purchase_request_id' => 'solicitud de compra',
             'date' => 'fecha',
+            'delivery_date' => 'fecha de entrega',
+            'payment_method' => 'forma de pago',
             'total_amount' => 'monto total',
             'is_selected' => 'estado de selección',
         ];
@@ -63,7 +87,8 @@ class MarketRateRequest extends FormRequest
             'purchase_request_id.exists' => 'La solicitud de compra seleccionada no existe.',
             'date.required' => 'El campo fecha es obligatorio.',
             'date.date' => 'El campo fecha debe ser una fecha válida.',
-            'total_amount.required' => 'El campo monto total es obligatorio.',
+            'delivery_date.date' => 'El campo fecha de entrega debe ser una fecha válida.',
+            'payment_method.max' => 'El campo forma de pago no puede superar los 255 caracteres.',
             'total_amount.numeric' => 'El campo monto total debe ser un número.',
             'total_amount.min' => 'El campo monto total debe ser mayor o igual a 0.',
             'is_selected.boolean' => 'El campo estado de selección debe ser verdadero o falso.',

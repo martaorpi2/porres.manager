@@ -49,9 +49,9 @@ class MarketRateCrudController extends CrudController
         // Habilitar tabla responsiva
         CRUD::enableResponsiveTable();
         
-        // Ocultar botones de editar y eliminar para role_admin_institucion, role_apoderado y role_representante_legal
+        // Ocultar botones de editar y eliminar solo para apoderado y representante_legal (admin_institucion y responsable_compras pueden editar)
         $user = backpack_user();
-        if ($user && ($user->hasRole('role_admin_institucion', 'backpack') || $user->hasRole('role_apoderado', 'backpack') || $user->hasRole('role_representante_legal', 'backpack'))) {
+        if ($user && ($user->hasRole('role_apoderado', 'backpack') || $user->hasRole('role_representante_legal', 'backpack'))) {
             CRUD::removeButton('update');
             CRUD::removeButton('delete');
         }
@@ -81,6 +81,8 @@ class MarketRateCrudController extends CrudController
                 return '<span class="badge ' . $badgeClass . '">' . $icon . ' ' . $status . '</span>';
             });
         CRUD::column('date')->label('Fecha');
+        CRUD::column('delivery_date')->label('Fecha de entrega')->type('date');
+        CRUD::column('payment_method')->label('Forma de pago');
         CRUD::column('total_amount')->label('Monto Total')->type('number')->decimals(2)->prefix('$');
         
         // Agregar columna personalizada para mostrar detalles de cotización
@@ -180,7 +182,12 @@ class MarketRateCrudController extends CrudController
         ]);
         
         CRUD::field('date')->label('Fecha')->type('date')->default(now()->format('Y-m-d'));
-        CRUD::field('total_amount')->label('Monto Total')->type('number')->decimals(2)->prefix('$')->default(0);
+        CRUD::field('delivery_date')->label('Fecha de entrega')->type('date')->hint('Fecha estimada de entrega de la cotización');
+        CRUD::field('payment_method')->label('Forma de pago')->type('text')->placeholder('Ej: Contado, 30 días fecha factura, 60 días, etc.');
+        CRUD::field('total_amount')->label('Monto Total')->type('text')
+            ->attributes(['inputmode' => 'decimal', 'placeholder' => '0,00 o 0.00'])
+            ->hint('Puede usar coma o punto como separador decimal. El monto se recalcula desde los ítems.')
+            ->default(0);
         CRUD::field([
             'name' => 'is_selected',
             'label' => 'Estado de Selección',
@@ -218,10 +225,19 @@ class MarketRateCrudController extends CrudController
     {
         $this->setupCreateOperation();
         
-        // Cargar los items existentes para edición
         $entry = $this->crud->getCurrentEntry();
         if ($entry) {
-            $existingItems = $entry->quoteDetails->map(function($detail) {
+            // Incluir la solicitud de compra actual en el select aunque esté Aprobada/Completada (solo si el campo existe para evitar array offset on null)
+            $purchaseRequestField = $this->crud->firstFieldWhere('name', 'purchase_request_id');
+            if ($purchaseRequestField !== null) {
+                CRUD::modifyField('purchase_request_id', [
+                    'options' => [$this, 'getPurchaseRequestOptionsForEdit'],
+                ]);
+            }
+
+            // Cargar los items existentes para edición (quoteDetails puede ser colección vacía, no null si está cargada)
+            $quoteDetails = $entry->quoteDetails ?? collect();
+            $existingItems = $quoteDetails->map(function($detail) {
                 return [
                     'product_id' => $detail->product_id,
                     'product_name' => $detail->product->name ?? 'Producto no encontrado',
@@ -230,9 +246,11 @@ class MarketRateCrudController extends CrudController
                 ];
             })->toArray();
             
-            CRUD::modifyField('quote_items_selection', [
-                'value' => $this->getQuoteItemsSelectionHtml($existingItems),
-            ]);
+            if ($this->crud->firstFieldWhere('name', 'quote_items_selection') !== null) {
+                CRUD::modifyField('quote_items_selection', [
+                    'value' => $this->getQuoteItemsSelectionHtml($existingItems),
+                ]);
+            }
         }
     }
 
@@ -248,6 +266,43 @@ class MarketRateCrudController extends CrudController
         CRUD::addClause('with', ['supplier', 'quoteDetails.product', 'purchaseRequest']);
         
         CRUD::setFromDb(); // set fields from db columns.
+
+        // Proveedor: label en español y mostrar nombre (company_name)
+        CRUD::modifyColumn('supplier_id', [
+            'label' => 'Proveedor',
+            'type' => 'custom_html',
+            'value' => function ($entry) {
+                $name = $entry->supplier && $entry->supplier->company_name
+                    ? e($entry->supplier->company_name)
+                    : '—';
+                return $name;
+            },
+        ]);
+
+        // Fecha de la cotización
+        CRUD::modifyColumn('date', [
+            'label' => 'Fecha de la cotización',
+            'type' => 'date',
+        ]);
+
+        // Monto total
+        CRUD::modifyColumn('total_amount', [
+            'label' => 'Monto total',
+            'type' => 'number',
+            'decimals' => 2,
+            'prefix' => '$',
+        ]);
+
+        // Formatear fecha de entrega en vista show
+        CRUD::modifyColumn('delivery_date', [
+            'label' => 'Fecha de entrega',
+            'type' => 'date',
+        ]);
+
+        // Formatear forma de pago
+        CRUD::modifyColumn('payment_method', [
+            'label' => 'Forma de pago',
+        ]);
         
         // Mostrar el estado de la solicitud de compra
         CRUD::modifyColumn('purchase_request_id', [
@@ -354,6 +409,25 @@ class MarketRateCrudController extends CrudController
     }
 
     /**
+     * Opciones del select Solicitud de Compra en edición: incluye la solicitud actual aunque esté Aprobada/Completada.
+     * Callable desde la vista select.blade.php (evita pasar closure que falla como callback).
+     */
+    public function getPurchaseRequestOptionsForEdit($query)
+    {
+        $list = $query->where('status', '!=', 'Aprobada')
+                      ->where('status', '!=', 'Completada')
+                      ->get();
+        $entry = $this->crud->getCurrentEntry();
+        if ($entry && $entry->purchase_request_id && $list->where('id', $entry->purchase_request_id)->isEmpty()) {
+            $current = \App\Models\PurchaseRequest::find($entry->purchase_request_id);
+            if ($current) {
+                $list = $list->push($current);
+            }
+        }
+        return $list;
+    }
+
+    /**
      * Store a newly created resource in storage.
      */
     public function store()
@@ -382,7 +456,7 @@ class MarketRateCrudController extends CrudController
         $this->crud->registerFieldEvents();
 
         // Obtener datos para guardar
-        $dataToSave = $this->crud->getStrippedSaveRequest($request);
+        $dataToSave = $this->crud->getStrippedSaveRequest($request) ?? [];
         
         // Si no se seleccionó una solicitud de compra, buscar una pendiente por defecto
         if (!isset($dataToSave['purchase_request_id']) || empty($dataToSave['purchase_request_id'])) {
@@ -409,6 +483,9 @@ class MarketRateCrudController extends CrudController
             $items = json_decode($selectedItems, true);
             if (is_array($items)) {
                 foreach ($items as $itemData) {
+                    if (!is_array($itemData)) {
+                        continue;
+                    }
                     $quantity = floatval($itemData['quantity'] ?? 0);
                     $unitPrice = floatval($itemData['unit_price'] ?? 0);
                     $calculatedTotal += $quantity * $unitPrice;
@@ -452,16 +529,41 @@ class MarketRateCrudController extends CrudController
         // Obtener la cotización actual
         $currentEntry = $this->crud->getCurrentEntry();
         
-        // Validar que la solicitud de compra asociada no esté aprobada
-        if ($currentEntry && $currentEntry->purchaseRequest) {
-            if ($currentEntry->purchaseRequest->status === 'Aprobada') {
-                \Alert::error('No se pueden editar cotizaciones de una solicitud de compra que ya está aprobada.')->flash();
-                return redirect()->back();
-            }
-        }
+        // Advertir pero permitir editar si la solicitud está aprobada (solo bloqueamos asociar a otra solicitud aprobada más abajo)
+        // Así se pueden corregir fecha de entrega, forma de pago, etc. sin bloquear todo el guardado.
 
         // Obtener datos para guardar
-        $dataToSave = $this->crud->getStrippedSaveRequest($request);
+        $dataToSave = $this->crud->getStrippedSaveRequest($request) ?? [];
+
+        // Calcular total desde items de cotización (como en create) o conservar el actual si no se envió monto
+        $selectedItems = $request->input('selected_quote_items');
+        $calculatedTotal = 0;
+        if ($selectedItems) {
+            $items = json_decode($selectedItems, true);
+            if (is_array($items)) {
+                foreach ($items as $itemData) {
+                    if (!is_array($itemData)) {
+                        continue;
+                    }
+                    $quantity = floatval($itemData['quantity'] ?? 0);
+                    $unitPrice = floatval($itemData['unit_price'] ?? 0);
+                    $calculatedTotal += $quantity * $unitPrice;
+                }
+            }
+        }
+        if (isset($dataToSave['total_amount']) && $dataToSave['total_amount'] !== '' && $dataToSave['total_amount'] !== null) {
+            $v = $dataToSave['total_amount'];
+            if (is_string($v)) {
+                $v = trim($v);
+                if (str_contains($v, ',')) {
+                    $v = str_replace('.', '', $v);
+                    $v = str_replace(',', '.', $v);
+                }
+            }
+            $dataToSave['total_amount'] = (float) $v;
+        } else {
+            $dataToSave['total_amount'] = $calculatedTotal > 0 ? $calculatedTotal : (float) ($currentEntry ? ($currentEntry->total_amount ?? 0) : 0);
+        }
 
         // Validar también si se está cambiando la solicitud de compra a una aprobada
         if (isset($dataToSave['purchase_request_id']) && !empty($dataToSave['purchase_request_id'])) {
@@ -820,6 +922,10 @@ class MarketRateCrudController extends CrudController
         $totalAmount = 0;
         
         foreach ($items as $itemData) {
+            if (!is_array($itemData)) {
+                Log::warning('Item de cotización no es un array, omitiendo:', ['itemData' => $itemData]);
+                continue;
+            }
             $productId = $itemData['product_id'] ?? null;
             $quantity = floatval($itemData['quantity'] ?? 0);
             $unitPrice = floatval($itemData['unit_price'] ?? 0);
