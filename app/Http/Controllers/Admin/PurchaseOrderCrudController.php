@@ -153,8 +153,17 @@ class PurchaseOrderCrudController extends CrudController
     protected function setupCreateOperation()
     {
         CRUD::setValidation(PurchaseOrderRequest::class);
-        $ultimo = \App\Models\PurchaseOrder::max('id');
-        $nro = 'OC-'.date('Y').'-'.str_pad(($ultimo + 1), 3, '0', STR_PAD_LEFT);
+        $letter = 'X';
+        $purchaseRequestId = request()->get('purchase_request_id');
+        if ($purchaseRequestId) {
+            $pr = PurchaseRequest::with('responsibilityArea')->find($purchaseRequestId);
+            if ($pr?->responsibilityArea) {
+                $letter = $pr->responsibilityArea->purchaseOrderLetter();
+            }
+        }
+        $year = (int) date('Y');
+        $corr = PurchaseOrder::nextCorrelativeForAreaAndYear($letter, $year);
+        $nro = PurchaseOrder::formatPurchaseOrderNumber($letter, $year, $corr, 1);
         CRUD::addField([
             'name'  => 'number',
             'label' => 'Número',
@@ -483,8 +492,15 @@ class PurchaseOrderCrudController extends CrudController
         // Register any Model Events defined on fields
         $this->crud->registerFieldEvents();
 
+        $data = $this->crud->getStrippedSaveRequest($request);
+        $area = null;
+        if (!empty($data['purchase_request_id'])) {
+            $area = PurchaseRequest::find($data['purchase_request_id'])?->responsibilityArea;
+        }
+        $data['number'] = PurchaseOrder::allocateNextFormattedNumber($area, 1);
+
         // Insert the entry
-        $item = $this->crud->create($this->crud->getStrippedSaveRequest($request));
+        $item = $this->crud->create($data);
         $this->data['entry'] = $this->crud->entry = $item;
 
         // Si viene de una solicitud de compra, replicar automáticamente los productos

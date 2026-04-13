@@ -37,4 +37,18 @@ class ResponsibilityArea extends Model
     {
         return $this->hasMany(PurchaseRequest::class);
     }
+
+    /**
+     * Letra usada en el número de orden de compra (OC-{letra}-…).
+     */
+    public function purchaseOrderLetter(): string
+    {
+        return match ($this->name) {
+            'Mantenimiento' => 'M',
+            'Insumos Generales' => 'G',
+            'Insumos de Salud' => 'S',
+            'Informática' => 'I',
+            default => strtoupper(mb_substr($this->name ?: 'X', 0, 1)),
+        };
+    }
 }

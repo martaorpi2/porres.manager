@@ -2607,21 +2607,9 @@ class PurchaseRequestCrudController extends CrudController
     private function generatePurchaseOrderFromPerProductAssignment($purchaseRequest)
     {
         $request = request();
-        $ultimo = \App\Models\PurchaseOrder::max('id');
-        $orderNumber = 'OC-' . date('Y') . '-' . str_pad(($ultimo + 1), 3, '0', STR_PAD_LEFT);
         $issueDate = $request->input('issue_date') ? \Carbon\Carbon::parse($request->input('issue_date')) : now();
 
-        $purchaseOrder = \App\Models\PurchaseOrder::create([
-            'number' => $orderNumber,
-            'date' => now(),
-            'issue_date' => $issueDate,
-            'supplier_id' => null,
-            'authorizing_user_id' => auth()->id(),
-            'status' => 'Pendiente',
-            'purchase_request_id' => $purchaseRequest->id,
-            'payment_conditions' => '30 días fecha factura',
-        ]);
-
+        $linesBySupplier = [];
         foreach ($purchaseRequest->details as $requestDetail) {
             $marketRate = $requestDetail->selectedMarketRate;
             if (!$marketRate || !$requestDetail->product) {
@@ -2632,22 +2620,82 @@ class PurchaseRequestCrudController extends CrudController
                 continue;
             }
             $input = $this->findOrCreateInputFromProduct($quoteDetail->product);
-            if ($input) {
-                \App\Models\PurchaseOrderDetail::create([
-                    'purchase_order_id' => $purchaseOrder->id,
-                    'supplier_id' => $marketRate->supplier_id,
-                    'input_id' => $input->id,
-                    'quantity' => $quoteDetail->quantity,
-                    'unit_price' => $quoteDetail->unit_price,
-                ]);
+            if (!$input) {
+                continue;
             }
+            $sid = $marketRate->supplier_id;
+            if (!isset($linesBySupplier[$sid])) {
+                $linesBySupplier[$sid] = [];
+            }
+            $linesBySupplier[$sid][] = [
+                'input_id' => $input->id,
+                'quantity' => $quoteDetail->quantity,
+                'unit_price' => $quoteDetail->unit_price,
+            ];
         }
 
-        $newType = ($purchaseRequest->purchase_type === 'internet') ? 'internet' : 'normal';
-        $purchaseRequest->update(['status' => 'Completada', 'purchase_type' => $newType]);
-        $this->createPaymentOrderIfInternetApprovedByAdmin($purchaseOrder, $purchaseRequest);
-        \Alert::success('Orden de compra generada exitosamente (varios proveedores): ' . $purchaseOrder->number)->flash();
-        return redirect()->route('purchase-order.show', $purchaseOrder->id);
+        if ($linesBySupplier === []) {
+            \Alert::error('No se pudo generar la orden: no hay líneas válidas con cotización asignada.')->flash();
+            return redirect()->back();
+        }
+
+        ksort($linesBySupplier, SORT_NUMERIC);
+
+        $area = $purchaseRequest->responsibilityArea;
+        $letter = $area ? $area->purchaseOrderLetter() : 'X';
+        $year = (int) now()->year;
+
+        $createdOrders = [];
+        \Illuminate\Support\Facades\DB::transaction(function () use (
+            $purchaseRequest,
+            $issueDate,
+            $linesBySupplier,
+            $letter,
+            $year,
+            &$createdOrders
+        ) {
+            $correlative = \App\Models\PurchaseOrder::nextCorrelativeForAreaAndYear($letter, $year);
+            $supplierIndex = 1;
+            foreach ($linesBySupplier as $supplierId => $lines) {
+                $orderNumber = \App\Models\PurchaseOrder::formatPurchaseOrderNumber($letter, $year, $correlative, $supplierIndex);
+                $purchaseOrder = \App\Models\PurchaseOrder::create([
+                    'number' => $orderNumber,
+                    'date' => now(),
+                    'issue_date' => $issueDate,
+                    'supplier_id' => $supplierId,
+                    'authorizing_user_id' => auth()->id(),
+                    'status' => 'Pendiente',
+                    'purchase_request_id' => $purchaseRequest->id,
+                    'payment_conditions' => '30 días fecha factura',
+                ]);
+                foreach ($lines as $line) {
+                    \App\Models\PurchaseOrderDetail::create([
+                        'purchase_order_id' => $purchaseOrder->id,
+                        'supplier_id' => $supplierId,
+                        'input_id' => $line['input_id'],
+                        'quantity' => $line['quantity'],
+                        'unit_price' => $line['unit_price'],
+                    ]);
+                }
+                $createdOrders[] = $purchaseOrder;
+                $supplierIndex++;
+            }
+
+            $newType = ($purchaseRequest->purchase_type === 'internet') ? 'internet' : 'normal';
+            $purchaseRequest->update(['status' => 'Completada', 'purchase_type' => $newType]);
+        });
+
+        foreach ($createdOrders as $purchaseOrder) {
+            $this->createPaymentOrderIfInternetApprovedByAdmin($purchaseOrder, $purchaseRequest);
+        }
+
+        $numbers = collect($createdOrders)->pluck('number')->implode(', ');
+        $msg = count($createdOrders) > 1
+            ? 'Órdenes de compra generadas (' . count($createdOrders) . ' proveedores): ' . $numbers
+            : 'Orden de compra generada exitosamente: ' . $numbers;
+        \Alert::success($msg)->flash();
+
+        return redirect()->route('purchase-order.show', $createdOrders[0]->id);
     }
     
     /**
@@ -2657,10 +2705,8 @@ class PurchaseRequestCrudController extends CrudController
     {
         $request = request();
         
-        // Generar número de orden
-        $ultimo = \App\Models\PurchaseOrder::max('id');
-        $orderNumber = 'OC-' . date('Y') . '-' . str_pad(($ultimo + 1), 3, '0', STR_PAD_LEFT);
-        
+        $orderNumber = \App\Models\PurchaseOrder::allocateNextFormattedNumber($purchaseRequest->responsibilityArea, 1);
+
         // Obtener fecha de emisión del request o usar la fecha actual
         $issueDate = $request->input('issue_date') ? \Carbon\Carbon::parse($request->input('issue_date')) : now();
         
@@ -2714,10 +2760,8 @@ class PurchaseRequestCrudController extends CrudController
         // Validar que el proveedor existe
         $supplier = \App\Models\Supplier::findOrFail($supplierId);
         
-        // Generar número de orden
-        $ultimo = \App\Models\PurchaseOrder::max('id');
-        $orderNumber = 'OC-' . date('Y') . '-' . str_pad(($ultimo + 1), 3, '0', STR_PAD_LEFT);
-        
+        $orderNumber = \App\Models\PurchaseOrder::allocateNextFormattedNumber($purchaseRequest->responsibilityArea, 1);
+
         // Obtener fecha de emisión del request o usar la fecha actual
         $issueDate = $request->input('issue_date') ? \Carbon\Carbon::parse($request->input('issue_date')) : now();
         

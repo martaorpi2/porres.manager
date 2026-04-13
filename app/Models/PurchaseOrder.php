@@ -87,37 +87,43 @@ class PurchaseOrder extends Model
     | MODEL EVENTS
     |--------------------------------------------------------------------------
     */
-    /*protected static function booted(): void
+
+    /**
+     * Siguiente correlativo para OC-{área}-{año}-CORRELATIVO-{proveedor} (por letra de área y año civil).
+     */
+    public static function nextCorrelativeForAreaAndYear(string $areaLetter, int $fullYear): int
     {
-        static::creating(function (PurchaseOrder $purchaseOrder): void {
-            // Auto-generate sequential number if not provided
-            if (empty($purchaseOrder->number)) {
-                $purchaseOrder->number = self::generateNextNumber();
+        $yy = sprintf('%02d', $fullYear % 100);
+        $prefix = 'OC-' . $areaLetter . '-' . $yy . '-';
+
+        $max = 0;
+        foreach (static::query()->where('number', 'like', $prefix . '%')->pluck('number') as $num) {
+            if (preg_match('/^OC-[A-Z]-\d{2}-(\d+)-\d+$/', $num, $m)) {
+                $max = max($max, (int) $m[1]);
             }
-        });
-    }
-
-    public static function generateNextNumber(): string
-    {
-        $year = now()->year;
-        $prefix = 'OC-' . $year . '-';
-
-        // Find the current max sequence for this year based on the number suffix
-        $last = static::query()
-            ->where('number', 'like', $prefix . '%')
-            ->orderByDesc('number')
-            ->value('number');
-
-        $nextSequence = 1;
-        if ($last) {
-            $parts = explode('-', $last);
-            $suffix = end($parts);
-            $seq = (int) ltrim($suffix, '0');
-            $nextSequence = $seq + 1;
         }
 
-        return $prefix . str_pad((string) $nextSequence, 3, '0', STR_PAD_LEFT);
-    }*/
+        return $max + 1;
+    }
+
+    public static function formatPurchaseOrderNumber(string $areaLetter, int $fullYear, int $correlative, int $supplierPart): string
+    {
+        $yy = sprintf('%02d', $fullYear % 100);
+
+        return sprintf('OC-%s-%s-%d-%d', $areaLetter, $yy, $correlative, $supplierPart);
+    }
+
+    /**
+     * Asigna correlativo nuevo y arma el número (un solo proveedor / una sola OC).
+     */
+    public static function allocateNextFormattedNumber(?ResponsibilityArea $area, int $supplierIndex = 1): string
+    {
+        $letter = $area ? $area->purchaseOrderLetter() : 'X';
+        $year = (int) now()->year;
+        $corr = self::nextCorrelativeForAreaAndYear($letter, $year);
+
+        return self::formatPurchaseOrderNumber($letter, $year, $corr, $supplierIndex);
+    }
     /*
     |--------------------------------------------------------------------------
     | SCOPES
