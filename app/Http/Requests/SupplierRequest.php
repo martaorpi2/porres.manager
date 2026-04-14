@@ -25,7 +25,14 @@ class SupplierRequest extends FormRequest
     public function rules()
     {
         return [
-            // 'name' => 'required|min:5|max:255'
+            'company_name' => ['required', 'string', 'max:255'],
+            'cuit' => ['required', 'string', 'max:20'],
+            'address' => ['nullable', 'string', 'max:255'],
+            'email' => ['nullable', 'email', 'max:255'],
+            'contact' => ['nullable', 'string', 'max:150'],
+            'cvu' => ['nullable', 'string', 'max:22'],
+            'alias' => ['nullable', 'string', 'max:50'],
+            'supplier_heading_id' => ['required', 'exists:suppliers_headings,id'],
         ];
     }
 
@@ -37,7 +44,14 @@ class SupplierRequest extends FormRequest
     public function attributes()
     {
         return [
-            //
+            'company_name' => 'nombre',
+            'cuit' => 'CUIT',
+            'address' => 'dirección',
+            'email' => 'email',
+            'contact' => 'teléfono',
+            'cvu' => 'CBU/CVU',
+            'alias' => 'alias',
+            'supplier_heading_id' => 'rubro',
         ];
     }
 

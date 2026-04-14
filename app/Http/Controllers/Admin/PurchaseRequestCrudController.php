@@ -33,6 +33,12 @@ class PurchaseRequestCrudController extends CrudController
         
         // Usar FormRequest personalizado
         CRUD::setValidation(PurchaseRequestRequest::class);
+
+        // El responsable de compras no puede editar solicitudes de compra.
+        $user = backpack_user();
+        if ($user && $user->hasRole('role_responsable_compras', 'backpack')) {
+            CRUD::denyAccess('update');
+        }
     }
 
     /**
@@ -115,8 +121,13 @@ class PurchaseRequestCrudController extends CrudController
         // Remover botón de edición por defecto y usar el personalizado
         CRUD::removeButton('update');
         
-        // Ocultar botones de crear, editar y eliminar para role_admin_institucion, role_apoderado y role_representante_legal
-        if ($user && ($user->hasRole('role_admin_institucion', 'backpack') || $user->hasRole('role_apoderado', 'backpack') || $user->hasRole('role_representante_legal', 'backpack'))) {
+        // Ocultar botones de crear, editar y eliminar para roles sin edición manual de solicitudes.
+        if ($user && (
+            $user->hasRole('role_admin_institucion', 'backpack')
+            || $user->hasRole('role_apoderado', 'backpack')
+            || $user->hasRole('role_representante_legal', 'backpack')
+            || $user->hasRole('role_responsable_compras', 'backpack')
+        )) {
             CRUD::removeButton('create');
             CRUD::removeButton('delete');
             // No agregar el botón personalizado de editar para estos roles
@@ -1919,14 +1930,12 @@ class PurchaseRequestCrudController extends CrudController
             'responsibilityArea'
         ])->findOrFail($id);
 
-        // Get all market rates for products in this purchase request
+        // Get all market rates for this purchase request (incluye cotizaciones globales sin detalle por producto)
         $productIds = $purchaseRequest->details->pluck('product_id')->toArray();
         $marketRates = \App\Models\MarketRate::with([
             'supplier',
             'quoteDetails.product'
-        ])->whereHas('quoteDetails', function($query) use ($productIds) {
-            $query->whereIn('product_id', $productIds);
-        })->get();
+        ])->where('purchase_request_id', $purchaseRequest->id)->get();
 
         // Group market rates by supplier
         $suppliers = $marketRates->groupBy('supplier_id');
@@ -1945,45 +1954,80 @@ class PurchaseRequestCrudController extends CrudController
         $sheet->setCellValue('A4', 'Área: ' . ($purchaseRequest->responsibilityArea->name ?? 'N/A'));
         
         $row = 6;
-        
-        // Headers for products
-        $sheet->setCellValue('A' . $row, 'Producto');
-        $sheet->setCellValue('B' . $row, 'Cantidad Solicitada');
-        $sheet->setCellValue('C' . $row, 'Especificaciones');
-        
-        $col = 'D';
+        // Resumen de monto total por proveedor para facilitar comparación.
+        $sheet->setCellValue('A' . $row, 'Resumen total por proveedor');
+        $sheet->getStyle('A' . $row)->getFont()->setBold(true);
+        $row++;
+
+        $sheet->setCellValue('A' . $row, 'Proveedor');
+        $sheet->setCellValue('B' . $row, 'Subtotal');
+        $sheet->setCellValue('C' . $row, 'IVA');
+        $sheet->setCellValue('D' . $row, 'Total + IVA');
+        $sheet->setCellValue('E' . $row, 'Productos incluidos');
+        $sheet->getStyle('A' . $row . ':E' . $row)->getFont()->setBold(true);
+        $row++;
+
         foreach ($suppliers as $supplierId => $supplierRates) {
             $supplier = $supplierRates->first()->supplier;
-            $sheet->setCellValue($col . $row, $supplier->company_name ?? 'Proveedor ' . $supplierId);
-            $col++;
-        }
-        
-        $row++;
-        
-        // Add product rows
-        foreach ($purchaseRequest->details as $detail) {
-            $sheet->setCellValue('A' . $row, $detail->product->name ?? 'Producto no encontrado');
-            $sheet->setCellValue('B' . $row, $detail->requested_quantity);
-            $sheet->setCellValue('C' . $row, $detail->specifications ?? 'Sin especificaciones');
-            
-            $col = 'D';
-            foreach ($suppliers as $supplierId => $supplierRates) {
-                $quoteDetail = $supplierRates->flatMap(function($rate) {
-                    return $rate->quoteDetails;
-                })->where('product_id', $detail->product_id)->first();
-                
-                if ($quoteDetail) {
-                    $sheet->setCellValue($col . $row, '$' . number_format($quoteDetail->unit_price, 2));
-                } else {
-                    $sheet->setCellValue($col . $row, 'Sin cotización');
+            $supplierName = $supplier->company_name ?? ('Proveedor ' . $supplierId);
+            $effectiveTotal = 0.0;
+            $vatAmount = 0.0;
+            $totalWithVat = 0.0;
+            $totalQty = 0.0;
+            $productNames = [];
+            $hasGlobalWithoutDetails = false;
+
+            foreach ($supplierRates as $rate) {
+                foreach ($rate->quoteDetails as $qd) {
+                    $name = $qd->product->name ?? ('Producto #' . ($qd->product_id ?? 'N/A'));
+                    if (is_string($name) && trim($name) !== '') {
+                        $productNames[] = trim($name);
+                    }
                 }
-                $col++;
+
+                $rateSubtotalFromDetails = (float) $rate->quoteDetails->sum(function ($d) {
+                    return ((float) ($d->quantity ?? 0)) * ((float) ($d->unit_price ?? 0));
+                });
+                $rateTotalQty = (float) $rate->quoteDetails->sum(function ($d) {
+                    return (float) ($d->quantity ?? 0);
+                });
+                $rateSubtotal = $rateSubtotalFromDetails > 0
+                    ? $rateSubtotalFromDetails
+                    : (float) ($rate->total_amount ?? 0);
+                if ($rate->quoteDetails->isEmpty() && $rateSubtotal > 0) {
+                    $hasGlobalWithoutDetails = true;
+                }
+
+                $rateVat = (float) ($rate->vat_amount ?? 0);
+                $rateTotalWithVat = (float) ($rate->total_amount_with_vat ?? 0);
+
+                if ($rateVat <= 0 && $rateTotalWithVat > 0 && $rateSubtotal > 0) {
+                    $rateVat = max(0, $rateTotalWithVat - $rateSubtotal);
+                }
+                if ($rateTotalWithVat <= 0 && $rateSubtotal > 0) {
+                    $rateTotalWithVat = $rateSubtotal + max(0, $rateVat);
+                }
+
+                $effectiveTotal += max(0, $rateSubtotal);
+                $vatAmount += max(0, $rateVat);
+                $totalWithVat += max(0, $rateTotalWithVat);
+                $totalQty += max(0, $rateTotalQty);
             }
+            $sheet->setCellValue('A' . $row, $supplierName);
+            $sheet->setCellValue('B' . $row, $effectiveTotal > 0 ? '$' . number_format($effectiveTotal, 2) : 'Sin monto informado');
+            $sheet->setCellValue('C' . $row, $vatAmount > 0 ? '$' . number_format($vatAmount, 2) : '$0.00');
+            $sheet->setCellValue('D' . $row, $totalWithVat > 0 ? '$' . number_format($totalWithVat, 2) : 'Sin monto informado');
+            $productNames = array_values(array_unique($productNames));
+            $productsLabel = empty($productNames) ? 'Sin detalle de productos' : implode(', ', $productNames);
+            if ($hasGlobalWithoutDetails) {
+                $productsLabel .= empty($productNames) ? 'Cotización global (sin detalle)' : ' + Cotización global sin detalle';
+            }
+            $sheet->setCellValue('E' . $row, $productsLabel);
             $row++;
         }
         
         // Auto-size columns
-        foreach (range('A', $col) as $column) {
+        foreach (range('A', 'E') as $column) {
             $sheet->getColumnDimension($column)->setAutoSize(true);
         }
         
@@ -2297,23 +2341,10 @@ class PurchaseRequestCrudController extends CrudController
         
         $request = request();
         
-        // Calcular el monto total de la cotización desde los detalles si no está disponible
-        $newTotalAmount = $marketRate->total_amount;
+        // Calcular monto efectivo de la cotización (prioriza total con IVA).
+        $newTotalAmount = $this->getMarketRateEffectiveTotal($marketRate);
         if (!$newTotalAmount || $newTotalAmount == 0) {
-            // Recalcular desde los detalles de la cotización
-            $newTotalAmount = $marketRate->quoteDetails->sum(function($detail) {
-                return ($detail->quantity ?? 0) * ($detail->unit_price ?? 0);
-            });
-            
-            // Si se calculó un monto, actualizar la cotización
-            if ($newTotalAmount > 0) {
-                $marketRate->update(['total_amount' => $newTotalAmount]);
-            }
-        }
-        
-        // Si aún no hay monto, mantener el de la solicitud de compra
-        if (!$newTotalAmount || $newTotalAmount == 0) {
-            $newTotalAmount = $purchaseRequest->total_amount ?? 0;
+            $newTotalAmount = (float) ($purchaseRequest->total_amount ?? 0);
         }
         
         $comprasLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_responsable_compras');
@@ -2354,7 +2385,75 @@ class PurchaseRequestCrudController extends CrudController
             
             \Alert::success('Cotización seleccionada y solicitud aprobada exitosamente.')->flash();
         }
+
+        // Marcar la cotización como seleccionada para permitir selección múltiple en la vista.
+        $marketRate->update(['is_selected' => true]);
+
+        // Recalcular total de solicitud según cotizaciones seleccionadas (incluyendo IVA)
+        $recalculatedTotal = $this->recalculateSelectedQuotationsTotalForPurchaseRequest($purchaseRequest);
+        $purchaseRequest->update([
+            'total_amount' => $recalculatedTotal,
+            'requires_admin_approval' => $recalculatedTotal > $comprasLimit,
+        ]);
         
+        return redirect()->route('purchase-request.show', $id);
+    }
+
+    /**
+     * Toggle selección múltiple de cotizaciones desde la vista de solicitud.
+     */
+    public function toggleMarketRateSelection($id, $marketRateId)
+    {
+        // Verificar que solo el responsable de compras/admin pueda seleccionar cotizaciones
+        $user = backpack_user();
+        $adminRoles = ['role_admin_sistema', 'role_admin_institucion', 'role_responsable_compras'];
+        $isAdmin = false;
+        foreach ($adminRoles as $role) {
+            if ($user && $user->hasRole($role, 'backpack')) {
+                $isAdmin = true;
+                break;
+            }
+        }
+
+        if (! $isAdmin) {
+            abort(403, 'Solo el responsable de compras puede seleccionar cotizaciones.');
+        }
+
+        $purchaseRequest = \App\Models\PurchaseRequest::with('marketRates')->findOrFail($id);
+        $marketRate = \App\Models\MarketRate::where('purchase_request_id', $id)->findOrFail($marketRateId);
+
+        $newValue = ! (bool) $marketRate->is_selected;
+        $marketRate->update(['is_selected' => $newValue]);
+
+        // Mantener compatibilidad con lógica existente basada en selected_market_rate_id.
+        if ($newValue && empty($purchaseRequest->selected_market_rate_id)) {
+            $purchaseRequest->update([
+                'selected_market_rate_id' => $marketRate->id,
+                'selected_by' => auth()->id(),
+                'selected_at' => now(),
+            ]);
+        }
+
+        if (! $newValue && (int) $purchaseRequest->selected_market_rate_id === (int) $marketRate->id) {
+            $anotherSelectedId = $purchaseRequest->marketRates()
+                ->where('is_selected', true)
+                ->where('id', '!=', $marketRate->id)
+                ->value('id');
+
+            $purchaseRequest->update([
+                'selected_market_rate_id' => $anotherSelectedId,
+            ]);
+        }
+
+        // Recalcular total y requisito de aprobación usando cotizaciones seleccionadas.
+        $comprasLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_responsable_compras');
+        $recalculatedTotal = $this->recalculateSelectedQuotationsTotalForPurchaseRequest($purchaseRequest);
+        $purchaseRequest->update([
+            'total_amount' => $recalculatedTotal,
+            'requires_admin_approval' => $recalculatedTotal > $comprasLimit,
+        ]);
+
+        \Alert::success($newValue ? 'Cotización seleccionada.' : 'Cotización deseleccionada.')->flash();
         return redirect()->route('purchase-request.show', $id);
     }
 
@@ -2421,7 +2520,7 @@ class PurchaseRequestCrudController extends CrudController
      */
     public function approvePurchaseRequest($id)
     {
-        $purchaseRequest = \App\Models\PurchaseRequest::findOrFail($id);
+        $purchaseRequest = \App\Models\PurchaseRequest::with('marketRates')->findOrFail($id);
         $user = backpack_user();
         
         if (!$user) {
@@ -2452,6 +2551,25 @@ class PurchaseRequestCrudController extends CrudController
         if ($purchaseRequest->status !== 'Pendiente') {
             abort(403, 'Solo se pueden aprobar solicitudes con estado "Pendiente".');
         }
+
+        // No permitir aprobar sin cotización seleccionada (salvo compra directa).
+        $hasAnySelectedQuotation = !empty($purchaseRequest->selected_market_rate_id)
+            || $purchaseRequest->marketRates->contains(function ($mr) {
+                return (bool) ($mr->is_selected ?? false);
+            });
+        if (! $purchaseRequest->is_direct_purchase && ! $hasAnySelectedQuotation) {
+            \Alert::error('Debe seleccionar al menos una cotización antes de aprobar la solicitud.')->flash();
+            return redirect()->route('purchase-request.show', $id);
+        }
+
+        // Recalcular total efectivo a aprobar (incluye IVA y selección múltiple) antes de validar límites.
+        $effectiveTotal = $this->recalculateSelectedQuotationsTotalForPurchaseRequest($purchaseRequest);
+        $comprasLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_responsable_compras');
+        $purchaseRequest->update([
+            'total_amount' => $effectiveTotal,
+            'requires_admin_approval' => $effectiveTotal > $comprasLimit,
+        ]);
+        $purchaseRequest->refresh();
         
         $request = request();
         $request->validate([
@@ -2470,6 +2588,54 @@ class PurchaseRequestCrudController extends CrudController
         \Alert::success('Solicitud de compra aprobada exitosamente.')->flash();
         
         return redirect()->route('purchase-request.show', $id);
+    }
+
+    /**
+     * Obtiene total efectivo de una cotización (priorizando total con IVA).
+     */
+    private function getMarketRateEffectiveTotal(\App\Models\MarketRate $marketRate): float
+    {
+        $totalWithVat = (float) ($marketRate->total_amount_with_vat ?? 0);
+        if ($totalWithVat > 0) {
+            return $totalWithVat;
+        }
+
+        $subtotal = (float) ($marketRate->total_amount ?? 0);
+        $vat = (float) ($marketRate->vat_amount ?? 0);
+        if ($subtotal > 0 || $vat > 0) {
+            return $subtotal + max(0, $vat);
+        }
+
+        return (float) $marketRate->quoteDetails->sum(function ($detail) {
+            return ((float) ($detail->quantity ?? 0)) * ((float) ($detail->unit_price ?? 0));
+        });
+    }
+
+    /**
+     * Recalcula total de la solicitud según cotizaciones seleccionadas (incluye IVA).
+     */
+    private function recalculateSelectedQuotationsTotalForPurchaseRequest(\App\Models\PurchaseRequest $purchaseRequest): float
+    {
+        // Consultar siempre desde DB para evitar relaciones cacheadas al seleccionar/deseleccionar.
+        $selectedRates = \App\Models\MarketRate::with('quoteDetails')
+            ->where('purchase_request_id', $purchaseRequest->id)
+            ->where('is_selected', true)
+            ->get();
+
+        if ($selectedRates->isNotEmpty()) {
+            return (float) $selectedRates->sum(function ($marketRate) {
+                return $this->getMarketRateEffectiveTotal($marketRate);
+            });
+        }
+
+        if (!empty($purchaseRequest->selected_market_rate_id)) {
+            $single = \App\Models\MarketRate::with('quoteDetails')->find($purchaseRequest->selected_market_rate_id);
+            if ($single) {
+                return $this->getMarketRateEffectiveTotal($single);
+            }
+        }
+
+        return (float) ($purchaseRequest->total_amount ?? 0);
     }
 
     /**
@@ -2753,7 +2919,10 @@ class PurchaseRequestCrudController extends CrudController
             return $this->generatePurchaseOrderWithoutQuote($purchaseRequest, $purchaseRequest->direct_purchase_supplier_id);
         }
         
-        $totalAmount = $purchaseRequest->total_amount ?? 0;
+        $totalAmount = $this->recalculateSelectedQuotationsTotalForPurchaseRequest($purchaseRequest);
+        $purchaseRequest->update([
+            'total_amount' => $totalAmount,
+        ]);
         $threshold = 60000;
         $quotationsCount = $this->countQuotationsForPurchaseRequest($purchaseRequest);
         $allDetailsHaveAssignment = $purchaseRequest->details->isNotEmpty()
@@ -3002,7 +3171,7 @@ class PurchaseRequestCrudController extends CrudController
         
         // Determinar el tipo de compra (preservar 'internet' si ya estaba marcada)
         $purchaseType = ($purchaseRequest->purchase_type === 'internet') ? 'internet' : 'normal';
-        $totalAmount = $purchaseRequest->total_amount ?? 0;
+        $totalAmount = $this->recalculateSelectedQuotationsTotalForPurchaseRequest($purchaseRequest);
         $threshold = 60000;
         if ($purchaseType !== 'internet') {
             if ($purchaseRequest->is_direct_purchase && $purchaseRequest->direct_purchase_authorized_by) {
@@ -3129,7 +3298,25 @@ class PurchaseRequestCrudController extends CrudController
                     return '<span class="badge bg-danger">Rechazada</span>';
                 } elseif ($entry->requires_admin_approval) {
                     $comprasLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_responsable_compras');
-                    return '<span class="badge bg-warning">Requiere aprobación de Administrador (Supera $' . number_format($comprasLimit, 2) . ')</span>';
+                    $total = (float) ($entry->total_amount ?? 0);
+                    $adminLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_admin_institucion');
+                    $apoderadoLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_apoderado');
+                    $representanteLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_representante_legal');
+
+                    $requiredRole = null;
+                    if ($adminLimit > 0 && $total <= $adminLimit) {
+                        $requiredRole = 'Administrador del Instituto';
+                    } elseif ($apoderadoLimit > 0 && $total <= $apoderadoLimit) {
+                        $requiredRole = 'Apoderado';
+                    } elseif ($representanteLimit > 0 && $total <= $representanteLimit) {
+                        $requiredRole = 'Representante Legal';
+                    }
+
+                    if ($requiredRole) {
+                        return '<span class="badge bg-warning">Requiere aprobación de ' . e($requiredRole) . ' (Monto: $' . number_format($total, 2) . ')</span>';
+                    }
+
+                    return '<span class="badge bg-danger">Monto supera todos los límites de aprobación (Monto: $' . number_format($total, 2) . ')</span>';
                 } else {
                     return '<span class="badge bg-secondary">Pendiente</span>';
                 }
@@ -3144,7 +3331,7 @@ class PurchaseRequestCrudController extends CrudController
         CRUD::column('general_request_info')->label('Solicitud General de Origen')->type('custom_html')
             ->value(function($entry) {
                 if (!$entry->convertedFromGeneralRequest) {
-                    return '<div class="alert alert-secondary">
+                    return '<div class="alert alert-secondary text-dark">
                         <i class="la la-info-circle"></i> Esta solicitud de compra no fue convertida desde una solicitud general.
                     </div>';
                 }
@@ -3796,7 +3983,7 @@ class PurchaseRequestCrudController extends CrudController
                 $html .= '<tbody>';
                 
                 foreach ($marketRates as $marketRate) {
-                    $isSelected = $entry->selected_market_rate_id == $marketRate->id;
+                    $isSelected = (bool) ($marketRate->is_selected || $entry->selected_market_rate_id == $marketRate->id);
                     $rowClass = $isSelected ? 'table-success' : '';
                     
                     $html .= '<tr class="' . $rowClass . '">';
@@ -3810,8 +3997,45 @@ class PurchaseRequestCrudController extends CrudController
                         $date = \Carbon\Carbon::parse($date);
                     }
                     $html .= '<td>' . ($date ? $date->format('d/m/Y') : 'N/A') . '</td>';
-                    $html .= '<td class="text-end"><strong>$' . number_format($marketRate->total_amount, 2) . '</strong></td>';
-                    $html .= '<td><span class="badge bg-info">' . $marketRate->quoteDetails->count() . ' productos</span></td>';
+                    $subtotal = (float) ($marketRate->total_amount ?? 0);
+                    $vatAmount = (float) ($marketRate->vat_amount ?? 0);
+                    $totalWithVat = (float) ($marketRate->total_amount_with_vat ?? 0);
+                    if ($totalWithVat <= 0 && ($subtotal > 0 || $vatAmount > 0)) {
+                        $totalWithVat = $subtotal + $vatAmount;
+                    }
+                    $html .= '<td class="text-end"><strong>$' . number_format($totalWithVat > 0 ? $totalWithVat : $subtotal, 2) . '</strong>';
+                    if ($vatAmount > 0) {
+                        $html .= '<br><small class="text-muted">Subtotal: $' . number_format($subtotal, 2) . ' + IVA: $' . number_format($vatAmount, 2) . '</small>';
+                    }
+                    $html .= '</td>';
+                    $rawDocumentFiles = $marketRate->document_files;
+                    if (is_string($rawDocumentFiles)) {
+                        $decoded = json_decode($rawDocumentFiles, true);
+                        $documentFiles = is_array($decoded) ? $decoded : [];
+                    } else {
+                        $documentFiles = is_array($rawDocumentFiles) ? $rawDocumentFiles : [];
+                    }
+
+                    if ($marketRate->quoteDetails->isEmpty()) {
+                        $productsHtml = '<span class="text-muted">Sin productos</span>';
+                    } else {
+                        $productsHtml = '<div><span class="badge bg-info mb-1">' . $marketRate->quoteDetails->count() . ' productos</span></div>';
+                        $productsHtml .= '<ul class="mb-0 ps-3">';
+                        foreach ($marketRate->quoteDetails as $detail) {
+                            $productName = $detail->product->name ?? ('Producto #' . $detail->product_id);
+                            if (is_array($productName)) {
+                                $productName = 'Producto no encontrado';
+                            }
+                            $productsHtml .= '<li>' . e($productName);
+                            $detailDescription = $detail->product_description ?? ($detail->product->description ?? null);
+                            if ($detailDescription && !is_array($detailDescription)) {
+                                $productsHtml .= '<br><small class="text-muted">' . e($detailDescription) . '</small>';
+                            }
+                            $productsHtml .= ' - Cant: ' . (float) $detail->quantity . ' - $' . number_format((float) $detail->unit_price, 2) . '/u</li>';
+                        }
+                        $productsHtml .= '</ul>';
+                    }
+                    $html .= '<td>' . $productsHtml . '</td>';
                     $html .= '<td>';
                     if ($isSelected) {
                         $html .= '<span class="badge bg-success">Seleccionada</span>';
@@ -3832,10 +4056,32 @@ class PurchaseRequestCrudController extends CrudController
                         }
                     }
                     
-                    if (!$isSelected && $entry->status != 'Completada' && $canSelect) {
-                        $html .= '<a href="' . route('purchase-request.show-select-market-rate', [$entry->id, $marketRate->id]) . '" class="btn btn-sm btn-success">';
-                        $html .= '<i class="la la-check"></i> Seleccionar';
-                        $html .= '</a>';
+                    $html .= '<a href="' . route('market-rate.pdf', $marketRate->id) . '" class="btn btn-sm btn-outline-primary me-1" target="_blank">';
+                    $html .= '<i class="la la-file-pdf-o"></i> PDF';
+                    $html .= '</a>';
+
+                    if (!empty($documentFiles)) {
+                        foreach ($documentFiles as $idx => $filePath) {
+                            if (!is_string($filePath) || trim($filePath) === '') {
+                                continue;
+                            }
+                            $label = $idx === 0 ? 'Archivo subido' : ('Archivo ' . ($idx + 1));
+                            $fileUrl = route('market-rate.uploaded-file', ['id' => $marketRate->id, 'index' => $idx]);
+                            $html .= '<a href="' . e($fileUrl) . '" class="btn btn-sm btn-outline-secondary me-1" target="_blank" rel="noopener">';
+                            $html .= '<i class="la la-paperclip"></i> ' . e($label);
+                            $html .= '</a>';
+                        }
+                    }
+
+                    if ($entry->status != 'Completada' && $canSelect) {
+                        $html .= '<form method="POST" action="' . route('purchase-request.toggle-market-rate', [$entry->id, $marketRate->id]) . '" style="display:inline-block;" class="me-1">';
+                        $html .= csrf_field();
+                        if ($isSelected) {
+                            $html .= '<button type="submit" class="btn btn-sm btn-warning"><i class="la la-minus-circle"></i> Deseleccionar</button>';
+                        } else {
+                            $html .= '<button type="submit" class="btn btn-sm btn-success"><i class="la la-check"></i> Seleccionar</button>';
+                        }
+                        $html .= '</form>';
                     }
                     
                     $html .= '</td>';
@@ -3899,7 +4145,8 @@ class PurchaseRequestCrudController extends CrudController
                 $user = backpack_user();
                 $canGenerateOrder = !($user && $user->hasRole('role_responsable_area', 'backpack'));
                 
-                $totalAmount = $entry->total_amount ?? 0;
+                $entry->load('marketRates.quoteDetails');
+                $totalAmount = $this->recalculateSelectedQuotationsTotalForPurchaseRequest($entry);
                 $threshold = 60000;
                 // Usar la relación del modelo en lugar de consulta directa
                 $entry->load('marketRates');
@@ -4109,7 +4356,7 @@ class PurchaseRequestCrudController extends CrudController
                 }
                 
                 if ($suggestions->isEmpty()) {
-                    $html .= '<div class="alert alert-info">No hay sugerencias de proveedores para esta solicitud.</div>';
+                    $html .= '-';
                 } else {
                     $html .= '<div class="table-responsive">';
                     $html .= '<table class="table table-striped table-bordered">';
@@ -4346,18 +4593,24 @@ class PurchaseRequestCrudController extends CrudController
                 if ($entry->is_direct_purchase && $entry->direct_purchase_authorization_requested && !$entry->direct_purchase_authorized_by && !$entry->direct_purchase_authorization_rejected) {
                     return '';
                 }
+
+                // Recalcular monto efectivo (cotizaciones seleccionadas, incluyendo IVA) para validar límites correctamente en UI.
+                $effectiveTotal = $this->recalculateSelectedQuotationsTotalForPurchaseRequest($entry);
+                $comprasLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_responsable_compras');
+                $entryForApproval = clone $entry;
+                $entryForApproval->total_amount = $effectiveTotal;
+                $entryForApproval->requires_admin_approval = $effectiveTotal > $comprasLimit;
                 
                 // Verificar si el usuario puede aprobar esta solicitud
-                if (!$entry->canBeApprovedBy($user)) {
+                if (!$entryForApproval->canBeApprovedBy($user)) {
                     // Si es responsable de compras y supera su límite
                     if ($user->hasRole('role_responsable_compras', 'backpack')) {
-                        $comprasLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_responsable_compras');
                         $adminLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_admin_institucion');
                         $apoderadoLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_apoderado');
                         $representanteLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_representante_legal');
                         return '<div class="alert alert-warning mt-3">
                             <i class="la la-exclamation-triangle"></i> 
-                            <strong>Límite excedido:</strong> Esta solicitud ($' . number_format($entry->total_amount, 2) . ') supera tu límite de autorización de $' . number_format($comprasLimit, 2) . '. No puedes aprobar esta solicitud. Requiere aprobación del administrador del instituto (límite: $' . number_format($adminLimit, 2) . '), apoderado (límite: $' . number_format($apoderadoLimit, 2) . ') o representante legal (límite: $' . number_format($representanteLimit, 2) . ').
+                            <strong>Límite excedido:</strong> Esta solicitud ($' . number_format($effectiveTotal, 2) . ') supera tu límite de autorización de $' . number_format($comprasLimit, 2) . '. No puedes aprobar esta solicitud. Requiere aprobación del administrador del instituto (límite: $' . number_format($adminLimit, 2) . '), apoderado (límite: $' . number_format($apoderadoLimit, 2) . ') o representante legal (límite: $' . number_format($representanteLimit, 2) . ').
                         </div>';
                     }
                     
@@ -4366,7 +4619,7 @@ class PurchaseRequestCrudController extends CrudController
                         $adminLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_admin_institucion');
                         return '<div class="alert alert-danger mt-3">
                             <i class="la la-exclamation-triangle"></i> 
-                            <strong>Límite excedido:</strong> Esta solicitud ($' . number_format($entry->total_amount, 2) . ') supera tu límite de autorización de $' . number_format($adminLimit, 2) . '. No puedes aprobar esta solicitud.
+                            <strong>Límite excedido:</strong> Esta solicitud ($' . number_format($effectiveTotal, 2) . ') supera tu límite de autorización de $' . number_format($adminLimit, 2) . '. No puedes aprobar esta solicitud.
                         </div>';
                     }
                     
@@ -4375,7 +4628,7 @@ class PurchaseRequestCrudController extends CrudController
                         $apoderadoLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_apoderado');
                         return '<div class="alert alert-danger mt-3">
                             <i class="la la-exclamation-triangle"></i> 
-                            <strong>Límite excedido:</strong> Esta solicitud ($' . number_format($entry->total_amount, 2) . ') supera tu límite de autorización de $' . number_format($apoderadoLimit, 2) . '. No puedes aprobar esta solicitud.
+                            <strong>Límite excedido:</strong> Esta solicitud ($' . number_format($effectiveTotal, 2) . ') supera tu límite de autorización de $' . number_format($apoderadoLimit, 2) . '. No puedes aprobar esta solicitud.
                         </div>';
                     }
                     
@@ -4384,19 +4637,18 @@ class PurchaseRequestCrudController extends CrudController
                         $representanteLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_representante_legal');
                         return '<div class="alert alert-danger mt-3">
                             <i class="la la-exclamation-triangle"></i> 
-                            <strong>Límite excedido:</strong> Esta solicitud ($' . number_format($entry->total_amount, 2) . ') supera tu límite de autorización de $' . number_format($representanteLimit, 2) . '. No puedes aprobar esta solicitud.
+                            <strong>Límite excedido:</strong> Esta solicitud ($' . number_format($effectiveTotal, 2) . ') supera tu límite de autorización de $' . number_format($representanteLimit, 2) . '. No puedes aprobar esta solicitud.
                         </div>';
                     }
                     
                     // Si requiere aprobación de administrador y el usuario no es admin, apoderado ni representante legal
-                    if ($entry->requires_admin_approval) {
-                        $comprasLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_responsable_compras');
+                    if ($entryForApproval->requires_admin_approval) {
                         $adminLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_admin_institucion');
                         $apoderadoLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_apoderado');
                         $representanteLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_representante_legal');
                         return '<div class="alert alert-warning mt-3">
                             <i class="la la-exclamation-triangle"></i> 
-                            <strong>Requiere aprobación:</strong> Esta solicitud ($' . number_format($entry->total_amount, 2) . ') supera el límite de autorización del responsable de compras ($' . number_format($comprasLimit, 2) . '). Requiere aprobación del administrador del instituto (límite: $' . number_format($adminLimit, 2) . '), apoderado (límite: $' . number_format($apoderadoLimit, 2) . ') o representante legal (límite: $' . number_format($representanteLimit, 2) . ').
+                            <strong>Requiere aprobación:</strong> Esta solicitud ($' . number_format($effectiveTotal, 2) . ') supera el límite de autorización del responsable de compras ($' . number_format($comprasLimit, 2) . '). Requiere aprobación del administrador del instituto (límite: $' . number_format($adminLimit, 2) . '), apoderado (límite: $' . number_format($apoderadoLimit, 2) . ') o representante legal (límite: $' . number_format($representanteLimit, 2) . ').
                         </div>';
                     }
                     return '';
@@ -4408,18 +4660,28 @@ class PurchaseRequestCrudController extends CrudController
                 $html .= '<h6 class="mb-0"><i class="la la-check-circle"></i> Acciones de Aprobación</h6>';
                 $html .= '</div>';
                 $html .= '<div class="card-body">';
+
+                $hasSelectedQuotation = !empty($entry->selected_market_rate_id)
+                    || $entry->marketRates()->where('is_selected', true)->exists();
+                if (!$entry->is_direct_purchase && !$hasSelectedQuotation) {
+                    $html .= '<div class="alert alert-warning mb-3">';
+                    $html .= '<i class="la la-exclamation-triangle"></i> Debe seleccionar al menos una cotización en "Cotizaciones Disponibles" antes de aprobar.';
+                    $html .= '</div>';
+                }
                 
                 // Formulario para aprobar
-                $html .= '<form method="POST" action="' . route('purchase-request.approve', $entry->id) . '" class="d-inline">';
-                $html .= csrf_field();
-                $html .= '<div class="mb-3">';
-                $html .= '<label for="approval_justification" class="form-label">Justificación de Aprobación:</label>';
-                $html .= '<textarea name="approval_justification" id="approval_justification" class="form-control" rows="3" required></textarea>';
-                $html .= '</div>';
-                $html .= '<button type="submit" class="btn btn-success" onclick="return confirm(\'¿Está seguro de aprobar esta solicitud de compra?\')">';
-                $html .= '<i class="la la-check"></i> Aprobar Solicitud';
-                $html .= '</button>';
-                $html .= '</form>';
+                if ($entry->is_direct_purchase || $hasSelectedQuotation) {
+                    $html .= '<form method="POST" action="' . route('purchase-request.approve', $entry->id) . '" class="d-inline">';
+                    $html .= csrf_field();
+                    $html .= '<div class="mb-3">';
+                    $html .= '<label for="approval_justification" class="form-label">Justificación de Aprobación:</label>';
+                    $html .= '<textarea name="approval_justification" id="approval_justification" class="form-control" rows="3" required></textarea>';
+                    $html .= '</div>';
+                    $html .= '<button type="submit" class="btn btn-success" onclick="return confirm(\'¿Está seguro de aprobar esta solicitud de compra?\')">';
+                    $html .= '<i class="la la-check"></i> Aprobar Solicitud';
+                    $html .= '</button>';
+                    $html .= '</form>';
+                }
                 
                 // Botón para rechazar
                 $html .= '<form method="POST" action="' . route('purchase-request.reject', $entry->id) . '" class="d-inline ms-2">';

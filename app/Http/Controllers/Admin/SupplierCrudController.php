@@ -53,7 +53,7 @@ class SupplierCrudController extends CrudController
             if ($userAreas->isNotEmpty()) {
                 // Mapeo de áreas a rubros permitidos
                 $areaRubroMap = [
-                    'Informática' => ['Tecnología'],
+                    'Informática' => ['Tecnología', 'Plataforma de e-commerce', 'Plataforma e-commerce'],
                     'Salud' => ['Salud'],
                     'Insumos de Salud' => ['Salud'],
                     'Mantenimiento' => ['Herramientas'],
@@ -94,7 +94,7 @@ class SupplierCrudController extends CrudController
         CRUD::column('company_name')->label('Nombre');
         CRUD::column('cuit')->label('Cuit');
         CRUD::column('address')->label('Dirección');
-        CRUD::column('cvu')->label('CVU');
+        CRUD::column('cvu')->label('CBU/CVU');
         CRUD::column('alias')->label('Alias');
         CRUD::addColumn([
             'name' => 'supplier_heading_id',
@@ -191,12 +191,15 @@ class SupplierCrudController extends CrudController
     protected function setupCreateOperation()
     {
         CRUD::setValidation(SupplierRequest::class);
+        $this->crud->removeAllFields();
         //CRUD::setFromDb(); // set fields from db columns.
         CRUD::field('company_name')->label('Nombre');
         CRUD::field('cuit')->label('Cuit');
         CRUD::field('address')->label('Dirección');
-        CRUD::field('cvu')->label('CVU')->attributes(['placeholder' => 'Ej: 0000003100123456789012']);
-        CRUD::field('alias')->label('Alias CBU/CVU')->attributes(['placeholder' => 'Ej: proveedor.cbu.alias']);
+        CRUD::field('email')->label('Email')->type('email');
+        CRUD::field('contact')->label('Teléfono');
+        CRUD::field('cvu')->label('CBU/CVU')->attributes(['placeholder' => 'Ej: 0000003100123456789012']);
+        CRUD::field('alias')->label('Alias')->attributes(['placeholder' => 'Ej: proveedor.cbu.alias']);
         
         // Filtrar rubros según el área del responsable
         $user = backpack_user();
@@ -209,7 +212,7 @@ class SupplierCrudController extends CrudController
             if ($userAreas->isNotEmpty()) {
                 // Mapeo de áreas a rubros permitidos
                 $areaRubroMap = [
-                    'Informática' => ['Tecnología'],
+                    'Informática' => ['Tecnología', 'Plataforma de e-commerce', 'Plataforma e-commerce'],
                     'Salud' => ['Salud'],
                     'Insumos de Salud' => ['Salud'],
                     'Mantenimiento' => ['Herramientas'],
@@ -298,7 +301,7 @@ class SupplierCrudController extends CrudController
             if ($userAreas->isNotEmpty()) {
                 // Mapeo de áreas a rubros permitidos
                 $areaRubroMap = [
-                    'Informática' => ['Tecnología'],
+                    'Informática' => ['Tecnología', 'Plataforma de e-commerce', 'Plataforma e-commerce'],
                     'Salud' => ['Salud'],
                     'Insumos de Salud' => ['Salud'],
                     'Mantenimiento' => ['Herramientas'],
@@ -405,7 +408,7 @@ class SupplierCrudController extends CrudController
             if ($userAreas->isNotEmpty()) {
                 // Mapeo de áreas a rubros permitidos
                 $areaRubroMap = [
-                    'Informática' => ['Tecnología'],
+                    'Informática' => ['Tecnología', 'Plataforma de e-commerce', 'Plataforma e-commerce'],
                     'Salud' => ['Salud'],
                     'Insumos de Salud' => ['Salud'],
                     'Mantenimiento' => ['Herramientas'],

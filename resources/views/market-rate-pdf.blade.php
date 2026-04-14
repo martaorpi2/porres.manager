@@ -49,6 +49,21 @@
     @endphp
 </head>
 <body>
+    @php
+        $detailsSubtotal = (float) $marketRate->quoteDetails->sum(function ($detail) {
+            return ((float) ($detail->quantity ?? 0)) * ((float) ($detail->unit_price ?? 0));
+        });
+        $storedSubtotal = (float) ($marketRate->total_amount ?? 0);
+        $subtotalValue = $detailsSubtotal > 0 ? $detailsSubtotal : $storedSubtotal;
+
+        $vatValue = (float) ($marketRate->vat_amount ?? 0);
+        $storedTotalWithVat = (float) ($marketRate->total_amount_with_vat ?? 0);
+        if ($vatValue <= 0 && $storedTotalWithVat > 0 && $subtotalValue > 0) {
+            $vatValue = max(0, $storedTotalWithVat - $subtotalValue);
+        }
+
+        $totalWithVatValue = $storedTotalWithVat > 0 ? $storedTotalWithVat : ($subtotalValue + $vatValue);
+    @endphp
     <div class="watermark">porresManager - ISMP</div>
     <div class="quote-header">
         <div class="header">
@@ -62,10 +77,17 @@
         @if($marketRate->delivery_date)
         <div><strong>Fecha de entrega:</strong> {{ fmt_date($marketRate->delivery_date) }}</div>
         @endif
+        @if($marketRate->delivery_term)
+        <div><strong>Plazo de entrega:</strong> {{ $marketRate->delivery_term }}</div>
+        @endif
         @if($marketRate->payment_method)
         <div><strong>Forma de pago:</strong> {{ $marketRate->payment_method }}</div>
         @endif
-        <div><strong>Monto Total:</strong> {{ money_format_local($marketRate->total_amount) }}</div>
+        <div><strong>Subtotal:</strong> {{ money_format_local($subtotalValue) }}</div>
+        @if($vatValue > 0)
+        <div><strong>IVA:</strong> {{ money_format_local($vatValue) }}</div>
+        @endif
+        <div><strong>Monto Total:</strong> {{ money_format_local($totalWithVatValue) }}</div>
     </div>
 
     <div class="box">
@@ -82,7 +104,7 @@
     <div class="box">
         <div><strong>Solicitud de Compra:</strong> {{ $marketRate->purchaseRequest->request_number ?? 'N/A' }}</div>
         <div><strong>Estado de la Solicitud:</strong> {{ $marketRate->purchaseRequest->status ?? 'Sin estado' }}</div>
-        <div><strong>Validez de la Cotización:</strong> 30 días desde la fecha de emisión</div>
+        <div><strong>Validez de la Cotización:</strong> {{ $marketRate->validity_term ?: '30 días desde la fecha de emisión' }}</div>
     </div>
 
     <div class="mb-4"><strong>Detalle de productos cotizados</strong></div>
@@ -97,30 +119,45 @@
             </tr>
         </thead>
         <tbody>
-            @php $total = 0; @endphp
-            @foreach($marketRate->quoteDetails as $index => $detail)
-            @php 
-                $subtotal = $detail->quantity * $detail->unit_price;
-                $total += $subtotal;
-            @endphp
+            @if($marketRate->quoteDetails->isEmpty())
             <tr>
-                <td class="center">{{ $index + 1 }}</td>
-                <td>
-                    <strong>{{ $detail->product->name ?? 'Producto no encontrado' }}</strong>
-                    @if($detail->product && $detail->product->description)
-                    <br><small class="muted">{{ $detail->product->description }}</small>
-                    @endif
-                </td>
-                <td class="center">{{ $detail->quantity }}</td>
-                <td class="right">{{ money_format_local($detail->unit_price) }}</td>
-                <td class="right">{{ money_format_local($subtotal) }}</td>
+                <td class="center">1</td>
+                <td><strong>Cotización global</strong><br><small class="muted">Sin detalle por producto/unidad.</small></td>
+                <td class="center">-</td>
+                <td class="right">-</td>
+                <td class="right">{{ money_format_local($subtotalValue) }}</td>
             </tr>
-            @endforeach
+            @else
+                @foreach($marketRate->quoteDetails as $index => $detail)
+                @php 
+                    $lineSubtotal = ((float) ($detail->quantity ?? 0)) * ((float) ($detail->unit_price ?? 0));
+                @endphp
+                <tr>
+                    <td class="center">{{ $index + 1 }}</td>
+                    <td>
+                        <strong>{{ $detail->product->name ?? 'Producto no encontrado' }}</strong>
+                        @php
+                            $detailDescription = $detail->product_description ?? ($detail->product->description ?? null);
+                        @endphp
+                        @if($detailDescription)
+                        <br><small class="muted">{{ $detailDescription }}</small>
+                        @endif
+                    </td>
+                    <td class="center">{{ $detail->quantity }}</td>
+                    <td class="right">{{ money_format_local($detail->unit_price) }}</td>
+                    <td class="right">{{ money_format_local($lineSubtotal) }}</td>
+                </tr>
+                @endforeach
+            @endif
         </tbody>
     </table>
 
     <div class="total-box">
-        Total de la Cotización: {{ money_format_local($total) }}
+        Subtotal: {{ money_format_local($subtotalValue) }}
+        @if($vatValue > 0)
+        <br>IVA: {{ money_format_local($vatValue) }}
+        @endif
+        <br>Total de la Cotización: {{ money_format_local($totalWithVatValue) }}
     </div>
 
     @php
@@ -149,14 +186,24 @@
 
     <div class="box">
         <div><strong>Condiciones Generales:</strong></div>
-        <div>• Precios válidos por 30 días desde la fecha de emisión</div>
-        <div>• Los precios incluyen IVA</div>
-        @if($marketRate->delivery_date)
+        <div>• Validez de la cotización: {{ $marketRate->validity_term ?: 'No especificada' }}</div>
+        @php
+            $hasVatAmount = $vatValue > 0;
+            $totalDiffersFromSubtotal = $totalWithVatValue > $subtotalValue;
+        @endphp
+        @if($hasVatAmount || $totalDiffersFromSubtotal)
+        <div>• Tratamiento de IVA: Incluye IVA</div>
+        @else
+        <div>• Tratamiento de IVA: IVA no informado / no incluido</div>
+        @endif
+        @if($marketRate->delivery_term)
+        <div>• Plazo de entrega: {{ $marketRate->delivery_term }}</div>
+        @elseif($marketRate->delivery_date)
         <div>• Fecha de entrega: {{ fmt_date($marketRate->delivery_date) }}</div>
         @else
         <div>• Entrega según disponibilidad de stock</div>
         @endif
-        <div>• Forma de pago: {{ $marketRate->payment_method ?: '30 días fecha factura' }}</div>
+        <div>• Forma de pago: {{ $marketRate->payment_method ?: 'No especificada' }}</div>
         <div class="muted" style="margin-top: 8px; font-size: 10px;">
             Documento generado el {{ now()->format('d/m/Y H:i') }}
         </div>

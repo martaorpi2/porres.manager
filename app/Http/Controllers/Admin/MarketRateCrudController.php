@@ -89,8 +89,12 @@ class MarketRateCrudController extends CrudController
             });
         CRUD::column('date')->label('Fecha');
         CRUD::column('delivery_date')->label('Fecha de entrega')->type('date');
+        CRUD::column('delivery_term')->label('Plazo de entrega');
         CRUD::column('payment_method')->label('Forma de pago');
+        CRUD::column('validity_term')->label('Validez de la cotización');
         CRUD::column('total_amount')->label('Monto Total')->type('number')->decimals(2)->prefix('$');
+        CRUD::column('vat_amount')->label('IVA')->type('number')->decimals(2)->prefix('$');
+        CRUD::column('total_amount_with_vat')->label('Total + IVA')->type('number')->decimals(2)->prefix('$');
 
         CRUD::column('supporting_badge')->label('Adj.')->type('custom_html')
             ->value(function (\App\Models\MarketRate $entry) {
@@ -201,15 +205,18 @@ class MarketRateCrudController extends CrudController
         
         CRUD::field('date')->label('Fecha')->type('date')->default(now()->format('Y-m-d'));
         CRUD::field('delivery_date')->label('Fecha de entrega')->type('date')->hint('Fecha estimada de entrega de la cotización');
+        CRUD::field('delivery_term')->label('Plazo de entrega')->type('text')->placeholder('Ej: 5 a 7 días a partir del pago');
         CRUD::field('payment_method')->label('Forma de pago')->type('text')->placeholder('Ej: Contado, 30 días fecha factura, 60 días, etc.');
+        CRUD::field('validity_term')->label('Validez de la cotización')->type('text')->placeholder('Ej: 30 días desde la fecha de emisión');
 
         CRUD::field([
             'name' => 'document_files',
             'label' => 'Archivos de la cotización',
             'type' => 'upload_multiple',
+            'upload' => true,
             'disk' => 'public',
-            'path' => 'market_rate_documents',
-            'hint' => 'Opcional: ofertas en PDF, capturas de pantalla, planillas, etc.',
+            'path' => 'cotizaciones',
+            'hint' => 'Opcional: se guardan en storage/app/public/cotizaciones (PDF, imágenes, planillas, etc.).',
         ]);
 
         CRUD::field([
@@ -227,6 +234,12 @@ class MarketRateCrudController extends CrudController
             ->attributes(['inputmode' => 'decimal', 'placeholder' => '0,00 o 0.00'])
             ->hint('Puede usar coma o punto como separador decimal. El monto se recalcula desde los ítems.')
             ->default(0);
+        CRUD::field('vat_amount')->label('IVA')->type('text')
+            ->attributes(['inputmode' => 'decimal', 'placeholder' => '0,00 o 0.00'])
+            ->hint('Opcional: importe de IVA de la cotización.');
+        CRUD::field('total_amount_with_vat')->label('Monto Total + IVA')->type('text')
+            ->attributes(['inputmode' => 'decimal', 'placeholder' => '0,00 o 0.00'])
+            ->hint('Opcional: total final con IVA incluido.');
         CRUD::field([
             'name' => 'is_selected',
             'label' => 'Estado de Selección',
@@ -282,6 +295,7 @@ class MarketRateCrudController extends CrudController
                     'product_name' => $detail->product->name ?? 'Producto no encontrado',
                     'quantity' => $detail->quantity,
                     'unit_price' => $detail->unit_price,
+                    'product_description' => $detail->product_description ?? ($detail->product->description ?? ''),
                 ];
             })->toArray();
             
@@ -336,6 +350,18 @@ class MarketRateCrudController extends CrudController
             'decimals' => 2,
             'prefix' => '$',
         ]);
+        CRUD::modifyColumn('vat_amount', [
+            'label' => 'IVA',
+            'type' => 'number',
+            'decimals' => 2,
+            'prefix' => '$',
+        ]);
+        CRUD::modifyColumn('total_amount_with_vat', [
+            'label' => 'Monto total + IVA',
+            'type' => 'number',
+            'decimals' => 2,
+            'prefix' => '$',
+        ]);
 
         // Formatear fecha de entrega en vista show
         CRUD::modifyColumn('delivery_date', [
@@ -343,9 +369,16 @@ class MarketRateCrudController extends CrudController
             'type' => 'date',
         ]);
 
+        CRUD::modifyColumn('delivery_term', [
+            'label' => 'Plazo de entrega',
+        ]);
+
         // Formatear forma de pago
         CRUD::modifyColumn('payment_method', [
             'label' => 'Forma de pago',
+        ]);
+        CRUD::modifyColumn('validity_term', [
+            'label' => 'Validez de la cotización',
         ]);
         
         // Mostrar el estado de la solicitud de compra
@@ -420,8 +453,9 @@ class MarketRateCrudController extends CrudController
                         $productName = 'Producto no encontrado';
                     }
                     $html .= '<td><strong>' . $productName . '</strong>';
-                    if ($detail->product && $detail->product->description && !is_array($detail->product->description)) {
-                        $html .= '<br><small class="text-muted">' . $detail->product->description . '</small>';
+                    $detailDescription = $detail->product_description ?? ($detail->product->description ?? null);
+                    if ($detailDescription && !is_array($detailDescription)) {
+                        $html .= '<br><small class="text-muted">' . e($detailDescription) . '</small>';
                     }
                     $html .= '</td>';
                     $html .= '<td><span class="badge bg-info">' . $detail->quantity . '</span>';
@@ -530,10 +564,18 @@ class MarketRateCrudController extends CrudController
         $selectedItems = $request->input('selected_quote_items');
         $calculatedTotal = $this->sumTotalFromSelectedQuoteItemsJson($selectedItems);
         $parsedManual = $this->parseTotalAmountInput($dataToSave['total_amount'] ?? null);
+        $parsedVat = $this->parseTotalAmountInput($dataToSave['vat_amount'] ?? null);
+        $parsedTotalWithVat = $this->parseTotalAmountInput($dataToSave['total_amount_with_vat'] ?? null);
         if ($parsedManual !== null) {
             $dataToSave['total_amount'] = $parsedManual;
         } else {
             $dataToSave['total_amount'] = $calculatedTotal;
+        }
+        $dataToSave['vat_amount'] = $parsedVat;
+        if ($parsedTotalWithVat !== null && $parsedTotalWithVat > 0) {
+            $dataToSave['total_amount_with_vat'] = $parsedTotalWithVat;
+        } elseif (($dataToSave['total_amount'] ?? null) !== null && $parsedVat !== null) {
+            $dataToSave['total_amount_with_vat'] = (float) $dataToSave['total_amount'] + $parsedVat;
         }
         
         // insert item in the db
@@ -584,10 +626,18 @@ class MarketRateCrudController extends CrudController
         $selectedItems = $request->input('selected_quote_items');
         $calculatedTotal = $this->sumTotalFromSelectedQuoteItemsJson($selectedItems);
         $parsedManual = $this->parseTotalAmountInput($dataToSave['total_amount'] ?? null);
+        $parsedVat = $this->parseTotalAmountInput($dataToSave['vat_amount'] ?? null);
+        $parsedTotalWithVat = $this->parseTotalAmountInput($dataToSave['total_amount_with_vat'] ?? null);
         if ($parsedManual !== null) {
             $dataToSave['total_amount'] = $parsedManual;
         } else {
             $dataToSave['total_amount'] = $calculatedTotal > 0 ? $calculatedTotal : (float) ($currentEntry ? ($currentEntry->total_amount ?? 0) : 0);
+        }
+        $dataToSave['vat_amount'] = $parsedVat;
+        if ($parsedTotalWithVat !== null && $parsedTotalWithVat > 0) {
+            $dataToSave['total_amount_with_vat'] = $parsedTotalWithVat;
+        } elseif (($dataToSave['total_amount'] ?? null) !== null && $parsedVat !== null) {
+            $dataToSave['total_amount_with_vat'] = (float) $dataToSave['total_amount'] + $parsedVat;
         }
 
         // Validar también si se está cambiando la solicitud de compra a una aprobada
@@ -628,6 +678,34 @@ class MarketRateCrudController extends CrudController
     }
 
     /**
+     * Mostrar archivo adjunto subido para una cotización.
+     */
+    public function showUploadedFile($id, $index = 0)
+    {
+        $marketRate = \App\Models\MarketRate::findOrFail($id);
+        $files = $marketRate->document_files;
+
+        if (is_string($files)) {
+            $decoded = json_decode($files, true);
+            $files = is_array($decoded) ? $decoded : [];
+        } else {
+            $files = is_array($files) ? $files : [];
+        }
+
+        $fileIndex = max(0, (int) $index);
+        if (!isset($files[$fileIndex]) || !is_string($files[$fileIndex]) || trim($files[$fileIndex]) === '') {
+            abort(404, 'Archivo adjunto no encontrado.');
+        }
+
+        $path = $files[$fileIndex];
+        if (!Storage::disk('public')->exists($path)) {
+            abort(404, 'El archivo no existe en el almacenamiento.');
+        }
+
+        return response()->file(Storage::disk('public')->path($path));
+    }
+
+    /**
      * Generate HTML for quote items selection (similar to products in general requests)
      */
     private function getQuoteItemsSelectionHtml($existingItems = [])
@@ -652,12 +730,16 @@ class MarketRateCrudController extends CrudController
                     <input type="number" id="item-price" class="form-control" min="0" step="0.01" value="0">
                 </div>
                 <div class="col-md-2">
+                    <label for="item-description" class="form-label">Descripción</label>
+                    <input type="text" id="item-description" class="form-control" placeholder="Opcional">
+                </div>
+                <div class="col-md-1">
                     <label class="form-label">Subtotal</label>
                     <div id="subtotal-info" class="form-control-plaintext">
                         <span class="badge bg-secondary">$0.00</span>
                     </div>
                 </div>
-                <div class="col-md-2">
+                <div class="col-md-1">
                     <label class="form-label">&nbsp;</label>
                     <button type="button" id="add-item-btn" class="btn btn-primary btn-block">
                         <i class="la la-plus"></i> Agregar
@@ -684,24 +766,19 @@ class MarketRateCrudController extends CrudController
             document.getElementById("product-select").addEventListener("change", updateProductInfo);
             document.getElementById("item-quantity").addEventListener("input", calculateSubtotal);
             document.getElementById("item-price").addEventListener("input", calculateSubtotal);
-            
-            // Asegurar que el total_amount se actualice antes de enviar el formulario
-            const form = document.querySelector("form");
-            if (form) {
-                form.addEventListener("submit", function(e) {
-                    updateTotalAmount();
-                    // Pequeño delay para asegurar que el valor se actualice
-                    setTimeout(function() {
-                        // Continuar con el envío normal
-                    }, 100);
-                });
+            const vatField = getVatAmountField();
+            if (vatField) {
+                vatField.addEventListener("input", updateTotalWithVatField);
+                vatField.addEventListener("change", updateTotalWithVatField);
             }
+            
+            // No forzamos el total en submit para no pisar montos manuales.
             
             // Cargar items existentes si hay
             const existingItems = ' . $existingItemsJson . ';
             if (existingItems && existingItems.length > 0) {
                 existingItems.forEach(item => {
-                    addItemToList(item.product_id, item.product_name, item.quantity, item.unit_price);
+                    addItemToList(item.product_id, item.product_name, item.quantity, item.unit_price, "unidad", item.product_description || "");
                 });
             }
             
@@ -731,10 +808,11 @@ class MarketRateCrudController extends CrudController
                 const selectedOption = select.options[select.selectedIndex];
                 
                 if (selectedOption.value) {
-                    const unit = selectedOption.getAttribute("data-unit");
                     const description = selectedOption.getAttribute("data-description");
-                    
-                    // Aquí podrías mostrar información adicional del producto si es necesario
+                    const descriptionInput = document.getElementById("item-description");
+                    if (descriptionInput && !descriptionInput.value) {
+                        descriptionInput.value = description || "";
+                    }
                     calculateSubtotal();
                 }
             }
@@ -752,6 +830,7 @@ class MarketRateCrudController extends CrudController
                 const select = document.getElementById("product-select");
                 const quantity = document.getElementById("item-quantity");
                 const price = document.getElementById("item-price");
+                const descriptionInput = document.getElementById("item-description");
                 
                 if (!select.value) {
                     alert("Por favor seleccione un producto");
@@ -772,7 +851,7 @@ class MarketRateCrudController extends CrudController
                 const productId = select.value;
                 const productName = selectedOption.textContent;
                 const unit = selectedOption.getAttribute("data-unit");
-                const description = selectedOption.getAttribute("data-description");
+                const description = descriptionInput ? descriptionInput.value : "";
                 
                 addItemToList(productId, productName, quantity.value, price.value, unit, description);
                 
@@ -780,6 +859,9 @@ class MarketRateCrudController extends CrudController
                 select.value = "";
                 quantity.value = 1;
                 price.value = 0;
+                if (descriptionInput) {
+                    descriptionInput.value = "";
+                }
                 calculateSubtotal();
             }
             
@@ -805,6 +887,10 @@ class MarketRateCrudController extends CrudController
                         <div class="col-md-2">
                             <label>Precio Unitario:</label>
                             <input type="number" class="form-control item-price" value="${unitPrice}" min="0" step="0.01">
+                        </div>
+                        <div class="col-md-2">
+                            <label>Descripción:</label>
+                            <input type="text" class="form-control item-description" value="${description || ""}">
                         </div>
                         <div class="col-md-2">
                             <label>Subtotal:</label>
@@ -841,6 +927,13 @@ class MarketRateCrudController extends CrudController
                     updateHiddenFields();
                     updateTotalAmount();
                 });
+
+                const descriptionField = itemDiv.querySelector(".item-description");
+                if (descriptionField) {
+                    descriptionField.addEventListener("input", function() {
+                        updateHiddenFields();
+                    });
+                }
                 
                 updateHiddenFields();
                 updateTotalAmount();
@@ -863,12 +956,15 @@ class MarketRateCrudController extends CrudController
                     const quantity = itemDiv.querySelector(".item-quantity").value;
                     const unitPrice = itemDiv.querySelector(".item-price").value;
                     const productName = itemDiv.querySelector("strong").textContent;
+                    const productDescriptionField = itemDiv.querySelector(".item-description");
+                    const productDescription = productDescriptionField ? productDescriptionField.value : "";
                     
                     items.push({
                         product_id: productId,
                         product_name: productName,
                         quantity: quantity,
-                        unit_price: unitPrice
+                        unit_price: unitPrice,
+                        product_description: productDescription
                     });
                 });
                 
@@ -902,13 +998,61 @@ class MarketRateCrudController extends CrudController
                     totalAmountField = document.querySelector("input[name*=\'total_amount\']");
                 }
                 if (totalAmountField) {
-                    totalAmountField.value = total.toFixed(2);
-                    // Disparar evento change para asegurar que el valor se registre
-                    totalAmountField.dispatchEvent(new Event(\'change\', { bubbles: true }));
-                    totalAmountField.dispatchEvent(new Event(\'input\', { bubbles: true }));
+                    const currentRaw = (totalAmountField.value || "").trim();
+                    const currentValue = parseFloat(currentRaw.replace(",", "."));
+                    const hasManualValue = currentRaw !== "" && !Number.isNaN(currentValue) && currentValue > 0;
+                    // Solo autocompletamos si hay total calculado o si el campo esta vacio/no valido.
+                    if (total > 0 || !hasManualValue) {
+                        totalAmountField.value = total.toFixed(2);
+                        // Disparar evento change para asegurar que el valor se registre
+                        totalAmountField.dispatchEvent(new Event(\'change\', { bubbles: true }));
+                        totalAmountField.dispatchEvent(new Event(\'input\', { bubbles: true }));
+                    }
+                    updateTotalWithVatField();
                 } else {
                     console.warn("No se encontró el campo total_amount para actualizar");
                 }
+            }
+
+            function getVatAmountField() {
+                let field = document.querySelector("input[name=\'vat_amount\']");
+                if (!field) {
+                    field = document.getElementById("vat_amount");
+                }
+                if (!field) {
+                    field = document.querySelector("input[name*=\'vat_amount\']");
+                }
+                return field;
+            }
+
+            function getTotalWithVatField() {
+                let field = document.querySelector("input[name=\'total_amount_with_vat\']");
+                if (!field) {
+                    field = document.getElementById("total_amount_with_vat");
+                }
+                if (!field) {
+                    field = document.querySelector("input[name*=\'total_amount_with_vat\']");
+                }
+                return field;
+            }
+
+            function updateTotalWithVatField() {
+                let totalAmountField = document.querySelector("input[name=\'total_amount\']");
+                if (!totalAmountField) {
+                    totalAmountField = document.querySelector("input[name*=\'total_amount\']");
+                }
+                const vatAmountField = getVatAmountField();
+                const totalWithVatField = getTotalWithVatField();
+                if (!totalAmountField || !vatAmountField || !totalWithVatField) {
+                    return;
+                }
+
+                const subtotal = parseFloat(String(totalAmountField.value || "0").replace(",", ".")) || 0;
+                const vat = parseFloat(String(vatAmountField.value || "0").replace(",", ".")) || 0;
+                const totalWithVat = subtotal + vat;
+                totalWithVatField.value = totalWithVat.toFixed(2);
+                totalWithVatField.dispatchEvent(new Event(\'change\', { bubbles: true }));
+                totalWithVatField.dispatchEvent(new Event(\'input\', { bubbles: true }));
             }
         });
         </script>';
@@ -959,6 +1103,10 @@ class MarketRateCrudController extends CrudController
             $productId = $itemData['product_id'] ?? null;
             $quantity = floatval($itemData['quantity'] ?? 0);
             $unitPrice = floatval($itemData['unit_price'] ?? 0);
+            $productDescription = isset($itemData['product_description']) ? trim((string) $itemData['product_description']) : null;
+            if ($productDescription === '') {
+                $productDescription = null;
+            }
             
             if (!$productId || $quantity <= 0 || $unitPrice < 0) {
                 Log::warning('Item de cotización inválido, omitiendo:', $itemData);
@@ -970,6 +1118,7 @@ class MarketRateCrudController extends CrudController
                 $detail = \App\Models\QuoteDetail::create([
                     'market_rate_id' => $marketRate->id,
                     'product_id' => $productId,
+                    'product_description' => $productDescription,
                     'quantity' => $quantity,
                     'unit_price' => $unitPrice,
                 ]);
@@ -990,7 +1139,18 @@ class MarketRateCrudController extends CrudController
         }
 
         $marketRate->refresh();
-        $marketRate->update(['total_amount' => $finalTotal]);
+        $vatAmount = $this->parseTotalAmountInput($request->input('vat_amount'));
+        $totalWithVatInput = $this->parseTotalAmountInput($request->input('total_amount_with_vat'));
+        $updateData = ['total_amount' => $finalTotal];
+        if ($vatAmount !== null) {
+            $updateData['vat_amount'] = $vatAmount;
+        }
+        if ($totalWithVatInput !== null && $totalWithVatInput > 0) {
+            $updateData['total_amount_with_vat'] = $totalWithVatInput;
+        } elseif ($vatAmount !== null) {
+            $updateData['total_amount_with_vat'] = $finalTotal + $vatAmount;
+        }
+        $marketRate->update($updateData);
         Log::info('Monto total actualizado:', ['market_rate_id' => $marketRate->id, 'total_amount' => $finalTotal, 'from_lines' => $totalAmount, 'manual' => $manualTotal]);
     }
 
@@ -1080,7 +1240,7 @@ class MarketRateCrudController extends CrudController
         if ($request->hasFile('document_files')) {
             foreach ((array) $request->file('document_files') as $file) {
                 if ($file && $file->isValid()) {
-                    $paths[] = $file->store('market_rate_documents', 'public');
+                    $paths[] = $file->store('cotizaciones', 'public');
                 }
             }
         }
@@ -1119,11 +1279,11 @@ class MarketRateCrudController extends CrudController
         $files = $entry->document_files;
         if (is_array($files) && count($files) > 0) {
             $lis = [];
-            foreach ($files as $path) {
+            foreach ($files as $idx => $path) {
                 if (! is_string($path) || $path === '') {
                     continue;
                 }
-                $url = Storage::disk('public')->url($path);
+                $url = route('market-rate.uploaded-file', ['id' => $entry->id, 'index' => $idx]);
                 $lis[] = '<li><a href="'.e($url).'" target="_blank" rel="noopener">'.e(basename($path)).'</a></li>';
             }
             if ($lis !== []) {

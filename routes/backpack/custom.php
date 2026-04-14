@@ -41,6 +41,7 @@ Route::group([
     Route::get('api/productos-por-area', 'PurchaseRequestCrudController@getProductosByArea')->name('api.productos-por-area');
     Route::crud('request-detail', 'RequestDetailCrudController');
     Route::crud('market-rate', 'MarketRateCrudController');
+    Route::get('market-rate/{id}/uploaded-file/{index?}', 'MarketRateCrudController@showUploadedFile')->name('market-rate.uploaded-file');
     Route::crud('quote-detail', 'QuoteDetailCrudController');
     Route::crud('reception', 'ReceptionCrudController');
     Route::get('reception/{id}/pdf', 'ReceptionCrudController@generatePdf')->name('reception.pdf');
@@ -51,6 +52,7 @@ Route::group([
     Route::get('purchase-request/{id}/comparative-excel', 'PurchaseRequestCrudController@generateComparativeExcel')->name('purchase-request.comparative-excel');
     Route::get('purchase-request/{id}/select-market-rate/{marketRateId}', 'PurchaseRequestCrudController@showSelectMarketRateForm')->name('purchase-request.show-select-market-rate');
     Route::post('purchase-request/{id}/select-market-rate/{marketRateId}', 'PurchaseRequestCrudController@storeMarketRateSelection')->name('purchase-request.store-market-rate-selection');
+    Route::post('purchase-request/{id}/toggle-market-rate/{marketRateId}', 'PurchaseRequestCrudController@toggleMarketRateSelection')->name('purchase-request.toggle-market-rate');
     Route::get('purchase-request/{id}/suggest-supplier', 'PurchaseRequestCrudController@showSuggestSupplierForm')->name('purchase-request.suggest-supplier');
     Route::post('purchase-request/{id}/suggest-supplier', 'PurchaseRequestCrudController@storeSupplierSuggestion')->name('purchase-request.store-supplier-suggestion');
     Route::post('purchase-request/{id}/assign-quotations', 'PurchaseRequestCrudController@assignQuotations')->name('purchase-request.assign-quotations');
