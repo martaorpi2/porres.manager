@@ -317,16 +317,18 @@ class EducationalHealthDataSeeder extends Seeder
             $rolePersonal->givePermissionTo(['solicitud.crear', 'solicitud.ver']);
         }
         
-        if ($roleResponsableArea && $roleResponsableArea->permissions->isEmpty()) {
-            $roleResponsableArea->givePermissionTo(['solicitud.ver', 'solicitud.aprobar', 'solicitud.entregar']);
+        // Incluye solicitud.crear (crear solicitudes generales y flujo a compra). givePermissionTo es idempotente.
+        if ($roleResponsableArea) {
+            $roleResponsableArea->givePermissionTo(['solicitud.crear', 'solicitud.ver', 'solicitud.aprobar', 'solicitud.entregar']);
         }
         
-        if ($roleResponsableCompras && $roleResponsableCompras->permissions->isEmpty()) {
-            $roleResponsableCompras->givePermissionTo(['compra.crear', 'compra.aprobar', 'compra.ejecutar', 'solicitud.ver']);
+        if ($roleResponsableCompras) {
+            $roleResponsableCompras->givePermissionTo(['compra.crear', 'compra.aprobar', 'compra.ejecutar', 'solicitud.ver', 'solicitud.entregar']);
         }
         
-        if ($roleAdminInstitucion && $roleAdminInstitucion->permissions->isEmpty()) {
-            $roleAdminInstitucion->givePermissionTo(['compra.aprobar', 'compra.ejecutar', 'solicitud.ver', 'solicitud.aprobar']);
+        // reportes.exportar: exportaciones (p. ej. Excel/PDF en listados). givePermissionTo es idempotente.
+        if ($roleAdminInstitucion) {
+            $roleAdminInstitucion->givePermissionTo(['compra.aprobar', 'compra.ejecutar', 'solicitud.ver', 'solicitud.aprobar', 'reportes.exportar']);
         }
         
         if ($roleApoderado && $roleApoderado->permissions->isEmpty()) {

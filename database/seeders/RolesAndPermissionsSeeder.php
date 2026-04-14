@@ -98,12 +98,13 @@ class RolesAndPermissionsSeeder extends Seeder
             Permission::findByName('solicitud.entregar', 'web'),
         ]);
 
-        // Responsable de compras - puede crear y aprobar compras según monto
+        // Responsable de compras - compras y visibilidad de solicitudes; entregas vinculadas al flujo
         $roleResponsableCompras->givePermissionTo([
             Permission::findByName('compra.crear', 'backpack'),
             Permission::findByName('compra.aprobar', 'backpack'),
             Permission::findByName('compra.ejecutar', 'backpack'),
             Permission::findByName('solicitud.ver', 'backpack'),
+            Permission::findByName('solicitud.entregar', 'backpack'),
         ]);
 
         // Administrador - permisos de administración institucional y aprobación de compras
@@ -112,6 +113,7 @@ class RolesAndPermissionsSeeder extends Seeder
             Permission::findByName('compra.ejecutar', 'backpack'),
             Permission::findByName('solicitud.ver', 'backpack'),
             Permission::findByName('solicitud.aprobar', 'backpack'),
+            Permission::findByName('reportes.exportar', 'backpack'),
         ]);
 
         // Apoderado legal - puede aprobar compras de mayor monto

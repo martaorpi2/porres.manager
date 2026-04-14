@@ -35,6 +35,11 @@ class MarketRateRequest extends FormRequest
             }
             $this->merge(['total_amount' => $amount]);
         }
+
+        // Evitar que el input oculto de upload_multiple envíe valores que fallen la validación si no hay archivos reales
+        if (! $this->hasFile('document_files')) {
+            $this->request->remove('document_files');
+        }
     }
 
     /**
@@ -51,6 +56,9 @@ class MarketRateRequest extends FormRequest
             'delivery_date' => 'nullable|date',
             'payment_method' => 'nullable|string|max:255',
             'total_amount' => 'nullable|numeric|min:0',
+            'reference_links' => 'nullable|string|max:20000',
+            'clear_document_files' => 'nullable|array',
+            'clear_document_files.*' => 'nullable|string|max:500',
             'is_selected' => 'boolean',
         ];
     }
@@ -69,6 +77,7 @@ class MarketRateRequest extends FormRequest
             'delivery_date' => 'fecha de entrega',
             'payment_method' => 'forma de pago',
             'total_amount' => 'monto total',
+            'reference_links' => 'enlaces de referencia',
             'is_selected' => 'estado de selección',
         ];
     }

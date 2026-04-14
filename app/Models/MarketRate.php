@@ -28,12 +28,15 @@ class MarketRate extends Model
         'delivery_date',
         'payment_method',
         'total_amount',
+        'document_files',
+        'reference_links',
         'is_selected',
     ];
     protected $casts = [
         'date' => 'date',
         'delivery_date' => 'date',
         'total_amount' => 'decimal:2',
+        'document_files' => 'array',
         'is_selected' => 'boolean',
     ];
     // protected $hidden = [];

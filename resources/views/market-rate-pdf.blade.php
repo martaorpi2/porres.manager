@@ -123,6 +123,30 @@
         Total de la Cotización: {{ money_format_local($total) }}
     </div>
 
+    @php
+        $docFiles = $marketRate->document_files;
+        $docFiles = is_array($docFiles) ? $docFiles : [];
+        $refLines = $marketRate->reference_links ? preg_split('/\r\n|\r|\n/', $marketRate->reference_links) : [];
+        $refLines = array_values(array_filter(array_map('trim', $refLines)));
+        $refLines = array_values(array_filter($refLines, fn ($u) => is_string($u) && preg_match('#^https?://#i', $u)));
+    @endphp
+    @if(count($docFiles) > 0 || count($refLines) > 0)
+    <div class="box">
+        <div><strong>Documentación de respaldo</strong></div>
+        @if(count($docFiles) > 0)
+        <div class="muted" style="margin-top: 6px;">Archivos adjuntos: {{ count($docFiles) }} archivo(s) (ver sistema porresManager para descargar).</div>
+        @endif
+        @if(count($refLines) > 0)
+        <div style="margin-top: 8px;"><strong>Enlaces de referencia:</strong></div>
+        <ul style="margin: 4px 0 0 18px; padding: 0;">
+            @foreach($refLines as $u)
+            <li style="word-break: break-all;">{{ $u }}</li>
+            @endforeach
+        </ul>
+        @endif
+    </div>
+    @endif
+
     <div class="box">
         <div><strong>Condiciones Generales:</strong></div>
         <div>• Precios válidos por 30 días desde la fecha de emisión</div>

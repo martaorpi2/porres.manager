@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use Backpack\CRUD\app\Http\Controllers\CrudController;
 use Backpack\CRUD\app\Library\CrudPanel\CrudPanelFacade as CRUD;
 use App\Http\Requests\PurchaseRequestRequest;
+use Illuminate\Support\Str;
 
 /**
  * Class PurchaseRequestCrudController
@@ -375,6 +376,11 @@ class PurchaseRequestCrudController extends CrudController
             
             // Campo para seleccionar productos - solo si no está aprobada
             if ($entry->status !== 'Aprobada') {
+                CRUD::addField([
+                    'name' => 'selected_products',
+                    'type' => 'hidden',
+                    'value' => '[]',
+                ]);
                 $entry->load('details.product');
                 if ($entry->details && $entry->details->count() > 0) {
                     $existingProducts = $entry->details->map(function($detail) {
@@ -532,6 +538,13 @@ class PurchaseRequestCrudController extends CrudController
         // Campo oculto para conversión desde solicitud general (se establecerá dinámicamente)
         CRUD::field('converted_from_general_request_id')->type('hidden')->attributes(['name' => 'converted_from_general_request_id']);
         
+        // Mismo patrón que GeneralRequest: el input debe existir en el formulario para que el POST siempre incluya la clave
+        CRUD::addField([
+            'name' => 'selected_products',
+            'type' => 'hidden',
+            'value' => '[]',
+        ]);
+        
         // Campo para seleccionar productos
         CRUD::field('products_selection')->label('Productos Solicitados')->type('custom_html')
             ->value('
@@ -565,13 +578,29 @@ class PurchaseRequestCrudController extends CrudController
             </div>
             
             <script>
-            document.addEventListener("DOMContentLoaded", function() {
+            (function purchaseRequestProductsInitCreate() {
+                function init() {
                 // Cargar productos existentes
                 loadProducts();
                 
                 // Event listeners
                 document.getElementById("add-product-btn").addEventListener("click", addProduct);
                 document.getElementById("add-new-product-btn").addEventListener("click", showNewProductModal);
+                
+                const selectedListEl = document.getElementById("selected-products-list");
+                if (selectedListEl) {
+                    selectedListEl.addEventListener("click", function(e) {
+                        const btn = e.target.closest("button.remove-product");
+                        if (!btn) return;
+                        e.preventDefault();
+                        if (!confirm("¿Eliminar esta línea de productos de la solicitud?")) return;
+                        const row = btn.closest(".selected-product-item");
+                        if (row) {
+                            row.remove();
+                            updateHiddenFields();
+                        }
+                    });
+                }
                 
                 // Función para cargar productos
                 function loadProducts() {
@@ -666,17 +695,50 @@ class PurchaseRequestCrudController extends CrudController
                 }
                 
                 // Función para agregar producto a la lista
+                function getProductsForm() {
+                    const c = document.getElementById("products-container");
+                    if (c) {
+                        const f = c.closest("form");
+                        if (f) return f;
+                    }
+                    const opUpdate = document.querySelector("[bp-section=crud-operation-update] form");
+                    if (opUpdate) return opUpdate;
+                    const opCreate = document.querySelector("[bp-section=crud-operation-create] form");
+                    if (opCreate) return opCreate;
+                    const mainForm = document.querySelector("main form");
+                    if (mainForm) return mainForm;
+                    return document.querySelector("form[method=post]");
+                }
+                
+                function escapeHtml(s) {
+                    if (s == null || s === undefined) return "";
+                    return String(s)
+                        .replace(/&/g, "&amp;")
+                        .replace(/</g, "&lt;")
+                        .replace(/>/g, "&gt;")
+                        .replace(/"/g, "&quot;");
+                }
+                
                 function addProductToList(productId, productName, unit, description, quantity, price = 0, specifications = "") {
                     const container = document.getElementById("selected-products-list");
                     const productDiv = document.createElement("div");
                     productDiv.className = "selected-product-item border p-3 mb-2";
                     productDiv.setAttribute("data-product-id", productId);
+                    if (typeof productId === "string" && productId.indexOf("new_") === 0) {
+                        productDiv.setAttribute("data-new-name", productName || "");
+                        productDiv.setAttribute("data-new-unit", unit || "unidad");
+                        productDiv.setAttribute("data-new-description", description || "");
+                    }
+                    
+                    const safeName = escapeHtml(productName);
+                    const safeDesc = escapeHtml(description);
+                    const safeSpecs = escapeHtml(specifications);
                     
                     productDiv.innerHTML = `
                         <div class="row">
                             <div class="col-md-4">
-                                <strong>${productName}</strong>
-                                ${description ? `<br><small class="text-muted">${description}</small>` : ""}
+                                <strong>${safeName}</strong>
+                                ${description ? `<br><small class="text-muted">${safeDesc}</small>` : ""}
                             </div>
                             <div class="col-md-2">
                                 <label>Cantidad:</label>
@@ -688,7 +750,7 @@ class PurchaseRequestCrudController extends CrudController
                             </div>
                             <div class="col-md-3">
                                 <label>Descripción / Especificaciones:</label>
-                                <textarea class="form-control product-specs" rows="2" placeholder="Describa el producto o indique especificaciones...">${specifications}</textarea>
+                                <textarea class="form-control product-specs" rows="2" placeholder="Describa el producto o indique especificaciones...">${safeSpecs}</textarea>
                             </div>
                             <div class="col-md-1">
                                 <button type="button" class="btn btn-danger btn-sm remove-product">
@@ -700,45 +762,57 @@ class PurchaseRequestCrudController extends CrudController
                     
                     container.appendChild(productDiv);
                     
-                    // Event listener para remover producto
-                    productDiv.querySelector(".remove-product").addEventListener("click", function() {
-                        productDiv.remove();
-                        updateHiddenFields();
-                    });
-                    
                     // Event listeners para actualizar totales
                     productDiv.querySelector(".product-quantity").addEventListener("input", updateTotals);
                     productDiv.querySelector(".product-price").addEventListener("input", updateTotals);
+                    productDiv.querySelector(".product-specs").addEventListener("input", updateTotals);
                     
                     updateHiddenFields();
                 }
                 
                 // Función para actualizar campos ocultos
                 function updateHiddenFields() {
+                    const form = getProductsForm();
+                    if (!form) {
+                        console.error("No se encontró el formulario de solicitud de compra (products-container).");
+                        return;
+                    }
+                    const pc = document.getElementById("products-container");
                     const products = [];
-                    document.querySelectorAll(".selected-product-item").forEach(item => {
+                    (pc ? pc.querySelectorAll(".selected-product-item") : []).forEach(item => {
                         const productId = item.getAttribute("data-product-id");
                         const quantity = item.querySelector(".product-quantity").value;
                         const price = item.querySelector(".product-price").value;
                         const specs = item.querySelector(".product-specs").value;
                         
-                        products.push({
+                        const row = {
                             product_id: productId,
                             quantity: quantity,
                             price: price,
                             specifications: specs
-                        });
+                        };
+                        if (typeof productId === "string" && productId.indexOf("new_") === 0) {
+                            row.name = item.getAttribute("data-new-name") || "";
+                            row.unit = item.getAttribute("data-new-unit") || "unidad";
+                            row.description = item.getAttribute("data-new-description") || "";
+                            row.product_description = specs || item.getAttribute("data-new-description") || "";
+                        }
+                        products.push(row);
                     });
                     
-                    // Crear o actualizar campo oculto
-                    let hiddenField = document.querySelector("input[name=\'selected_products\']");
-                    if (!hiddenField) {
-                        hiddenField = document.createElement("input");
-                        hiddenField.type = "hidden";
-                        hiddenField.name = "selected_products";
-                        document.querySelector("form").appendChild(hiddenField);
+                    const json = JSON.stringify(products);
+                    const hiddens = form.querySelectorAll("input[name=\'selected_products\']");
+                    if (hiddens.length === 0) {
+                        const h = document.createElement("input");
+                        h.type = "hidden";
+                        h.name = "selected_products";
+                        h.value = json;
+                        form.appendChild(h);
+                    } else {
+                        const arr = Array.from(hiddens);
+                        arr.forEach(el => { el.value = json; });
+                        arr.slice(1).forEach(el => el.remove());
                     }
-                    hiddenField.value = JSON.stringify(products);
                 }
                 
                 // Función para actualizar totales
@@ -756,22 +830,22 @@ class PurchaseRequestCrudController extends CrudController
                     
                     const productDescription = prompt("Descripción / Especificaciones (opcional):") || "";
                     
-                    // Agregar como producto temporal con ID negativo
                     const tempId = "new_" + Date.now();
-                    const productData = {
-                        product_id: tempId,
-                        name: productName,
-                        unit: productUnit,
-                        description: productDescription,
-                        quantity: 1,
-                        price: 0,
-                        specifications: ""
-                    };
-                    
-                    // Agregar a la lista de productos seleccionados
                     addProductToList(tempId, productName, productUnit, productDescription, 1, 0, productDescription);
                 }
-            });
+
+                const __prForm = getProductsForm();
+                if (__prForm && !__prForm.dataset.prProductsSyncBound) {
+                    __prForm.dataset.prProductsSyncBound = "1";
+                    __prForm.addEventListener("submit", function() { updateHiddenFields(); }, true);
+                }
+                }
+                if (document.readyState === "loading") {
+                    document.addEventListener("DOMContentLoaded", init, { once: true });
+                } else {
+                    init();
+                }
+            })();
             </script>
             ');
     }
@@ -882,7 +956,8 @@ class PurchaseRequestCrudController extends CrudController
         </div>
         
         <script>
-        document.addEventListener("DOMContentLoaded", function() {
+        (function purchaseRequestProductsInitEdit() {
+            function init() {
             const existingProducts = ' . $existingProductsJson . ';
             
             // Cargar productos existentes
@@ -904,11 +979,28 @@ class PurchaseRequestCrudController extends CrudController
                         product.stock_total || 0
                     );
                 });
+            } else {
+                updateHiddenFields();
             }
             
             // Event listeners
             document.getElementById("add-product-btn").addEventListener("click", addProduct);
             document.getElementById("add-new-product-btn").addEventListener("click", showNewProductModal);
+            
+            const selectedListEl = document.getElementById("selected-products-list");
+            if (selectedListEl) {
+                selectedListEl.addEventListener("click", function(e) {
+                    const btn = e.target.closest("button.remove-product");
+                    if (!btn) return;
+                    e.preventDefault();
+                    if (!confirm("¿Eliminar esta línea de productos de la solicitud?")) return;
+                    const row = btn.closest(".selected-product-item");
+                    if (row) {
+                        row.remove();
+                        updateHiddenFields();
+                    }
+                });
+            }
             
             // Función para cargar productos
             function loadProducts() {
@@ -964,22 +1056,56 @@ class PurchaseRequestCrudController extends CrudController
                 quantity.value = 1;
             }
             
+            function getProductsForm() {
+                const c = document.getElementById("products-container");
+                if (c) {
+                    const f = c.closest("form");
+                    if (f) return f;
+                }
+                const opUpdate = document.querySelector("[bp-section=crud-operation-update] form");
+                if (opUpdate) return opUpdate;
+                const opCreate = document.querySelector("[bp-section=crud-operation-create] form");
+                if (opCreate) return opCreate;
+                const mainForm = document.querySelector("main form");
+                if (mainForm) return mainForm;
+                return document.querySelector("form[method=post]");
+            }
+            
+            function escapeHtml(s) {
+                if (s == null || s === undefined) return "";
+                return String(s)
+                    .replace(/&/g, "&amp;")
+                    .replace(/</g, "&lt;")
+                    .replace(/>/g, "&gt;")
+                    .replace(/"/g, "&quot;");
+            }
+            
             // Función para agregar producto a la lista
             function addProductToList(productId, productName, unit, description, quantity, price = 0, specifications = "", minimumStock = 0, stockTotal = 0) {
                 const container = document.getElementById("selected-products-list");
                 const productDiv = document.createElement("div");
                 productDiv.className = "selected-product-item border p-3 mb-2";
                 productDiv.setAttribute("data-product-id", productId);
+                if (typeof productId === "string" && productId.indexOf("new_") === 0) {
+                    productDiv.setAttribute("data-new-name", productName || "");
+                    productDiv.setAttribute("data-new-unit", unit || "unidad");
+                    productDiv.setAttribute("data-new-description", description || "");
+                }
                 
                 // Calcular cantidad sugerida (cantidad solicitada + stock mínimo)
                 const suggestedQuantity = parseFloat(quantity) + (minimumStock > 0 ? minimumStock : 0);
                 const showStockMinSuggestion = minimumStock > 0;
                 
+                const safeName = escapeHtml(productName);
+                const safeDesc = escapeHtml(description);
+                const safeSpecs = escapeHtml(specifications);
+                const safeUnit = escapeHtml(unit);
+                
                 productDiv.innerHTML = `
                     <div class="row">
                         <div class="col-md-4">
-                            <strong>${productName}</strong>
-                            ${description ? `<br><small class="text-muted">${description}</small>` : ""}
+                            <strong>${safeName}</strong>
+                            ${description ? `<br><small class="text-muted">${safeDesc}</small>` : ""}
                             ${showStockMinSuggestion ? `<br><small class="text-info"><i class="la la-info-circle"></i> Stock actual: ${stockTotal} | Stock mínimo: ${minimumStock}</small>` : ""}
                         </div>
                         <div class="col-md-2">
@@ -992,7 +1118,7 @@ class PurchaseRequestCrudController extends CrudController
                                     </a>
                                 </small>
                                 <small class="text-success d-block mt-1" style="display: none;" id="suggested-${productId}">
-                                    Sugerido: ${suggestedQuantity} ${unit}
+                                    Sugerido: ${suggestedQuantity} ${safeUnit}
                                 </small>
                             ` : ""}
                         </div>
@@ -1002,7 +1128,7 @@ class PurchaseRequestCrudController extends CrudController
                         </div>
                         <div class="col-md-3">
                             <label>Descripción / Especificaciones:</label>
-                            <textarea class="form-control product-specs" rows="2" placeholder="Describa el producto o indique especificaciones...">${specifications}</textarea>
+                            <textarea class="form-control product-specs" rows="2" placeholder="Describa el producto o indique especificaciones...">${safeSpecs}</textarea>
                         </div>
                         <div class="col-md-1">
                             <button type="button" class="btn btn-danger btn-sm remove-product">
@@ -1013,12 +1139,6 @@ class PurchaseRequestCrudController extends CrudController
                 `;
                 
                 container.appendChild(productDiv);
-                
-                // Event listener para remover producto
-                productDiv.querySelector(".remove-product").addEventListener("click", function() {
-                    productDiv.remove();
-                    updateHiddenFields();
-                });
                 
                 // Event listener para agregar stock mínimo
                 const addStockMinLink = productDiv.querySelector(".add-stock-min-link");
@@ -1047,36 +1167,54 @@ class PurchaseRequestCrudController extends CrudController
                 // Event listeners para actualizar totales
                 productDiv.querySelector(".product-quantity").addEventListener("input", updateTotals);
                 productDiv.querySelector(".product-price").addEventListener("input", updateTotals);
+                productDiv.querySelector(".product-specs").addEventListener("input", updateTotals);
                 
                 updateHiddenFields();
             }
             
             // Función para actualizar campos ocultos
             function updateHiddenFields() {
+                const form = getProductsForm();
+                if (!form) {
+                    console.error("No se encontró el formulario de solicitud de compra (products-container).");
+                    return;
+                }
+                const pc = document.getElementById("products-container");
                 const products = [];
-                document.querySelectorAll(".selected-product-item").forEach(item => {
+                (pc ? pc.querySelectorAll(".selected-product-item") : []).forEach(item => {
                     const productId = item.getAttribute("data-product-id");
                     const quantity = item.querySelector(".product-quantity").value;
                     const price = item.querySelector(".product-price").value;
                     const specs = item.querySelector(".product-specs").value;
                     
-                    products.push({
+                    const row = {
                         product_id: productId,
                         quantity: quantity,
                         price: price,
                         specifications: specs
-                    });
+                    };
+                    if (typeof productId === "string" && productId.indexOf("new_") === 0) {
+                        row.name = item.getAttribute("data-new-name") || "";
+                        row.unit = item.getAttribute("data-new-unit") || "unidad";
+                        row.description = item.getAttribute("data-new-description") || "";
+                        row.product_description = specs || item.getAttribute("data-new-description") || "";
+                    }
+                    products.push(row);
                 });
                 
-                // Crear o actualizar campo oculto
-                let hiddenField = document.querySelector("input[name=\'selected_products\']");
-                if (!hiddenField) {
-                    hiddenField = document.createElement("input");
-                    hiddenField.type = "hidden";
-                    hiddenField.name = "selected_products";
-                    document.querySelector("form").appendChild(hiddenField);
+                const json = JSON.stringify(products);
+                const hiddens = form.querySelectorAll("input[name=\'selected_products\']");
+                if (hiddens.length === 0) {
+                    const h = document.createElement("input");
+                    h.type = "hidden";
+                    h.name = "selected_products";
+                    h.value = json;
+                    form.appendChild(h);
+                } else {
+                    const arr = Array.from(hiddens);
+                    arr.forEach(el => { el.value = json; });
+                    arr.slice(1).forEach(el => el.remove());
                 }
-                hiddenField.value = JSON.stringify(products);
             }
             
             // Función para actualizar totales
@@ -1094,22 +1232,22 @@ class PurchaseRequestCrudController extends CrudController
                 
                 const productDescription = prompt("Descripción / Especificaciones (opcional):") || "";
                 
-                // Agregar como producto temporal con ID negativo
                 const tempId = "new_" + Date.now();
-                const productData = {
-                    product_id: tempId,
-                    name: productName,
-                    unit: productUnit,
-                    description: productDescription,
-                    quantity: 1,
-                    price: 0,
-                    specifications: ""
-                };
-                
-                // Agregar a la lista de productos seleccionados
                 addProductToList(tempId, productName, productUnit, productDescription, 1, 0, productDescription, 0, 0);
             }
-        });
+
+            const __prFormEdit = getProductsForm();
+            if (__prFormEdit && !__prFormEdit.dataset.prProductsSyncBound) {
+                __prFormEdit.dataset.prProductsSyncBound = "1";
+                __prFormEdit.addEventListener("submit", function() { updateHiddenFields(); }, true);
+            }
+            }
+            if (document.readyState === "loading") {
+                document.addEventListener("DOMContentLoaded", init, { once: true });
+            } else {
+                init();
+            }
+        })();
         </script>
         ';
     }
@@ -1484,16 +1622,13 @@ class PurchaseRequestCrudController extends CrudController
             $this->data['entry'] = $this->crud->entry = $item;
 
             // Procesar productos seleccionados (eliminar existentes y crear nuevos) - solo si no está aprobada
-            if ($entry->status !== 'Aprobada') {
-                $selectedProducts = $request->input('selected_products');
-                if ($selectedProducts && $selectedProducts !== '[]') {
-                    \Log::info('Procesando productos en actualización:', ['selected_products' => $selectedProducts]);
-                    // Eliminar productos existentes
-                    $item->details()->delete();
-                    // Procesar nuevos productos
-                    $this->processSelectedProducts($item, $request, true);
-                }
-            } else {
+            if ($entry->status !== 'Aprobada' && $request->has('selected_products')) {
+                \Log::info('Procesando productos en actualización:', ['selected_products' => $request->input('selected_products')]);
+                $item->details()->delete();
+                $this->processSelectedProducts($item, $request, true);
+                $item->refresh();
+                $this->pruneOrphanQuoteDetailsForPurchaseRequest($item);
+            } elseif ($entry->status === 'Aprobada') {
                 // Si está aprobada, no permitir modificar productos
                 \Alert::warning('No se pueden modificar los productos de una solicitud aprobada.')->flash();
             }
@@ -1623,6 +1758,8 @@ class PurchaseRequestCrudController extends CrudController
         
         if (!$selectedProducts || $selectedProducts === '[]' || $selectedProducts === '') {
             \Log::info('No hay productos seleccionados');
+            $this->resetPurchaseRequestTotalsAfterProductSync($purchaseRequest);
+
             return;
         }
         
@@ -1636,12 +1773,16 @@ class PurchaseRequestCrudController extends CrudController
                     'json_error' => json_last_error_msg(),
                     'raw_value' => $selectedProducts
                 ]);
+                $this->resetPurchaseRequestTotalsAfterProductSync($purchaseRequest);
+
                 return;
             }
         }
         
         if (!$products || !is_array($products) || empty($products)) {
             \Log::warning('Productos seleccionados está vacío o no es un array válido');
+            $this->resetPurchaseRequestTotalsAfterProductSync($purchaseRequest);
+
             return;
         }
         
@@ -1655,29 +1796,39 @@ class PurchaseRequestCrudController extends CrudController
                 continue;
             }
             
-            $productId = $productData['product_id'];
+            $productIdRaw = $productData['product_id'] ?? null;
             // Convertir a números para evitar errores de multiplicación
             $quantity = (float)($productData['quantity'] ?? 0);
             $price = (float)($productData['price'] ?? 0);
             $specifications = $productData['specifications'] ?? '';
             // Unificado: descripción/especificaciones se guarda en ambos campos para compatibilidad
             $productDescription = $productData['product_description'] ?? $specifications;
-            
-            // Si es un producto nuevo (ID que empieza con "new_")
-            if (strpos($productId, 'new_') === 0) {
-                // Crear el nuevo producto
+
+            $isNewProduct = is_string($productIdRaw) && str_starts_with($productIdRaw, 'new_');
+
+            if ($isNewProduct) {
+                $name = trim((string) ($productData['name'] ?? ''));
+                $specTrim = trim((string) $specifications);
+                if ($name === '' || preg_match('/^producto\s+nuevo$/iu', $name)) {
+                    $name = $specTrim !== '' ? Str::limit($specTrim, 255, '') : 'Producto Nuevo';
+                }
+                $description = trim((string) ($productData['description'] ?? $productData['product_description'] ?? $specTrim));
+                $unit = trim((string) ($productData['unit'] ?? 'unidad')) ?: 'unidad';
+
+                $defaultCategoryId = \App\Models\Category::query()->orderBy('id')->value('id') ?? 1;
+
                 $newProduct = \App\Models\Product::create([
-                    'name' => $productData['name'] ?? 'Producto Nuevo',
-                    'description' => $productData['description'] ?? '',
-                    'unit_measurement' => $productData['unit'] ?? 'unidad',
-                    'category_id' => 1, // Categoría por defecto
-                    'minimum_stock' => 0
+                    'name' => $name,
+                    'description' => $description,
+                    'unit_measurement' => $unit,
+                    'category_id' => $defaultCategoryId,
+                    'minimum_stock' => 0,
                 ]);
                 $productId = $newProduct->id;
                 \Log::info('Nuevo producto creado:', ['id' => $newProduct->id, 'name' => $newProduct->name]);
             } else {
                 // Validar que el producto existe
-                $productId = (int)$productId;
+                $productId = (int) $productIdRaw;
                 $product = \App\Models\Product::find($productId);
                 if (!$product) {
                     \Log::warning('Producto no encontrado:', ['product_id' => $productId]);
@@ -1710,6 +1861,52 @@ class PurchaseRequestCrudController extends CrudController
             'requires_admin_approval' => $requiresAdminApproval
         ]);
         \Log::info('Monto total actualizado:', ['total' => $totalAmount, 'requires_admin_approval' => $requiresAdminApproval]);
+    }
+
+    /**
+     * Cuando no quedan líneas de producto, el total de la solicitud debe reflejarlo (detalles ya borrados antes).
+     */
+    private function resetPurchaseRequestTotalsAfterProductSync(\App\Models\PurchaseRequest $purchaseRequest): void
+    {
+        $purchaseRequest->update([
+            'total_amount' => 0,
+            'requires_admin_approval' => false,
+        ]);
+    }
+
+    /**
+     * Elimina líneas de cotización (quote_details) de productos que ya no están en la solicitud.
+     */
+    private function pruneOrphanQuoteDetailsForPurchaseRequest(\App\Models\PurchaseRequest $purchaseRequest): void
+    {
+        $purchaseRequest->loadMissing('details');
+        $keptProductIds = $purchaseRequest->details->pluck('product_id')->unique()->filter()->values()->all();
+        $marketRateIds = \App\Models\MarketRate::query()
+            ->where('purchase_request_id', $purchaseRequest->id)
+            ->pluck('id');
+
+        if ($marketRateIds->isEmpty()) {
+            return;
+        }
+
+        $baseQuery = \App\Models\QuoteDetail::query()->whereIn('market_rate_id', $marketRateIds);
+        if ($keptProductIds === []) {
+            $baseQuery->delete();
+        } else {
+            (clone $baseQuery)->whereNotIn('product_id', $keptProductIds)->delete();
+        }
+
+        foreach ($marketRateIds as $mrId) {
+            $mr = \App\Models\MarketRate::query()->find($mrId);
+            if (!$mr) {
+                continue;
+            }
+            $total = (float) \App\Models\QuoteDetail::query()
+                ->where('market_rate_id', $mrId)
+                ->get()
+                ->sum(fn (\App\Models\QuoteDetail $d) => (float) $d->quantity * (float) $d->unit_price);
+            $mr->update(['total_amount' => $total]);
+        }
     }
 
     /**
@@ -3098,6 +3295,7 @@ class PurchaseRequestCrudController extends CrudController
         // Agregar campo personalizado para mostrar detalles de productos
         CRUD::column('details_table')->label('Detalles de Productos')->type('custom_html')
             ->value(function($entry) {
+                $entry->loadMissing(['details.product']);
                 $details = $entry->details;
                 
                 if ($details->isEmpty()) {
@@ -3106,7 +3304,7 @@ class PurchaseRequestCrudController extends CrudController
                 
                 $html = '<div class="card border-primary">';
                 $html .= '<div class="card-header bg-primary text-white">';
-                $html .= '<h6 class="mb-0"><i class="la la-shopping-cart"></i> Productos Solicitados</h6>';
+                $html .= '<h6 class="mb-0"><i class="la la-shopping-cart"></i> Productos Solicitados <span class="badge bg-light text-primary ms-1">' . $details->count() . '</span></h6>';
                 $html .= '</div>';
                 $html .= '<div class="card-body p-0">';
                 $html .= '<div class="table-responsive">';
@@ -3123,7 +3321,7 @@ class PurchaseRequestCrudController extends CrudController
                 $html .= '</thead>';
                 $html .= '<tbody>';
                 
-                foreach ($details as $detail) {
+                foreach ($details as $index => $detail) {
                     $deliveredQuantity = $detail->delivered_quantity ?? 0;
                     $requestedQuantity = $detail->requested_quantity ?? 0;
                     $deliveryStatus = $detail->delivery_status ?? 'Pendiente';
@@ -3144,18 +3342,37 @@ class PurchaseRequestCrudController extends CrudController
                     }
                     
                     $html .= '<tr>';
-                    $productName = $detail->product->name ?? 'Producto no encontrado';
-                    if (is_array($productName)) {
-                        $productName = 'Producto no encontrado';
+                    $lineNo = $index + 1;
+                    $rawCatalogName = null;
+                    if ($detail->product) {
+                        $n = $detail->product->name;
+                        $rawCatalogName = is_array($n) ? null : $n;
                     }
-                    $html .= '<td><strong>' . $productName . '</strong>';
+                    $specLine = trim((string) ($detail->product_description ?? $detail->specifications ?? ''));
+                    $isGenericCatalog = is_string($rawCatalogName) && preg_match('/^producto\s+nuevo$/iu', $rawCatalogName);
+
+                    $html .= '<td>';
+                    $html .= '<span class="badge bg-secondary me-1">#' . $lineNo . '</span>';
+                    if ($isGenericCatalog && $specLine !== '') {
+                        $html .= '<strong>' . e($specLine) . '</strong>';
+                        $html .= '<br><small class="text-muted">Catálogo: ' . e((string) $rawCatalogName) . ' · ID ' . (int) $detail->product_id . '</small>';
+                    } elseif ($isGenericCatalog) {
+                        $html .= '<strong>' . e('Ítem #' . $lineNo . ' (sin descripción en la línea)') . '</strong>';
+                        $html .= '<br><small class="text-muted">Nombre en catálogo: ' . e((string) $rawCatalogName) . ' · ID ' . (int) $detail->product_id . '</small>';
+                    } else {
+                        $label = ($rawCatalogName !== null && $rawCatalogName !== '') ? (string) $rawCatalogName : 'Sin catálogo';
+                        $html .= '<strong>' . e($label) . '</strong>';
+                        if ($detail->product_id) {
+                            $html .= '<br><small class="text-muted">ID producto ' . (int) $detail->product_id . '</small>';
+                        }
+                    }
                     if ($detail->product && $detail->product->description && !is_array($detail->product->description)) {
-                        $html .= '<br><small class="text-muted">' . $detail->product->description . '</small>';
+                        $html .= '<br><small class="text-muted">' . e($detail->product->description) . '</small>';
                     }
                     $html .= '</td>';
                     $html .= '<td class="text-center"><span class="badge bg-primary">' . number_format($requestedQuantity) . '</span>';
                     if ($detail->product && $detail->product->unit_measurement && !is_array($detail->product->unit_measurement)) {
-                        $html .= '<br><small class="text-muted">' . $detail->product->unit_measurement . '</small>';
+                        $html .= '<br><small class="text-muted">' . e($detail->product->unit_measurement) . '</small>';
                     }
                     $html .= '</td>';
                     $html .= '<td class="text-center">';
@@ -3164,8 +3381,8 @@ class PurchaseRequestCrudController extends CrudController
                     $html .= '</span>';
                     $html .= '</td>';
                     $html .= '<td class="text-center">';
-                    $html .= '<span class="badge bg-' . $deliveryStatusColor . '" title="Estado de recepción: ' . $deliveryStatus . '">';
-                    $html .= '<i class="la la-' . $deliveryStatusIcon . '"></i> ' . $deliveryStatus;
+                    $html .= '<span class="badge bg-' . $deliveryStatusColor . '" title="Estado de recepción: ' . e($deliveryStatus) . '">';
+                    $html .= '<i class="la la-' . $deliveryStatusIcon . '"></i> ' . e($deliveryStatus);
                     $html .= '</span>';
                     $html .= '</td>';
                     $descSpecs = $detail->specifications ?? $detail->product_description ?? '';
@@ -3177,7 +3394,7 @@ class PurchaseRequestCrudController extends CrudController
                     if (is_array($status)) {
                         $status = 'Pendiente';
                     }
-                    $html .= '<td class="text-center"><span class="badge bg-' . ($detail->status == 'Aprobada' ? 'success' : ($detail->status == 'Rechazada' ? 'danger' : 'warning')) . '">' . $status . '</span></td>';
+                    $html .= '<td class="text-center"><span class="badge bg-' . ($detail->status == 'Aprobada' ? 'success' : ($detail->status == 'Rechazada' ? 'danger' : 'warning')) . '">' . e((string) $status) . '</span></td>';
                     $html .= '</tr>';
                 }
                 

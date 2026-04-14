@@ -35,6 +35,7 @@ class PurchaseRequestRequest extends FormRequest
             'observations' => 'nullable|string',
             'total_amount' => 'nullable|numeric|min:0',
             'converted_from_general_request_id' => 'nullable|exists:general_requests,id',
+            'selected_products' => 'nullable|string',
         ];
     }
 

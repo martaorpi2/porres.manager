@@ -5,7 +5,11 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Requests\MarketRateRequest;
 use Backpack\CRUD\app\Http\Controllers\CrudController;
 use Backpack\CRUD\app\Library\CrudPanel\CrudPanelFacade as CRUD;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Validator;
+use Illuminate\Validation\ValidationException;
 
 /**
  * Class MarketRateCrudController
@@ -87,6 +91,16 @@ class MarketRateCrudController extends CrudController
         CRUD::column('delivery_date')->label('Fecha de entrega')->type('date');
         CRUD::column('payment_method')->label('Forma de pago');
         CRUD::column('total_amount')->label('Monto Total')->type('number')->decimals(2)->prefix('$');
+
+        CRUD::column('supporting_badge')->label('Adj.')->type('custom_html')
+            ->value(function (\App\Models\MarketRate $entry) {
+                $hasFiles = is_array($entry->document_files) && count($entry->document_files) > 0;
+                $hasLinks = filled($entry->reference_links);
+
+                return ($hasFiles || $hasLinks)
+                    ? '<span class="badge bg-secondary">Sí</span>'
+                    : '<span class="text-muted">—</span>';
+            });
         
         // Agregar columna personalizada para mostrar detalles de cotización
         CRUD::column('quote_details_count')->label('Detalles')->type('custom_html')
@@ -175,6 +189,7 @@ class MarketRateCrudController extends CrudController
         } else {
             $infoMessage .= ' Selecciona la solicitud de compra para la cual deseas crear la cotización.';
         }
+        $infoMessage .= '<br>Puede <strong>adjuntar archivos</strong> (PDF, imágenes, etc.) y/o <strong>pegar enlaces</strong> (por ejemplo publicaciones de Mercado Libre), uno por línea.';
         $infoMessage .= '</div>';
         
         CRUD::field([
@@ -187,6 +202,27 @@ class MarketRateCrudController extends CrudController
         CRUD::field('date')->label('Fecha')->type('date')->default(now()->format('Y-m-d'));
         CRUD::field('delivery_date')->label('Fecha de entrega')->type('date')->hint('Fecha estimada de entrega de la cotización');
         CRUD::field('payment_method')->label('Forma de pago')->type('text')->placeholder('Ej: Contado, 30 días fecha factura, 60 días, etc.');
+
+        CRUD::field([
+            'name' => 'document_files',
+            'label' => 'Archivos de la cotización',
+            'type' => 'upload_multiple',
+            'disk' => 'public',
+            'path' => 'market_rate_documents',
+            'hint' => 'Opcional: ofertas en PDF, capturas de pantalla, planillas, etc.',
+        ]);
+
+        CRUD::field([
+            'name' => 'reference_links',
+            'label' => 'Enlaces (Mercado Libre u otros)',
+            'type' => 'textarea',
+            'attributes' => [
+                'rows' => 4,
+                'placeholder' => "https://articulo.mercadolibre.com.ar/...\nhttps://...",
+            ],
+            'hint' => 'Opcional: un enlace por línea (publicaciones ML, catálogos online, etc.). Solo se guardan líneas que comienzan con http:// o https://',
+        ]);
+
         CRUD::field('total_amount')->label('Monto Total')->type('text')
             ->attributes(['inputmode' => 'decimal', 'placeholder' => '0,00 o 0.00'])
             ->hint('Puede usar coma o punto como separador decimal. El monto se recalcula desde los ítems.')
@@ -269,6 +305,11 @@ class MarketRateCrudController extends CrudController
         CRUD::addClause('with', ['supplier', 'quoteDetails.product', 'purchaseRequest']);
         
         CRUD::setFromDb(); // set fields from db columns.
+
+        CRUD::removeColumn('document_files');
+        CRUD::removeColumn('reference_links');
+        CRUD::column('supporting_material')->label('Archivos y enlaces')->type('custom_html')
+            ->value(fn (\App\Models\MarketRate $entry) => self::supportingMaterialAdminHtml($entry));
 
         // Proveedor: label en español y mostrar nombre (company_name)
         CRUD::modifyColumn('supplier_id', [
@@ -460,6 +501,13 @@ class MarketRateCrudController extends CrudController
 
         // Obtener datos para guardar
         $dataToSave = $this->crud->getStrippedSaveRequest($request) ?? [];
+
+        unset($dataToSave['document_files']);
+        $this->assertValidQuoteUploads($request);
+        $dataToSave['document_files'] = $this->mergeMarketRateDocumentFiles($request, null);
+        if (array_key_exists('reference_links', $dataToSave)) {
+            $dataToSave['reference_links'] = $this->normalizeReferenceLinksField($dataToSave['reference_links'] ?? null);
+        }
         
         // Si no se seleccionó una solicitud de compra, buscar una pendiente por defecto
         if (!isset($dataToSave['purchase_request_id']) || empty($dataToSave['purchase_request_id'])) {
@@ -478,27 +526,15 @@ class MarketRateCrudController extends CrudController
             }
         }
 
-        // Procesar los items de cotización primero para calcular el total
+        // Total desde ítems (líneas) y/o monto manual del formulario (ej. cotización Mercado Libre sin precios por ítem)
         $selectedItems = $request->input('selected_quote_items');
-        $calculatedTotal = 0;
-        
-        if ($selectedItems) {
-            $items = json_decode($selectedItems, true);
-            if (is_array($items)) {
-                foreach ($items as $itemData) {
-                    if (!is_array($itemData)) {
-                        continue;
-                    }
-                    $quantity = floatval($itemData['quantity'] ?? 0);
-                    $unitPrice = floatval($itemData['unit_price'] ?? 0);
-                    $calculatedTotal += $quantity * $unitPrice;
-                }
-            }
+        $calculatedTotal = $this->sumTotalFromSelectedQuoteItemsJson($selectedItems);
+        $parsedManual = $this->parseTotalAmountInput($dataToSave['total_amount'] ?? null);
+        if ($parsedManual !== null) {
+            $dataToSave['total_amount'] = $parsedManual;
+        } else {
+            $dataToSave['total_amount'] = $calculatedTotal;
         }
-        
-        // Actualizar el total_amount con el valor calculado antes de guardar
-        // Siempre establecer el total_amount calculado, incluso si es 0
-        $dataToSave['total_amount'] = $calculatedTotal;
         
         // insert item in the db
         $item = $this->crud->create($dataToSave);
@@ -538,32 +574,18 @@ class MarketRateCrudController extends CrudController
         // Obtener datos para guardar
         $dataToSave = $this->crud->getStrippedSaveRequest($request) ?? [];
 
-        // Calcular total desde items de cotización (como en create) o conservar el actual si no se envió monto
-        $selectedItems = $request->input('selected_quote_items');
-        $calculatedTotal = 0;
-        if ($selectedItems) {
-            $items = json_decode($selectedItems, true);
-            if (is_array($items)) {
-                foreach ($items as $itemData) {
-                    if (!is_array($itemData)) {
-                        continue;
-                    }
-                    $quantity = floatval($itemData['quantity'] ?? 0);
-                    $unitPrice = floatval($itemData['unit_price'] ?? 0);
-                    $calculatedTotal += $quantity * $unitPrice;
-                }
-            }
+        unset($dataToSave['document_files']);
+        $this->assertValidQuoteUploads($request);
+        $dataToSave['document_files'] = $this->mergeMarketRateDocumentFiles($request, $currentEntry);
+        if (array_key_exists('reference_links', $dataToSave)) {
+            $dataToSave['reference_links'] = $this->normalizeReferenceLinksField($dataToSave['reference_links'] ?? null);
         }
-        if (isset($dataToSave['total_amount']) && $dataToSave['total_amount'] !== '' && $dataToSave['total_amount'] !== null) {
-            $v = $dataToSave['total_amount'];
-            if (is_string($v)) {
-                $v = trim($v);
-                if (str_contains($v, ',')) {
-                    $v = str_replace('.', '', $v);
-                    $v = str_replace(',', '.', $v);
-                }
-            }
-            $dataToSave['total_amount'] = (float) $v;
+
+        $selectedItems = $request->input('selected_quote_items');
+        $calculatedTotal = $this->sumTotalFromSelectedQuoteItemsJson($selectedItems);
+        $parsedManual = $this->parseTotalAmountInput($dataToSave['total_amount'] ?? null);
+        if ($parsedManual !== null) {
+            $dataToSave['total_amount'] = $parsedManual;
         } else {
             $dataToSave['total_amount'] = $calculatedTotal > 0 ? $calculatedTotal : (float) ($currentEntry ? ($currentEntry->total_amount ?? 0) : 0);
         }
@@ -902,13 +924,16 @@ class MarketRateCrudController extends CrudController
             Log::info('Eliminando items existentes de cotización:', ['id' => $marketRate->id]);
             $marketRate->quoteDetails()->delete();
         }
+
+        $manualTotal = $this->parseTotalAmountInput($request->input('total_amount'));
         
         $selectedItems = $request->input('selected_quote_items');
         
         if (!$selectedItems) {
             Log::info('No hay items de cotización seleccionados');
-            // Si no hay items, asegurar que el total_amount sea 0
-            $marketRate->update(['total_amount' => 0]);
+            if ($manualTotal !== null) {
+                $marketRate->update(['total_amount' => $manualTotal]);
+            }
             return;
         }
         
@@ -916,7 +941,9 @@ class MarketRateCrudController extends CrudController
         
         if (!is_array($items) || empty($items)) {
             Log::warning('Items de cotización no válidos o vacíos:', ['selectedItems' => $selectedItems]);
-            $marketRate->update(['total_amount' => 0]);
+            if ($manualTotal !== null) {
+                $marketRate->update(['total_amount' => $manualTotal]);
+            }
             return;
         }
         
@@ -957,9 +984,169 @@ class MarketRateCrudController extends CrudController
             }
         }
         
-        // Actualizar el monto total de la cotización (siempre, incluso si es 0)
+        $finalTotal = $totalAmount;
+        if ($finalTotal <= 0 && $manualTotal !== null && $manualTotal > 0) {
+            $finalTotal = $manualTotal;
+        }
+
         $marketRate->refresh();
-        $marketRate->update(['total_amount' => $totalAmount]);
-        Log::info('Monto total actualizado:', ['market_rate_id' => $marketRate->id, 'total_amount' => $totalAmount]);
+        $marketRate->update(['total_amount' => $finalTotal]);
+        Log::info('Monto total actualizado:', ['market_rate_id' => $marketRate->id, 'total_amount' => $finalTotal, 'from_lines' => $totalAmount, 'manual' => $manualTotal]);
+    }
+
+    private function parseTotalAmountInput($raw): ?float
+    {
+        if ($raw === null || $raw === '') {
+            return null;
+        }
+        $v = $raw;
+        if (is_string($v)) {
+            $v = trim($v);
+            if ($v === '') {
+                return null;
+            }
+            if (str_contains($v, ',')) {
+                $v = str_replace('.', '', $v);
+                $v = str_replace(',', '.', $v);
+            }
+        }
+        if (! is_numeric($v)) {
+            return null;
+        }
+
+        return (float) $v;
+    }
+
+    private function sumTotalFromSelectedQuoteItemsJson(?string $selectedItems): float
+    {
+        $calculatedTotal = 0.0;
+        if (! $selectedItems) {
+            return $calculatedTotal;
+        }
+        $items = json_decode($selectedItems, true);
+        if (! is_array($items)) {
+            return $calculatedTotal;
+        }
+        foreach ($items as $itemData) {
+            if (! is_array($itemData)) {
+                continue;
+            }
+            $quantity = floatval($itemData['quantity'] ?? 0);
+            $unitPrice = floatval($itemData['unit_price'] ?? 0);
+            $calculatedTotal += $quantity * $unitPrice;
+        }
+
+        return $calculatedTotal;
+    }
+
+    private function assertValidQuoteUploads(Request $request): void
+    {
+        if (! $request->hasFile('document_files')) {
+            return;
+        }
+        $files = $request->file('document_files');
+        if (! is_array($files)) {
+            $files = [$files];
+        }
+        $validator = Validator::make(
+            ['document_files' => $files],
+            ['document_files' => 'array', 'document_files.*' => 'file|max:10240|mimes:pdf,jpeg,jpg,png,gif,webp,doc,docx']
+        );
+        if ($validator->fails()) {
+            throw new ValidationException($validator);
+        }
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function mergeMarketRateDocumentFiles(Request $request, ?\App\Models\MarketRate $existing): array
+    {
+        $paths = [];
+        if ($existing && is_array($existing->document_files)) {
+            $paths = $existing->document_files;
+        }
+        foreach ((array) $request->input('clear_document_files', []) as $cleared) {
+            if ($cleared === null || $cleared === '') {
+                continue;
+            }
+            $paths = array_values(array_filter($paths, fn ($p) => $p !== $cleared));
+            try {
+                Storage::disk('public')->delete($cleared);
+            } catch (\Throwable $e) {
+                Log::warning('market_rate: no se pudo borrar archivo', ['path' => $cleared, 'message' => $e->getMessage()]);
+            }
+        }
+        if ($request->hasFile('document_files')) {
+            foreach ((array) $request->file('document_files') as $file) {
+                if ($file && $file->isValid()) {
+                    $paths[] = $file->store('market_rate_documents', 'public');
+                }
+            }
+        }
+
+        return array_values(array_unique(array_filter($paths)));
+    }
+
+    private function normalizeReferenceLinksField($raw): ?string
+    {
+        if ($raw === null) {
+            return null;
+        }
+        $text = trim((string) $raw);
+        if ($text === '') {
+            return null;
+        }
+        $lines = preg_split('/\r\n|\r|\n/', $text);
+        $kept = [];
+        foreach ($lines as $line) {
+            $line = trim($line);
+            if ($line === '') {
+                continue;
+            }
+            if (! preg_match('#^https?://#i', $line)) {
+                continue;
+            }
+            $kept[] = $line;
+        }
+
+        return $kept === [] ? null : implode("\n", $kept);
+    }
+
+    private static function supportingMaterialAdminHtml(\App\Models\MarketRate $entry): string
+    {
+        $parts = [];
+        $files = $entry->document_files;
+        if (is_array($files) && count($files) > 0) {
+            $lis = [];
+            foreach ($files as $path) {
+                if (! is_string($path) || $path === '') {
+                    continue;
+                }
+                $url = Storage::disk('public')->url($path);
+                $lis[] = '<li><a href="'.e($url).'" target="_blank" rel="noopener">'.e(basename($path)).'</a></li>';
+            }
+            if ($lis !== []) {
+                $parts[] = '<strong>Archivos</strong><ul class="mb-0 small">'.implode('', $lis).'</ul>';
+            }
+        }
+        if ($entry->reference_links) {
+            $lis = [];
+            foreach (preg_split('/\r\n|\r|\n/', $entry->reference_links) as $line) {
+                $line = trim($line);
+                if ($line === '' || ! preg_match('#^https?://#i', $line)) {
+                    continue;
+                }
+                $lis[] = '<li><a href="'.e($line).'" target="_blank" rel="noopener">'.e(\Illuminate\Support\Str::limit($line, 72)).'</a></li>';
+            }
+            if ($lis !== []) {
+                $parts[] = '<strong>Enlaces</strong><ul class="mb-0 small">'.implode('', $lis).'</ul>';
+            }
+        }
+        if ($parts === []) {
+            return '<span class="text-muted">—</span>';
+        }
+
+        return '<div>'.implode('</div><div class="mt-2">', $parts).'</div>';
     }
 }

@@ -1,112 +1,125 @@
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     var rolePermissionsMap = @json($rolePermissionsMap);
-    
-    console.log('Role permissions map loaded:', rolePermissionsMap);
-    
-    // Función para marcar permisos basados en roles seleccionados
+
+    function selectedRoleIdSet(selectedRoles) {
+        var set = new Set();
+        selectedRoles.forEach(function(roleId) {
+            set.add(String(roleId));
+        });
+        return set;
+    }
+
+    /** True si el permiso está definido en algún rol que NO está seleccionado (copias directas “fantasma”). */
+    function permissionGrantedByUnselectedRole(permissionId, selectedRoleSet) {
+        permissionId = String(permissionId);
+        for (var rid in rolePermissionsMap) {
+            if (!Object.prototype.hasOwnProperty.call(rolePermissionsMap, rid)) {
+                continue;
+            }
+            if (selectedRoleSet.has(String(rid))) {
+                continue;
+            }
+            var perms = rolePermissionsMap[rid] || [];
+            for (var i = 0; i < perms.length; i++) {
+                if (String(perms[i]) === permissionId) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
     function updatePermissionsFromRoles() {
-        // Buscar el campo hidden de roles que contiene el JSON con los IDs seleccionados
         var rolesHiddenInput = document.querySelector('input[name="roles"][type="hidden"]');
         var selectedRoles = [];
-        
+
         if (rolesHiddenInput) {
             try {
                 selectedRoles = JSON.parse(rolesHiddenInput.value || '[]');
-                console.log('Selected roles:', selectedRoles);
             } catch (e) {
-                console.error('Error parsing roles:', e);
+                return;
             }
         }
-        
-        // Colectar todos los permisos de los roles seleccionados
-        var permissionsToCheck = new Set();
+
+        var permissionsFromSelectedRoles = new Set();
         selectedRoles.forEach(function(roleId) {
-            roleId = parseInt(roleId);
+            roleId = parseInt(roleId, 10);
             if (rolePermissionsMap[roleId]) {
-                console.log('Role ' + roleId + ' has permissions:', rolePermissionsMap[roleId]);
                 rolePermissionsMap[roleId].forEach(function(permissionId) {
-                    permissionsToCheck.add(permissionId.toString());
+                    permissionsFromSelectedRoles.add(String(permissionId));
                 });
             }
         });
-        
-        console.log('Permissions to check from roles:', Array.from(permissionsToCheck));
-        
-        // Buscar el campo hidden de permisos
+
+        var selectedRoleSet = selectedRoleIdSet(selectedRoles);
+
         var permissionsHiddenInput = document.querySelector('input[name="permissions"][type="hidden"]');
-        var currentPermissions = new Set();
-        
-        if (permissionsHiddenInput) {
-            try {
-                var existingPermissions = JSON.parse(permissionsHiddenInput.value || '[]');
-                existingPermissions.forEach(function(permId) {
-                    currentPermissions.add(permId.toString());
-                });
-                console.log('Current permissions:', Array.from(currentPermissions));
-            } catch (e) {
-                console.error('Error parsing permissions:', e);
-            }
+        if (!permissionsHiddenInput) {
+            return;
         }
-        
-        // Combinar permisos de roles y permisos actuales
-        permissionsToCheck.forEach(function(permissionId) {
-            currentPermissions.add(permissionId);
-        });
-        
-        var finalPermissions = Array.from(currentPermissions);
-        console.log('Final permissions to set:', finalPermissions);
-        
-        // Actualizar el valor del campo hidden de permisos
-        if (permissionsHiddenInput) {
-            permissionsHiddenInput.value = JSON.stringify(finalPermissions);
-            
-            // Disparar el evento change para que Backpack actualice los checkboxes
-            permissionsHiddenInput.dispatchEvent(new Event('change', { bubbles: true }));
-            
-            // Actualizar visualmente los checkboxes
-            var permissionsContainer = permissionsHiddenInput.closest('.form-group');
-            if (permissionsContainer) {
-                var checkboxes = permissionsContainer.querySelectorAll('input[type="checkbox"]');
-                checkboxes.forEach(function(checkbox) {
-                    var isChecked = finalPermissions.includes(checkbox.value);
-                    if (checkbox.checked !== isChecked) {
-                        checkbox.checked = isChecked;
-                    }
-                });
+
+        var current = new Set();
+        try {
+            var existing = JSON.parse(permissionsHiddenInput.value || '[]');
+            existing.forEach(function(permId) {
+                current.add(String(permId));
+            });
+        } catch (e) {
+            current = new Set();
+        }
+
+        // Quitar del hidden los permisos que solo “venían” de roles ya desmarcados (Spatie los seguiría dando por syncPermissions directo).
+        Array.from(current).forEach(function(p) {
+            if (permissionsFromSelectedRoles.has(p)) {
+                return;
             }
+            if (permissionGrantedByUnselectedRole(p, selectedRoleSet)) {
+                current.delete(p);
+            }
+        });
+
+        permissionsFromSelectedRoles.forEach(function(p) {
+            current.add(p);
+        });
+
+        var finalPermissions = Array.from(current);
+        permissionsHiddenInput.value = JSON.stringify(finalPermissions);
+        permissionsHiddenInput.dispatchEvent(new Event('change', { bubbles: true }));
+
+        var permissionsContainer = permissionsHiddenInput.closest('.form-group');
+        if (permissionsContainer) {
+            var checkboxes = permissionsContainer.querySelectorAll('input[type="checkbox"]');
+            checkboxes.forEach(function(checkbox) {
+                var isChecked = finalPermissions.includes(checkbox.value);
+                if (checkbox.checked !== isChecked) {
+                    checkbox.checked = isChecked;
+                }
+            });
         }
     }
-    
-    // Esperar a que Backpack inicialice los campos
+
     setTimeout(function() {
-        console.log('Setting up role change listeners...');
-        
-        // Buscar el campo hidden de roles
         var rolesHiddenInput = document.querySelector('input[name="roles"][type="hidden"]');
-        
-        if (rolesHiddenInput) {
-            // Escuchar cambios en el campo hidden de roles
-            rolesHiddenInput.addEventListener('change', function() {
-                console.log('Roles changed!');
-                updatePermissionsFromRoles();
-            });
-            
-            // También escuchar clics en los checkboxes visuales de roles
-            var rolesContainer = rolesHiddenInput.closest('.form-group');
-            if (rolesContainer) {
-                var roleCheckboxes = rolesContainer.querySelectorAll('input[type="checkbox"]');
-                roleCheckboxes.forEach(function(checkbox) {
-                    checkbox.addEventListener('click', function() {
-                        setTimeout(updatePermissionsFromRoles, 100);
-                    });
-                });
-            }
-            
-            // Ejecutar al cargar si hay roles ya seleccionados
-            updatePermissionsFromRoles();
+        if (!rolesHiddenInput) {
+            return;
         }
+
+        rolesHiddenInput.addEventListener('change', function() {
+            updatePermissionsFromRoles();
+        });
+
+        var rolesContainer = rolesHiddenInput.closest('.form-group');
+        if (rolesContainer) {
+            var roleCheckboxes = rolesContainer.querySelectorAll('input[type="checkbox"]');
+            roleCheckboxes.forEach(function(checkbox) {
+                checkbox.addEventListener('click', function() {
+                    setTimeout(updatePermissionsFromRoles, 100);
+                });
+            });
+        }
+
+        updatePermissionsFromRoles();
     }, 1000);
 });
 </script>
-

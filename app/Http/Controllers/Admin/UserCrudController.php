@@ -57,15 +57,23 @@ class UserCrudController extends CrudController
         // Mostrar roles del usuario usando closure con eager loading
         CRUD::addClause('with', ['roles']);
         
+        $backpackGuard = config('backpack.base.guard', 'backpack');
         CRUD::addColumn([
             'name' => 'roles',
             'label' => 'Roles',
             'type' => 'closure',
-            'function' => function($entry) {
-                if ($entry->roles && $entry->roles->count() > 0) {
-                    return $entry->roles->pluck('name')->join(', ');
+            'function' => function ($entry) use ($backpackGuard) {
+                $roles = $entry->roles ? $entry->roles->where('guard_name', $backpackGuard) : collect();
+                if ($roles->isNotEmpty()) {
+                    return $roles->pluck('name')->unique()->sort()->join(', ');
                 }
                 return '-';
+            },
+            'searchLogic' => function ($query, $column, $searchTerm) use ($backpackGuard) {
+                $query->orWhereHas('roles', function ($q) use ($searchTerm, $backpackGuard) {
+                    $q->where('guard_name', $backpackGuard)
+                        ->where('name', 'like', '%'.$searchTerm.'%');
+                });
             },
         ]);
 
@@ -88,7 +96,8 @@ class UserCrudController extends CrudController
         CRUD::field('password')->label('Contraseña')->type('password');
         CRUD::field('password_confirmation')->label('Confirmar Contraseña')->type('password');
         
-        // Campo para roles (multiselect)
+        // Campo para roles (solo guard backpack: evita duplicados role_analista_area / role_responsable_area con guard web)
+        $backpackGuard = config('backpack.base.guard', 'backpack');
         CRUD::field([
             'name' => 'roles',
             'label' => 'Roles',
@@ -97,9 +106,10 @@ class UserCrudController extends CrudController
             'attribute' => 'name',
             'model' => Role::class,
             'pivot' => true,
+            'options' => fn ($query) => $query->where('guard_name', $backpackGuard)->orderBy('name'),
         ]);
         
-        // Campo para permisos individuales adicionales
+        // Campo para permisos individuales adicionales (mismo guard)
         CRUD::field([
             'name' => 'permissions',
             'label' => 'Permisos',
@@ -108,6 +118,7 @@ class UserCrudController extends CrudController
             'attribute' => 'name',
             'model' => Permission::class,
             'pivot' => true,
+            'options' => fn ($query) => $query->where('guard_name', $backpackGuard)->orderBy('name'),
             'hint' => 'Los permisos de los roles se seleccionan automáticamente. Aquí puedes agregar permisos adicionales.',
         ])->after('roles');
     }
@@ -138,18 +149,19 @@ class UserCrudController extends CrudController
         CRUD::field('password')->label('Nueva Contraseña')->type('password')->hint('Opcional: dejar en blanco para mantener la actual');
         CRUD::field('password_confirmation')->label('Confirmar Nueva Contraseña')->type('password');
         
-        // Obtener valores actuales para pasar al campo
+        $backpackGuard = config('backpack.base.guard', 'backpack');
+
+        // Solo IDs del guard backpack (evita marcar checkboxes huérfanos si hubiera roles web asignados)
         $rolesValue = [];
         $permissionsValue = [];
-        
         if ($entry && $entry->relationLoaded('roles')) {
-            $rolesValue = $entry->roles->pluck('id')->toArray();
+            $rolesValue = $entry->roles->where('guard_name', $backpackGuard)->pluck('id')->toArray();
         }
         if ($entry && $entry->relationLoaded('permissions')) {
-            $permissionsValue = $entry->permissions->pluck('id')->toArray();
+            $permissionsValue = $entry->permissions->where('guard_name', $backpackGuard)->pluck('id')->toArray();
         }
-        
-        // Campo para roles (multiselect)
+
+        // Campo para roles (solo guard backpack)
         CRUD::field([
             'name' => 'roles',
             'label' => 'Roles',
@@ -159,6 +171,7 @@ class UserCrudController extends CrudController
             'model' => Role::class,
             'pivot' => true,
             'value' => $rolesValue,
+            'options' => fn ($query) => $query->where('guard_name', $backpackGuard)->orderBy('name'),
             'hint' => 'Seleccione los roles del usuario',
         ]);
         
@@ -172,11 +185,15 @@ class UserCrudController extends CrudController
             'model' => Permission::class,
             'pivot' => true,
             'value' => $permissionsValue,
+            'options' => fn ($query) => $query->where('guard_name', $backpackGuard)->orderBy('name'),
             'hint' => 'Los permisos de los roles se seleccionan automáticamente. Aquí puedes agregar permisos adicionales.',
         ])->after('roles');
         
-        // JavaScript para marcar automáticamente permisos al seleccionar roles
-        $rolesWithPermissions = Role::with('permissions')->get()->toArray();
+        // JavaScript para marcar automáticamente permisos al seleccionar roles (solo roles del guard backpack)
+        $rolesWithPermissions = Role::with('permissions')
+            ->where('guard_name', $backpackGuard)
+            ->get()
+            ->toArray();
         $rolePermissionsMap = [];
         foreach ($rolesWithPermissions as $role) {
             $rolePermissionsMap[$role['id']] = array_column($role['permissions'], 'id');

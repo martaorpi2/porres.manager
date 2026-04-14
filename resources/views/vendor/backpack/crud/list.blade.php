@@ -749,8 +749,8 @@ a:hover {
 
     <!-- THE ACTUAL CONTENT -->
     <div class="{{ $crud->getListContentClass() }}">
-      <div class="row mb-0">
-        <div class="col-sm-6">
+      <div class="row mb-0 align-items-center">
+        <div class="col min-w-0">
           @if ( $crud->buttons()->where('stack', 'top')->count() ||  $crud->exportButtons())
           <div class="d-print-none {{ $crud->hasAccess('create')?'with-border':'' }}">
 
@@ -759,8 +759,13 @@ a:hover {
           </div>
           @endif
         </div>
-        <div class="col-sm-6">
-          <div id="datatable_search_stack" class="mt-sm-0 mt-2 d-print-none"></div>
+        <div class="col-auto flex-shrink-0 ms-auto">
+          {{-- Buscador al extremo derecho del listado (.input-icon requerido por datatables_logic) --}}
+          <div id="datatable_search_stack" class="mt-2 mt-sm-0 d-print-none">
+            <div class="input-icon">
+              <span class="input-icon-addon d-none" aria-hidden="true"></span>
+            </div>
+          </div>
         </div>
       </div>
 
