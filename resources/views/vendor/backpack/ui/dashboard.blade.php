@@ -7,6 +7,9 @@
   :root {
       --bs-primary: #871f1f !important;
       --bs-primary-rgb: 135, 31, 31 !important;
+      /* Mismo tono para todo estado “positivo” del flujo (chips, OP, recepción, etc.) */
+      --dashboard-positive-bg: #198754;
+      --dashboard-positive-text: #fff;
   }
 
   /* Estilos para el modal de alertas de stock */
@@ -122,16 +125,81 @@
       text-transform: uppercase;
   }
 
-  .status-pendiente { background: #fd7e14; color: #fff; }
-  .status-aprobada { background: #28a745; color: #fff; }
-  .status-en-proceso { background: #17a2b8; color: #fff; }
-  .status-completada { background: #28a745; color: #fff; }
-  .status-rechazada { background: #dc3545; color: #fff; }
-  .status-recibida { background: #28a745; color: #fff; }
+  .process-item-status.status-pendiente { background: #fd7e14; color: #fff; }
+  .process-item-status.status-anulada { background: #6c757d; color: #fff; }
+  .process-item-status.status-rechazada,
+  .process-item-status.status-rechazada-analista { background: #dc3545; color: #fff; }
+  /* Positivos: un solo color (completada, recibida, aprobada, conforme implícito en badge, OP completada, etc.) */
+  .process-item-status.status-completada,
+  .process-item-status.status-recibida,
+  .process-item-status.status-aprobada,
+  .process-item-status.status-ejecutada,
+  .process-item-status.status-conforme,
+  .process-item-status.status-en-proceso,
+  .process-item-status.status-entregada-parcialmente,
+  .process-item-status.status-entregada-totalmente {
+      background: var(--dashboard-positive-bg) !important;
+      color: var(--dashboard-positive-text) !important;
+  }
+  .badge.dashboard-badge-positive {
+      background-color: var(--dashboard-positive-bg) !important;
+      color: var(--dashboard-positive-text) !important;
+  }
+
+  .legal-approval-alert {
+      border-left: 6px solid #dc3545;
+      background: #fff5f5;
+      color: #842029;
+      box-shadow: 0 4px 10px rgba(220, 53, 69, 0.12);
+      animation: legalApprovalPulse 1.8s ease-in-out infinite;
+  }
+
+  .pending-approval-highlight {
+      box-shadow: 0 0 0 2px rgba(220, 53, 69, 0.2), 0 4px 12px rgba(220, 53, 69, 0.2);
+  }
+
+  @keyframes legalApprovalPulse {
+      0% { box-shadow: 0 0 0 0 rgba(220, 53, 69, 0.25); }
+      70% { box-shadow: 0 0 0 12px rgba(220, 53, 69, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(220, 53, 69, 0); }
+  }
+
+  .compras-superior-approval-alert {
+      border-left: 6px solid #0d6efd;
+      background: #e7f1ff;
+      color: #084298;
+      box-shadow: 0 4px 10px rgba(13, 110, 253, 0.12);
+      animation: comprasSuperiorPulse 1.8s ease-in-out infinite;
+  }
+
+  @keyframes comprasSuperiorPulse {
+      0% { box-shadow: 0 0 0 0 rgba(13, 110, 253, 0.22); }
+      70% { box-shadow: 0 0 0 10px rgba(13, 110, 253, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(13, 110, 253, 0); }
+  }
+
+  .compras-op-pendiente-alert {
+      border-left: 6px solid #198754;
+      background: #e8f5e9;
+      color: #0f5132;
+      box-shadow: 0 4px 10px rgba(25, 135, 84, 0.12);
+      animation: comprasOpPendientePulse 1.8s ease-in-out infinite;
+  }
+
+  @keyframes comprasOpPendientePulse {
+      0% { box-shadow: 0 0 0 0 rgba(25, 135, 84, 0.22); }
+      70% { box-shadow: 0 0 0 10px rgba(25, 135, 84, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(25, 135, 84, 0); }
+  }
   
   /* Estados de Solicitudes Generales */
   .process-item-status.status-creada { background: #6c757d !important; color: #fff !important; }
-  .process-item-status.status-revisada-area { background: #17a2b8 !important; color: #fff !important; }
+  .process-item-status.status-revisada-area {
+      background: var(--dashboard-positive-bg) !important;
+      color: var(--dashboard-positive-text) !important;
+  }
+  .process-item-status.status-pendiente-analisis { background: #fd7e14 !important; color: #fff !important; }
+  .process-item-status.status-sin-entrega { background: #ffc107 !important; color: #212529 !important; }
   .process-item-status.status-archivada { background: #495057 !important; color: #fff !important; }
 
   .stat-card {
@@ -1069,6 +1137,46 @@
 
 @section('content')
 <div class="container-fluid">
+    @php
+        $pendingLegalApprovalsCount = isset($pendingApprovalRequests) ? $pendingApprovalRequests->count() : 0;
+    @endphp
+
+    @if(isset($isRepresentanteLegal) && $isRepresentanteLegal && $pendingLegalApprovalsCount > 0)
+    <div class="alert legal-approval-alert d-flex justify-content-between align-items-center mb-4" role="alert">
+        <div>
+            <i class="la la-bell mr-2"></i>
+            <strong>Atención:</strong> tienes {{ $pendingLegalApprovalsCount }} solicitud(es) de compra pendiente(s) de tu aprobación.
+        </div>
+        <a href="#pending-approval-section" class="btn btn-sm btn-danger">
+            Revisar ahora
+        </a>
+    </div>
+    @endif
+
+    @if(isset($isResponsableCompras) && $isResponsableCompras && ($superiorApprovedPurchaseRequestsCount ?? 0) > 0)
+    <div class="alert compras-superior-approval-alert d-flex justify-content-between align-items-center mb-4" role="alert">
+        <div>
+            <i class="la la-bell mr-2"></i>
+            <strong>Compras:</strong> hay {{ $superiorApprovedPurchaseRequestsCount }} solicitud(es) de compra aprobada(s) por un usuario superior (listas para continuar el proceso de cotización / OC).
+        </div>
+        <a href="{{ backpack_url('purchase-request?aprobadas_por_superior=1') }}" class="btn btn-sm btn-primary">
+            Ver solicitudes
+        </a>
+    </div>
+    @endif
+
+    @if(isset($isResponsableCompras) && $isResponsableCompras && ($purchaseOrdersPendingPaymentAfterConformeCount ?? 0) > 0)
+    <div class="alert compras-op-pendiente-alert d-flex justify-content-between align-items-center mb-4" role="alert">
+        <div>
+            <i class="la la-bell mr-2"></i>
+            <strong>Orden de pago:</strong> hay {{ $purchaseOrdersPendingPaymentAfterConformeCount }} orden(es) de compra con recepción conforme y aún sin orden de pago. Use el botón «Crear Orden de Pago» en el detalle de cada orden.
+        </div>
+        <a href="{{ backpack_url('purchase-order?pendiente_op_tras_conforme=1') }}" class="btn btn-sm btn-success">
+            Ver órdenes de compra
+        </a>
+    </div>
+    @endif
+
     @if(isset($isPersonal) && $isPersonal)
     <!-- Cards de Estado de Solicitudes para role_personal -->
     <div class="row mb-4">
@@ -1081,20 +1189,20 @@
     </div>
     <div class="row mb-4">
         <div class="col-md-4">
-            <div class="stat-card" style="border-left: 4px solid #28a745;">
-                <div class="stat-card-icon" style="color: #28a745;">
+            <div class="stat-card" style="border-left: 4px solid var(--dashboard-positive-bg);">
+                <div class="stat-card-icon" style="color: var(--dashboard-positive-bg);">
                     <i class="la la-check-circle"></i>
                 </div>
-                <div class="stat-card-number" style="color: #28a745;">{{ $stats['general_requests_approved'] ?? 0 }}</div>
+                <div class="stat-card-number" style="color: var(--dashboard-positive-bg);">{{ $stats['general_requests_approved'] ?? 0 }}</div>
                 <div class="stat-card-label">Solicitudes Aprobadas</div>
             </div>
         </div>
         <div class="col-md-4">
-            <div class="stat-card" style="border-left: 4px solid #17a2b8;">
-                <div class="stat-card-icon" style="color: #17a2b8;">
+            <div class="stat-card" style="border-left: 4px solid var(--dashboard-positive-bg);">
+                <div class="stat-card-icon" style="color: var(--dashboard-positive-bg);">
                     <i class="la la-truck"></i>
                 </div>
-                <div class="stat-card-number" style="color: #17a2b8;">{{ $stats['general_requests_entregada'] ?? 0 }}</div>
+                <div class="stat-card-number" style="color: var(--dashboard-positive-bg);">{{ $stats['general_requests_entregada'] ?? 0 }}</div>
                 <div class="stat-card-label">Solicitudes Entregadas</div>
             </div>
         </div>
@@ -1453,11 +1561,16 @@
                             $status = $generalRequest->status ?? 'N/A';
                             $statusClass = strtolower(str_replace([' ', '_'], '-', $status));
                             
-                            // Definir colores por estado (solo estados de solicitud)
+                            $pos = ['bg' => '#198754', 'text' => '#fff'];
                             $statusColors = [
                                 'creada' => ['bg' => '#6c757d', 'text' => '#fff', 'label' => 'Creada'],
-                                'revisada-area' => ['bg' => '#17a2b8', 'text' => '#fff', 'label' => 'Revisada por Área'],
+                                'pendiente-analisis' => ['bg' => '#fd7e14', 'text' => '#fff', 'label' => 'Pendiente análisis'],
+                                'revisada-area' => $pos + ['label' => 'Revisada por Área'],
                                 'archivada' => ['bg' => '#495057', 'text' => '#fff', 'label' => 'Archivada'],
+                                'sin-entrega' => ['bg' => '#ffc107', 'text' => '#212529', 'label' => 'Sin entrega'],
+                                'entregada-parcialmente' => $pos + ['label' => 'Entregada parcialmente'],
+                                'entregada-totalmente' => $pos + ['label' => 'Entregada totalmente'],
+                                'rechazada-analista' => ['bg' => '#dc3545', 'text' => '#fff', 'label' => 'Rechazada analista'],
                             ];
                             $color = $statusColors[$statusClass] ?? ['bg' => '#6c757d', 'text' => '#fff', 'label' => ucfirst(str_replace('_', ' ', $status))];
                             $isConverted = $generalRequest->is_converted ?? false;
@@ -1466,7 +1579,7 @@
                             {{ $color['label'] }}
                         </span>
                         @if($isConverted)
-                            <span class="badge bg-success" style="margin-left: 5px;" title="Convertida a compra">
+                            <span class="badge dashboard-badge-positive" style="margin-left: 5px;" title="Convertida a compra">
                                 <i class="la la-check-circle"></i> Convertida
                             </span>
                         @else
@@ -1496,25 +1609,33 @@
     </div>
     @endif
 
-    @if((isset($isAdminInstitucion) && $isAdminInstitucion) || (isset($isApoderado) && $isApoderado) || (isset($isRepresentanteLegal) && $isRepresentanteLegal) && isset($pendingApprovalRequests))
+    @if(((isset($isAdminInstitucion) && $isAdminInstitucion) || (isset($isApoderado) && $isApoderado) || (isset($isRepresentanteLegal) && $isRepresentanteLegal)) && isset($pendingApprovalRequests))
     <!-- Solicitudes Pendientes de Aprobación (Administrador del Instituto, Apoderado o Representante Legal) -->
-    <div class="process-step" style="border-left: 4px solid #ffc107;">
-        <div class="process-step-header" style="background-color: #fff3cd;">
+    @php
+        $isLegalPendingHighlight = isset($isRepresentanteLegal) && $isRepresentanteLegal && $pendingApprovalRequests->count() > 0;
+        $approvalBorderColor = $isLegalPendingHighlight ? '#dc3545' : '#ffc107';
+        $approvalHeaderBg = $isLegalPendingHighlight ? '#f8d7da' : '#fff3cd';
+        $approvalTextColor = $isLegalPendingHighlight ? '#842029' : '#856404';
+        $approvalCounterBg = $isLegalPendingHighlight ? '#dc3545' : '#ffc107';
+        $approvalCounterText = $isLegalPendingHighlight ? '#fff' : '#856404';
+    @endphp
+    <div id="pending-approval-section" class="process-step {{ $isLegalPendingHighlight ? 'pending-approval-highlight' : '' }}" style="border-left: 4px solid {{ $approvalBorderColor }};">
+        <div class="process-step-header" style="background-color: {{ $approvalHeaderBg }};">
             <div class="process-step-title">
-                <i class="la la-exclamation-triangle process-step-icon" style="color: #856404;"></i>
-                <span style="color: #856404; font-weight: bold;">Solicitudes Pendientes de Aprobación</span>
+                <i class="la la-exclamation-triangle process-step-icon" style="color: {{ $approvalTextColor }};"></i>
+                <span style="color: {{ $approvalTextColor }}; font-weight: bold;">Solicitudes Pendientes de Aprobación</span>
             </div>
-            <span class="process-step-count" style="background-color: #ffc107; color: #856404;">{{ $pendingApprovalRequests->count() }}</span>
+            <span class="process-step-count" style="background-color: {{ $approvalCounterBg }}; color: {{ $approvalCounterText }};">{{ $pendingApprovalRequests->count() }}</span>
         </div>
         <div class="process-step-content">
             @forelse($pendingApprovalRequests as $purchaseRequest)
-                <div class="process-item-card" onclick="window.location='{{ backpack_url('purchase-request/' . $purchaseRequest->id . '/show') }}'" style="border-left: 3px solid #ffc107; cursor: pointer;">
+                <div class="process-item-card" onclick="window.location='{{ backpack_url('purchase-request/' . $purchaseRequest->id . '/show') }}'" style="border-left: 3px solid {{ $approvalBorderColor }}; cursor: pointer;">
                     <div class="process-item-title">
                         {{ $purchaseRequest->request_number }}
                         @if($purchaseRequest->is_direct_purchase)
                             <span class="badge bg-info text-white" style="margin-left: 10px;">Compra Directa</span>
                         @else
-                            <span class="badge bg-warning text-dark" style="margin-left: 10px;">Requiere Aprobación</span>
+                            <span class="badge {{ $isLegalPendingHighlight ? 'bg-danger text-white' : 'bg-warning text-dark' }}" style="margin-left: 10px;">Requiere Aprobación</span>
                         @endif
                     </div>
                     <div class="process-item-meta">
@@ -1627,7 +1748,10 @@
         <div class="process-step-content">
             @forelse($paymentOrders as $paymentOrder)
                 <div class="process-item-card" onclick="window.location='{{ backpack_url('payment-order/' . $paymentOrder->id . '/show') }}'">
-                    <div class="process-item-title">{{ $paymentOrder->payment_number ?? 'N/A' }}</div>
+                    <div class="process-item-title">
+                        {{ $paymentOrder->payment_number ?? 'N/A' }}
+                        <span class="process-item-status status-{{ $paymentOrder->dashboard_payment_status_css_suffix }}">{{ $paymentOrder->dashboard_payment_status_label }}</span>
+                    </div>
                     <div class="process-item-meta">
                         <span><i class="la la-truck"></i> {{ $paymentOrder->purchase_order->supplier_display_name }}</span>
                         <span><i class="la la-clipboard-list"></i> {{ $paymentOrder->purchase_order->number ?? 'N/A' }}</span>
@@ -1657,7 +1781,12 @@
         <div class="process-step-content">
             @forelse($receptions as $reception)
                 <div class="process-item-card" onclick="window.location='{{ backpack_url('reception/' . $reception->id . '/show') }}'">
-                    <div class="process-item-title">{{ $reception->number ?? 'REC-' . $reception->id }}</div>
+                    <div class="process-item-title">
+                        {{ $reception->number ?? 'REC-' . $reception->id }}
+                        @if(($reception->according ?? '') === 'Si')
+                            <span class="badge dashboard-badge-positive ms-2 align-middle text-uppercase">Conforme</span>
+                        @endif
+                    </div>
                     <div class="process-item-meta">
                         <span><i class="la la-clipboard-list"></i> {{ $reception->purchase_order->number ?? 'N/A' }}</span>
                         <span><i class="la la-truck"></i> {{ $reception->purchase_order->supplier_display_name }}</span>
@@ -1746,21 +1875,35 @@
     <div class="row mb-4">
         <div class="col-md-12">
             <h3 class="section-title">Trazabilidad Completa de Procesos</h3>
-            <p class="text-muted">Muestra el flujo completo desde las solicitudes generales hasta las entregas y devoluciones (si aplica)</p>
+            <p class="text-muted">Incluye solicitudes generales con compra asociada y solicitudes de compra creadas directamente (sin solicitud general), hasta órdenes de compra, pagos, recepciones y devoluciones si aplica.</p>
         </div>
     </div>
 
     @foreach($processFlows as $flow)
-        @if(isset($flow['general_request']) && $flow['general_request'])
+        @php
+            $flowHasGeneral = isset($flow['general_request']) && $flow['general_request'];
+            $flowHasPurchaseRequests = isset($flow['purchase_requests']) && count($flow['purchase_requests']) > 0;
+        @endphp
+        @if($flowHasGeneral || $flowHasPurchaseRequests)
             <div class="card mb-4">
-                <div class="card-header bg-primary">
-                    <h5 class="mb-0">
-                        <i class="la la-file-alt"></i> 
-                        Solicitud General: {{ $flow['general_request']->number }}
+                <div class="card-header {{ $flowHasGeneral ? 'bg-primary text-white' : 'bg-light text-dark border' }}">
+                    <h5 class="mb-0 {{ $flowHasGeneral ? '' : 'text-dark' }}">
+                        @if($flowHasGeneral)
+                            <i class="la la-file-alt"></i>
+                            Solicitud General: {{ $flow['general_request']->number }}
+                        @else
+                            @php $flowLeadPr = $flow['purchase_requests'][0] ?? null; @endphp
+                            <i class="la la-shopping-cart"></i>
+                            Flujo desde solicitud de compra
+                            @if($flowLeadPr)
+                                : <a href="{{ backpack_url('purchase-request/' . $flowLeadPr->id . '/show') }}" class="text-dark text-decoration-underline">{{ $flowLeadPr->request_number ?? 'SC-' . $flowLeadPr->id }}</a>
+                            @endif
+                        @endif
                     </h5>
                 </div>
                 <div class="card-body">
                     <div class="flow-timeline">
+                        @if($flowHasGeneral)
                         <div class="flow-timeline-item">
                             <div class="flow-timeline-content">
                                 <strong>Solicitud General:</strong> {{ $flow['general_request']->title }}
@@ -1774,11 +1917,16 @@
                                         // Convertir guiones bajos a guiones y espacios a guiones
                                         $statusClass = strtolower(str_replace([' ', '_'], '-', $status));
                                         
-                                        // Definir colores por estado (solo estados de solicitud)
+                                        $pos = ['bg' => '#198754', 'text' => '#fff'];
                                         $statusColors = [
                                             'creada' => ['bg' => '#6c757d', 'text' => '#fff', 'label' => 'Creada'],
-                                            'revisada-area' => ['bg' => '#17a2b8', 'text' => '#fff', 'label' => 'Revisada por Área'],
+                                            'pendiente-analisis' => ['bg' => '#fd7e14', 'text' => '#fff', 'label' => 'Pendiente análisis'],
+                                            'revisada-area' => $pos + ['label' => 'Revisada por Área'],
                                             'archivada' => ['bg' => '#495057', 'text' => '#fff', 'label' => 'Archivada'],
+                                            'sin-entrega' => ['bg' => '#ffc107', 'text' => '#212529', 'label' => 'Sin entrega'],
+                                            'entregada-parcialmente' => $pos + ['label' => 'Entregada parcialmente'],
+                                            'entregada-totalmente' => $pos + ['label' => 'Entregada totalmente'],
+                                            'rechazada-analista' => ['bg' => '#dc3545', 'text' => '#fff', 'label' => 'Rechazada analista'],
                                         ];
                                         $color = $statusColors[$statusClass] ?? ['bg' => '#6c757d', 'text' => '#fff', 'label' => ucfirst(str_replace('_', ' ', $status))];
                                         $isConverted = $flow['general_request']->is_converted ?? false;
@@ -1787,7 +1935,7 @@
                                         {{ $color['label'] }}
                                     </span>
                                     @if($isConverted)
-                                        <span class="badge bg-success" style="margin-left: 5px;" title="Convertida a compra">
+                                        <span class="badge dashboard-badge-positive" style="margin-left: 5px;" title="Convertida a compra">
                                             <i class="la la-check-circle"></i> Convertida
                                         </span>
                                     @else
@@ -1798,8 +1946,9 @@
                                 </small>
                             </div>
                         </div>
+                        @endif
 
-                        @if(isset($flow['purchase_requests']) && count($flow['purchase_requests']) > 0)
+                        @if($flowHasPurchaseRequests)
                             @foreach($flow['purchase_requests'] as $pr)
                                 <div class="flow-timeline-item">
                                     <div class="flow-timeline-content">
@@ -1818,7 +1967,7 @@
                                     </div>
                                 </div>
                             @endforeach
-                        @else
+                        @elseif($flowHasGeneral)
                             <div class="flow-timeline-item">
                                 <div class="flow-timeline-content">
                                     <small class="text-muted">No hay solicitudes de compra generadas aún</small>
@@ -1848,46 +1997,22 @@
                                     </div>
                                 </div>
 
-                                {{-- Mostrar órdenes de pago relacionadas con esta orden de compra --}}
-                                @if($po->paymentOrders && $po->paymentOrders->count() > 0)
-                                    @foreach($po->paymentOrders as $paymentOrder)
-                                        <div class="flow-timeline-item">
-                                            <div class="flow-timeline-content" style="margin-left: 20px; border-left: 3px solid #28a745;">
-                                                <strong><i class="la la-money-bill-wave"></i> Orden de Pago:</strong> 
-                                                <a href="{{ backpack_url('payment-order/' . $paymentOrder->id . '/show') }}" class="text-primary">
-                                                    {{ $paymentOrder->payment_number ?? 'N/A' }}
-                                                </a>
-                                                <br>
-                                                <small class="text-muted">
-                                                    Fecha: {{ $paymentOrder->date ? $paymentOrder->date->format('d/m/Y') : 'N/A' }}
-                                                    | Monto: ${{ number_format($paymentOrder->total_amount ?? 0, 2) }}
-                                                    @if($paymentOrder->status)
-                                                        | Estado: {{ $paymentOrder->status }}
-                                                    @endif
-                                                    @if($paymentOrder->user)
-                                                        | Autorizado por: {{ $paymentOrder->user->name }}
-                                                    @endif
-                                                </small>
-                                            </div>
-                                        </div>
-                                    @endforeach
-                                @else
-                                    <div class="flow-timeline-item">
-                                        <div class="flow-timeline-content" style="margin-left: 20px;">
-                                            <small class="text-muted"><i class="la la-info-circle"></i> No hay órdenes de pago registradas para esta orden de compra</small>
-                                        </div>
-                                    </div>
-                                @endif
-
-                                {{-- Mostrar recepciones relacionadas con esta orden de compra --}}
+                                {{-- Mostrar recepciones relacionadas con esta orden de compra (antes que OP en la línea de tiempo) --}}
                                 @if($po->receptions && $po->receptions->count() > 0)
                                     @foreach($po->receptions as $reception)
                                         <div class="flow-timeline-item">
-                                            <div class="flow-timeline-content" style="margin-left: 20px; border-left: 3px solid #17a2b8;">
+                                            <div class="flow-timeline-content" style="margin-left: 20px; border-left: 3px solid var(--dashboard-positive-bg);">
                                                 <strong><i class="la la-truck-loading"></i> Recepción:</strong> 
                                                 <a href="{{ backpack_url('reception/' . $reception->id . '/show') }}" class="text-primary">
                                                     {{ $reception->number ?? 'REC-' . $reception->id }}
                                                 </a>
+                                                @if(($reception->according ?? '') === 'Si')
+                                                    @if($flowHasGeneral)
+                                                        <span class="badge dashboard-badge-positive ms-1 align-middle text-uppercase">Conforme</span>
+                                                    @else
+                                                        <span class="text-muted ms-1 text-uppercase">Conforme</span>
+                                                    @endif
+                                                @endif
                                                 <br>
                                                 <small class="text-muted">
                                                     Fecha: {{ $reception->created_at->format('d/m/Y H:i') }}
@@ -1933,7 +2058,7 @@
                                                         </a>
                                                         <br>
                                                         <small class="text-muted">
-                                                            Solicitud General: {{ $delivery->generalRequest->number ?? 'N/A' }}
+                                                            Solicitud General: {{ $delivery->generalRequest?->number ?? '—' }}
                                                             @if($delivery->delivery_date)
                                                                 | Fecha: {{ $delivery->delivery_date->format('d/m/Y') }}
                                                             @endif
@@ -1956,6 +2081,43 @@
                                         </div>
                                     </div>
                                 @endif
+
+                                {{-- Mostrar órdenes de pago relacionadas con esta orden de compra (después de recepciones en la línea de tiempo) --}}
+                                @if($po->paymentOrders && $po->paymentOrders->count() > 0)
+                                    @foreach($po->paymentOrders as $paymentOrder)
+                                        <div class="flow-timeline-item">
+                                            <div class="flow-timeline-content" style="margin-left: 20px; border-left: 3px solid var(--dashboard-positive-bg);">
+                                                <strong><i class="la la-money-bill-wave"></i> Orden de Pago:</strong> 
+                                                <a href="{{ backpack_url('payment-order/' . $paymentOrder->id . '/show') }}" class="text-primary">
+                                                    {{ $paymentOrder->payment_number ?? 'N/A' }}
+                                                </a>
+                                                <br>
+                                                <small class="text-muted">
+                                                    Fecha: {{ $paymentOrder->date ? $paymentOrder->date->format('d/m/Y') : 'N/A' }}
+                                                    | Monto: ${{ number_format($paymentOrder->total_amount ?? 0, 2) }}
+                                                    | Estado:
+                                                    @if($flowHasGeneral)
+                                                        <span class="process-item-status status-{{ $paymentOrder->dashboard_payment_status_css_suffix }}">{{ $paymentOrder->dashboard_payment_status_label }}</span>
+                                                    @else
+                                                        {{ $paymentOrder->dashboard_payment_status_label }}
+                                                    @endif
+                                                    @if($paymentOrder->payment_date)
+                                                        | Fecha de pago: {{ $paymentOrder->payment_date->format('d/m/Y') }}
+                                                    @endif
+                                                    @if($paymentOrder->user)
+                                                        | Autorizado por: {{ $paymentOrder->user->name }}
+                                                    @endif
+                                                </small>
+                                            </div>
+                                        </div>
+                                    @endforeach
+                                @else
+                                    <div class="flow-timeline-item">
+                                        <div class="flow-timeline-content" style="margin-left: 20px;">
+                                            <small class="text-muted"><i class="la la-info-circle"></i> No hay órdenes de pago registradas para esta orden de compra</small>
+                                        </div>
+                                    </div>
+                                @endif
                             @endforeach
                         @else
                             <div class="flow-timeline-item">
@@ -1974,7 +2136,7 @@
         <div class="col-md-12">
             <div class="alert alert-info">
                 <i class="la la-info-circle"></i> 
-                No hay procesos completos para mostrar. La trazabilidad aparecerá cuando las solicitudes generales tengan solicitudes de compra asociadas.
+                No hay procesos para mostrar todavía. La trazabilidad incluye solicitudes generales con compras asociadas, o solicitudes de compra creadas directamente (sin solicitud general), con su seguimiento hasta órdenes de compra y recepciones.
             </div>
         </div>
     </div>

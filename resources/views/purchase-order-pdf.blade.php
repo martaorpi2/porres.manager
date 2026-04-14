@@ -86,8 +86,6 @@
                 <th>Proveedor</th>
                 @endif
                 <th class="center">Cantidad</th>
-                <th class="right">Precio Unitario</th>
-                <th class="right">Subtotal</th>
             </tr>
         </thead>
         <tbody>
@@ -99,8 +97,6 @@
                 <td>{{ $detail->supplier->company_name ?? '—' }}</td>
                 @endif
                 <td class="center">{{ $detail->quantity }}</td>
-                <td class="right">{{ money_format_local($detail->unit_price) }}</td>
-                <td class="right">{{ money_format_local($detail->subtotal) }}</td>
             </tr>
             @endforeach
         </tbody>

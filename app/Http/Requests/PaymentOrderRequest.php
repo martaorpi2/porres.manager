@@ -25,7 +25,7 @@ class PaymentOrderRequest extends FormRequest
     public function rules()
     {
         $paymentOrderId = $this->route('id') ?? $this->payment_order_id ?? null;
-        
+
         return [
             'purchase_order_id' => [
                 'required',
@@ -125,9 +125,25 @@ class PaymentOrderRequest extends FormRequest
                 },
             ],
             'date' => 'required|date',
+            'payment_date' => 'nullable|date',
+            'payment_method' => 'nullable|string|max:255',
+            'bank' => 'nullable|string|max:255',
+            'observations' => 'nullable|string',
+            'payment_number' => 'required|string|max:255',
             'status' => 'required|in:Pendiente,Aprobada,Ejecutada,Anulada',
             'authorizing_user_id' => 'required|exists:users,id',
         ];
+    }
+
+    protected function prepareForValidation(): void
+    {
+        $merge = [];
+        if ($this->has('payment_date') && $this->input('payment_date') === '') {
+            $merge['payment_date'] = null;
+        }
+        if ($merge !== []) {
+            $this->merge($merge);
+        }
     }
 
     /**
@@ -141,6 +157,11 @@ class PaymentOrderRequest extends FormRequest
             'purchase_order_id' => 'orden de compra',
             'total_amount' => 'monto total',
             'date' => 'fecha',
+            'payment_date' => 'fecha de pago',
+            'payment_method' => 'forma de pago',
+            'bank' => 'banco',
+            'observations' => 'observaciones',
+            'payment_number' => 'número de orden de pago',
             'status' => 'estado',
             'authorizing_user_id' => 'usuario autorizador',
         ];
@@ -165,6 +186,8 @@ class PaymentOrderRequest extends FormRequest
             'status.in' => 'El campo estado debe ser: Pendiente, Aprobada, Ejecutada o Anulada.',
             'authorizing_user_id.required' => 'El campo usuario autorizador es obligatorio.',
             'authorizing_user_id.exists' => 'El usuario autorizador seleccionado no existe.',
+            'payment_date.date' => 'La fecha de pago debe ser una fecha válida.',
+            'payment_number.required' => 'El número de orden de pago es obligatorio.',
         ];
     }
 }

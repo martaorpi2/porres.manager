@@ -82,6 +82,7 @@ class PurchaseOrder extends Model
     {
         return $this->belongsTo(\App\Models\PurchaseRequest::class, 'purchase_request_id');
     }
+
     /*
     |--------------------------------------------------------------------------
     | MODEL EVENTS
@@ -124,6 +125,20 @@ class PurchaseOrder extends Model
 
         return self::formatPurchaseOrderNumber($letter, $year, $corr, $supplierIndex);
     }
+    /**
+     * Marca la OC como Recibida cuando ya hay recepción conforme (regla completa en recepciones.according).
+     * El dashboard y los contadores usan la columna status; sin esto quedaría en Pendiente aunque exista OP.
+     */
+    public function markAsRecibidaIfHasConformeReception(): void
+    {
+        if ($this->receptions()->where('according', 'Si')->doesntExist()) {
+            return;
+        }
+        if ($this->getAttribute('status') !== 'Recibida') {
+            $this->update(['status' => 'Recibida']);
+        }
+    }
+
     /*
     |--------------------------------------------------------------------------
     | SCOPES
@@ -135,9 +150,64 @@ class PurchaseOrder extends Model
     | ACCESSORS
     |--------------------------------------------------------------------------
     */
+    /**
+     * Total de la OC: suma de líneas (cantidad × precio unitario guardado). Si todas las líneas están en 0,
+     * se muestra el monto total de la solicitud de compra asociada (sin repartir en ítems).
+     */
     public function getTotalAttribute()
     {
-        return $this->details->sum('subtotal');
+        $this->loadMissing('details');
+        $fromLines = (float) $this->details->sum(function (PurchaseOrderDetail $d) {
+            return (float) $d->quantity * (float) ($d->getAttributes()['unit_price'] ?? 0);
+        });
+        if ($fromLines > 0) {
+            return $fromLines;
+        }
+        if ($this->purchase_request_id) {
+            $this->loadMissing('purchaseRequest');
+            if ($this->purchaseRequest) {
+                return $this->fallbackTotalWhenLineAmountsAreZero();
+            }
+        }
+
+        return 0.0;
+    }
+
+    /**
+     * Cuando no hay importes en líneas: una sola OC usa el total de la solicitud; si hay varias OC (varios proveedores),
+     * se intenta el total de la cotización de ese proveedor para no repetir el monto global en cada orden.
+     */
+    protected function fallbackTotalWhenLineAmountsAreZero(): float
+    {
+        $pr = $this->purchaseRequest;
+        if (!$pr) {
+            return 0.0;
+        }
+        $orderCount = static::query()->where('purchase_request_id', $pr->id)->count();
+        if ($orderCount <= 1) {
+            return (float) ($pr->total_amount ?? 0);
+        }
+        if ($this->supplier_id) {
+            $mr = MarketRate::query()
+                ->where('purchase_request_id', $pr->id)
+                ->where('supplier_id', $this->supplier_id)
+                ->first();
+            if ($mr) {
+                $fromMr = (float) ($mr->total_amount ?? 0);
+                if ($fromMr > 0) {
+                    return $fromMr;
+                }
+                $mr->loadMissing('quoteDetails');
+                $sumLines = (float) $mr->quoteDetails->sum(function ($qd) {
+                    return (float) ($qd->quantity ?? 0) * (float) ($qd->unit_price ?? 0);
+                });
+                if ($sumLines > 0) {
+                    return $sumLines;
+                }
+            }
+        }
+
+        return 0.0;
     }
 
     /**

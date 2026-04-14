@@ -19,8 +19,11 @@ class PaymentOrderCrudController extends CrudController
 {
     use \Backpack\CRUD\app\Http\Controllers\Operations\ListOperation;
     use \Backpack\CRUD\app\Http\Controllers\Operations\CreateOperation;
-    use \Backpack\CRUD\app\Http\Controllers\Operations\UpdateOperation;
     use \Backpack\CRUD\app\Http\Controllers\Operations\ShowOperation;
+    use \Backpack\CRUD\app\Http\Controllers\Operations\UpdateOperation {
+        edit as protected backpackEdit;
+        update as protected backpackUpdate;
+    }
 
     /**
      * Configure the CrudPanel object. Apply settings to all operations.
@@ -144,14 +147,26 @@ class PaymentOrderCrudController extends CrudController
     {
         $this->crud->hasAccessOrFail('create');
 
+        $user = backpack_user();
+        if (! $user || ! $user->hasRole('role_responsable_compras', 'backpack')) {
+            \Alert::error('Solo el responsable de compras puede crear órdenes de pago.')->flash();
+
+            return redirect()->back()->withInput();
+        }
+        if ($user->hasRole('role_apoderado', 'backpack') || $user->hasRole('role_representante_legal', 'backpack')) {
+            \Alert::error('No tiene permiso para crear órdenes de pago.')->flash();
+
+            return redirect()->back()->withInput();
+        }
+
         $purchaseOrderId = request()->input('purchase_order_id');
         if ($purchaseOrderId) {
-            $po = \App\Models\PurchaseOrder::with(['purchaseRequest', 'receptions'])->find($purchaseOrderId);
+            $po = \App\Models\PurchaseOrder::with(['receptions'])->find($purchaseOrderId);
             if ($po) {
-                $isInternet = $po->purchaseRequest && ($po->purchaseRequest->purchase_type === 'internet');
-                $hasConformeReception = $po->receptions->contains('according', 'Si');
-                if (!$isInternet && !$hasConformeReception) {
-                    \Alert::error('La orden de pago solo puede generarse cuando exista una recepción conforme para esta orden de compra.')->flash();
+                $hasConformeReception = $po->receptions->contains(fn (\App\Models\Reception $r) => $r->isAccordingComplete());
+                if (! $hasConformeReception) {
+                    \Alert::error('La orden de pago solo puede generarse cuando exista una recepción conforme (tres conformidades en Sí, corroboración ARCA y comprobante válido) para esta orden de compra.')->flash();
+
                     return redirect()->back()->withInput();
                 }
             }
@@ -165,6 +180,10 @@ class PaymentOrderCrudController extends CrudController
 
             $item = $this->crud->create($this->crud->getStrippedSaveRequest($request));
             $this->data['entry'] = $this->crud->entry = $item;
+
+            if ($item->purchase_order_id) {
+                \App\Models\PurchaseOrder::find($item->purchase_order_id)?->markAsRecibidaIfHasConformeReception();
+            }
 
             \Alert::success(trans('backpack::crud.insert_success'))->flash();
             $this->crud->setSaveAction();
@@ -300,7 +319,8 @@ class PaymentOrderCrudController extends CrudController
         if ($entry->status === 'Anulada') {
             abort(403, 'No se puede editar una orden de pago anulada.');
         }
-        return parent::edit($id);
+
+        return $this->backpackEdit($id);
     }
 
     /**
@@ -313,7 +333,8 @@ class PaymentOrderCrudController extends CrudController
         if ($entry && $entry->status === 'Anulada') {
             abort(403, 'No se puede editar una orden de pago anulada.');
         }
-        return parent::update();
+
+        return $this->backpackUpdate();
     }
 
     /**

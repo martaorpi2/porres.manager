@@ -145,6 +145,7 @@ class PurchaseRequestCrudController extends CrudController
         // No aplicar si viene de una restauración automática de Backpack desde localStorage
         // Backpack agrega 'persistent-table=true' cuando restaura desde localStorage
         $hasPendientes = request()->query('pendientes') == '1';
+        $hasAprobadasPorSuperior = request()->query('aprobadas_por_superior') == '1';
         $isPersistentRestore = request()->query('persistent-table') == 'true';
         
         // Solo aplicar el filtro si:
@@ -153,6 +154,24 @@ class PurchaseRequestCrudController extends CrudController
         // Esto asegura que cuando el usuario accede desde el menú, se muestre todo
         if ($hasPendientes && !$isPersistentRestore) {
             CRUD::addClause('where', 'status', 'Pendiente');
+        }
+
+        // Solicitudes aprobadas por nivel superior (desde aviso del dashboard de compras)
+        if ($hasAprobadasPorSuperior && !$isPersistentRestore && $user && $user->hasRole('role_responsable_compras', 'backpack')) {
+            $supervisorRoleNames = [
+                'role_admin_sistema',
+                'role_admin_institucion',
+                'role_apoderado',
+                'role_representante_legal',
+            ];
+            CRUD::addClause(function ($query) use ($user, $supervisorRoleNames) {
+                $query->where('status', 'Aprobada')
+                    ->whereNotNull('approved_by')
+                    ->where('approved_by', '!=', $user->id)
+                    ->whereHas('approvedBy.roles', function ($q) use ($supervisorRoleNames) {
+                        $q->where('guard_name', 'backpack')->whereIn('name', $supervisorRoleNames);
+                    });
+            });
         }
     }
 
@@ -1680,6 +1699,11 @@ class PurchaseRequestCrudController extends CrudController
         if ($user && $user->hasRole('role_admin_institucion', 'backpack')) {
             abort(403, 'No tienes permiso para eliminar solicitudes de compra.');
         }
+
+        $entry = $this->crud->getCurrentEntry();
+        if ($entry instanceof \App\Models\PurchaseRequest && $entry->deletionIsForbidden()) {
+            abort(403, 'No se puede eliminar una solicitud de compra que ya fue aprobada, está en proceso o está completada.');
+        }
     }
     
     /**
@@ -1693,6 +1717,16 @@ class PurchaseRequestCrudController extends CrudController
         $user = backpack_user();
         if ($user && $user->hasRole('role_admin_institucion', 'backpack')) {
             abort(403, 'No tienes permiso para eliminar solicitudes de compra.');
+        }
+
+        $entry = \App\Models\PurchaseRequest::find($id);
+        if ($entry && $entry->deletionIsForbidden()) {
+            $message = 'No se puede eliminar una solicitud de compra que ya fue aprobada, está en proceso o está completada.';
+            if (request()->ajax()) {
+                return response()->json(['error' => [$message]]);
+            }
+            \Alert::error($message)->flash();
+            return redirect()->back();
         }
         
         return $this->crud->delete($id);
@@ -2853,6 +2887,14 @@ class PurchaseRequestCrudController extends CrudController
             return redirect()->back();
         }
 
+        try {
+            \App\Models\PurchaseRequestDetail::ensureSelectedMarketRateIdColumnExists();
+        } catch (\Throwable $e) {
+            \Log::error('ensureSelectedMarketRateIdColumnExists failed', ['exception' => $e]);
+            \Alert::error('No se pudo preparar la base de datos para asignar cotizaciones. Ejecute: php artisan migrate --path=database/migrations/2026_04_15_130000_ensure_selected_market_rate_id_on_purchase_request_details_table.php')->flash();
+            return redirect()->back();
+        }
+
         $detailQuotes = request()->input('detail_quote', []);
         $marketRateIds = $purchaseRequest->marketRates->pluck('id')->toArray();
         $quoteDetailsByRate = $purchaseRequest->marketRates->keyBy('id')->map->quoteDetails->keyBy('product_id');
@@ -2900,6 +2942,18 @@ class PurchaseRequestCrudController extends CrudController
             'details.selectedMarketRate.quoteDetails.product',
             'responsibilityArea'
         ])->findOrFail($id);
+
+        try {
+            \App\Models\PurchaseRequestDetail::ensureSelectedMarketRateIdColumnExists();
+            \App\Models\PurchaseOrderDetail::ensureSupplierIdColumnExists();
+            $purchaseRequest->load([
+                'details.product',
+                'details.selectedMarketRate.supplier',
+                'details.selectedMarketRate.quoteDetails.product',
+            ]);
+        } catch (\Throwable $e) {
+            \Log::error('ensure purchase request / OC detail columns failed', ['exception' => $e]);
+        }
         
         // Verificar que la solicitud esté aprobada antes de generar la orden
         if ($purchaseRequest->status !== 'Aprobada') {
@@ -2989,6 +3043,7 @@ class PurchaseRequestCrudController extends CrudController
             if (!$input) {
                 continue;
             }
+            $unitPrice = $this->parseMonetaryValue($quoteDetail->unit_price);
             $sid = $marketRate->supplier_id;
             if (!isset($linesBySupplier[$sid])) {
                 $linesBySupplier[$sid] = [];
@@ -2996,7 +3051,7 @@ class PurchaseRequestCrudController extends CrudController
             $linesBySupplier[$sid][] = [
                 'input_id' => $input->id,
                 'quantity' => $quoteDetail->quantity,
-                'unit_price' => $quoteDetail->unit_price,
+                'unit_price' => $unitPrice,
             ];
         }
 
@@ -3051,10 +3106,6 @@ class PurchaseRequestCrudController extends CrudController
             $purchaseRequest->update(['status' => 'Completada', 'purchase_type' => $newType]);
         });
 
-        foreach ($createdOrders as $purchaseOrder) {
-            $this->createPaymentOrderIfInternetApprovedByAdmin($purchaseOrder, $purchaseRequest);
-        }
-
         $numbers = collect($createdOrders)->pluck('number')->implode(', ');
         $msg = count($createdOrders) > 1
             ? 'Órdenes de compra generadas (' . count($createdOrders) . ' proveedores): ' . $numbers
@@ -3076,6 +3127,8 @@ class PurchaseRequestCrudController extends CrudController
         // Obtener fecha de emisión del request o usar la fecha actual
         $issueDate = $request->input('issue_date') ? \Carbon\Carbon::parse($request->input('issue_date')) : now();
         
+        $quoteDetails = $purchaseRequest->selectedMarketRate->quoteDetails;
+
         $supplierId = $purchaseRequest->selectedMarketRate->supplier_id;
         // Create purchase order (supplier_id opcional a nivel orden cuando hay varios proveedores por línea)
         $purchaseOrder = \App\Models\PurchaseOrder::create([
@@ -3090,17 +3143,18 @@ class PurchaseRequestCrudController extends CrudController
         ]);
         
         // Create purchase order details from quote (cada línea con su proveedor)
-        foreach ($purchaseRequest->selectedMarketRate->quoteDetails as $quoteDetail) {
+        foreach ($quoteDetails as $quoteDetail) {
             // Buscar o crear el Input correspondiente al Product
             $input = $this->findOrCreateInputFromProduct($quoteDetail->product);
             
             if ($input) {
+                $unitPrice = $this->parseMonetaryValue($quoteDetail->unit_price);
                 \App\Models\PurchaseOrderDetail::create([
                     'purchase_order_id' => $purchaseOrder->id,
                     'supplier_id' => $supplierId,
                     'input_id' => $input->id,
                     'quantity' => $quoteDetail->quantity,
-                    'unit_price' => $quoteDetail->unit_price,
+                    'unit_price' => $unitPrice,
                 ]);
             }
         }
@@ -3111,7 +3165,6 @@ class PurchaseRequestCrudController extends CrudController
             'status' => 'Completada',
             'purchase_type' => $newType
         ]);
-        $this->createPaymentOrderIfInternetApprovedByAdmin($purchaseOrder, $purchaseRequest);
         \Alert::success('Orden de compra generada exitosamente: ' . $purchaseOrder->number)->flash();
         return redirect()->route('purchase-order.show', $purchaseOrder->id);
     }
@@ -3133,6 +3186,32 @@ class PurchaseRequestCrudController extends CrudController
         
         // Obtener precios del request
         $prices = $request->input('prices', []);
+        $lines = [];
+
+        foreach ($purchaseRequest->details as $requestDetail) {
+            if (!$requestDetail->product) {
+                continue;
+            }
+
+            $input = $this->findOrCreateInputFromProduct($requestDetail->product);
+            if (!$input) {
+                continue;
+            }
+
+            $rawPrice = $prices[$requestDetail->id] ?? $requestDetail->estimated_unit_price ?? 0;
+            $unitPrice = $this->parseMonetaryValue($rawPrice);
+
+            $lines[] = [
+                'input_id' => $input->id,
+                'quantity' => $requestDetail->requested_quantity,
+                'unit_price' => $unitPrice,
+            ];
+        }
+
+        if (empty($lines)) {
+            \Alert::error('No se pudo generar la orden: no hay líneas válidas para crear la OC.')->flash();
+            return redirect()->back();
+        }
         
         // Create purchase order
         $purchaseOrder = \App\Models\PurchaseOrder::create([
@@ -3147,26 +3226,14 @@ class PurchaseRequestCrudController extends CrudController
         ]);
         
         // Create purchase order details from purchase request details (cada línea con el mismo proveedor)
-        foreach ($purchaseRequest->details as $requestDetail) {
-            if (!$requestDetail->product) {
-                continue;
-            }
-            
-            // Buscar o crear el Input correspondiente al Product
-            $input = $this->findOrCreateInputFromProduct($requestDetail->product);
-            
-            if ($input) {
-                // Usar el precio del formulario si está disponible, sino usar el precio estimado
-                $unitPrice = isset($prices[$requestDetail->id]) ? (float)$prices[$requestDetail->id] : ($requestDetail->estimated_unit_price ?? 0);
-                
-                \App\Models\PurchaseOrderDetail::create([
-                    'purchase_order_id' => $purchaseOrder->id,
-                    'supplier_id' => $supplierId,
-                    'input_id' => $input->id,
-                    'quantity' => $requestDetail->requested_quantity,
-                    'unit_price' => $unitPrice,
-                ]);
-            }
+        foreach ($lines as $line) {
+            \App\Models\PurchaseOrderDetail::create([
+                'purchase_order_id' => $purchaseOrder->id,
+                'supplier_id' => $supplierId,
+                'input_id' => $line['input_id'],
+                'quantity' => $line['quantity'],
+                'unit_price' => $line['unit_price'],
+            ]);
         }
         
         // Determinar el tipo de compra (preservar 'internet' si ya estaba marcada)
@@ -3186,32 +3253,8 @@ class PurchaseRequestCrudController extends CrudController
             'status' => 'Completada',
             'purchase_type' => $purchaseType
         ]);
-        $this->createPaymentOrderIfInternetApprovedByAdmin($purchaseOrder, $purchaseRequest);
         \Alert::success('Orden de compra generada exitosamente: ' . $purchaseOrder->number)->flash();
         return redirect()->route('purchase-order.show', $purchaseOrder->id);
-    }
-    
-    /**
-     * Para compras por internet aprobadas por nivel superior (por monto), se genera automáticamente la OP.
-     */
-    private function createPaymentOrderIfInternetApprovedByAdmin($purchaseOrder, $purchaseRequest)
-    {
-        if (($purchaseRequest->purchase_type ?? '') !== 'internet' || !$purchaseRequest->requires_admin_approval) {
-            return;
-        }
-        \Illuminate\Support\Facades\DB::transaction(function () use ($purchaseOrder, $purchaseRequest) {
-            $purchaseOrder->load('details');
-            $totalAmount = $purchaseOrder->total;
-            $paymentNumber = \App\Models\PaymentOrder::getNextPaymentNumber();
-            \App\Models\PaymentOrder::create([
-                'payment_number' => $paymentNumber,
-                'date' => now(),
-                'total_amount' => $totalAmount,
-                'status' => 'Pendiente',
-                'purchase_order_id' => $purchaseOrder->id,
-                'authorizing_user_id' => auth()->id(),
-            ]);
-        });
     }
 
     /**
@@ -3221,6 +3264,27 @@ class PurchaseRequestCrudController extends CrudController
     {
         // Usar la relación del modelo en lugar de consulta directa
         return $purchaseRequest->marketRates()->count();
+    }
+
+    private function parseMonetaryValue($raw): float
+    {
+        if ($raw === null || $raw === '') {
+            return 0.0;
+        }
+        if (is_numeric($raw)) {
+            return (float) $raw;
+        }
+        $value = trim((string) $raw);
+        $value = str_replace(['$', ' '], '', $value);
+        if (str_contains($value, ',')) {
+            $value = str_replace('.', '', $value);
+            $value = str_replace(',', '.', $value);
+        }
+        $value = preg_replace('/[^0-9.\-]/', '', $value);
+        if ($value === '' || !is_numeric($value)) {
+            return 0.0;
+        }
+        return (float) $value;
     }
     
     /**

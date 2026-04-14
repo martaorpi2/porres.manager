@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Backpack\CRUD\app\Models\Traits\CrudTrait;
+use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
@@ -29,6 +30,19 @@ class PaymentOrder extends Model
         'payment_date' => 'date',
         'annulled_at' => 'datetime',
     ];
+
+    protected static function booted(): void
+    {
+        static::created(function (self $paymentOrder): void {
+            if (!$paymentOrder->purchase_order_id) {
+                return;
+            }
+            $purchaseOrder = PurchaseOrder::query()->find($paymentOrder->purchase_order_id);
+            if ($purchaseOrder && $purchaseOrder->status === 'Pendiente') {
+                $purchaseOrder->update(['status' => 'Aprobada']);
+            }
+        });
+    }
 
     /*
     |--------------------------------------------------------------------------
@@ -103,11 +117,74 @@ class PaymentOrder extends Model
         return $this->status === 'Anulada';
     }
 
+    /**
+     * Pago efectivamente realizado (para resumen en dashboard).
+     * No cuenta como pagada si solo está aprobada o la fecha de pago es futura.
+     */
+    public function isDashboardPaymentCompleted(): bool
+    {
+        if ($this->status === 'Anulada' || $this->status !== 'Ejecutada') {
+            return false;
+        }
+        if (!$this->payment_date) {
+            return true;
+        }
+        $paymentDay = $this->payment_date instanceof CarbonInterface
+            ? $this->payment_date->copy()->startOfDay()
+            : \Carbon\Carbon::parse($this->payment_date)->startOfDay();
+
+        return !$paymentDay->isAfter(now()->startOfDay());
+    }
+
+    /**
+     * Etiqueta simplificada para el dashboard (Pendiente / Completada / Anulada).
+     */
+    public function getDashboardPaymentStatusLabelAttribute(): string
+    {
+        if ($this->status === 'Anulada') {
+            return 'Anulada';
+        }
+        if ($this->isDashboardPaymentCompleted()) {
+            return 'Completada';
+        }
+
+        return 'Pendiente';
+    }
+
+    /**
+     * Sufijo de clase CSS (.status-*) alineado con dashboard.blade.php.
+     */
+    public function getDashboardPaymentStatusCssSuffixAttribute(): string
+    {
+        return match ($this->dashboard_payment_status_label) {
+            'Completada' => 'completada',
+            'Anulada' => 'anulada',
+            default => 'pendiente',
+        };
+    }
+
     /*
     |--------------------------------------------------------------------------
     | SCOPES
     |--------------------------------------------------------------------------
     */
+
+    /**
+     * Órdenes de pago que aún no figuran como pagadas en el dashboard
+     * (incluye Aprobada y Ejecutada con fecha de pago futura).
+     */
+    public function scopeDashboardPendingPayment($query)
+    {
+        return $query->where('status', '!=', 'Anulada')
+            ->where(function ($q) {
+                $q->where('status', '!=', 'Ejecutada')
+                    ->orWhere(function ($q2) {
+                        $q2->where('status', 'Ejecutada')
+                            ->whereNotNull('payment_date')
+                            ->whereDate('payment_date', '>', now());
+                    });
+            });
+    }
 
     /*
     |--------------------------------------------------------------------------
@@ -120,4 +197,9 @@ class PaymentOrder extends Model
     | MUTATORS
     |--------------------------------------------------------------------------
     */
+
+    public function setPaymentDateAttribute($value): void
+    {
+        $this->attributes['payment_date'] = ($value === '' || $value === null) ? null : $value;
+    }
 }

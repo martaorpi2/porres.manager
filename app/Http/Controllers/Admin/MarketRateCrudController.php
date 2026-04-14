@@ -783,12 +783,24 @@ class MarketRateCrudController extends CrudController
             }
             
             function fetchProducts() {
-                fetch("/admin/api/products")
-                    .then(response => response.json())
+                const productsUrl = ' . json_encode(backpack_url('api/productos')) . ';
+                fetch(productsUrl, { credentials: "same-origin" })
+                    .then(response => {
+                        if (!response.ok) {
+                            throw new Error("HTTP " + response.status);
+                        }
+                        return response.json();
+                    })
                     .then(products => {
                         const select = document.getElementById("product-select");
+                        if (!select) {
+                            return;
+                        }
                         select.innerHTML = "<option value=\"\">Seleccionar un producto...</option>";
-                        
+                        if (!Array.isArray(products) || products.length === 0) {
+                            select.innerHTML += "<option value=\"\" disabled>No hay productos disponibles</option>";
+                            return;
+                        }
                         products.forEach(product => {
                             const option = document.createElement("option");
                             option.value = product.id;
@@ -800,6 +812,10 @@ class MarketRateCrudController extends CrudController
                     })
                     .catch(error => {
                         console.error("Error cargando productos:", error);
+                        const select = document.getElementById("product-select");
+                        if (select) {
+                            select.innerHTML = "<option value=\"\">Error al cargar productos</option>";
+                        }
                     });
             }
             

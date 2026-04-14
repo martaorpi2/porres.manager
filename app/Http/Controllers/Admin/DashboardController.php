@@ -152,7 +152,7 @@ class DashboardController extends Controller
                 'purchase_orders' => PurchaseOrder::count(),
                 'purchase_orders_pending' => PurchaseOrder::where('status', 'Pendiente')->count(),
                 'payment_orders' => PaymentOrder::count(),
-                'payment_orders_pending' => PaymentOrder::where('status', 'Pendiente')->count(),
+                'payment_orders_pending' => PaymentOrder::dashboardPendingPayment()->count(),
                 'receptions' => Reception::count(),
                 'devolutions' => Devolution::count(),
                 'deliveries' => Delivery::count(),
@@ -239,6 +239,36 @@ class DashboardController extends Controller
                 ->orderBy('created_at', 'asc') // Ordenar por más antiguas primero
                 ->limit(12)
                 ->get();
+        }
+
+        // Responsable de compras: solicitudes ya aprobadas por un usuario de nivel superior (no por compras)
+        $superiorApprovedPurchaseRequestsCount = 0;
+        if ($isResponsableCompras) {
+            $supervisorRoleNames = [
+                'role_admin_sistema',
+                'role_admin_institucion',
+                'role_apoderado',
+                'role_representante_legal',
+            ];
+            $superiorApprovedQuery = PurchaseRequest::query()
+                ->where('status', 'Aprobada')
+                ->whereNotNull('approved_by')
+                ->where('approved_by', '!=', $user->id)
+                ->whereHas('approvedBy.roles', function ($q) use ($supervisorRoleNames) {
+                    $q->where('guard_name', 'backpack')->whereIn('name', $supervisorRoleNames);
+                });
+            $superiorApprovedPurchaseRequestsCount = (clone $superiorApprovedQuery)->count();
+        }
+
+        // Responsable de compras: OC con al menos una recepción conforme y sin orden de pago asociada
+        $purchaseOrdersPendingPaymentAfterConformeCount = 0;
+        if ($isResponsableCompras) {
+            $purchaseOrdersPendingPaymentAfterConformeCount = PurchaseOrder::query()
+                ->whereHas('receptions', function ($q) {
+                    $q->where('according', 'Si');
+                })
+                ->whereDoesntHave('paymentOrders')
+                ->count();
         }
 
         // Obtener órdenes de compra recientes (solo si no es role_personal ni role_responsable_area)
@@ -473,6 +503,8 @@ class DashboardController extends Controller
             'isAdminInstitucion',
             'isApoderado',
             'isRepresentanteLegal',
+            'superiorApprovedPurchaseRequestsCount',
+            'purchaseOrdersPendingPaymentAfterConformeCount',
             'pendingApprovalRequests',
             'stockAlerts',
             'stockAlertsHtml',
@@ -513,33 +545,8 @@ class DashboardController extends Controller
             foreach ($generalRequest->purchaseRequests as $purchaseRequest) {
                 $flow['purchase_requests'][] = $purchaseRequest;
 
-                // Obtener órdenes de compra relacionadas directamente por la relación
-                // Cargar todas las relaciones necesarias: paymentOrders, receptions con devolutions
-                $purchaseOrders = PurchaseOrder::where('purchase_request_id', $purchaseRequest->id)
-                    ->with([
-                        'supplier', 
-                        'details', 
-                        'paymentOrders' => function($query) {
-                            $query->with('user')->orderBy('created_at', 'desc');
-                        },
-                        'receptions' => function($query) {
-                            $query->with([
-                                'user',
-                                'devolutions' => function($q) {
-                                    $q->with('user')->orderBy('created_at', 'desc');
-                                },
-                                'deliveries' => function($q) {
-                                    $q->with(['generalRequest', 'deliveredBy', 'receivedBy', 'details.product'])->orderBy('created_at', 'desc');
-                                }
-                            ])->orderBy('created_at', 'desc');
-                        }
-                    ])
-                    ->get();
-                
-                foreach ($purchaseOrders as $purchaseOrder) {
-                    // Evitar duplicados
-                    if (!in_array($purchaseOrder->id, array_column($flow['purchase_orders'], 'id'))) {
-                        // Guardar la orden de compra con todas sus relaciones cargadas
+                foreach ($this->purchaseOrdersForProcessFlow($purchaseRequest->id) as $purchaseOrder) {
+                    if (! in_array($purchaseOrder->id, array_column($flow['purchase_orders'], 'id'))) {
                         $flow['purchase_orders'][] = $purchaseOrder;
                     }
                 }
@@ -550,7 +557,7 @@ class DashboardController extends Controller
             $flows[] = $flow;
         }
 
-        return $flows;
+        return $this->mergeStandalonePurchaseRequestFlows($flows, null);
     }
     
     /**
@@ -593,32 +600,8 @@ class DashboardController extends Controller
             foreach ($generalRequest->purchaseRequests as $purchaseRequest) {
                 $flow['purchase_requests'][] = $purchaseRequest;
 
-                // Obtener órdenes de compra relacionadas
-                $purchaseOrders = PurchaseOrder::where('purchase_request_id', $purchaseRequest->id)
-                    ->with([
-                        'supplier', 
-                        'details', 
-                        'paymentOrders' => function($query) {
-                            $query->with('user')->orderBy('created_at', 'desc');
-                        },
-                        'receptions' => function($query) use ($user) {
-                            $query->with([
-                                'user',
-                                'devolutions' => function($q) {
-                                    $q->with('user')->orderBy('created_at', 'desc');
-                                },
-                                'deliveries' => function($q) use ($user) {
-                                    $q->where('received_by', $user->id)
-                                        ->with(['generalRequest', 'deliveredBy', 'receivedBy', 'details.product'])
-                                        ->orderBy('created_at', 'desc');
-                                }
-                            ])->orderBy('created_at', 'desc');
-                        }
-                    ])
-                    ->get();
-                
-                foreach ($purchaseOrders as $purchaseOrder) {
-                    if (!in_array($purchaseOrder->id, array_column($flow['purchase_orders'], 'id'))) {
+                foreach ($this->purchaseOrdersForProcessFlow($purchaseRequest->id, $user->id) as $purchaseOrder) {
+                    if (! in_array($purchaseOrder->id, array_column($flow['purchase_orders'], 'id'))) {
                         $flow['purchase_orders'][] = $purchaseOrder;
                     }
                 }
@@ -627,7 +610,9 @@ class DashboardController extends Controller
             $flows[] = $flow;
         }
 
-        return $flows;
+        return $this->mergeStandalonePurchaseRequestFlows($flows, function ($query) use ($user) {
+            $query->where('requesting_user_id', $user->id);
+        }, $user->id);
     }
     
     /**
@@ -682,6 +667,127 @@ class DashboardController extends Controller
             }
 
             $flows[] = $flow;
+        }
+
+        return $this->mergeStandalonePurchaseRequestFlows($flows, function ($query) use ($user, $userAreas) {
+            $query->where(function ($q) use ($user, $userAreas) {
+                $q->where('requesting_user_id', $user->id);
+                if ($userAreas->isNotEmpty()) {
+                    $q->orWhereIn('responsibility_area_id', $userAreas);
+                }
+            });
+        }, null);
+    }
+
+    /**
+     * Relaciones eager-load para órdenes de compra en la línea de tiempo del dashboard.
+     *
+     * @return array<string, mixed>
+     */
+    private function purchaseOrdersTimelineWith(): array
+    {
+        return [
+            'supplier',
+            'details',
+            'paymentOrders' => function ($query) {
+                $query->with('user')->orderBy('created_at', 'desc');
+            },
+            'receptions' => function ($query) {
+                $query->with([
+                    'user',
+                    'devolutions' => function ($q) {
+                        $q->with('user')->orderBy('created_at', 'desc');
+                    },
+                    'deliveries' => function ($q) {
+                        $q->with(['generalRequest', 'deliveredBy', 'receivedBy', 'details.product'])
+                            ->orderBy('created_at', 'desc');
+                    },
+                ])->orderBy('created_at', 'desc');
+            },
+        ];
+    }
+
+    /**
+     * @return \Illuminate\Support\Collection<int, \App\Models\PurchaseOrder>
+     */
+    private function purchaseOrdersForProcessFlow(int $purchaseRequestId, ?int $personalDeliveriesReceivedByUserId = null)
+    {
+        if ($personalDeliveriesReceivedByUserId !== null) {
+            return PurchaseOrder::where('purchase_request_id', $purchaseRequestId)
+                ->with([
+                    'supplier',
+                    'details',
+                    'paymentOrders' => function ($query) {
+                        $query->with('user')->orderBy('created_at', 'desc');
+                    },
+                    'receptions' => function ($query) use ($personalDeliveriesReceivedByUserId) {
+                        $query->with([
+                            'user',
+                            'devolutions' => function ($q) {
+                                $q->with('user')->orderBy('created_at', 'desc');
+                            },
+                            'deliveries' => function ($q) use ($personalDeliveriesReceivedByUserId) {
+                                $q->where('received_by', $personalDeliveriesReceivedByUserId)
+                                    ->with(['generalRequest', 'deliveredBy', 'receivedBy', 'details.product'])
+                                    ->orderBy('created_at', 'desc');
+                            },
+                        ])->orderBy('created_at', 'desc');
+                    },
+                ])
+                ->get();
+        }
+
+        return PurchaseOrder::where('purchase_request_id', $purchaseRequestId)
+            ->with($this->purchaseOrdersTimelineWith())
+            ->get();
+    }
+
+    /**
+     * Añade flujos de solicitudes de compra creadas sin solicitud general (converted_from_general_request_id nulo).
+     *
+     * @param  array<int, array<string, mixed>>  $flows
+     * @return array<int, array<string, mixed>>
+     */
+    private function mergeStandalonePurchaseRequestFlows(array $flows, ?callable $purchaseRequestScope = null, ?int $personalDeliveriesReceivedByUserId = null): array
+    {
+        $idsAlreadyShown = collect($flows)
+            ->flatMap(function ($f) {
+                return collect($f['purchase_requests'] ?? [])->pluck('id');
+            })
+            ->filter()
+            ->unique()
+            ->values();
+
+        $query = PurchaseRequest::query()
+            ->whereNull('converted_from_general_request_id')
+            ->with([
+                'selectedMarketRate.supplier',
+                'details.product',
+            ])
+            ->orderByDesc('created_at')
+            ->orderByDesc('id')
+            ->limit(20);
+
+        if ($purchaseRequestScope) {
+            $purchaseRequestScope($query);
+        }
+
+        if ($idsAlreadyShown->isNotEmpty()) {
+            $query->whereNotIn('id', $idsAlreadyShown->all());
+        }
+
+        foreach ($query->get() as $purchaseRequest) {
+            $purchaseOrders = [];
+            foreach ($this->purchaseOrdersForProcessFlow($purchaseRequest->id, $personalDeliveriesReceivedByUserId) as $purchaseOrder) {
+                $purchaseOrders[] = $purchaseOrder;
+            }
+
+            $flows[] = [
+                'general_request' => null,
+                'purchase_requests' => [$purchaseRequest],
+                'purchase_orders' => $purchaseOrders,
+                'purchase_request_only' => true,
+            ];
         }
 
         return $flows;

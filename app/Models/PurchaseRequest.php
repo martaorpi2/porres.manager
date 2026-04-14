@@ -58,6 +58,30 @@ class PurchaseRequest extends Model
         'direct_purchase_authorization_rejected' => 'boolean',
     ];
 
+    protected static function booted(): void
+    {
+        static::deleting(function (PurchaseRequest $purchaseRequest) {
+            if ($purchaseRequest->deletionIsForbidden()) {
+                abort(403, 'No se puede eliminar una solicitud de compra que ya fue aprobada, está en proceso o está completada.');
+            }
+        });
+    }
+
+    /**
+     * Estados en los que la solicitud no puede eliminarse (aprobada o ya en flujo posterior).
+     *
+     * @return list<string>
+     */
+    public static function statusesThatPreventDeletion(): array
+    {
+        return ['Aprobada', 'En Proceso', 'Completada'];
+    }
+
+    public function deletionIsForbidden(): bool
+    {
+        return in_array($this->status, self::statusesThatPreventDeletion(), true);
+    }
+
     /**
      * Get the responsibility area for this request.
      */

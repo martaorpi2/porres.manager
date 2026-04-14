@@ -123,6 +123,17 @@ class PurchaseOrderCrudController extends CrudController
             }
         }
 
+        // Desde dashboard (compras): OC con recepción conforme y sin orden de pago
+        $hasPendienteOpTrasConforme = request()->query('pendiente_op_tras_conforme') == '1';
+        $isPersistentRestore = request()->query('persistent-table') == 'true';
+        if ($hasPendienteOpTrasConforme && ! $isPersistentRestore) {
+            CRUD::addClause(function ($query) {
+                $query->whereHas('receptions', function ($q) {
+                    $q->where('according', 'Si');
+                })->whereDoesntHave('paymentOrders');
+            });
+        }
+
         // Filtro personalizado por proveedor (orden o detalles)
         if (request()->has('proveedor')) {
             $proveedorId = request()->get('proveedor');
@@ -325,11 +336,9 @@ class PurchaseOrderCrudController extends CrudController
                 $html .= '<table class="table table-sm table-bordered mb-0">';
                 $html .= '<thead class="table-light">';
                 $html .= '<tr>';
-                $html .= '<th style="width: 25%;">Producto</th>';
-                $html .= '<th style="width: 20%;">Proveedor</th>';
-                $html .= '<th style="width: 15%;">Cantidad</th>';
-                $html .= '<th style="width: 20%;">Precio Unit.</th>';
-                $html .= '<th style="width: 20%;">Subtotal</th>';
+                $html .= '<th style="width: 40%;">Producto</th>';
+                $html .= '<th style="width: 30%;">Proveedor</th>';
+                $html .= '<th style="width: 30%;">Cantidad</th>';
                 $html .= '</tr>';
                 $html .= '</thead>';
                 $html .= '<tbody>';
@@ -340,12 +349,12 @@ class PurchaseOrderCrudController extends CrudController
                     $html .= '<td><strong>' . e($detail->input->name) . '</strong><br><small class="text-muted">' . e($detail->input->description ?? 'Sin descripción') . '</small></td>';
                     $html .= '<td>' . $supplierName . '</td>';
                     $html .= '<td><span class="badge bg-info">' . $detail->quantity . '</span> <small class="text-muted">' . e($detail->input->unit) . '</small></td>';
-                    $html .= '<td class="text-end"><strong>$' . number_format($detail->unit_price, 2) . '</strong></td>';
-                    $html .= '<td class="text-end"><span class="badge bg-success">$' . number_format($detail->subtotal, 2) . '</span></td>';
                     $html .= '</tr>';
                 }
                 
                 $html .= '</tbody>';
+                $html .= '<tfoot class="table-light"><tr><td colspan="3" class="text-end"><strong>Monto total de la orden</strong></td></tr>';
+                $html .= '<tr><td colspan="3" class="text-end"><span class="badge bg-success fs-6">$' . number_format($entry->total, 2) . '</span></td></tr></tfoot>';
                 $html .= '</table>';
                 $html .= '</div>';
                 $html .= '</div>';
@@ -372,7 +381,7 @@ class PurchaseOrderCrudController extends CrudController
         // Agregar botón de PDF en la vista previa (también en top)
         CRUD::addButton('top', 'pdf', 'view', 'crud::buttons.purchase_order_pdf', 'end');
         
-        // Botón Crear Orden de Pago: para compras por internet siempre; para el resto solo cuando hay recepción conforme
+        // Botón Crear Orden de Pago: solo responsable de compras, cuando hay recepción conforme (3 conformidades + ARCA + comprobante) y sin OP aún
         CRUD::addColumn([
             'name' => 'create_payment_order',
             'label' => 'Acciones',
@@ -382,26 +391,26 @@ class PurchaseOrderCrudController extends CrudController
                 if ($user && $user->hasRole('role_responsable_area', 'backpack')) {
                     return '';
                 }
-                $canCreate = true;
-                if ($user && ($user->hasRole('role_admin_institucion', 'backpack') ||
-                             $user->hasRole('role_apoderado', 'backpack') ||
-                             $user->hasRole('role_representante_legal', 'backpack'))) {
-                    $canCreate = false;
-                }
-                if (!$canCreate) {
+                if (! $user || ! $user->hasRole('role_responsable_compras', 'backpack')) {
                     return '';
                 }
-                $entry->load(['purchaseRequest', 'receptions']);
-                $isInternet = $entry->purchaseRequest && ($entry->purchaseRequest->purchase_type === 'internet');
-                $hasConformeReception = $entry->receptions->contains('according', 'Si');
-                if (!$isInternet && !$hasConformeReception) {
-                    return '<div class="mt-3"><span class="text-muted"><i class="la la-info-circle"></i> La orden de pago se genera cuando exista una recepción conforme.</span></div>';
+                if ($user->hasRole('role_apoderado', 'backpack') || $user->hasRole('role_representante_legal', 'backpack')) {
+                    return '';
+                }
+                $entry->load(['purchaseRequest', 'receptions', 'paymentOrders']);
+                if ($entry->paymentOrders->isNotEmpty()) {
+                    return '';
+                }
+                $hasConformeReception = $entry->receptions->contains(fn (\App\Models\Reception $r) => $r->isAccordingComplete());
+                if (! $hasConformeReception) {
+                    return '<div class="mt-3"><span class="text-muted"><i class="la la-info-circle"></i> La orden de pago la genera el responsable de compras cuando la recepción esté conforme (tres conformidades en Sí, corroboración ARCA y comprobante válido).</span></div>';
                 }
                 $html = '<div class="mt-3">';
                 $html .= '<a href="' . backpack_url('payment-order/create?purchase_order_id=' . $entry->id) . '" class="btn btn-success">';
                 $html .= '<i class="la la-money-bill-wave"></i> Crear Orden de Pago';
                 $html .= '</a>';
                 $html .= '</div>';
+
                 return $html;
             },
             'escaped' => false
@@ -670,8 +679,8 @@ class PurchaseOrderCrudController extends CrudController
      */
     public function generatePdf($id)
     {
-        $purchaseOrder = \App\Models\PurchaseOrder::with(['supplier', 'details.input', 'details.supplier'])->findOrFail($id);
-        
+        $purchaseOrder = \App\Models\PurchaseOrder::with(['supplier', 'details.input', 'details.supplier', 'purchaseRequest'])->findOrFail($id);
+
         $pdf = Pdf::loadView('purchase-order-pdf', compact('purchaseOrder'));
         
         return $pdf->stream('orden-compra-' . $purchaseOrder->number . '.pdf');

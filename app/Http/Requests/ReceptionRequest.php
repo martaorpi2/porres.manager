@@ -24,7 +24,12 @@ class ReceptionRequest extends FormRequest
      */
     public function rules()
     {
-        $receptionId = $this->route('id') ?? $this->reception_id ?? null;
+        // Excluir la recepción actual al validar OC duplicada. En PUT/PATCH, si la ruta no expone id, usar el hidden del formulario (no en POST crear: evita eludir la regla con un id falso).
+        $receptionId = $this->route('id') ?? $this->route()?->parameter('id');
+        if (($receptionId === null || $receptionId === '') && in_array($this->method(), ['PUT', 'PATCH'], true)) {
+            $receptionId = $this->input('id');
+        }
+        $receptionId = $receptionId !== null && $receptionId !== '' ? (int) $receptionId : null;
         
         return [
             'purchase_order_id' => [

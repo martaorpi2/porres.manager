@@ -5,6 +5,8 @@ namespace App\Models;
 use Backpack\CRUD\app\Models\Traits\CrudTrait;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
 
 class PurchaseRequestDetail extends Model
 {
@@ -51,6 +53,23 @@ class PurchaseRequestDetail extends Model
     public function selectedMarketRate()
     {
         return $this->belongsTo(\App\Models\MarketRate::class, 'selected_market_rate_id');
+    }
+
+    /**
+     * Asegura que exista selected_market_rate_id (BD sin migración 2026_02_13 / ensure).
+     */
+    public static function ensureSelectedMarketRateIdColumnExists(): void
+    {
+        $tableName = (new static)->getTable();
+        if (! Schema::hasTable($tableName) || Schema::hasColumn($tableName, 'selected_market_rate_id')) {
+            return;
+        }
+        Schema::table($tableName, function (Blueprint $blueprint) {
+            $blueprint->foreignId('selected_market_rate_id')
+                ->nullable()
+                ->constrained('market_rates')
+                ->nullOnDelete();
+        });
     }
 
     /**

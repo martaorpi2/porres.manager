@@ -68,6 +68,19 @@ class Reception extends Model
     {
         return $this->hasMany(\App\Models\Delivery::class, 'reception_id');
     }
+
+    /**
+     * Recepción conforme solo si las tres conformidades son Sí y ARCA + comprobante válido están registrados.
+     */
+    public function isAccordingComplete(): bool
+    {
+        return ($this->conformidad_estado ?? null) === 'Si'
+            && ($this->conformidad_cantidad ?? null) === 'Si'
+            && ($this->conformidad_factura ?? null) === 'Si'
+            && $this->corroborado_por_arca_at
+            && $this->comprobante_valido_at;
+    }
+
     /*
     |--------------------------------------------------------------------------
     | SCOPES

@@ -1,7 +1,16 @@
 @if ($crud->hasAccess('delete', $entry))
+    @php
+        $crudModelClass = is_object($crud->model ?? null) ? get_class($crud->model) : (string) ($crud->model ?? '');
+        $hideDeleteForApprovedPurchaseRequest = $entry
+            && $crudModelClass === \App\Models\PurchaseRequest::class
+            && $entry instanceof \App\Models\PurchaseRequest
+            && $entry->deletionIsForbidden();
+    @endphp
+    @if (!$hideDeleteForApprovedPurchaseRequest)
     <a href="javascript:void(0)" onclick="deleteEntry(this)" bp-button="delete" data-route="{{ url($crud->route.'/'.$entry->getKey()) }}" class="btn btn-sm btn-link" data-button-type="delete">
         <i class="la la-trash"></i> <span>{{ trans('backpack::crud.delete') }}</span>
     </a>
+    @endif
 @endif
 
 {{-- Button Javascript --}}
