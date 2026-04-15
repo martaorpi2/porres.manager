@@ -49,7 +49,7 @@ Route::group([
     Route::crud('devolution', 'DevolutionCrudController');
     Route::get('devolution/{id}/pdf', 'DevolutionCrudController@generatePdf')->name('devolution.pdf');
     Route::crud('responsibility-area', 'ResponsibilityAreaCrudController');
-    Route::crud('purchase-request', 'PurchaseRequestCrudController');
+    // Rutas fijas de solicitud de compra antes del CRUD (mismo criterio que market-rate: orden de registro).
     Route::get('purchase-request/{id}/comparative-excel', 'PurchaseRequestCrudController@generateComparativeExcel')->name('purchase-request.comparative-excel');
     Route::get('purchase-request/{id}/select-market-rate/{marketRateId}', 'PurchaseRequestCrudController@showSelectMarketRateForm')->name('purchase-request.show-select-market-rate');
     Route::post('purchase-request/{id}/select-market-rate/{marketRateId}', 'PurchaseRequestCrudController@storeMarketRateSelection')->name('purchase-request.store-market-rate-selection');
@@ -65,6 +65,7 @@ Route::group([
     Route::post('purchase-request/{id}/approve-direct-purchase', 'PurchaseRequestCrudController@approveDirectPurchase')->name('purchase-request.approve-direct-purchase');
     Route::post('purchase-request/{id}/reject-direct-purchase-authorization', 'PurchaseRequestCrudController@rejectDirectPurchaseAuthorization')->name('purchase-request.reject-direct-purchase-authorization');
     Route::get('api/purchase-request/{id}', 'PurchaseRequestCrudController@getPurchaseRequestData')->name('api.purchase-request.data');
+    Route::crud('purchase-request', 'PurchaseRequestCrudController');
     Route::get('api/suppliers', 'PurchaseRequestCrudController@getSuppliers')->name('api.suppliers');
     Route::crud('general-request', 'GeneralRequestCrudController');
     Route::get('general-request-converted', 'GeneralRequestCrudController@showConverted')->name('general-request.converted');

@@ -4121,7 +4121,7 @@ class PurchaseRequestCrudController extends CrudController
                     }
 
                     if ($entry->status != 'Completada' && $canSelect) {
-                        $html .= '<form method="POST" action="' . route('purchase-request.toggle-market-rate', [$entry->id, $marketRate->id]) . '" style="display:inline-block;" class="me-1">';
+                        $html .= '<form method="POST" action="' . e(backpack_url('purchase-request/' . $entry->id . '/toggle-market-rate/' . $marketRate->id)) . '" style="display:inline-block;" class="me-1">';
                         $html .= csrf_field();
                         if ($isSelected) {
                             $html .= '<button type="submit" class="btn btn-sm btn-warning"><i class="la la-minus-circle"></i> Deseleccionar</button>';
