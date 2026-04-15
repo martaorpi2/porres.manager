@@ -729,16 +729,73 @@ class MarketRateCrudController extends CrudController
         }
 
         $fileIndex = max(0, (int) $index);
-        if (!isset($files[$fileIndex]) || !is_string($files[$fileIndex]) || trim($files[$fileIndex]) === '') {
+        if (! isset($files[$fileIndex]) || ! is_string($files[$fileIndex]) || trim($files[$fileIndex]) === '') {
             abort(404, 'Archivo adjunto no encontrado.');
         }
 
-        $path = $files[$fileIndex];
-        if (!Storage::disk('public')->exists($path)) {
-            abort(404, 'El archivo no existe en el almacenamiento.');
+        $stored = $files[$fileIndex];
+        $relative = self::normalizeDocumentFileToPublicDiskRelativePath($stored);
+        if ($relative !== null && Storage::disk('public')->exists($relative)) {
+            return response()->file(Storage::disk('public')->path($relative));
         }
 
-        return response()->file(Storage::disk('public')->path($path));
+        $normalizedFs = str_replace('\\', '/', trim($stored));
+        if ($normalizedFs !== '' && ! str_contains($normalizedFs, '..') && is_file($normalizedFs) && is_readable($normalizedFs)) {
+            return response()->file($normalizedFs);
+        }
+
+        abort(404, 'El archivo no existe en el almacenamiento.');
+    }
+
+    /**
+     * Pasa el valor guardado en document_files a una ruta relativa al disco "public" (root storage/app/public).
+     * Acepta: "cotizaciones/archivo.pdf", "/storage/cotizaciones/...", URL completa, o ruta absoluta bajo .../storage/app/public/...
+     */
+    private static function normalizeDocumentFileToPublicDiskRelativePath(string $stored): ?string
+    {
+        $stored = trim($stored);
+        if ($stored === '') {
+            return null;
+        }
+
+        $asUrl = str_replace('\\', '/', $stored);
+        if (preg_match('#^https?://#i', $asUrl)) {
+            $pathPart = parse_url($asUrl, PHP_URL_PATH);
+            if (! is_string($pathPart) || $pathPart === '') {
+                return null;
+            }
+            $pathPart = str_replace('\\', '/', $pathPart);
+            if (preg_match('#/storage/(.+)$#i', $pathPart, $m)) {
+                return self::stripDirectoryTraversal(urldecode($m[1]));
+            }
+
+            return null;
+        }
+
+        $unix = str_replace('\\', '/', $stored);
+        if (preg_match('#(?:/|\\\\)storage/app/public/(.+)$#i', $unix, $m)) {
+            return self::stripDirectoryTraversal($m[1]);
+        }
+
+        $rel = ltrim($unix, '/');
+        if (str_starts_with($rel, 'storage/')) {
+            $rel = substr($rel, strlen('storage/'));
+        }
+        if (str_starts_with($rel, 'public/')) {
+            $rel = substr($rel, strlen('public/'));
+        }
+
+        return self::stripDirectoryTraversal($rel);
+    }
+
+    private static function stripDirectoryTraversal(string $path): ?string
+    {
+        $path = str_replace('\\', '/', trim($path));
+        if ($path === '' || str_contains($path, '..')) {
+            return null;
+        }
+
+        return ltrim($path, '/');
     }
 
     /**
@@ -1335,7 +1392,7 @@ class MarketRateCrudController extends CrudController
                 if (! is_string($path) || $path === '') {
                     continue;
                 }
-                $url = route('market-rate.uploaded-file', ['id' => $entry->id, 'index' => $idx]);
+                $url = backpack_url('market-rate/'.$entry->id.'/uploaded-file/'.$idx);
                 $lis[] = '<li><a href="'.e($url).'" target="_blank" rel="noopener">'.e(basename($path)).'</a></li>';
             }
             if ($lis !== []) {

@@ -4121,7 +4121,7 @@ class PurchaseRequestCrudController extends CrudController
                                 continue;
                             }
                             $label = $idx === 0 ? 'Archivo subido' : ('Archivo ' . ($idx + 1));
-                            $fileUrl = route('market-rate.uploaded-file', ['id' => $marketRate->id, 'index' => $idx]);
+                            $fileUrl = backpack_url('market-rate/'.$marketRate->id.'/uploaded-file/'.$idx);
                             $html .= '<a href="' . e($fileUrl) . '" class="btn btn-sm btn-outline-secondary me-1" target="_blank" rel="noopener">';
                             $html .= '<i class="la la-paperclip"></i> ' . e($label);
                             $html .= '</a>';
