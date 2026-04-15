@@ -14,9 +14,9 @@
     <div class="existing-file">
         @if (isset($field['disk']))
         @if (isset($field['temporary']))
-            <a target="_blank" href="{{ (asset(\Storage::disk($field['disk'])->temporaryUrl(Arr::get($field, 'prefix', '').$field['value'], Carbon\Carbon::now()->addMinutes($field['temporary'])))) }}">
+            <a target="_blank" href="{{ \Storage::disk($field['disk'])->temporaryUrl(Arr::get($field, 'prefix', '').$field['value'], Carbon\Carbon::now()->addMinutes($field['temporary'])) }}">
         @else
-            <a target="_blank" href="{{ (asset(\Storage::disk($field['disk'])->url(Arr::get($field, 'prefix', '').$field['value']))) }}">
+            <a target="_blank" href="{{ \Storage::disk($field['disk'])->url(Arr::get($field, 'prefix', '').$field['value']) }}">
         @endif
         @else
             <a target="_blank" href="{{ (asset(Arr::get($field, 'prefix', '').$field['value'])) }}">

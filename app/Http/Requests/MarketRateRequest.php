@@ -57,11 +57,6 @@ class MarketRateRequest extends FormRequest
             }
             $this->merge(['total_amount_with_vat' => $totalWithVat]);
         }
-
-        // Evitar que el input oculto de upload_multiple envíe valores que fallen la validación si no hay archivos reales
-        if (! $this->hasFile('document_files')) {
-            $this->request->remove('document_files');
-        }
     }
 
     /**

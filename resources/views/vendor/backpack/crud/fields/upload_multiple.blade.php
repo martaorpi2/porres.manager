@@ -23,9 +23,10 @@
     	@foreach($values as $key => $file_path)
     		<div class="file-preview">
     			@if (isset($field['temporary']))
-		            <a target="_blank" href="{{ isset($field['disk'])?asset(\Storage::disk($field['disk'])->temporaryUrl($file_path, Carbon\Carbon::now()->addMinutes($field['temporary']))):asset($file_path) }}">{{ $file_path }}</a>
+		            <a target="_blank" href="{{ isset($field['disk']) ? \Storage::disk($field['disk'])->temporaryUrl($file_path, Carbon\Carbon::now()->addMinutes($field['temporary'])) : asset($file_path) }}">{{ $file_path }}</a>
 		        @else
-		            <a target="_blank" href="{{ isset($field['disk'])?asset(\Storage::disk($field['disk'])->url($file_path)):asset($file_path) }}">{{ $file_path }}</a>
+		            {{-- No usar asset() sobre Storage::url(): asset() usa ASSET_URL y puede anteponer segmentos erróneos (ej. /dashboard). --}}
+		            <a target="_blank" href="{{ isset($field['disk']) ? \Storage::disk($field['disk'])->url($file_path) : asset($file_path) }}">{{ $file_path }}</a>
 		        @endif
 		    	<a href="#" class="btn btn-light btn-sm float-right file-clear-button" title="Clear file" data-filename="{{ $file_path }}"><i class="la la-remove"></i></a>
 		    	<div class="clearfix"></div>
@@ -35,7 +36,7 @@
     @endif
     @endif
 	{{-- Show the file picker on CREATE form. --}}
-	<input name="{{ $field['name'] }}[]" type="hidden" value="">
+	{{-- Meta JSON en input con otro name: evita mezclar strings con document_files[] y romper $_FILES / guardado. --}}
 	<div class="backstrap-file">
 		<input
 	        type="file"
@@ -43,6 +44,7 @@
 	        @include('crud::fields.inc.attributes', ['default_class' => 'file_input backstrap-file-input'])
 	        multiple
 	    >
+		<input type="hidden" class="bp-upload-multiple-meta" name="_bp_{{ $field['name'] }}_meta" value="">
         <label class="backstrap-file-label" for="customFile"></label>
     </div>
 
@@ -225,7 +227,7 @@
 						selectedFiles.push({name: file.name, type: file.type})
 					});
 
-					element.find('input').first().val(JSON.stringify(selectedFiles)).trigger('change');
+					element.find('input.bp-upload-multiple-meta').val(JSON.stringify(selectedFiles)).trigger('change');
 
 					// create a bunch of span elements with the selected files names to display in the label
 					let files = '';
@@ -236,15 +238,15 @@
 					// if existing files is not on the page, create a new div a prepend it to the fileInput
 					if(existingFiles.length === 0) {
 						existingFiles = $('<div class="well well-sm existing-file mb-2"></div>');
-						existingFiles.insertBefore(element.find('input[type=hidden]').first());
+						existingFiles.insertBefore(element.find('input.bp-upload-multiple-meta'));
 						existingFiles.html(files);
 					}else {
 						// if existing files is on page show the added files after the uploaded ones
 						existingFiles.append(files);
 					}
 
-		        	// remove the hidden input, so that the setXAttribute method is no longer triggered
-					$(this).next("input[type=hidden]:not([name='clear_"+fieldName+"[]'])").remove();
+		        	// Vaciar meta (nombre _bp_* no afecta document_files). Evita quitar el nodo: si no, el segundo cambio de archivo no encuentra el hidden.
+					$(this).next('input.bp-upload-multiple-meta').val('');
 		        });
 
 				element.find('input').on('CrudField:disable', function(e) {

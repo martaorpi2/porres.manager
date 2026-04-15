@@ -9,9 +9,10 @@
                 return asset($prefix.$file_path);
             }
             if (isset($column['temporary'])) {
-                return asset(\Storage::disk($disk)->temporaryUrl($file_path, Carbon\Carbon::now()->addMinutes($column['temporary'])));
+                return \Storage::disk($disk)->temporaryUrl($file_path, Carbon\Carbon::now()->addMinutes($column['temporary']));
             }
-            return asset(\Storage::disk($disk)->url($file_path)); 
+
+            return \Storage::disk($disk)->url($file_path);
         };
        
         $column['wrapper']['href'] = $column_wrapper_href instanceof \Closure ? $column_wrapper_href($column['value'], $column['disk'], $column['prefix'] ?? '') : $column_wrapper_href;

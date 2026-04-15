@@ -6,6 +6,7 @@ use App\Http\Requests\MarketRateRequest;
 use Backpack\CRUD\app\Http\Controllers\CrudController;
 use Backpack\CRUD\app\Library\CrudPanel\CrudPanelFacade as CRUD;
 use Illuminate\Http\Request;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
@@ -734,12 +735,26 @@ class MarketRateCrudController extends CrudController
         }
 
         $stored = $files[$fileIndex];
-        $relative = self::normalizeDocumentFileToPublicDiskRelativePath($stored);
-        if ($relative !== null && Storage::disk('public')->exists($relative)) {
-            return response()->file(Storage::disk('public')->path($relative));
+        if (is_string($stored)) {
+            $trimmed = trim($stored);
+            if ($trimmed !== '' && str_starts_with($trimmed, '[')) {
+                $inner = json_decode($trimmed, true);
+                if (is_array($inner) && isset($inner[0]) && is_string($inner[0]) && count($inner) === 1) {
+                    $stored = $inner[0];
+                }
+            }
         }
 
-        $normalizedFs = str_replace('\\', '/', trim($stored));
+        $relative = self::normalizeDocumentFileToPublicDiskRelativePath($stored);
+        if ($relative !== null && Storage::disk('public')->exists($relative)) {
+            $downloadName = basename(str_replace('\\', '/', $relative));
+
+            return Storage::disk('public')->response($relative, $downloadName, [
+                'Content-Disposition' => 'inline; filename="'.$downloadName.'"',
+            ]);
+        }
+
+        $normalizedFs = str_replace('\\', '/', trim((string) $stored));
         if ($normalizedFs !== '' && ! str_contains($normalizedFs, '..') && is_file($normalizedFs) && is_readable($normalizedFs)) {
             return response()->file($normalizedFs);
         }
@@ -1347,8 +1362,10 @@ class MarketRateCrudController extends CrudController
             }
         }
         if ($request->hasFile('document_files')) {
-            foreach ((array) $request->file('document_files') as $file) {
-                if ($file && $file->isValid()) {
+            $uploaded = $request->file('document_files');
+            $list = is_array($uploaded) ? $uploaded : [$uploaded];
+            foreach ($list as $file) {
+                if ($file instanceof UploadedFile && $file->isValid()) {
                     $paths[] = $file->store('cotizaciones', 'public');
                 }
             }
