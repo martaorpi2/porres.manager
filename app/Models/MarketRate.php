@@ -53,6 +53,52 @@ class MarketRate extends Model
     |--------------------------------------------------------------------------
     */
 
+    /**
+     * Lista ordenada de rutas de disco (disco public) para enlaces de descarga.
+     * Ignora entradas vacías y desanida un nivel si un elemento es JSON ["ruta"].
+     *
+     * @param  array<int|string, mixed>|string|null  $raw
+     * @return list<string>
+     */
+    public static function normalizeDocumentFilesToPathList($raw): array
+    {
+        if ($raw === null) {
+            return [];
+        }
+        if (is_string($raw)) {
+            $decoded = json_decode($raw, true);
+            $raw = is_array($decoded) ? $decoded : [];
+        }
+        if (! is_array($raw)) {
+            return [];
+        }
+        $out = [];
+        foreach ($raw as $p) {
+            if (! is_string($p)) {
+                continue;
+            }
+            $p = trim($p);
+            if ($p === '') {
+                continue;
+            }
+            if (str_starts_with($p, '[')) {
+                $nested = json_decode($p, true);
+                if (is_array($nested)) {
+                    foreach ($nested as $n) {
+                        if (is_string($n) && trim($n) !== '') {
+                            $out[] = trim($n);
+                        }
+                    }
+                }
+
+                continue;
+            }
+            $out[] = $p;
+        }
+
+        return array_values($out);
+    }
+
     /*
     |--------------------------------------------------------------------------
     | RELATIONS

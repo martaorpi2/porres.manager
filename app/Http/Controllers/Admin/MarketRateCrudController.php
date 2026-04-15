@@ -717,20 +717,13 @@ class MarketRateCrudController extends CrudController
     /**
      * Mostrar archivo adjunto subido para una cotización.
      */
-    public function showUploadedFile($id, $index = 0)
+    public function showUploadedFile($id, $index = null)
     {
         $marketRate = \App\Models\MarketRate::findOrFail($id);
-        $files = $marketRate->document_files;
+        $files = \App\Models\MarketRate::normalizeDocumentFilesToPathList($marketRate->document_files);
 
-        if (is_string($files)) {
-            $decoded = json_decode($files, true);
-            $files = is_array($decoded) ? $decoded : [];
-        } else {
-            $files = is_array($files) ? $files : [];
-        }
-
-        $fileIndex = max(0, (int) $index);
-        if (! isset($files[$fileIndex]) || ! is_string($files[$fileIndex]) || trim($files[$fileIndex]) === '') {
+        $fileIndex = max(0, (int) ($index ?? 0));
+        if (! isset($files[$fileIndex])) {
             abort(404, 'Archivo adjunto no encontrado.');
         }
 
@@ -1402,14 +1395,11 @@ class MarketRateCrudController extends CrudController
     private static function supportingMaterialAdminHtml(\App\Models\MarketRate $entry): string
     {
         $parts = [];
-        $files = $entry->document_files;
-        if (is_array($files) && count($files) > 0) {
+        $paths = \App\Models\MarketRate::normalizeDocumentFilesToPathList($entry->document_files);
+        if ($paths !== []) {
             $lis = [];
-            foreach ($files as $idx => $path) {
-                if (! is_string($path) || $path === '') {
-                    continue;
-                }
-                $url = backpack_url('market-rate/'.$entry->id.'/uploaded-file/'.$idx);
+            foreach ($paths as $idx => $path) {
+                $url = route('market-rate.uploaded-file', ['id' => $entry->id, 'index' => $idx]);
                 $lis[] = '<li><a href="'.e($url).'" target="_blank" rel="noopener">'.e(basename($path)).'</a></li>';
             }
             if ($lis !== []) {

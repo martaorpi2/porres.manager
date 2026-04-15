@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use Backpack\CRUD\app\Http\Controllers\CrudController;
 use Backpack\CRUD\app\Library\CrudPanel\CrudPanelFacade as CRUD;
 use App\Http\Requests\PurchaseRequestRequest;
+use App\Models\MarketRate;
 use Illuminate\Support\Str;
 
 /**
@@ -4063,13 +4064,7 @@ class PurchaseRequestCrudController extends CrudController
                         $html .= '<br><small class="text-muted">Subtotal: $' . number_format($subtotal, 2) . ' + IVA: $' . number_format($vatAmount, 2) . '</small>';
                     }
                     $html .= '</td>';
-                    $rawDocumentFiles = $marketRate->document_files;
-                    if (is_string($rawDocumentFiles)) {
-                        $decoded = json_decode($rawDocumentFiles, true);
-                        $documentFiles = is_array($decoded) ? $decoded : [];
-                    } else {
-                        $documentFiles = is_array($rawDocumentFiles) ? $rawDocumentFiles : [];
-                    }
+                    $documentFiles = MarketRate::normalizeDocumentFilesToPathList($marketRate->document_files);
 
                     if ($marketRate->quoteDetails->isEmpty()) {
                         $productsHtml = '<span class="text-muted">Sin productos</span>';
@@ -4115,13 +4110,10 @@ class PurchaseRequestCrudController extends CrudController
                     $html .= '<i class="la la-file-pdf-o"></i> PDF';
                     $html .= '</a>';
 
-                    if (!empty($documentFiles)) {
+                    if ($documentFiles !== []) {
                         foreach ($documentFiles as $idx => $filePath) {
-                            if (!is_string($filePath) || trim($filePath) === '') {
-                                continue;
-                            }
                             $label = $idx === 0 ? 'Archivo subido' : ('Archivo ' . ($idx + 1));
-                            $fileUrl = backpack_url('market-rate/'.$marketRate->id.'/uploaded-file/'.$idx);
+                            $fileUrl = route('market-rate.uploaded-file', ['id' => $marketRate->id, 'index' => $idx]);
                             $html .= '<a href="' . e($fileUrl) . '" class="btn btn-sm btn-outline-secondary me-1" target="_blank" rel="noopener">';
                             $html .= '<i class="la la-paperclip"></i> ' . e($label);
                             $html .= '</a>';

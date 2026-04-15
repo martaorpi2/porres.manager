@@ -40,6 +40,8 @@ Route::group([
     Route::get('api/productos', 'ApplicationCrudController@getProductos')->name('api.productos');
     Route::get('api/productos-por-area', 'PurchaseRequestCrudController@getProductosByArea')->name('api.productos-por-area');
     Route::crud('request-detail', 'RequestDetailCrudController');
+    // Antes del CRUD: ruta fija para no depender del orden de registro ni de backpack_url().
+    Route::get('market-rate/{id}/uploaded-file/{index?}', 'MarketRateCrudController@showUploadedFile')->name('market-rate.uploaded-file');
     Route::crud('market-rate', 'MarketRateCrudController');
     Route::crud('quote-detail', 'QuoteDetailCrudController');
     Route::crud('reception', 'ReceptionCrudController');
