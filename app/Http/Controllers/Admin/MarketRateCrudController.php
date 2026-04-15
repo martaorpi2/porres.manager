@@ -1408,11 +1408,7 @@ class MarketRateCrudController extends CrudController
         }
         if ($entry->reference_links) {
             $lis = [];
-            foreach (preg_split('/\r\n|\r|\n/', $entry->reference_links) as $line) {
-                $line = trim($line);
-                if ($line === '' || ! preg_match('#^https?://#i', $line)) {
-                    continue;
-                }
+            foreach (\App\Models\MarketRate::referenceLinkUrlsList($entry->reference_links) as $line) {
                 $lis[] = '<li><a href="'.e($line).'" target="_blank" rel="noopener">'.e(\Illuminate\Support\Str::limit($line, 72)).'</a></li>';
             }
             if ($lis !== []) {

@@ -99,6 +99,28 @@ class MarketRate extends Model
         return array_values($out);
     }
 
+    /**
+     * URLs http(s) válidas a partir del texto multilínea del campo reference_links.
+     *
+     * @return list<string>
+     */
+    public static function referenceLinkUrlsList(?string $raw): array
+    {
+        if ($raw === null || $raw === '') {
+            return [];
+        }
+        $out = [];
+        foreach (preg_split('/\r\n|\r|\n/', $raw) as $line) {
+            $line = trim($line);
+            if ($line === '' || ! preg_match('#^https?://#i', $line)) {
+                continue;
+            }
+            $out[] = $line;
+        }
+
+        return array_values($out);
+    }
+
     /*
     |--------------------------------------------------------------------------
     | RELATIONS

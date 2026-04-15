@@ -4120,6 +4120,18 @@ class PurchaseRequestCrudController extends CrudController
                         }
                     }
 
+                    $referenceUrls = MarketRate::referenceLinkUrlsList($marketRate->reference_links);
+                    if ($referenceUrls !== []) {
+                        foreach ($referenceUrls as $idx => $linkUrl) {
+                            $linkLabel = count($referenceUrls) === 1
+                                ? 'Enlace (Mercado Libre u otros)'
+                                : ('Enlace ' . ($idx + 1));
+                            $html .= '<a href="' . e($linkUrl) . '" class="btn btn-sm btn-outline-info me-1" target="_blank" rel="noopener" title="' . e($linkUrl) . '">';
+                            $html .= '<i class="la la-external-link"></i> ' . e($linkLabel);
+                            $html .= '</a>';
+                        }
+                    }
+
                     if ($entry->status != 'Completada' && $canSelect) {
                         $html .= '<form method="POST" action="' . e(backpack_url('purchase-request/' . $entry->id . '/toggle-market-rate/' . $marketRate->id)) . '" style="display:inline-block;" class="me-1">';
                         $html .= csrf_field();
