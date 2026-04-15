@@ -41,7 +41,6 @@ Route::group([
     Route::get('api/productos-por-area', 'PurchaseRequestCrudController@getProductosByArea')->name('api.productos-por-area');
     Route::crud('request-detail', 'RequestDetailCrudController');
     Route::crud('market-rate', 'MarketRateCrudController');
-    Route::get('market-rate/{id}/uploaded-file/{index?}', 'MarketRateCrudController@showUploadedFile')->name('market-rate.uploaded-file');
     Route::crud('quote-detail', 'QuoteDetailCrudController');
     Route::crud('reception', 'ReceptionCrudController');
     Route::get('reception/{id}/pdf', 'ReceptionCrudController@generatePdf')->name('reception.pdf');
