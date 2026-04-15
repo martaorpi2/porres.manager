@@ -35,9 +35,9 @@ class MarketRateCrudController extends CrudController
         CRUD::setRoute(config('backpack.base.route_prefix') . '/market-rate');
         CRUD::setEntityNameStrings('cotización', 'cotizaciones');
         
-        // Restringir creación de cotizaciones solo al responsable de compras
+        // Permitir creación de cotizaciones a compras, admin y responsables de área.
         $user = backpack_user();
-        if ($user && !$user->hasRole('role_responsable_compras', 'backpack') && !$user->hasRole('role_admin_sistema', 'backpack') && !$user->hasRole('role_admin_institucion', 'backpack')) {
+        if ($user && !$user->hasRole('role_responsable_compras', 'backpack') && !$user->hasRole('role_admin_sistema', 'backpack') && !$user->hasRole('role_admin_institucion', 'backpack') && !$user->hasRole('role_responsable_area', 'backpack')) {
             CRUD::denyAccess('create');
         }
     }
@@ -61,6 +61,13 @@ class MarketRateCrudController extends CrudController
         if ($user && ($user->hasRole('role_apoderado', 'backpack') || $user->hasRole('role_representante_legal', 'backpack'))) {
             CRUD::removeButton('update');
             CRUD::removeButton('delete');
+        }
+
+        // Responsable de área: solo ver cotizaciones de sus propias solicitudes de compra.
+        if ($user && $user->hasRole('role_responsable_area', 'backpack')) {
+            CRUD::addClause('whereHas', 'purchaseRequest', function ($query) use ($user) {
+                $query->where('requesting_user_id', $user->id);
+            });
         }
         
         // Cargar relaciones necesarias
@@ -126,6 +133,7 @@ class MarketRateCrudController extends CrudController
     protected function setupCreateOperation()
     {
         CRUD::setValidation(MarketRateRequest::class);
+        $user = backpack_user();
         
         // Obtener purchase_request_id de la URL si existe
         $purchaseRequestId = request()->get('purchase_request_id');
@@ -176,11 +184,17 @@ class MarketRateCrudController extends CrudController
             'attribute' => 'request_number',
             'model' => 'App\Models\PurchaseRequest',
             'default' => $purchaseRequestId,
-            'options' => function ($query) {
+            'options' => function ($query) use ($user) {
                 // Filtrar solo solicitudes que no estén aprobadas o completadas
-                return $query->where('status', '!=', 'Aprobada')
-                             ->where('status', '!=', 'Completada')
-                             ->get();
+                $query->where('status', '!=', 'Aprobada')
+                    ->where('status', '!=', 'Completada');
+
+                // Responsable de área: solo sus propias solicitudes.
+                if ($user && $user->hasRole('role_responsable_area', 'backpack')) {
+                    $query->where('requesting_user_id', $user->id);
+                }
+
+                return $query->get();
             },
         ]);
         
@@ -510,9 +524,9 @@ class MarketRateCrudController extends CrudController
      */
     public function store()
     {
-        // Verificar que solo el responsable de compras pueda crear cotizaciones
+        // Verificar que el rol tenga permitido crear cotizaciones.
         $user = backpack_user();
-        $adminRoles = ['role_admin_sistema', 'role_admin_institucion', 'role_responsable_compras'];
+        $adminRoles = ['role_admin_sistema', 'role_admin_institucion', 'role_responsable_compras', 'role_responsable_area'];
         $isAdmin = false;
         foreach ($adminRoles as $role) {
             if ($user && $user->hasRole($role, 'backpack')) {
@@ -522,7 +536,7 @@ class MarketRateCrudController extends CrudController
         }
         
         if (!$isAdmin) {
-            abort(403, 'Solo el responsable de compras puede crear cotizaciones.');
+            abort(403, 'No tienes permisos para crear cotizaciones.');
         }
         
         $this->crud->hasAccessOrFail('create');
@@ -557,6 +571,16 @@ class MarketRateCrudController extends CrudController
             if ($purchaseRequest && $purchaseRequest->status === 'Aprobada') {
                 \Alert::error('No se pueden agregar cotizaciones a una solicitud de compra que ya está aprobada.')->flash();
                 return redirect()->back()->withInput();
+            }
+
+            // Responsable de área: solo puede cotizar sus propias solicitudes.
+            if (
+                $purchaseRequest
+                && $user
+                && $user->hasRole('role_responsable_area', 'backpack')
+                && (int) $purchaseRequest->requesting_user_id !== (int) $user->id
+            ) {
+                abort(403, 'Solo puedes cargar cotizaciones en tus propias solicitudes de compra.');
             }
         }
 
@@ -600,6 +624,7 @@ class MarketRateCrudController extends CrudController
     public function update()
     {
         $this->crud->hasAccessOrFail('update');
+        $user = backpack_user();
 
         // execute the FormRequest authorization and validation, if one is required
         $request = $this->crud->validateRequest();
@@ -646,6 +671,17 @@ class MarketRateCrudController extends CrudController
             if ($purchaseRequest && $purchaseRequest->status === 'Aprobada') {
                 \Alert::error('No se puede asociar una cotización a una solicitud de compra que ya está aprobada.')->flash();
                 return redirect()->back()->withInput();
+            }
+        }
+
+        // Responsable de área: solo puede editar cotizaciones ligadas a sus propias solicitudes.
+        if ($user && $user->hasRole('role_responsable_area', 'backpack')) {
+            $targetPurchaseRequestId = $dataToSave['purchase_request_id'] ?? ($currentEntry->purchase_request_id ?? null);
+            if ($targetPurchaseRequestId) {
+                $targetPurchaseRequest = \App\Models\PurchaseRequest::find($targetPurchaseRequestId);
+                if ($targetPurchaseRequest && (int) $targetPurchaseRequest->requesting_user_id !== (int) $user->id) {
+                    abort(403, 'Solo puedes editar cotizaciones de tus propias solicitudes de compra.');
+                }
             }
         }
 

@@ -91,15 +91,10 @@
 @push('after_scripts')
 <script>
 $(document).ready(function() {
-    console.log('Script cargado para CoreUI v2 dropdowns...');
-    
     // Manejar dropdowns de CoreUI v2
     $('.nav-item.nav-dropdown').each(function() {
         const $dropdown = $(this);
         const $link = $dropdown.find('.nav-link');
-        const $menu = $dropdown.find('.nav-dropdown-items');
-        
-        console.log('Encontrado dropdown CoreUI:', $dropdown[0]);
         
         // Hacer que solo el enlace principal sea clickeable para abrir/cerrar
         $link.on('click', function(e) {
@@ -107,8 +102,6 @@ $(document).ready(function() {
             if ($(this).attr('href') === '#' || !$(this).attr('href')) {
                 e.preventDefault();
                 e.stopPropagation();
-                
-                console.log('Click detectado en dropdown CoreUI');
                 
                 // Cerrar otros dropdowns
                 $('.nav-item.nav-dropdown').not($dropdown).removeClass('open');
@@ -119,8 +112,6 @@ $(document).ready(function() {
                 // Actualizar aria-expanded
                 const isExpanded = $dropdown.hasClass('open');
                 $link.attr('aria-expanded', isExpanded);
-                
-                console.log('Dropdown estado:', $dropdown.hasClass('open') ? 'abierto' : 'cerrado');
             }
             // Si tiene un href válido, permitir que navegue normalmente
         });
@@ -134,12 +125,6 @@ $(document).ready(function() {
         }
     });
     
-    // Permitir que los elementos del menú funcionen normalmente
-    $('.nav-dropdown-items a').on('click', function(e) {
-        // No prevenir el comportamiento - permitir navegación normal
-        console.log('Navegando a:', $(this).attr('href'));
-    });
-
     // Manejar la activación correcta de elementos dropdown
     $('.dropdown-item').on('click', function(e) {
         // Remover clase active de todos los elementos dropdown en el mismo dropdown
@@ -148,8 +133,6 @@ $(document).ready(function() {
         
         // Agregar clase active solo al elemento clickeado
         $(this).addClass('active');
-        
-        console.log('Elemento dropdown activado:', $(this).text());
     });
 
     // Función para verificar y corregir estados activos al cargar la página
@@ -167,7 +150,6 @@ $(document).ready(function() {
             
             if (itemHref && currentUrl.includes(itemHref.replace('/admin/', ''))) {
                 $item.addClass('active');
-                console.log('Activando elemento:', $item.text(), 'para URL:', currentUrl);
             }
         });
     }

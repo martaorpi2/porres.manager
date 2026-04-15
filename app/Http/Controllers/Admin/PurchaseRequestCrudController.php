@@ -52,7 +52,7 @@ class PurchaseRequestCrudController extends CrudController
         // Habilitar tabla responsiva
         CRUD::enableResponsiveTable();
         
-        CRUD::addClause('with', ['responsibilityArea', 'requestingUser', 'details', 'purchaseOrders']);
+        CRUD::addClause('with', ['responsibilityArea', 'requestingUser', 'details', 'purchaseOrders', 'marketRates']);
         
         // Filtrar solicitudes según el rol del usuario
         $user = backpack_user();
@@ -107,8 +107,7 @@ class PurchaseRequestCrudController extends CrudController
         // Agregar columna personalizada para mostrar cantidad de cotizaciones
         CRUD::column('quotations_count')->label('Cotizaciones')->type('custom_html')
             ->value(function($entry) {
-                // Usar la relación del modelo en lugar de consulta directa
-                $entry->load('marketRates');
+                // Evitar consultas por fila: marketRates ya viene eager-loaded.
                 $quotationsCount = $entry->marketRates->count();
                 
                 if ($quotationsCount > 0) {
@@ -4012,17 +4011,9 @@ class PurchaseRequestCrudController extends CrudController
                 return $html;
             });
 
-        // Agregar campo para mostrar cotizaciones disponibles (oculto para responsables de área)
+        // Agregar campo para mostrar cotizaciones disponibles.
         CRUD::column('market_rates_table')->label('Cotizaciones Disponibles')->type('custom_html')
             ->value(function($entry) {
-                // Ocultar esta sección para responsables de área
-                $user = backpack_user();
-                $isResponsableArea = $user && $user->hasRole('role_responsable_area', 'backpack');
-                
-                if ($isResponsableArea) {
-                    return '';
-                }
-                
                 // Usar la relación del modelo en lugar de consulta directa
                 $entry->load(['marketRates.supplier', 'marketRates.quoteDetails.product']);
                 $marketRates = $entry->marketRates;
@@ -4216,9 +4207,9 @@ class PurchaseRequestCrudController extends CrudController
                 $entry->load('marketRates');
                 $quotationsCount = $entry->marketRates->count();
                 
-                // Botón para agregar nueva cotización (solo responsable de compras y solo si la solicitud no está aprobada)
+                // Botón para agregar nueva cotización (compras, admin y responsable de área; solo si no está aprobada/completada)
                 $user = backpack_user();
-                $adminRoles = ['role_admin_sistema', 'role_admin_institucion', 'role_responsable_compras'];
+                $adminRoles = ['role_admin_sistema', 'role_admin_institucion', 'role_responsable_compras', 'role_responsable_area'];
                 $canCreateQuotation = false;
                 foreach ($adminRoles as $role) {
                     if ($user && $user->hasRole($role, 'backpack')) {
@@ -4384,11 +4375,6 @@ class PurchaseRequestCrudController extends CrudController
                         }
                         $html .= '</div>';
                     }
-                } elseif ($entry->status != 'Completada' && !$canGenerateOrder) {
-                    // Usuario con rol role_responsable_area no puede generar órdenes de compra
-                    $html .= '<div class="mt-3 alert alert-info">';
-                    $html .= '<i class="la la-info-circle"></i> <strong>Información:</strong> Los responsables de área no pueden generar órdenes de compra. Esta función está reservada para otros roles del sistema.';
-                    $html .= '</div>';
                 }
                 
                 return $html;

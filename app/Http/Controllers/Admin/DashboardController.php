@@ -375,8 +375,6 @@ class DashboardController extends Controller
             
             // Generar HTML para las alertas
             if ($stockAlerts->isNotEmpty()) {
-                \Log::info('Generando HTML para alertas de stock', ['count' => $stockAlerts->count()]);
-                
                 $stockAlertsHtml = '<div style="text-align: left; max-height: 400px; overflow-y: auto;">';
                 $stockAlertsHtml .= '<div class="alert alert-warning" style="margin-bottom: 15px;">';
                 $stockAlertsHtml .= '<i class="la la-info-circle"></i> <strong>Atención:</strong> Tienes <strong>' . $stockAlerts->count() . '</strong> producto(s) con stock por debajo del mínimo requerido.';
@@ -410,8 +408,6 @@ class DashboardController extends Controller
                 
                 $stockAlertsHtml .= '</tbody></table>';
                 $stockAlertsHtml .= '</div>';
-                
-                \Log::info('HTML de alertas generado', ['length' => strlen($stockAlertsHtml)]);
             }
         }
 
@@ -879,24 +875,11 @@ class DashboardController extends Controller
             }])
             ->get();
 
-        \Log::info('Productos encontrados con stock mínimo', [
-            'total_products' => $products->count(),
-            'location_ids' => $locationIds->toArray()
-        ]);
-
         $alerts = collect();
 
         foreach ($products as $product) {
             // Calcular el stock total en las ubicaciones del responsable
             $totalStock = $product->stockLevels->sum('quantity');
-            
-            \Log::info('Verificando producto', [
-                'product_id' => $product->id,
-                'product_name' => $product->name,
-                'total_stock' => $totalStock,
-                'minimum_stock' => $product->minimum_stock,
-                'stock_levels_count' => $product->stockLevels->count()
-            ]);
             
             // Verificar si el stock está por debajo del mínimo (usando comparación numérica)
             if ((float)$totalStock < (float)$product->minimum_stock) {
@@ -915,17 +898,8 @@ class DashboardController extends Controller
                     'deficit' => $product->minimum_stock - $totalStock,
                     'locations' => $locations,
                 ]);
-                
-                \Log::info('Alerta agregada para producto', [
-                    'product_id' => $product->id,
-                    'product_name' => $product->name,
-                    'current_stock' => $totalStock,
-                    'minimum_stock' => $product->minimum_stock
-                ]);
             }
         }
-
-        \Log::info('Total de alertas generadas', ['count' => $alerts->count()]);
 
         // Ordenar por déficit (mayor déficit primero)
         return $alerts->sortByDesc('deficit')->values();
