@@ -3,7 +3,9 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Requests\PaymentOrderRequest;
+use App\Models\OpDetail;
 use App\Models\PaymentOrder;
+use App\Models\User;
 use Backpack\CRUD\app\Http\Controllers\CrudController;
 use Backpack\CRUD\app\Library\CrudPanel\CrudPanelFacade as CRUD;
 use Barryvdh\DomPDF\Facade\Pdf;
@@ -57,9 +59,16 @@ class PaymentOrderCrudController extends CrudController
         // Las órdenes de pago no se eliminan; solo se pueden anular (solo la administradora).
         CRUD::removeButton('delete');
 
-        // Ocultar botones de crear y editar para role_admin_institucion, role_apoderado y role_representante_legal
+        // Ocultar crear/editar para admin institucional / apoderado / representante legal, salvo que también sea responsable de compras (cuenta típica «compras» del seeder).
         $user = backpack_user();
-        if ($user && ($user->hasRole('role_admin_institucion', 'backpack') || $user->hasRole('role_apoderado', 'backpack') || $user->hasRole('role_representante_legal', 'backpack'))) {
+        $esSoloPerfilRestringidoSinCompras = $user instanceof User
+            && ! $user->hasResponsableComprasRole()
+            && (
+                $user->hasRole('role_admin_institucion', 'backpack')
+                || $user->hasRole('role_apoderado', 'backpack')
+                || $user->hasRole('role_representante_legal', 'backpack')
+            );
+        if ($esSoloPerfilRestringidoSinCompras) {
             CRUD::removeButton('create');
             CRUD::removeButton('update');
         }
@@ -148,13 +157,8 @@ class PaymentOrderCrudController extends CrudController
         $this->crud->hasAccessOrFail('create');
 
         $user = backpack_user();
-        if (! $user || ! $user->hasRole('role_responsable_compras', 'backpack')) {
+        if (! $user instanceof User || ! $user->hasResponsableComprasRole()) {
             \Alert::error('Solo el responsable de compras puede crear órdenes de pago.')->flash();
-
-            return redirect()->back()->withInput();
-        }
-        if ($user->hasRole('role_apoderado', 'backpack') || $user->hasRole('role_representante_legal', 'backpack')) {
-            \Alert::error('No tiene permiso para crear órdenes de pago.')->flash();
 
             return redirect()->back()->withInput();
         }
@@ -178,8 +182,18 @@ class PaymentOrderCrudController extends CrudController
 
             $request->merge(['payment_number' => PaymentOrder::getNextPaymentNumber()]);
 
-            $item = $this->crud->create($this->crud->getStrippedSaveRequest($request));
+            $data = $this->crud->getStrippedSaveRequest($request);
+            $paymentDetailsRaw = $request->input('payment_details', []);
+            unset($data['payment_details']);
+
+            $item = $this->crud->create($data);
             $this->data['entry'] = $this->crud->entry = $item;
+
+            $this->syncOpDetailsFromRequest(
+                $item,
+                is_array($paymentDetailsRaw) ? $paymentDetailsRaw : [],
+                (string) ($request->input('payment_method') ?? '')
+            );
 
             if ($item->purchase_order_id) {
                 \App\Models\PurchaseOrder::find($item->purchase_order_id)?->markAsRecibidaIfHasConformeReception();
@@ -293,6 +307,56 @@ class PaymentOrderCrudController extends CrudController
             'label' => 'Fecha de Pago',
             'type' => 'date',
         ]);
+
+        CRUD::addField([
+            'name' => 'payment_details',
+            'label' => 'Detalle de pagos (opcional: varias cuotas o parcialidades)',
+            'type' => 'repeatable',
+            'subfields' => [
+                [
+                    'name' => 'concept',
+                    'label' => 'Concepto',
+                    'type' => 'select_from_array',
+                    'options' => [
+                        'advance' => 'Anticipo',
+                        'partiality' => 'Parcialidad',
+                        'residue' => 'Saldo',
+                    ],
+                    'allows_null' => false,
+                    'wrapper' => ['class' => 'form-group col-md-3'],
+                ],
+                [
+                    'name' => 'amount',
+                    'label' => 'Monto',
+                    'type' => 'number',
+                    'attributes' => ['step' => '0.01', 'min' => '0'],
+                    'wrapper' => ['class' => 'form-group col-md-2'],
+                ],
+                [
+                    'name' => 'method_payment',
+                    'label' => 'Método (línea)',
+                    'type' => 'text',
+                    'hint' => 'Si queda vacío, se usa la forma de pago de la cabecera.',
+                    'wrapper' => ['class' => 'form-group col-md-3'],
+                ],
+                [
+                    'name' => 'expiration_date',
+                    'label' => 'Vencimiento',
+                    'type' => 'date',
+                    'wrapper' => ['class' => 'form-group col-md-2'],
+                ],
+                [
+                    'name' => 'actual_payment_date',
+                    'label' => 'Pagado el',
+                    'type' => 'date',
+                    'wrapper' => ['class' => 'form-group col-md-2'],
+                ],
+            ],
+            'init_rows' => 0,
+            'min_rows' => 0,
+            'new_item_label' => 'Agregar línea de pago',
+        ]);
+
         /**
          * Fields can be defined using the fluent syntax:
          * - CRUD::field('price')->type('number');
@@ -308,6 +372,21 @@ class PaymentOrderCrudController extends CrudController
     protected function setupUpdateOperation()
     {
         $this->setupCreateOperation();
+
+        $entry = $this->crud->getCurrentEntry();
+        if ($entry instanceof PaymentOrder) {
+            $entry->load('opDetails');
+            $default = $entry->opDetails->map(function (OpDetail $d) {
+                return [
+                    'concept' => $d->concept,
+                    'amount' => (string) $d->amount,
+                    'method_payment' => $d->method_payment,
+                    'expiration_date' => $d->expiration_date ? $d->expiration_date->format('Y-m-d') : '',
+                    'actual_payment_date' => $d->actual_payment_date ? $d->actual_payment_date->format('Y-m-d') : '',
+                ];
+            })->toArray();
+            CRUD::modifyField('payment_details', ['default' => $default]);
+        }
     }
 
     /**
@@ -334,7 +413,72 @@ class PaymentOrderCrudController extends CrudController
             abort(403, 'No se puede editar una orden de pago anulada.');
         }
 
-        return $this->backpackUpdate();
+        return DB::transaction(function () {
+            $id = request()->input($this->crud->model->getKeyName());
+            $this->crud->hasAccessOrFail('update');
+            $this->crud->registerFieldEvents();
+            $request = $this->crud->validateRequest();
+
+            $data = $this->crud->getStrippedSaveRequest($request);
+            $paymentDetailsRaw = $request->input('payment_details', []);
+            unset($data['payment_details']);
+
+            $this->crud->entry = $this->crud->update($id, $data);
+            $this->data['entry'] = $this->crud->entry;
+
+            $this->syncOpDetailsFromRequest(
+                $this->crud->entry,
+                is_array($paymentDetailsRaw) ? $paymentDetailsRaw : [],
+                (string) ($request->input('payment_method') ?? '')
+            );
+
+            \Alert::success(trans('backpack::crud.update_success'))->flash();
+            $this->crud->setSaveAction();
+
+            return $this->crud->performSaveAction($this->crud->entry->getKey());
+        });
+    }
+
+    /**
+     * Persiste filas en op_details (reemplaza las existentes). Si no hay líneas, deja la tabla vacía.
+     */
+    protected function syncOpDetailsFromRequest(PaymentOrder $paymentOrder, array $rows, string $headerPaymentMethod): void
+    {
+        $paymentOrder->opDetails()->delete();
+
+        $header = trim($headerPaymentMethod) !== '' ? trim($headerPaymentMethod) : '—';
+
+        foreach ($rows as $row) {
+            if (! is_array($row)) {
+                continue;
+            }
+            $amount = isset($row['amount']) ? (float) $row['amount'] : 0;
+            if ($amount <= 0) {
+                continue;
+            }
+            $concept = $row['concept'] ?? 'partiality';
+            if (! in_array($concept, ['advance', 'residue', 'partiality'], true)) {
+                $concept = 'partiality';
+            }
+            $method = trim((string) ($row['method_payment'] ?? ''));
+            if ($method === '') {
+                $method = $header;
+            }
+
+            $exp = $row['expiration_date'] ?? null;
+            $exp = ($exp === '' || $exp === null) ? null : $exp;
+            $paid = $row['actual_payment_date'] ?? null;
+            $paid = ($paid === '' || $paid === null) ? null : $paid;
+
+            OpDetail::create([
+                'payment_order_id' => $paymentOrder->id,
+                'concept' => $concept,
+                'amount' => $amount,
+                'method_payment' => $method !== '' ? $method : '—',
+                'expiration_date' => $exp,
+                'actual_payment_date' => $paid,
+            ]);
+        }
     }
 
     /**
@@ -345,6 +489,8 @@ class PaymentOrderCrudController extends CrudController
      */
     protected function setupShowOperation()
     {
+        CRUD::addClause('with', ['opDetails']);
+
         // Configurar las columnas que se mostrarán en la vista de detalles
         CRUD::column('payment_number')->label('Número de Orden de Pago');
         CRUD::column('date')->label('Fecha');
@@ -444,10 +590,10 @@ class PaymentOrderCrudController extends CrudController
             'label' => 'Detalles de Pagos',
             'type' => 'closure',
             'function' => function($entry) {
-                $details = \Illuminate\Support\Facades\DB::table('op_details')
-                    ->where('payment_order_id', $entry->id)
-                    ->get();
-                
+                $details = $entry->relationLoaded('opDetails')
+                    ? $entry->opDetails
+                    : $entry->opDetails()->get();
+
                 if ($details->isEmpty()) {
                     return '<div class="alert alert-info">No hay detalles de pago</div>';
                 }
@@ -472,13 +618,15 @@ class PaymentOrderCrudController extends CrudController
                 
                 foreach ($details as $detail) {
                     $html .= '<tr>';
-                    $html .= '<td><span class="badge bg-secondary">' . ucfirst(e($detail->concept)) . '</span></td>';
-                    $html .= '<td class="text-end"><strong>$' . number_format($detail->amount, 2) . '</strong></td>';
+                    $html .= '<td><span class="badge bg-secondary">' . e(OpDetail::conceptLabel($detail->concept)) . '</span></td>';
+                    $html .= '<td class="text-end"><strong>$' . number_format((float) $detail->amount, 2) . '</strong></td>';
                     $html .= '<td>' . e($detail->method_payment) . '</td>';
-                    $html .= '<td>' . ($detail->expiration_date ? date('d/m/Y', strtotime($detail->expiration_date)) : '<span class="text-muted">N/A</span>') . '</td>';
+                    $exp = $detail->expiration_date;
+                    $html .= '<td>' . ($exp ? $exp->format('d/m/Y') : '<span class="text-muted">N/A</span>') . '</td>';
                     
-                    if ($detail->actual_payment_date) {
-                        $html .= '<td><span class="badge bg-success"><i class="la la-check"></i> Pagado</span><br><small class="text-muted">' . date('d/m/Y', strtotime($detail->actual_payment_date)) . '</small></td>';
+                    $paid = $detail->actual_payment_date;
+                    if ($paid) {
+                        $html .= '<td><span class="badge bg-success"><i class="la la-check"></i> Pagado</span><br><small class="text-muted">' . $paid->format('d/m/Y') . '</small></td>';
                     } else {
                         $html .= '<td><span class="badge bg-warning"><i class="la la-clock"></i> Pendiente</span></td>';
                     }
@@ -563,7 +711,11 @@ class PaymentOrderCrudController extends CrudController
      */
     public function generatePdf($id)
     {
-        $paymentOrder = PaymentOrder::with(['purchase_order.supplier', 'purchase_order.details.supplier'])->findOrFail($id);
+        $paymentOrder = PaymentOrder::with([
+            'opDetails',
+            'purchase_order.supplier',
+            'purchase_order.details.supplier',
+        ])->findOrFail($id);
 
         $pdf = Pdf::loadView('payment-order-pdf', compact('paymentOrder'));
 

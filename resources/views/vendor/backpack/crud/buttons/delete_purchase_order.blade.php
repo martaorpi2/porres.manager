@@ -1,16 +1,8 @@
 @php
-    $user = backpack_user();
-    $canDelete = false;
-
-    if ($entry->isAccordingComplete()) {
-        $canDelete = false;
-    } elseif ($user && $user->hasRole('role_responsable_compras', 'backpack')) {
-        // Si es role_responsable_compras, solo puede eliminar si creó la recepción
-        $canDelete = ($entry->area_manager_id == $user->id);
-    } else {
-        // Otros roles pueden eliminar normalmente
-        $canDelete = $crud->hasAccess('delete', $entry);
-    }
+    $blockedByOp = isset($entry->active_payment_orders_count)
+        ? (int) $entry->active_payment_orders_count > 0
+        : $entry->hasBlockingPaymentOrder();
+    $canDelete = ! $blockedByOp && $crud->hasAccess('delete', $entry);
 @endphp
 
 @if ($canDelete)
@@ -23,15 +15,13 @@
 {{-- - used right away in AJAX operations (ex: List) --}}
 {{-- - pushed to the end of the page, after jQuery is loaded, for non-AJAX operations (ex: Show) --}}
 @push('after_scripts') @if (request()->ajax()) @endpush @endif
-@bassetBlock('backpack/crud/buttons/delete-button-'.app()->getLocale().'.js')
+@bassetBlock('backpack/crud/buttons/delete-purchase-order-button-'.app()->getLocale().'.js')
 <script>
 
 	if (typeof deleteEntry != 'function') {
 	  $("[data-button-type=delete]").unbind('click');
 
 	  function deleteEntry(button) {
-		// ask for confirmation before deleting an item
-		// e.preventDefault();
 		var route = $(button).attr('data-route');
 
 		swal({
@@ -55,7 +45,7 @@
 			},
 		  dangerMode: true,
 		}).then((value) => {
-			
+
 				$.ajax({
 			      url: route,
 			      type: 'DELETE',
@@ -67,9 +57,7 @@
 			      },
 			      success: function(result) {
 			          if (result == 1) {
-						  // Redraw the table
 						  if (typeof crud != 'undefined' && typeof crud.table != 'undefined') {
-							  // Move to previous page in case of deleting the only item in table
 							  if(crud.table.rows().count() === 1) {
 							    crud.table.page("previous");
 							  }
@@ -77,19 +65,14 @@
 							  crud.table.draw(false);
 						  }
 
-			          	  // Show a success notification bubble
 			              new Noty({
 		                    type: "success",
 		                    text: "{!! '<strong>'.trans('backpack::crud.delete_confirmation_title').'</strong><br>'.trans('backpack::crud.delete_confirmation_message') !!}"
 		                  }).show();
 
-			              // Hide the modal, if any
 			              $('.modal').modal('hide');
 			          } else {
-			              // if the result is an array, it means 
-			              // we have notification bubbles to show
 			          	  if (result instanceof Object) {
-			          	  	// trigger one or more bubble notifications 
 			          	  	Object.entries(result).forEach(function(entry, index) {
 			          	  	  var type = entry[0];
 			          	  	  entry[1].forEach(function(message, i) {
@@ -99,7 +82,7 @@
 				                  }).show();
 			          	  	  });
 			          	  	});
-			          	  } else {// Show an error alert
+			          	  } else {
 				              swal({
 				              	title: "{!! trans('backpack::crud.delete_confirmation_not_title') !!}",
 	                            text: "{!! trans('backpack::crud.delete_confirmation_not_message') !!}",
@@ -107,11 +90,10 @@
 				              	timer: 4000,
 				              	buttons: false,
 				              });
-			          	  }			          	  
+			          	  }
 			          }
 			      },
 			      error: function(result) {
-			          // Show an alert with the result
 			          swal({
 		              	title: "{!! trans('backpack::crud.delete_confirmation_not_title') !!}",
                         text: "{!! trans('backpack::crud.delete_confirmation_not_message') !!}",
@@ -127,9 +109,6 @@
       }
 	}
 
-	// make it so that the function above is run after each DataTable draw event
-	// crud.addFunctionToDataTablesDrawEventQueue('deleteEntry');
 </script>
 @endBassetBlock
 @if (!request()->ajax()) @endpush @endif
-

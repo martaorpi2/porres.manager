@@ -107,6 +107,32 @@
         Total Orden de Pago: {{ money_format_local($paymentOrder->total_amount) }}
     </div>
 
+    @if($paymentOrder->opDetails && $paymentOrder->opDetails->isNotEmpty())
+    <div class="mb-4"><strong>Detalle de pagos (cuotas / parcialidades)</strong></div>
+    <table>
+        <thead>
+            <tr>
+                <th>Concepto</th>
+                <th class="right">Monto</th>
+                <th>Forma de pago</th>
+                <th>Vencimiento</th>
+                <th>Estado</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach($paymentOrder->opDetails as $d)
+            <tr>
+                <td>{{ \App\Models\OpDetail::conceptLabel($d->concept) }}</td>
+                <td class="right">{{ money_format_local($d->amount) }}</td>
+                <td>{{ $d->method_payment }}</td>
+                <td>{{ $d->expiration_date ? fmt_date($d->expiration_date) : '—' }}</td>
+                <td>{{ $d->actual_payment_date ? 'Pagado ' . fmt_date($d->actual_payment_date) : 'Pendiente' }}</td>
+            </tr>
+            @endforeach
+        </tbody>
+    </table>
+    @endif
+
     <div class="box">
         <div><strong>Estado:</strong> {{ $paymentOrder->status }}</div>
         @if(($paymentOrder->status ?? '') === 'Anulada' && !empty($paymentOrder->annulment_reason))

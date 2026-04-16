@@ -40,6 +40,7 @@
     @php
         function money_format_local($value) { return '$ ' . number_format((float)$value, 2, ',', '.'); }
         function fmt_date($d) { return $d ? \Carbon\Carbon::parse($d)->format('d/m/Y') : ''; }
+        $paymentConditionsDisplay = $purchaseOrder->paymentConditionsForDocument();
     @endphp
 </head>
 <body>
@@ -72,7 +73,7 @@
     @endif
 
     <div class="box">
-        <div><strong>Condiciones de pago:</strong> {{ $purchaseOrder->payment_conditions ?? '30 días fecha factura' }}</div>
+        <div><strong>Condiciones de pago:</strong> {{ $paymentConditionsDisplay ?? '—' }}</div>
         <div><strong>Entrega estimada:</strong> {{ $purchaseOrder->estimated_delivery_date ? fmt_date($purchaseOrder->estimated_delivery_date) : ($purchaseOrder->date ? $purchaseOrder->date->copy()->addDays(8)->format('d/m/Y') : 'N/A') }}</div>
     </div>
 

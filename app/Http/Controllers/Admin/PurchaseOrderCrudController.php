@@ -9,6 +9,7 @@ use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Response;
 use App\Models\PurchaseOrder;
 use App\Models\PurchaseOrderDetail;
+use App\Models\User;
 use App\Models\PurchaseRequest;
 use App\Models\PurchaseRequestDetail;
 use App\Models\Product;
@@ -63,7 +64,20 @@ class PurchaseOrderCrudController extends CrudController
             CRUD::removeButton('create');
             CRUD::removeButton('update');
             CRUD::removeButton('delete');
+        } else {
+            CRUD::removeButton('update');
+            CRUD::removeButton('delete');
+            CRUD::addButton('line', 'edit_purchase_order', 'view', 'crud::buttons.edit_purchase_order', 'beginning');
+            CRUD::addButton('line', 'delete_purchase_order', 'view', 'crud::buttons.delete_purchase_order', 'end');
         }
+
+        CRUD::addClause(function ($query) {
+            $query->withCount([
+                'paymentOrders as active_payment_orders_count' => function ($q) {
+                    $q->where('status', '!=', 'Anulada');
+                },
+            ]);
+        });
         
         // Habilitar el botón show para ver detalles
         // CRUD::removeButton('show');
@@ -191,7 +205,6 @@ class PurchaseOrderCrudController extends CrudController
             'name' => 'payment_conditions',
             'label' => 'Condiciones de Pago',
             'type' => 'text',
-            'default' => '30 días fecha factura',
             'attributes' => [
                 'placeholder' => 'Ej: 30 días fecha factura, Contado, etc.'
             ],
@@ -240,6 +253,11 @@ class PurchaseOrderCrudController extends CrudController
      */
     protected function setupUpdateOperation()
     {
+        $entry = $this->crud->getCurrentEntry();
+        if ($entry && $entry->hasBlockingPaymentOrder()) {
+            abort(403, 'No se puede editar una orden de compra que ya tiene una orden de pago generada.');
+        }
+
         $this->setupCreateOperation();
         CRUD::addField([
             'name' => 'details_suppliers_edit',
@@ -380,6 +398,12 @@ class PurchaseOrderCrudController extends CrudController
         
         // Agregar botón de PDF en la vista previa (también en top)
         CRUD::addButton('top', 'pdf', 'view', 'crud::buttons.purchase_order_pdf', 'end');
+
+        $entryShow = $this->crud->getCurrentEntry();
+        if ($entryShow && $entryShow->hasBlockingPaymentOrder()) {
+            CRUD::removeButton('update');
+            CRUD::removeButton('delete');
+        }
         
         // Botón Crear Orden de Pago: solo responsable de compras, cuando hay recepción conforme (3 conformidades + ARCA + comprobante) y sin OP aún
         CRUD::addColumn([
@@ -391,10 +415,7 @@ class PurchaseOrderCrudController extends CrudController
                 if ($user && $user->hasRole('role_responsable_area', 'backpack')) {
                     return '';
                 }
-                if (! $user || ! $user->hasRole('role_responsable_compras', 'backpack')) {
-                    return '';
-                }
-                if ($user->hasRole('role_apoderado', 'backpack') || $user->hasRole('role_representante_legal', 'backpack')) {
+                if (! $user instanceof User || ! $user->hasResponsableComprasRole()) {
                     return '';
                 }
                 $entry->load(['purchaseRequest', 'receptions', 'paymentOrders']);
@@ -442,16 +463,18 @@ class PurchaseOrderCrudController extends CrudController
                 $html .= '</thead>';
                 $html .= '<tbody>';
                 
-                $totalPaid = 0;
+                $sumPaymentOrders = 0;
                 foreach ($paymentOrders as $paymentOrder) {
-                    $totalPaid += $paymentOrder->total_amount ?? 0;
-                    $statusBadge = match($paymentOrder->status) {
-                        'Pendiente' => 'bg-warning',
-                        'Aprobada' => 'bg-success',
+                    $sumPaymentOrders += $paymentOrder->total_amount ?? 0;
+                    $statusBadge = match ($paymentOrder->status) {
+                        'Pendiente' => 'bg-warning text-dark',
+                        'Aprobada' => 'bg-info text-white',
+                        'Ejecutada' => 'bg-success',
+                        'Anulada' => 'bg-secondary',
                         'Rechazada' => 'bg-danger',
                         default => 'bg-secondary'
                     };
-                    
+
                     $html .= '<tr>';
                     $html .= '<td><strong>' . e($paymentOrder->payment_number ?? 'N/A') . '</strong></td>';
                     $html .= '<td>' . ($paymentOrder->date ? $paymentOrder->date->format('d/m/Y') : 'N/A') . '</td>';
@@ -468,21 +491,22 @@ class PurchaseOrderCrudController extends CrudController
                 $html .= '</tbody>';
                 $html .= '<tfoot class="table-light">';
                 $html .= '<tr>';
-                $html .= '<th colspan="2" class="text-end">Total Pagado:</th>';
-                $html .= '<th><strong>$' . number_format($totalPaid, 2) . '</strong></th>';
+                $html .= '<th colspan="2" class="text-end">Suma imputada en órdenes de pago:</th>';
+                $html .= '<th><strong>$' . number_format($sumPaymentOrders, 2) . '</strong></th>';
                 $html .= '<th colspan="2">';
-                $remaining = $entry->total - $totalPaid;
-                if ($remaining > 0) {
-                    $html .= '<span class="badge bg-warning">Pendiente: $' . number_format($remaining, 2) . '</span>';
+                $remaining = (float) $entry->total - $sumPaymentOrders;
+                if ($remaining > 0.009) {
+                    $html .= '<span class="badge bg-warning text-dark" title="La OC aún no alcanza su monto total con las OP generadas.">Saldo sin OP: $' . number_format($remaining, 2) . '</span>';
                 } else {
-                    $html .= '<span class="badge bg-success">Completado</span>';
+                    $html .= '<span class="badge bg-success" title="La suma de las OP cubre el total de la orden de compra; no indica que el pago ya esté ejecutado.">Monto OC cubierto por OPs</span>';
                 }
                 $html .= '</th>';
                 $html .= '</tr>';
                 $html .= '</tfoot>';
                 $html .= '</table>';
+                $html .= '<p class="small text-muted mb-0 mt-2"><i class="la la-info-circle"></i> La columna <strong>Estado</strong> es el trámite de cada orden de pago (pendiente de aprobación, aprobada o ejecutada). La fila de totales compara montos de la OC frente a la suma de las OP; no reemplaza el estado de la fila.</p>';
                 $html .= '</div>';
-                
+
                 return $html;
             }
         ]);
@@ -533,6 +557,14 @@ class PurchaseOrderCrudController extends CrudController
     public function update()
     {
         $this->crud->hasAccessOrFail('update');
+
+        $current = PurchaseOrder::query()->find($this->crud->getCurrentEntryId());
+        if ($current && $current->hasBlockingPaymentOrder()) {
+            \Alert::error('No se puede editar una orden de compra que ya tiene una orden de pago generada.')->flash();
+
+            return redirect()->back();
+        }
+
         $request = $this->crud->validateRequest();
         $this->crud->registerFieldEvents();
         $id = $request->get($this->crud->model->getKeyName());
@@ -674,12 +706,44 @@ class PurchaseOrderCrudController extends CrudController
         }
     }
 
+    protected function setupDeleteOperation()
+    {
+        $entry = $this->crud->getCurrentEntry();
+        if ($entry && $entry->hasBlockingPaymentOrder()) {
+            abort(403, 'No se puede eliminar una orden de compra que ya tiene una orden de pago generada.');
+        }
+    }
+
+    public function destroy($id)
+    {
+        $this->crud->hasAccessOrFail('delete');
+
+        $entry = PurchaseOrder::find($id);
+        if ($entry && $entry->hasBlockingPaymentOrder()) {
+            $message = 'No se puede eliminar una orden de compra que ya tiene una orden de pago generada.';
+            if (request()->ajax()) {
+                return response()->json(['error' => [$message]]);
+            }
+            \Alert::error($message)->flash();
+
+            return redirect()->back();
+        }
+
+        return $this->crud->delete($id);
+    }
+
     /**
      * Generate PDF for a purchase order
      */
     public function generatePdf($id)
     {
-        $purchaseOrder = \App\Models\PurchaseOrder::with(['supplier', 'details.input', 'details.supplier', 'purchaseRequest'])->findOrFail($id);
+        $purchaseOrder = \App\Models\PurchaseOrder::with([
+            'supplier',
+            'details.input',
+            'details.supplier',
+            'purchaseRequest.selectedMarketRate',
+            'purchaseRequest.marketRates',
+        ])->findOrFail($id);
 
         $pdf = Pdf::loadView('purchase-order-pdf', compact('purchaseOrder'));
         

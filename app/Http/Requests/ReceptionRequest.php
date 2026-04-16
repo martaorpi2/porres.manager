@@ -2,6 +2,9 @@
 
 namespace App\Http\Requests;
 
+use App\Models\Reception;
+use App\Models\User;
+use Carbon\CarbonInterface;
 use Illuminate\Foundation\Http\FormRequest;
 
 class ReceptionRequest extends FormRequest
@@ -15,6 +18,55 @@ class ReceptionRequest extends FormRequest
     {
         // only allow updates if the user is logged in
         return backpack_auth()->check();
+    }
+
+    /**
+     * Contabilidad: fecha, conformidades y orden de compra (en edición) van deshabilitadas (no viajan en el POST).
+     * Se reinyectan valores de la recepción en edición o valores por defecto en alta.
+     */
+    protected function prepareForValidation(): void
+    {
+        $user = backpack_user();
+        if (! $user instanceof User || ! $user->hasContabilidadRole()) {
+            return;
+        }
+
+        $receptionId = $this->route('id') ?? $this->route()?->parameter('id');
+        if (($receptionId === null || $receptionId === '') && in_array($this->method(), ['PUT', 'PATCH'], true)) {
+            $receptionId = $this->input('id');
+        }
+        $receptionId = $receptionId !== null && $receptionId !== '' ? (int) $receptionId : null;
+
+        if ($receptionId) {
+            $reception = Reception::find($receptionId);
+            if ($reception) {
+                $dateVal = $reception->date;
+                if ($dateVal instanceof CarbonInterface) {
+                    $dateVal = $dateVal->format('Y-m-d');
+                }
+
+                $this->merge([
+                    'purchase_order_id' => $reception->purchase_order_id,
+                    'date' => $dateVal,
+                    'conformidad_estado' => $reception->conformidad_estado,
+                    'conformidad_cantidad' => $reception->conformidad_cantidad,
+                    'conformidad_factura' => $reception->conformidad_factura,
+                ]);
+            }
+
+            return;
+        }
+
+        if (in_array($this->method(), ['PUT', 'PATCH'], true)) {
+            return;
+        }
+
+        $this->merge([
+            'date' => now()->format('Y-m-d'),
+            'conformidad_estado' => 'No',
+            'conformidad_cantidad' => 'No',
+            'conformidad_factura' => 'No',
+        ]);
     }
 
     /**

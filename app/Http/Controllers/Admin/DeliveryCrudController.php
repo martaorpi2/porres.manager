@@ -3,6 +3,10 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Requests\DeliveryRequest;
+use App\Models\Delivery;
+use App\Models\DeliveryDetail;
+use App\Models\PurchaseRequest;
+use App\Models\Reception;
 use Backpack\CRUD\app\Http\Controllers\CrudController;
 use Backpack\CRUD\app\Library\CrudPanel\CrudPanelFacade as CRUD;
 use Barryvdh\DomPDF\Facade\Pdf;
@@ -252,7 +256,6 @@ class DeliveryCrudController extends CrudController
             },
             'attributes' => [
                 'id' => 'purchase_request_select',
-                'style' => 'display: none;',
             ],
         ]);
         
@@ -768,6 +771,8 @@ class DeliveryCrudController extends CrudController
         // Obtener datos y remover request_type (solo es para UI)
         $dataToSave = $this->crud->getStrippedSaveRequest($request);
         unset($dataToSave['request_type']);
+        // Al registrar la entrega en este flujo, queda como efectivamente realizada (evita default DB "pendiente" en PDF/listados)
+        $dataToSave['status'] = 'entregada';
         
         // Obtener productos a entregar
         $deliveryProducts = $request->input('delivery_products', []);
@@ -788,7 +793,9 @@ class DeliveryCrudController extends CrudController
         
         // Procesar detalles de entrega
         $this->processDeliveryDetails($item, $deliveryProducts, $request);
-        
+        $item->refresh();
+        $this->fillDeliveryDetailsFromPurchaseRequestIfEmpty($item);
+
         // Restar del stock los productos entregados
         $this->updateStockLevels($item, $deliveryProducts, true);
         
@@ -895,6 +902,66 @@ class DeliveryCrudController extends CrudController
                     'observations' => $observations,
                 ]);
             }
+        }
+    }
+
+    /**
+     * Si no hay líneas de entrega (típico: flujo solicitud de compra / recepción sin formulario de productos),
+     * genera detalles desde la solicitud de compra con cantidades pendientes por producto.
+     */
+    private function fillDeliveryDetailsFromPurchaseRequestIfEmpty(Delivery $delivery): void
+    {
+        $delivery->loadMissing('details');
+        if ($delivery->details->isNotEmpty()) {
+            return;
+        }
+        if ($delivery->general_request_id) {
+            return;
+        }
+
+        $purchaseRequestId = $delivery->purchase_request_id;
+        if (! $purchaseRequestId && $delivery->reception_id) {
+            $reception = Reception::with('purchase_order')->find($delivery->reception_id);
+            $purchaseRequestId = $reception?->purchase_order?->purchase_request_id;
+        }
+        if (! $purchaseRequestId) {
+            return;
+        }
+
+        $purchaseRequest = PurchaseRequest::with('details')->find($purchaseRequestId);
+        if (! $purchaseRequest) {
+            return;
+        }
+
+        if (! $delivery->purchase_request_id) {
+            $delivery->update(['purchase_request_id' => $purchaseRequestId]);
+        }
+
+        foreach ($purchaseRequest->details as $prDetail) {
+            if (! $prDetail->product_id) {
+                continue;
+            }
+            $alreadyDelivered = (int) DeliveryDetail::query()
+                ->whereHas('delivery', function ($q) use ($purchaseRequestId, $delivery) {
+                    $q->where('purchase_request_id', $purchaseRequestId);
+                    if ($delivery->id) {
+                        $q->where('id', '!=', $delivery->id);
+                    }
+                })
+                ->where('product_id', $prDetail->product_id)
+                ->sum('delivered_quantity');
+
+            $pending = max(0, (int) $prDetail->requested_quantity - $alreadyDelivered);
+            if ($pending <= 0) {
+                continue;
+            }
+
+            DeliveryDetail::create([
+                'delivery_id' => $delivery->id,
+                'product_id' => $prDetail->product_id,
+                'delivered_quantity' => $pending,
+                'observations' => null,
+            ]);
         }
     }
     
@@ -1273,6 +1340,7 @@ class DeliveryCrudController extends CrudController
         // Obtener datos y remover request_type (solo es para UI)
         $dataToSave = $this->crud->getStrippedSaveRequest($request);
         unset($dataToSave['request_type']);
+        $dataToSave['status'] = 'entregada';
         
         // Obtener productos a entregar
         $deliveryProducts = $request->input('delivery_products', []);
@@ -1292,7 +1360,9 @@ class DeliveryCrudController extends CrudController
         
         // Procesar detalles de entrega
         $this->processDeliveryDetails($item, $deliveryProducts, $request);
-        
+        $item->refresh();
+        $this->fillDeliveryDetailsFromPurchaseRequestIfEmpty($item);
+
         // Restar del stock los productos entregados
         $this->updateStockLevels($item, $deliveryProducts, true);
         
@@ -1402,9 +1472,29 @@ class DeliveryCrudController extends CrudController
             'receivedBy',
             'details.product'
         ])->findOrFail($id);
-        
-        $pdf = Pdf::loadView('delivery-pdf', compact('delivery'));
-        
+
+        $prId = $delivery->purchase_request_id;
+        if (! $prId && $delivery->reception?->purchase_order) {
+            $prId = $delivery->reception->purchase_order->purchase_request_id;
+        }
+        if ($prId && ! $delivery->purchaseRequest) {
+            $pr = PurchaseRequest::with([
+                'responsibilityArea',
+                'requestingUser',
+                'details.product',
+            ])->find($prId);
+            if ($pr) {
+                $delivery->setRelation('purchaseRequest', $pr);
+            }
+        }
+
+        $deliveryPdfFallbackDetails = collect();
+        if ($delivery->details->isEmpty() && $delivery->purchaseRequest) {
+            $deliveryPdfFallbackDetails = $delivery->purchaseRequest->details ?? collect();
+        }
+
+        $pdf = Pdf::loadView('delivery-pdf', compact('delivery', 'deliveryPdfFallbackDetails'));
+
         return $pdf->stream('comprobante-entrega-' . $delivery->number . '.pdf');
     }
 }

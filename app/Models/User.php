@@ -54,4 +54,36 @@ class User extends Authenticatable
     {
         return $this->name;
     }
+
+    /**
+     * Rol contabilidad (Backpack / web / nombre), usado en recepciones y permisos afines.
+     */
+    public function hasContabilidadRole(): bool
+    {
+        if ($this->hasRole('role_contabilidad', 'backpack')) {
+            return true;
+        }
+
+        if ($this->hasRole('role_contabilidad', 'web')) {
+            return true;
+        }
+
+        return $this->getRoleNames()->contains('role_contabilidad');
+    }
+
+    /**
+     * Rol responsable de compras (Backpack / web / nombre), p. ej. órdenes de pago y flujo de compras.
+     */
+    public function hasResponsableComprasRole(): bool
+    {
+        if ($this->hasRole('role_responsable_compras', 'backpack')) {
+            return true;
+        }
+
+        if ($this->hasRole('role_responsable_compras', 'web')) {
+            return true;
+        }
+
+        return $this->getRoleNames()->contains('role_responsable_compras');
+    }
 }

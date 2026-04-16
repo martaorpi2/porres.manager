@@ -67,8 +67,13 @@ class ReceptionCrudController extends CrudController
             CRUD::addClause('where', 'area_manager_id', $user->id);
         }
         
-        // Si el usuario es role_responsable_compras, usar botón de editar personalizado
+        // Botones de línea: ocultar edición/eliminación si recepción conforme (misma regla que isAccordingComplete)
         if ($user && $user->hasRole('role_responsable_compras', 'backpack')) {
+            CRUD::removeButton('update');
+            CRUD::addButton('line', 'edit_reception', 'view', 'crud::buttons.edit_reception', 'beginning');
+            CRUD::removeButton('delete');
+            CRUD::addButton('line', 'delete_reception', 'view', 'crud::buttons.delete_reception', 'end');
+        } elseif (! $user || ! $user->hasRole('role_admin_institucion', 'backpack')) {
             CRUD::removeButton('update');
             CRUD::addButton('line', 'edit_reception', 'view', 'crud::buttons.edit_reception', 'beginning');
             CRUD::removeButton('delete');
@@ -200,35 +205,47 @@ class ReceptionCrudController extends CrudController
                 });
             },
         ]);
+        $camposRecepcionBloqueadosContabilidad = $this->userHasContabilidadRole(backpack_user());
+        $attrsDisabledContabilidad = $camposRecepcionBloqueadosContabilidad
+            ? ['attributes' => ['disabled' => 'disabled']]
+            : [];
+
+        if ($camposRecepcionBloqueadosContabilidad && $this->crud->getCurrentOperation() === 'update') {
+            CRUD::modifyField('purchase_order_id', $attrsDisabledContabilidad);
+        }
+
         CRUD::field('date')->label('Fecha');
-        CRUD::addField([
+        if ($camposRecepcionBloqueadosContabilidad) {
+            CRUD::modifyField('date', $attrsDisabledContabilidad);
+        }
+        CRUD::addField(array_merge([
             'name' => 'conformidad_estado',
             'label' => 'Conformidad de estado',
             'type' => 'select_from_array',
             'options' => ['Si' => 'Sí', 'No' => 'No'],
             'default' => 'No',
             'hint' => 'Estado de la mercadería recibida',
-        ]);
-        CRUD::addField([
+        ], $attrsDisabledContabilidad));
+        CRUD::addField(array_merge([
             'name' => 'conformidad_cantidad',
             'label' => 'Conformidad de cantidad',
             'type' => 'select_from_array',
             'options' => ['Si' => 'Sí', 'No' => 'No'],
             'default' => 'No',
             'hint' => 'Cantidad recibida conforme',
-        ]);
-        CRUD::addField([
+        ], $attrsDisabledContabilidad));
+        CRUD::addField(array_merge([
             'name' => 'conformidad_factura',
             'label' => 'Conformidad de factura recibida',
             'type' => 'select_from_array',
             'options' => ['Si' => 'Sí', 'No' => 'No'],
             'default' => 'No',
             'hint' => 'Factura recibida conforme',
-        ]);
+        ], $attrsDisabledContabilidad));
         CRUD::addField([
             'name' => 'according_info',
             'type' => 'custom_html',
-            'value' => '<p class="text-muted small">La recepción queda <strong>conforme</strong> solo cuando las tres conformidades son <strong>Sí</strong>, está <strong>corroborada por ARCA</strong> (tesorería) y tiene <strong>comprobante válido</strong> (factura) marcado por contabilidad. Recién entonces el <strong>responsable de compras</strong> podrá generar la Orden de Pago desde el detalle de la orden de compra.</p>',
+            'value' => '<p class="text-muted small">La recepción queda <strong>conforme</strong> solo cuando las tres conformidades son <strong>Sí</strong>, el área de <strong>contabilidad</strong> ha registrado la <strong>corroboración ARCA</strong> y, en un paso posterior, el <strong>comprobante válido</strong> (factura). Recién entonces el <strong>responsable de compras</strong> podrá generar la orden de pago desde el detalle de la orden de compra.</p>',
         ]);
         
         // Campo oculto: en crear, responsable = usuario actual; en editar, no fijar «value» (Backpack usa el del modelo).
@@ -255,7 +272,38 @@ class ReceptionCrudController extends CrudController
     }
 
     /**
-     * ARCA (tesorería) y comprobante válido (contabilidad). En create getCurrentEntry() es null: la visibilidad lo contempla.
+     * Modelo de recepción durante el armado del formulario (create/update), si getCurrentEntry() aún no está disponible.
+     */
+    protected function resolveReceptionEntryForCheckboxState(): ?Reception
+    {
+        $entry = $this->crud->getCurrentEntry();
+        if ($entry instanceof Reception) {
+            return $entry;
+        }
+
+        $id = $this->crud->getCurrentEntryId();
+        if ($id) {
+            return Reception::find($id);
+        }
+
+        $routeId = request()->route('id');
+        if ($routeId !== null && $routeId !== '') {
+            return Reception::find($routeId);
+        }
+
+        return null;
+    }
+
+    /**
+     * Comprueba rol contabilidad (ver {@see \App\Models\User::hasContabilidadRole()}).
+     */
+    protected function userHasContabilidadRole($user): bool
+    {
+        return $user instanceof \App\Models\User && $user->hasContabilidadRole();
+    }
+
+    /**
+     * Corroboración ARCA y comprobante válido (factura): ambos pasos corresponden al área de contabilidad. En create getCurrentEntry() es null: la visibilidad lo contempla.
      */
     protected function addReceptionArcaComprobanteCheckboxes(
         string $corroboradoArcaInfoHtml = '',
@@ -266,41 +314,36 @@ class ReceptionCrudController extends CrudController
             'type' => 'custom_html',
             'value' => $corroboradoArcaInfoHtml,
         ]);
-        CRUD::addField([
-            'name' => 'marcar_corroborado_arca',
-            'label' => 'Marcar como corroborado por ARCA',
-            'type' => 'checkbox',
-            'hint' => 'Solo el área de tesorería (ARCA) puede corroborar.',
-        ]);
-        CRUD::modifyField('marcar_corroborado_arca', [
-            'visible' => function () {
-                $u = backpack_user();
-                $e = $this->crud->getCurrentEntry();
 
-                return $u && $u->hasRole('role_tesoreria', 'backpack')
-                    && (!$e || ! $e->corroborado_por_arca_at);
-            },
-        ]);
+        $user = backpack_user();
+        $entry = $this->resolveReceptionEntryForCheckboxState();
+        $esContabilidad = $this->userHasContabilidadRole($user);
+
+        // No usar solo `visible` en checkbox: en algunos entornos el campo igual se renderiza; solo registramos el campo si corresponde.
+        if ($esContabilidad && (! $entry || ! $entry->corroborado_por_arca_at)) {
+            CRUD::addField([
+                'name' => 'marcar_corroborado_arca',
+                'label' => 'Marcar como corroborado por ARCA',
+                'type' => 'checkbox',
+                'hint' => 'Solo el área de contabilidad puede registrar la corroboración ARCA; ningún otro perfil puede usar esta opción.',
+            ]);
+        }
+
         CRUD::addField([
             'name' => 'comprobante_valido_info',
             'type' => 'custom_html',
             'value' => $comprobanteValidoInfoHtml,
         ]);
-        CRUD::addField([
-            'name' => 'marcar_comprobante_valido',
-            'label' => 'Marcar como comprobante válido (factura)',
-            'type' => 'checkbox',
-            'hint' => 'Solo contabilidad puede marcar, una vez corroborado por ARCA.',
-        ]);
-        CRUD::modifyField('marcar_comprobante_valido', [
-            'visible' => function () {
-                $u = backpack_user();
-                $e = $this->crud->getCurrentEntry();
 
-                return $u && $u->hasRole('role_contabilidad', 'backpack')
-                    && (! $e || ($e->corroborado_por_arca_at && ! $e->comprobante_valido_at));
-            },
-        ]);
+        // Misma idea que ARCA: mostrar el tilde hasta que el paso quede hecho (pueden marcarse ambos en un solo guardado; store/update aplican ARCA antes que el comprobante).
+        if ($esContabilidad && (! $entry || ! $entry->comprobante_valido_at)) {
+            CRUD::addField([
+                'name' => 'marcar_comprobante_valido',
+                'label' => 'Marcar como comprobante válido (factura)',
+                'type' => 'checkbox',
+                'hint' => 'Solo contabilidad. El comprobante válido se registra solo si la corroboración ARCA ya está hecha o la marca usted en el mismo guardado.',
+            ]);
+        }
     }
 
     /**
@@ -320,6 +363,10 @@ class ReceptionCrudController extends CrudController
             if ($entry && $entry->area_manager_id != $user->id) {
                 abort(403, 'Solo puedes editar las recepciones que creaste.');
             }
+        }
+
+        if ($entry && $entry->isAccordingComplete()) {
+            abort(403, 'No se puede editar una recepción que ya está conforme.');
         }
         
         $this->setupCreateOperation();
@@ -473,12 +520,19 @@ class ReceptionCrudController extends CrudController
         $data = $this->crud->getStrippedSaveRequest($request);
         $data['according'] = 'No';
 
+        if ($this->userHasContabilidadRole($user)) {
+            $data['date'] = now()->format('Y-m-d');
+            $data['conformidad_estado'] = 'No';
+            $data['conformidad_cantidad'] = 'No';
+            $data['conformidad_factura'] = 'No';
+        }
+
         // Insert the entry
         $entry = $this->crud->create($data);
         $this->data['entry'] = $this->crud->entry = $entry;
 
         $entry = Reception::find($entry->id);
-        if ($marcarArca && $user && $user->hasRole('role_tesoreria', 'backpack') && $entry && ! $entry->corroborado_por_arca_at) {
+        if ($marcarArca && $this->userHasContabilidadRole($user) && $entry && ! $entry->corroborado_por_arca_at) {
             $entry->update([
                 'corroborado_por_arca_at' => now(),
                 'corroborado_por_arca_by_id' => $user->id,
@@ -486,7 +540,7 @@ class ReceptionCrudController extends CrudController
             \Alert::success('Marcado como corroborado por ARCA.')->flash();
             $entry->refresh();
         }
-        if ($marcarComprobante && $user && $user->hasRole('role_contabilidad', 'backpack') && $entry && $entry->corroborado_por_arca_at && ! $entry->comprobante_valido_at) {
+        if ($marcarComprobante && $this->userHasContabilidadRole($user) && $entry && $entry->corroborado_por_arca_at && ! $entry->comprobante_valido_at) {
             $entry->update([
                 'comprobante_valido_at' => now(),
                 'comprobante_valido_by_id' => $user->id,
@@ -530,6 +584,12 @@ class ReceptionCrudController extends CrudController
     {
         $this->crud->hasAccessOrFail('update');
 
+        $existingReception = Reception::find($this->crud->getCurrentEntryId());
+        if ($existingReception && $existingReception->isAccordingComplete()) {
+            \Alert::error('No se puede editar una recepción que ya está conforme.')->flash();
+            return redirect()->back();
+        }
+
         // Igual que UpdateOperation de Backpack (eventos definidos en fields, si los hay)
         $this->crud->registerFieldEvents();
 
@@ -569,6 +629,21 @@ class ReceptionCrudController extends CrudController
         $data = $this->crud->getStrippedSaveRequest($request);
         $data['according'] = 'No';
 
+        if ($this->userHasContabilidadRole($user) && $currentReceptionId) {
+            $orig = Reception::find($currentReceptionId);
+            if ($orig) {
+                $dateVal = $orig->date;
+                if ($dateVal instanceof \Carbon\CarbonInterface) {
+                    $dateVal = $dateVal->format('Y-m-d');
+                }
+                $data['purchase_order_id'] = $orig->purchase_order_id;
+                $data['date'] = $dateVal;
+                $data['conformidad_estado'] = $orig->conformidad_estado;
+                $data['conformidad_cantidad'] = $orig->conformidad_cantidad;
+                $data['conformidad_factura'] = $orig->conformidad_factura;
+            }
+        }
+
         // Update the entry
         $entry = $this->crud->update(
             $this->crud->getCurrentEntryId(),
@@ -577,7 +652,7 @@ class ReceptionCrudController extends CrudController
         $this->data['entry'] = $this->crud->entry = $entry;
 
         $entry = Reception::find($entry->id);
-        if ($marcarArca && $user && $user->hasRole('role_tesoreria', 'backpack') && $entry && ! $entry->corroborado_por_arca_at) {
+        if ($marcarArca && $this->userHasContabilidadRole($user) && $entry && ! $entry->corroborado_por_arca_at) {
             $entry->update([
                 'corroborado_por_arca_at' => now(),
                 'corroborado_por_arca_by_id' => $user->id,
@@ -585,7 +660,7 @@ class ReceptionCrudController extends CrudController
             \Alert::success('Marcado como corroborado por ARCA.')->flash();
             $entry->refresh();
         }
-        if ($marcarComprobante && $user && $user->hasRole('role_contabilidad', 'backpack') && $entry && $entry->corroborado_por_arca_at && ! $entry->comprobante_valido_at) {
+        if ($marcarComprobante && $this->userHasContabilidadRole($user) && $entry && $entry->corroborado_por_arca_at && ! $entry->comprobante_valido_at) {
             $entry->update([
                 'comprobante_valido_at' => now(),
                 'comprobante_valido_by_id' => $user->id,
@@ -944,5 +1019,40 @@ class ReceptionCrudController extends CrudController
                 abort(403, 'Solo puedes eliminar las recepciones que creaste.');
             }
         }
+
+        if ($entry && $entry->isAccordingComplete()) {
+            abort(403, 'No se puede eliminar una recepción que ya está conforme.');
+        }
+    }
+
+    /**
+     * Recepción conforme: no se elimina (evita bypass por AJAX / URL directa).
+     */
+    public function destroy($id)
+    {
+        $this->crud->hasAccessOrFail('delete');
+
+        $user = backpack_user();
+        if ($user && $user->hasRole('role_responsable_compras', 'backpack')) {
+            $entry = Reception::find($id);
+            if ($entry && $entry->area_manager_id != $user->id) {
+                if (request()->ajax()) {
+                    return response()->json(['error' => ['Solo puedes eliminar las recepciones que creaste.']]);
+                }
+                abort(403, 'Solo puedes eliminar las recepciones que creaste.');
+            }
+        }
+
+        $entry = Reception::find($id);
+        if ($entry && $entry->isAccordingComplete()) {
+            $message = 'No se puede eliminar una recepción que ya está conforme.';
+            if (request()->ajax()) {
+                return response()->json(['error' => [$message]]);
+            }
+            \Alert::error($message)->flash();
+            return redirect()->back();
+        }
+
+        return $this->crud->delete($id);
     }
 }

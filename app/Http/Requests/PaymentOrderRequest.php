@@ -67,60 +67,31 @@ class PaymentOrderRequest extends FormRequest
                             ->whereIn('payment_order_id', $existingPaymentOrderIds)
                             ->sum('amount');
                     }
-                    
-                    // Obtener la suma de los detalles de la orden de pago actual (si existe)
-                    $currentOrderDetailsTotal = 0;
-                    if ($paymentOrderId) {
-                        $currentOrderDetailsTotal = \Illuminate\Support\Facades\DB::table('op_details')
-                            ->where('payment_order_id', $paymentOrderId)
-                            ->sum('amount');
-                    }
-                    
-                    // Si hay detalles en el request, calcular su suma
+
+                    // Suma de líneas de pago (ya normalizadas en prepareForValidation)
                     $paymentDetails = $this->input('payment_details', []);
                     $detailsTotal = 0;
-                    if (!empty($paymentDetails) && is_array($paymentDetails)) {
+                    if (! empty($paymentDetails) && is_array($paymentDetails)) {
                         foreach ($paymentDetails as $detail) {
                             if (isset($detail['amount'])) {
                                 $detailsTotal += (float) $detail['amount'];
                             }
                         }
                     }
-                    
-                    // Si hay detalles en el request, usar su suma; si no, usar el total_amount
-                    // Pero si hay detalles existentes en BD y no hay detalles en el request, usar los de BD
-                    $amountToUse = $value;
-                    if ($detailsTotal > 0) {
-                        $amountToUse = $detailsTotal;
-                    } elseif ($currentOrderDetailsTotal > 0 && !$paymentOrderId) {
-                        // Si es creación y hay detalles existentes (no debería pasar), usar los de BD
-                        $amountToUse = $currentOrderDetailsTotal;
-                    }
-                    
-                    // Restar el total actual de detalles de la orden de pago (si se está actualizando)
-                    if ($paymentOrderId && $currentOrderDetailsTotal > 0) {
-                        $totalPaidFromDetails -= $currentOrderDetailsTotal;
-                    }
-                    
-                    // Calcular el nuevo total pagado
+
+                    // Monto que aporta esta orden de pago: líneas si hay; si no, el monto total del formulario
+                    $amountToUse = $detailsTotal > 0 ? $detailsTotal : (float) $value;
+
+                    // totalPaidFromDetails solo incluye otras OP de la misma OC (la actual ya está excluida del query)
                     $newTotalPaid = $totalPaidFromDetails + $amountToUse;
-                    
-                    // Validar que no supere el total de la orden de compra
-                    if ($newTotalPaid > $purchaseOrderTotal) {
-                        $remaining = $purchaseOrderTotal - $totalPaidFromDetails;
-                        $fail("El monto total de las órdenes de pago ($" . number_format($newTotalPaid, 2) . ") no puede superar el total de la orden de compra ($" . number_format($purchaseOrderTotal, 2) . "). Monto máximo permitido: $" . number_format($remaining, 2));
+
+                    if ($newTotalPaid > $purchaseOrderTotal + 0.01) {
+                        $remaining = max(0, $purchaseOrderTotal - $totalPaidFromDetails);
+                        $fail("El monto total de las órdenes de pago ($" . number_format($newTotalPaid, 2) . ") no puede superar el total de la orden de compra ($" . number_format($purchaseOrderTotal, 2) . "). Monto máximo permitido para esta orden: $" . number_format($remaining, 2));
                     }
-                    
-                    // Validar que la suma de los detalles coincida con el total_amount (si hay detalles)
-                    if ($detailsTotal > 0 && abs($detailsTotal - $value) > 0.01) {
-                        $fail("La suma de los montos de los detalles ($" . number_format($detailsTotal, 2) . ") debe coincidir con el monto total de la orden de pago ($" . number_format($value, 2) . ").");
-                    }
-                    
-                    // Si no hay detalles en el request pero hay detalles en BD, validar que coincidan
-                    if ($paymentOrderId && $currentOrderDetailsTotal > 0 && $detailsTotal == 0) {
-                        if (abs($currentOrderDetailsTotal - $value) > 0.01) {
-                            $fail("La suma de los montos de los detalles existentes ($" . number_format($currentOrderDetailsTotal, 2) . ") debe coincidir con el monto total de la orden de pago ($" . number_format($value, 2) . ").");
-                        }
+
+                    if ($detailsTotal > 0 && abs($detailsTotal - (float) $value) > 0.01) {
+                        $fail("La suma de los montos de los detalles ($" . number_format($detailsTotal, 2) . ") debe coincidir con el monto total de la orden de pago ($" . number_format((float) $value, 2) . ").");
                     }
                 },
             ],
@@ -132,6 +103,12 @@ class PaymentOrderRequest extends FormRequest
             'payment_number' => 'required|string|max:255',
             'status' => 'required|in:Pendiente,Aprobada,Ejecutada,Anulada',
             'authorizing_user_id' => 'required|exists:users,id',
+            'payment_details' => 'nullable|array',
+            'payment_details.*.concept' => 'required|in:advance,residue,partiality',
+            'payment_details.*.amount' => 'required|numeric|min:0.01',
+            'payment_details.*.method_payment' => 'nullable|string|max:255',
+            'payment_details.*.expiration_date' => 'nullable|date',
+            'payment_details.*.actual_payment_date' => 'nullable|date',
         ];
     }
 
@@ -141,6 +118,52 @@ class PaymentOrderRequest extends FormRequest
         if ($this->has('payment_date') && $this->input('payment_date') === '') {
             $merge['payment_date'] = null;
         }
+
+        $raw = $this->input('payment_details');
+        if (is_string($raw) && $raw !== '') {
+            $decoded = json_decode($raw, true);
+            $raw = is_array($decoded) ? $decoded : [];
+        } elseif (! is_array($raw)) {
+            $raw = [];
+        }
+
+        $normalized = [];
+        foreach ($raw as $row) {
+            if (! is_array($row)) {
+                continue;
+            }
+            $amount = isset($row['amount']) ? (float) str_replace(',', '.', (string) $row['amount']) : 0.0;
+            if ($amount <= 0) {
+                continue;
+            }
+            $concept = $row['concept'] ?? 'partiality';
+            if (! in_array($concept, ['advance', 'residue', 'partiality'], true)) {
+                $concept = 'partiality';
+            }
+            $method = trim((string) ($row['method_payment'] ?? ''));
+            $exp = $row['expiration_date'] ?? null;
+            $exp = ($exp === '' || $exp === null) ? null : $exp;
+            $paid = $row['actual_payment_date'] ?? null;
+            $paid = ($paid === '' || $paid === null) ? null : $paid;
+
+            $normalized[] = [
+                'concept' => $concept,
+                'amount' => $amount,
+                'method_payment' => $method,
+                'expiration_date' => $exp,
+                'actual_payment_date' => $paid,
+            ];
+        }
+
+        $merge['payment_details'] = $normalized;
+        if (count($normalized) > 0) {
+            $sum = 0.0;
+            foreach ($normalized as $n) {
+                $sum += (float) $n['amount'];
+            }
+            $merge['total_amount'] = round($sum, 2);
+        }
+
         if ($merge !== []) {
             $this->merge($merge);
         }

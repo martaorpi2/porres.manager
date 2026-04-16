@@ -78,9 +78,55 @@ class PurchaseOrder extends Model
         return $this->hasMany(\App\Models\PaymentOrder::class, 'purchase_order_id');
     }
 
+    /**
+     * Hay al menos una orden de pago no anulada: la OC no debe editarse ni eliminarse.
+     */
+    public function hasBlockingPaymentOrder(): bool
+    {
+        return $this->paymentOrders()->where('status', '!=', 'Anulada')->exists();
+    }
+
     public function purchaseRequest()
     {
         return $this->belongsTo(\App\Models\PurchaseRequest::class, 'purchase_request_id');
+    }
+
+    /**
+     * Condiciones de pago para PDF: usa la columna de la OC salvo que esté vacía o sea el texto genérico
+     * que antes se grababa por defecto; en ese caso toma la forma de pago de la cotización (SC / proveedor).
+     */
+    public function paymentConditionsForDocument(): ?string
+    {
+        $legacyPlaceholder = '30 días fecha factura';
+        $raw = $this->payment_conditions;
+        $normalized = $raw !== null ? trim((string) $raw) : '';
+        $columnIsMeaningful = $normalized !== '' && strcasecmp($normalized, $legacyPlaceholder) !== 0;
+        if ($columnIsMeaningful) {
+            return $normalized;
+        }
+
+        $this->loadMissing(['purchaseRequest.selectedMarketRate', 'purchaseRequest.marketRates']);
+        $pr = $this->purchaseRequest;
+        if (! $pr) {
+            return null;
+        }
+
+        $pm = $pr->selectedMarketRate?->payment_method;
+        if ($pm !== null && trim((string) $pm) !== '') {
+            return trim((string) $pm);
+        }
+
+        if ($this->supplier_id && $pr->marketRates->isNotEmpty()) {
+            $rates = $pr->marketRates;
+            $match = $rates->firstWhere('supplier_id', $this->supplier_id)
+                ?? $rates->firstWhere('is_selected', true)
+                ?? $rates->first();
+            if ($match && $match->payment_method !== null && trim((string) $match->payment_method) !== '') {
+                return trim((string) $match->payment_method);
+            }
+        }
+
+        return null;
     }
 
     /*

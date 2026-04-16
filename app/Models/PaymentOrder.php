@@ -112,6 +112,14 @@ class PaymentOrder extends Model
         return $this->belongsTo(\App\Models\User::class, 'annulled_by_id');
     }
 
+    /**
+     * Líneas de pago (cuotas / parcialidades) en tabla op_details.
+     */
+    public function opDetails()
+    {
+        return $this->hasMany(OpDetail::class, 'payment_order_id')->orderBy('id');
+    }
+
     public function isAnnulled(): bool
     {
         return $this->status === 'Anulada';

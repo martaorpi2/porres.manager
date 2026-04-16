@@ -32,6 +32,13 @@
     @php
         function money_format_local($value) { return '$ ' . number_format((float)$value, 2, ',', '.'); }
         function fmt_date($d) { return $d ? \Carbon\Carbon::parse($d)->format('d/m/Y') : ''; }
+        $deliveryStatusLabels = [
+            'pendiente' => 'Pendiente',
+            'entregada' => 'Entregada',
+            'cancelada' => 'Cancelada',
+        ];
+        $deliveryStatusKey = strtolower((string) ($delivery->status ?? ''));
+        $deliveryStatusLabel = $deliveryStatusLabels[$deliveryStatusKey] ?? ($delivery->status ? ucfirst($delivery->status) : '—');
     @endphp
 </head>
 <body>
@@ -44,7 +51,7 @@
 
     <div class="box">
         <div><strong>Fecha de Entrega:</strong> {{ fmt_date($delivery->delivery_date) }}</div>
-        <div><strong>Estado:</strong> {{ $delivery->status ?? 'Completada' }}</div>
+        <div><strong>Estado:</strong> {{ $deliveryStatusLabel }}</div>
         <div><strong>Entregado por:</strong> {{ $delivery->deliveredBy ? $delivery->deliveredBy->name : 'N/A' }}</div>
         <div><strong>Recibido por:</strong> {{ $delivery->receivedBy ? $delivery->receivedBy->name : 'N/A' }}</div>
     </div>
@@ -103,6 +110,15 @@
                     <td>{{ $detail->product ? $detail->product->name : 'Producto no encontrado' }}</td>
                     <td class="center">{{ $detail->delivered_quantity ?? 0 }}</td>
                     <td>{{ $detail->observations ?? 'Sin observaciones' }}</td>
+                </tr>
+                @endforeach
+            @elseif(isset($deliveryPdfFallbackDetails) && $deliveryPdfFallbackDetails->count() > 0)
+                @foreach($deliveryPdfFallbackDetails as $index => $detail)
+                <tr>
+                    <td class="center">{{ $index + 1 }}</td>
+                    <td>{{ $detail->product ? $detail->product->name : 'Producto no encontrado' }}</td>
+                    <td class="center">{{ (int) ($detail->requested_quantity ?? 0) }}</td>
+                    <td class="muted">Cantidad según solicitud de compra (sin detalle de entrega registrado)</td>
                 </tr>
                 @endforeach
             @else

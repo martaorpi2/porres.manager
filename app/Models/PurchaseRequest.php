@@ -107,6 +107,31 @@ class PurchaseRequest extends Model
     }
 
     /**
+     * Indica si ya existe aprobación registrada (aprobado por / fecha, estado global o compra directa autorizada),
+     * independientemente de inconsistencias puntuales entre status y esos campos.
+     */
+    public function hasAdministrativeApprovalRecorded(): bool
+    {
+        if ($this->status === 'Rechazada') {
+            return false;
+        }
+        if (in_array($this->status, ['Aprobada', 'Completada'], true)) {
+            return true;
+        }
+        if (! empty($this->approved_by) && $this->approved_date) {
+            return true;
+        }
+        if ($this->is_direct_purchase
+            && ! empty($this->direct_purchase_authorized_by)
+            && $this->direct_purchase_authorized_at
+            && ! (bool) $this->direct_purchase_authorization_rejected) {
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
      * Get the details for this purchase request.
      */
     public function details()

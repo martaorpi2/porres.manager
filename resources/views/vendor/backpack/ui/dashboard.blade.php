@@ -1220,8 +1220,8 @@
             <i class="la la-bell mr-2"></i>
             <strong>Orden de pago:</strong> hay {{ $purchaseOrdersPendingPaymentAfterConformeCount }} orden(es) de compra con recepción conforme y aún sin orden de pago. Use el botón «Crear Orden de Pago» en el detalle de cada orden.
         </div>
-        <a href="{{ backpack_url('purchase-order?pendiente_op_tras_conforme=1') }}" class="btn btn-sm btn-success">
-            Ver órdenes de compra
+        <a href="#purchase-requests-process-section" class="btn btn-sm btn-success">
+            Revisar ahora
         </a>
     </div>
     @endif
@@ -1799,46 +1799,15 @@
             @endforelse
         </div>
     </div>
-
-    <!-- Paso 4: Órdenes de Pago -->
-    <div class="process-step">
-        <div class="process-step-header">
-            <div class="process-step-title">
-                <i class="la la-money-bill-wave process-step-icon"></i>
-                <span>4. Órdenes de Pago</span>
-            </div>
-            <span class="process-step-count">{{ $stats['payment_orders'] }}</span>
-        </div>
-        <div class="process-step-content">
-            @forelse($paymentOrders as $paymentOrder)
-                <div class="process-item-card" onclick="window.location='{{ backpack_url('payment-order/' . $paymentOrder->id . '/show') }}'">
-                    <div class="process-item-title">
-                        {{ $paymentOrder->payment_number ?? 'N/A' }}
-                        <span class="process-item-status status-{{ $paymentOrder->dashboard_payment_status_css_suffix }}">{{ $paymentOrder->dashboard_payment_status_label }}</span>
-                    </div>
-                    <div class="process-item-meta">
-                        <span><i class="la la-truck"></i> {{ $paymentOrder->purchase_order->supplier_display_name }}</span>
-                        <span><i class="la la-clipboard-list"></i> {{ $paymentOrder->purchase_order->number ?? 'N/A' }}</span>
-                    </div>
-                    <div class="process-item-meta">
-                        <span><i class="la la-calendar"></i> {{ $paymentOrder->date ? $paymentOrder->date->format('d/m/Y') : 'N/A' }}</span>
-                        <span><i class="la la-money-bill"></i> ${{ number_format($paymentOrder->total_amount ?? 0, 2) }}</span>
-                    </div>
-                </div>
-            @empty
-                <div class="text-muted">No hay órdenes de pago recientes</div>
-            @endforelse
-        </div>
-    </div>
     @endif
 
     @if(!isset($isPersonal) || !$isPersonal)
-    <!-- Paso {{ (isset($isResponsableArea) && $isResponsableArea) ? '3' : '5' }}: Recepciones -->
+    <!-- Paso {{ (isset($isResponsableArea) && $isResponsableArea) ? '3' : '4' }}: Recepciones -->
     <div class="process-step">
         <div class="process-step-header">
             <div class="process-step-title">
                 <i class="la la-truck-loading process-step-icon"></i>
-                <span>@if(isset($isResponsableArea) && $isResponsableArea)3.@else 5.@endif Recepciones</span>
+                <span>@if(isset($isResponsableArea) && $isResponsableArea)3.@else 4.@endif Recepciones</span>
             </div>
             <span class="process-step-count">{{ $stats['receptions'] }}</span>
         </div>
@@ -1867,6 +1836,37 @@
     @endif
 
     @if((!isset($isPersonal) || !$isPersonal) && (!isset($isResponsableArea) || !$isResponsableArea))
+    <!-- Paso 5: Órdenes de Pago -->
+    <div class="process-step">
+        <div class="process-step-header">
+            <div class="process-step-title">
+                <i class="la la-money-bill-wave process-step-icon"></i>
+                <span>5. Órdenes de Pago</span>
+            </div>
+            <span class="process-step-count">{{ $stats['payment_orders'] }}</span>
+        </div>
+        <div class="process-step-content">
+            @forelse($paymentOrders as $paymentOrder)
+                <div class="process-item-card" onclick="window.location='{{ backpack_url('payment-order/' . $paymentOrder->id . '/show') }}'">
+                    <div class="process-item-title">
+                        {{ $paymentOrder->payment_number ?? 'N/A' }}
+                        <span class="process-item-status status-{{ $paymentOrder->dashboard_payment_status_css_suffix }}">{{ $paymentOrder->dashboard_payment_status_label }}</span>
+                    </div>
+                    <div class="process-item-meta">
+                        <span><i class="la la-truck"></i> {{ $paymentOrder->purchase_order->supplier_display_name }}</span>
+                        <span><i class="la la-clipboard-list"></i> {{ $paymentOrder->purchase_order->number ?? 'N/A' }}</span>
+                    </div>
+                    <div class="process-item-meta">
+                        <span><i class="la la-calendar"></i> {{ $paymentOrder->date ? $paymentOrder->date->format('d/m/Y') : 'N/A' }}</span>
+                        <span><i class="la la-money-bill"></i> ${{ number_format($paymentOrder->total_amount ?? 0, 2) }}</span>
+                    </div>
+                </div>
+            @empty
+                <div class="text-muted">No hay órdenes de pago recientes</div>
+            @endforelse
+        </div>
+    </div>
+
     <!-- Paso 6: Devoluciones -->
     <div class="process-step">
         <div class="process-step-header">
@@ -1907,7 +1907,17 @@
         <div class="process-step-content">
             @forelse($deliveries as $delivery)
                 <div class="process-item-card" onclick="window.location='{{ backpack_url('delivery/' . $delivery->id . '/show') }}'">
-                    <div class="process-item-title">{{ $delivery->number ?? 'ENT-' . $delivery->id }}</div>
+                    <div class="process-item-title">
+                        {{ $delivery->number ?? 'ENT-' . $delivery->id }}
+                        @php $deliveryStatus = $delivery->status ?? 'pendiente'; @endphp
+                        @if($deliveryStatus === 'entregada')
+                            <span class="badge dashboard-badge-positive ms-2 align-middle"><i class="la la-check-circle"></i> Entrega completada</span>
+                        @elseif($deliveryStatus === 'cancelada')
+                            <span class="badge bg-secondary ms-2 align-middle"><i class="la la-ban"></i> Cancelada</span>
+                        @else
+                            <span class="badge bg-warning text-dark ms-2 align-middle"><i class="la la-clock"></i> Pendiente</span>
+                        @endif
+                    </div>
                     <div class="process-item-meta">
                         @if($delivery->reception)
                         <span><i class="la la-truck-loading"></i> {{ $delivery->reception->number ?? 'REC-' . $delivery->reception_id }}</span>
@@ -2120,6 +2130,18 @@
                                                         <a href="{{ backpack_url('delivery/' . $delivery->id . '/show') }}" class="text-primary">
                                                             {{ $delivery->number ?? 'ENT-' . $delivery->id }}
                                                         </a>
+                                                        @php $flowDeliveryStatus = $delivery->status ?? 'pendiente'; @endphp
+                                                        @if($flowDeliveryStatus === 'entregada')
+                                                            @if($flowHasGeneral)
+                                                                <span class="badge dashboard-badge-positive ms-1 align-middle"><i class="la la-check-circle"></i> Entrega completada</span>
+                                                            @else
+                                                                <span class="text-success ms-1 small fw-semibold"><i class="la la-check-circle"></i> Entrega completada</span>
+                                                            @endif
+                                                        @elseif($flowDeliveryStatus === 'cancelada')
+                                                            <span class="badge bg-secondary ms-1 align-middle">Cancelada</span>
+                                                        @else
+                                                            <span class="badge bg-warning text-dark ms-1 align-middle">Pendiente</span>
+                                                        @endif
                                                         <br>
                                                         <small class="text-muted">
                                                             Solicitud General: {{ $delivery->generalRequest?->number ?? '—' }}
@@ -2128,10 +2150,10 @@
                                                             @endif
                                                             @if($delivery->deliveredBy)
                                                                 | Entregado por: {{ $delivery->deliveredBy->name }}
-                                                                @endif
-                                                                @if($delivery->receivedBy)
+                                                            @endif
+                                                            @if($delivery->receivedBy)
                                                                 | Recibido por: {{ $delivery->receivedBy->name }}
-                                                                @endif
+                                                            @endif
                                                         </small>
                                                     </div>
                                                 </div>

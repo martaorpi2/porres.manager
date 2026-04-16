@@ -3049,6 +3049,7 @@ class PurchaseRequestCrudController extends CrudController
         $issueDate = $request->input('issue_date') ? \Carbon\Carbon::parse($request->input('issue_date')) : now();
 
         $linesBySupplier = [];
+        $paymentConditionsBySupplierId = [];
         foreach ($purchaseRequest->details as $requestDetail) {
             $marketRate = $requestDetail->selectedMarketRate;
             if (!$marketRate || !$requestDetail->product) {
@@ -3066,6 +3067,10 @@ class PurchaseRequestCrudController extends CrudController
             $sid = $marketRate->supplier_id;
             if (!isset($linesBySupplier[$sid])) {
                 $linesBySupplier[$sid] = [];
+            }
+            $pm = $marketRate->payment_method;
+            if ($pm !== null && trim((string) $pm) !== '' && ! isset($paymentConditionsBySupplierId[$sid])) {
+                $paymentConditionsBySupplierId[$sid] = trim((string) $pm);
             }
             $linesBySupplier[$sid][] = [
                 'input_id' => $input->id,
@@ -3090,6 +3095,7 @@ class PurchaseRequestCrudController extends CrudController
             $purchaseRequest,
             $issueDate,
             $linesBySupplier,
+            $paymentConditionsBySupplierId,
             $letter,
             $year,
             &$createdOrders
@@ -3106,7 +3112,7 @@ class PurchaseRequestCrudController extends CrudController
                     'authorizing_user_id' => auth()->id(),
                     'status' => 'Pendiente',
                     'purchase_request_id' => $purchaseRequest->id,
-                    'payment_conditions' => '30 días fecha factura',
+                    'payment_conditions' => $paymentConditionsBySupplierId[$supplierId] ?? null,
                 ]);
                 foreach ($lines as $line) {
                     \App\Models\PurchaseOrderDetail::create([
@@ -3158,7 +3164,7 @@ class PurchaseRequestCrudController extends CrudController
             'authorizing_user_id' => auth()->id(),
             'status' => 'Pendiente',
             'purchase_request_id' => $purchaseRequest->id,
-            'payment_conditions' => '30 días fecha factura', // Valor por defecto
+            'payment_conditions' => $purchaseRequest->selectedMarketRate?->payment_method,
         ]);
         
         // Create purchase order details from quote (cada línea con su proveedor)
@@ -3241,7 +3247,7 @@ class PurchaseRequestCrudController extends CrudController
             'authorizing_user_id' => auth()->id(),
             'status' => 'Pendiente',
             'purchase_request_id' => $purchaseRequest->id,
-            'payment_conditions' => '30 días fecha factura', // Valor por defecto
+            'payment_conditions' => $purchaseRequest->selectedMarketRate?->payment_method,
         ]);
         
         // Create purchase order details from purchase request details (cada línea con el mismo proveedor)
@@ -3352,7 +3358,7 @@ class PurchaseRequestCrudController extends CrudController
      */
     protected function setupShowOperation()
     {
-        CRUD::addClause('with', ['responsibilityArea', 'requestingUser', 'approvedBy', 'details.product', 'details.selectedMarketRate.supplier', 'selectedMarketRate.supplier', 'selectedBy', 'convertedFromGeneralRequest', 'deliveries.details', 'purchaseOrders.paymentOrders', 'directPurchaseSupplier', 'directPurchaseAuthorizationRequestedBy', 'directPurchaseAuthorizedBy', 'marketRates']);
+        CRUD::addClause('with', ['responsibilityArea', 'requestingUser', 'approvedBy', 'details.product', 'details.selectedMarketRate.supplier', 'selectedMarketRate.supplier', 'selectedBy', 'convertedFromGeneralRequest', 'deliveries.details', 'purchaseOrders.paymentOrders', 'purchaseOrders.receptions', 'directPurchaseSupplier', 'directPurchaseAuthorizationRequestedBy', 'directPurchaseAuthorizedBy', 'marketRates']);
         
         // Ocultar botón de eliminar para role_admin_institucion, role_apoderado y role_representante_legal
         $user = backpack_user();
@@ -3380,11 +3386,13 @@ class PurchaseRequestCrudController extends CrudController
         // Columna para mostrar si requiere aprobación de administrador
         CRUD::column('approval_status')->label('Estado de Aprobación')->type('custom_html')
             ->value(function($entry) {
-                if ($entry->status === 'Aprobada') {
-                    return '<span class="badge bg-success">Aprobada</span>';
-                } elseif ($entry->status === 'Rechazada') {
+                if ($entry->status === 'Rechazada') {
                     return '<span class="badge bg-danger">Rechazada</span>';
-                } elseif ($entry->requires_admin_approval) {
+                }
+                if ($entry->hasAdministrativeApprovalRecorded()) {
+                    return '<span class="badge bg-success">Aprobada</span>';
+                }
+                if ($entry->requires_admin_approval) {
                     $comprasLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_responsable_compras');
                     $total = (float) ($entry->total_amount ?? 0);
                     $adminLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_admin_institucion');
@@ -3693,16 +3701,18 @@ class PurchaseRequestCrudController extends CrudController
                     $isOwnRequest = $entry->requesting_user_id == $user->id;
                     $isResponsableArea = $user->hasRole('role_responsable_area', 'backpack');
                     
-                    // Verificar si puede editar
+                    // Verificar si puede editar (solicitud completada: no editar productos desde aquí)
                     $canEdit = false;
-                    if ($isAdmin) {
-                        $canEdit = true;
-                    } elseif ($isOwnRequest && $entry->status === 'Pendiente') {
-                        $canEdit = true;
-                    } elseif ($isResponsableArea && $entry->status === 'Pendiente') {
-                        $canEdit = true;
+                    if ($entry->status !== 'Completada') {
+                        if ($isAdmin) {
+                            $canEdit = true;
+                        } elseif ($isOwnRequest && $entry->status === 'Pendiente') {
+                            $canEdit = true;
+                        } elseif ($isResponsableArea && $entry->status === 'Pendiente') {
+                            $canEdit = true;
+                        }
                     }
-                    
+
                     if ($canEdit) {
                         $html .= '<div class="card-footer bg-light text-end">';
                         $html .= '<a href="' . backpack_url('purchase-request/' . $entry->id . '/edit') . '" class="btn btn-primary">';
@@ -3979,59 +3989,6 @@ class PurchaseRequestCrudController extends CrudController
                     $html .= '</div>';
                     $html .= '</div>';
                 }
-                
-                return $html;
-            });
-
-        // Agregar campo para mostrar órdenes de compra asociadas
-        CRUD::column('purchase_orders_table')->label('Órdenes de Compra Asociadas')->type('custom_html')
-            ->value(function($entry) {
-                $entry->load('purchaseOrders.supplier', 'purchaseOrders.details');
-                $purchaseOrders = $entry->purchaseOrders;
-                
-                if ($purchaseOrders->isEmpty()) {
-                    return '<div class="alert alert-info">No hay órdenes de compra asociadas a esta solicitud.</div>';
-                }
-                
-                $html = '<div class="table-responsive">';
-                $html .= '<table class="table table-striped table-bordered">';
-                $html .= '<thead class="thead-dark">';
-                $html .= '<tr>';
-                $html .= '<th>Número</th>';
-                $html .= '<th>Fecha</th>';
-                $html .= '<th>Proveedor</th>';
-                $html .= '<th>Estado</th>';
-                $html .= '<th>Total</th>';
-                $html .= '<th>Acciones</th>';
-                $html .= '</tr>';
-                $html .= '</thead>';
-                $html .= '<tbody>';
-                
-                foreach ($purchaseOrders as $purchaseOrder) {
-                    $statusBadge = match($purchaseOrder->status) {
-                        'Pendiente' => 'bg-warning',
-                        'Aprobada' => 'bg-success',
-                        'Recibida' => 'bg-info',
-                        default => 'bg-secondary'
-                    };
-                    
-                    $html .= '<tr>';
-                    $html .= '<td><strong>' . e($purchaseOrder->number ?? 'N/A') . '</strong></td>';
-                    $html .= '<td>' . ($purchaseOrder->date ? $purchaseOrder->date->format('d/m/Y') : 'N/A') . '</td>';
-                    $html .= '<td>' . e($purchaseOrder->supplier_display_name) . '</td>';
-                    $html .= '<td><span class="badge ' . $statusBadge . '">' . e($purchaseOrder->status ?? 'N/A') . '</span></td>';
-                    $html .= '<td><strong>$' . number_format($purchaseOrder->total ?? 0, 2) . '</strong></td>';
-                    $html .= '<td>';
-                    $html .= '<a href="' . backpack_url('purchase-order/' . $purchaseOrder->id . '/show') . '" class="btn btn-sm btn-info">';
-                    $html .= '<i class="la la-eye"></i> Ver';
-                    $html .= '</a>';
-                    $html .= '</td>';
-                    $html .= '</tr>';
-                }
-                
-                $html .= '</tbody>';
-                $html .= '</table>';
-                $html .= '</div>';
                 
                 return $html;
             });
@@ -4491,6 +4448,115 @@ class PurchaseRequestCrudController extends CrudController
                 return $html;
             });
 
+        // Agregar campo para mostrar órdenes de compra asociadas (debajo de sugerencias de proveedores)
+        CRUD::column('purchase_orders_table')->label('Órdenes de Compra Asociadas')->type('custom_html')
+            ->value(function($entry) {
+                $entry->load('purchaseOrders.supplier', 'purchaseOrders.details');
+                $purchaseOrders = $entry->purchaseOrders;
+                
+                if ($purchaseOrders->isEmpty()) {
+                    return '<div class="alert alert-info">No hay órdenes de compra asociadas a esta solicitud.</div>';
+                }
+                
+                $html = '<div class="table-responsive">';
+                $html .= '<table class="table table-striped table-bordered">';
+                $html .= '<thead class="thead-dark">';
+                $html .= '<tr>';
+                $html .= '<th>Número</th>';
+                $html .= '<th>Fecha</th>';
+                $html .= '<th>Proveedor</th>';
+                $html .= '<th>Estado</th>';
+                $html .= '<th>Total</th>';
+                $html .= '<th>Acciones</th>';
+                $html .= '</tr>';
+                $html .= '</thead>';
+                $html .= '<tbody>';
+                
+                foreach ($purchaseOrders as $purchaseOrder) {
+                    $statusBadge = match($purchaseOrder->status) {
+                        'Pendiente' => 'bg-warning',
+                        'Aprobada' => 'bg-success',
+                        'Recibida' => 'bg-info',
+                        default => 'bg-secondary'
+                    };
+                    
+                    $html .= '<tr>';
+                    $html .= '<td><strong>' . e($purchaseOrder->number ?? 'N/A') . '</strong></td>';
+                    $html .= '<td>' . ($purchaseOrder->date ? $purchaseOrder->date->format('d/m/Y') : 'N/A') . '</td>';
+                    $html .= '<td>' . e($purchaseOrder->supplier_display_name) . '</td>';
+                    $html .= '<td><span class="badge ' . $statusBadge . '">' . e($purchaseOrder->status ?? 'N/A') . '</span></td>';
+                    $html .= '<td><strong>$' . number_format($purchaseOrder->total ?? 0, 2) . '</strong></td>';
+                    $html .= '<td>';
+                    $html .= '<a href="' . backpack_url('purchase-order/' . $purchaseOrder->id . '/show') . '" class="btn btn-sm btn-info">';
+                    $html .= '<i class="la la-eye"></i> Ver';
+                    $html .= '</a>';
+                    $html .= '</td>';
+                    $html .= '</tr>';
+                }
+                
+                $html .= '</tbody>';
+                $html .= '</table>';
+                $html .= '</div>';
+                
+                return $html;
+            });
+
+        // Generar orden de pago desde la solicitud (misma regla que en el detalle de la OC)
+        CRUD::column('create_payment_orders_from_pr')->label('Órdenes de Pago')->type('custom_html')
+            ->value(function ($entry) {
+                $user = backpack_user();
+                if ($user && $user->hasRole('role_responsable_area', 'backpack')) {
+                    return '';
+                }
+                if (! $user instanceof \App\Models\User || ! $user->hasResponsableComprasRole()) {
+                    return '';
+                }
+
+                $entry->load(['purchaseOrders.receptions', 'purchaseOrders.paymentOrders']);
+                $purchaseOrders = $entry->purchaseOrders;
+                if ($purchaseOrders->isEmpty()) {
+                    return '<div class="alert alert-secondary mb-0"><i class="la la-info-circle"></i> No hay orden de compra asociada; la orden de pago se crea cuando exista una OC con recepción conforme.</div>';
+                }
+
+                $html = '<div class="card border-success mt-1">';
+                $html .= '<div class="card-header bg-success text-white py-2"><h6 class="mb-0"><i class="la la-money-bill-wave"></i> Orden de pago desde esta solicitud</h6></div>';
+                $html .= '<div class="card-body">';
+
+                foreach ($purchaseOrders as $purchaseOrder) {
+                    $purchaseOrder->loadMissing(['receptions', 'paymentOrders']);
+                    $hasConformeReception = $purchaseOrder->receptions->contains(fn (\App\Models\Reception $r) => $r->isAccordingComplete());
+                    $hasPaymentOrders = $purchaseOrder->paymentOrders->isNotEmpty();
+
+                    $html .= '<div class="mb-3 pb-3 border-bottom">';
+                    $html .= '<p class="mb-2"><strong>OC ' . e($purchaseOrder->number ?? 'N/A') . '</strong>';
+
+                    if ($hasPaymentOrders) {
+                        $html .= '</p>';
+                        foreach ($purchaseOrder->paymentOrders as $paymentOrder) {
+                            $opLabel = e($paymentOrder->payment_number ?? ('OP #' . $paymentOrder->id));
+                            $html .= '<a href="' . backpack_url('payment-order/' . $paymentOrder->id . '/show') . '" class="btn btn-sm btn-primary me-1 mb-1">';
+                            $html .= '<i class="la la-eye"></i> Ver orden de pago: ' . $opLabel;
+                            $html .= '</a>';
+                        }
+                        $html .= '<p class="text-muted small mb-0 mt-2"><i class="la la-check"></i> Orden(es) de pago asociada(s) a esta OC.</p>';
+                    } else {
+                        $html .= ' <a href="' . backpack_url('purchase-order/' . $purchaseOrder->id . '/show') . '" class="btn btn-sm btn-outline-info ms-1">Ver OC</a></p>';
+                        if (! $hasConformeReception) {
+                            $html .= '<p class="text-muted small mb-0"><i class="la la-info-circle"></i> La orden de pago se habilita cuando haya una <strong>recepción conforme</strong> (tres conformidades en Sí, corroboración ARCA y comprobante válido).</p>';
+                        } else {
+                            $html .= '<a href="' . backpack_url('payment-order/create?purchase_order_id=' . $purchaseOrder->id) . '" class="btn btn-success">';
+                            $html .= '<i class="la la-money-bill-wave"></i> Crear Orden de Pago';
+                            $html .= '</a>';
+                        }
+                    }
+                    $html .= '</div>';
+                }
+
+                $html .= '</div></div>';
+
+                return $html;
+            });
+
         // Agregar información de selección si existe
         CRUD::field('selection_info')->label('Información de Selección')->type('custom_html')
             ->value(function($entry) {
@@ -4533,24 +4599,55 @@ class PurchaseRequestCrudController extends CrudController
                 return $html;
             });
 
-        // Agregar botones para crear entregas y recepciones (solo para role_responsable_area)
+        // Agregar botones para crear entregas y recepciones (solo para role_responsable_area) y estado de recepción (todos los perfiles)
         CRUD::column('delivery_reception_actions')->label('Acciones de Entrega y Recepción')->type('custom_html')
             ->value(function($entry) {
                 $user = backpack_user();
                 $isResponsableArea = $user && $user->hasRole('role_responsable_area', 'backpack');
-                
-                if (!$isResponsableArea) {
-                    return '';
+
+                $entry->load(['purchaseOrders.receptions', 'purchaseOrders.paymentOrders']);
+
+                $receptionsLines = [];
+                foreach ($entry->purchaseOrders as $purchaseOrder) {
+                    foreach ($purchaseOrder->receptions as $reception) {
+                        $recLabel = e($reception->number ?? 'REC-' . $reception->id);
+                        $ocLabel = e($purchaseOrder->number ?? 'N/A');
+                        $isConforme = ($reception->according ?? '') === 'Si';
+                        $badge = $isConforme
+                            ? '<span class="badge bg-success ms-1">Conforme</span>'
+                            : '<span class="badge bg-secondary ms-1">No conforme</span>';
+                        $receptionsLines[] = '<li class="mb-1">'
+                            . '<a href="' . backpack_url('reception/' . $reception->id . '/show') . '">' . $recLabel . '</a>'
+                            . ' <span class="text-muted">(OC ' . $ocLabel . ')</span> ' . $badge . '</li>';
+                    }
                 }
-                
-                // Verificar condiciones:
+
+                $receptionsBlock = '';
+                if ($receptionsLines !== []) {
+                    $receptionsBlock .= '<div class="mb-3"><strong><i class="la la-truck-loading"></i> Recepciones registradas</strong>';
+                    $receptionsBlock .= '<ul class="mb-0 ps-3">' . implode('', $receptionsLines) . '</ul></div>';
+                }
+
+                if (! $isResponsableArea) {
+                    if ($receptionsBlock === '') {
+                        return '';
+                    }
+
+                    return '<div class="card border-info mt-3">'
+                        . '<div class="card-header bg-info text-white">'
+                        . '<h6 class="mb-0"><i class="la la-truck-loading"></i> Entrega y recepción</h6>'
+                        . '</div>'
+                        . '<div class="card-body">' . $receptionsBlock . '</div>'
+                        . '</div>';
+                }
+
+                // Verificar condiciones para acciones (responsable de área):
                 // 1. La solicitud debe estar aprobada
                 $isApproved = $entry->status === 'Aprobada';
-                
+
                 // 2. Debe existir al menos una orden de compra relacionada
-                $entry->load('purchaseOrders.paymentOrders');
                 $hasPurchaseOrder = $entry->purchaseOrders->isNotEmpty();
-                
+
                 // 3. Debe existir al menos una orden de pago relacionada con alguna orden de compra
                 $hasPaymentOrder = false;
                 if ($hasPurchaseOrder) {
@@ -4561,41 +4658,46 @@ class PurchaseRequestCrudController extends CrudController
                         }
                     }
                 }
-                
-                // Si no se cumplen todas las condiciones, no mostrar nada
-                if (!$isApproved || !$hasPurchaseOrder || !$hasPaymentOrder) {
+
+                $canShowActionButtons = $isApproved && $hasPurchaseOrder && $hasPaymentOrder;
+
+                if (! $canShowActionButtons && $receptionsBlock === '') {
                     return '';
                 }
-                
+
                 $html = '<div class="card border-success mt-3">';
                 $html .= '<div class="card-header bg-success text-white">';
-                $html .= '<h6 class="mb-0"><i class="la la-tasks"></i> Acciones Disponibles</h6>';
+                $html .= '<h6 class="mb-0"><i class="la la-tasks"></i> ' . ($canShowActionButtons ? 'Acciones disponibles' : 'Entrega y recepción') . '</h6>';
                 $html .= '</div>';
                 $html .= '<div class="card-body">';
-                $html .= '<div class="row">';
-                
-                // Botón para crear entrega
-                $html .= '<div class="col-md-6 mb-2">';
-                $html .= '<a href="' . backpack_url('delivery/create?purchase_request_id=' . $entry->id) . '" class="btn btn-primary btn-block">';
-                $html .= '<i class="la la-people-carry"></i> Crear Entrega';
-                $html .= '</a>';
-                $html .= '</div>';
-                
-                // Botón para crear recepción
-                // Necesitamos obtener la primera orden de compra para pasarla como parámetro
-                $firstPurchaseOrder = $entry->purchaseOrders->first();
-                if ($firstPurchaseOrder) {
+                if ($receptionsBlock !== '') {
+                    $html .= $receptionsBlock;
+                }
+
+                if ($canShowActionButtons) {
+                    $html .= '<div class="row">';
+                    // Botón para crear entrega
                     $html .= '<div class="col-md-6 mb-2">';
-                    $html .= '<a href="' . backpack_url('reception/create?purchase_order_id=' . $firstPurchaseOrder->id) . '" class="btn btn-success btn-block">';
-                    $html .= '<i class="la la-truck-loading"></i> Crear Recepción';
+                    $html .= '<a href="' . backpack_url('delivery/create?purchase_request_id=' . $entry->id) . '" class="btn btn-primary btn-block">';
+                    $html .= '<i class="la la-people-carry"></i> Crear Entrega';
                     $html .= '</a>';
                     $html .= '</div>';
+
+                    // Botón para crear recepción solo si la primera OC aún no tiene recepción
+                    $firstPurchaseOrder = $entry->purchaseOrders->first();
+                    if ($firstPurchaseOrder && $firstPurchaseOrder->receptions->isEmpty()) {
+                        $html .= '<div class="col-md-6 mb-2">';
+                        $html .= '<a href="' . backpack_url('reception/create?purchase_order_id=' . $firstPurchaseOrder->id) . '" class="btn btn-success btn-block">';
+                        $html .= '<i class="la la-truck-loading"></i> Crear Recepción';
+                        $html .= '</a>';
+                        $html .= '</div>';
+                    }
+                    $html .= '</div>';
                 }
-                
+
                 $html .= '</div>';
                 $html .= '</div>';
-                $html .= '</div>';
-                
+
                 return $html;
             });
         
@@ -4617,32 +4719,66 @@ class PurchaseRequestCrudController extends CrudController
                     return '';
                 }
                 
-                // Si la solicitud está aprobada, mostrar información de aprobación
-                if ($entry->status === 'Aprobada') {
+                // Aprobada, o completada pero conservando datos de aprobación (antes «Completada» devolvía vacío → «-» en la vista)
+                $mostrarResumenAprobacion = $entry->status === 'Aprobada'
+                    || ($entry->status === 'Completada' && ($entry->approved_by || $entry->approved_date));
+
+                if ($mostrarResumenAprobacion) {
+                    $entry->loadMissing(['approvedBy', 'directPurchaseAuthorizedBy', 'selectedBy']);
+
                     $html = '<div class="card border-success mt-3">';
                     $html .= '<div class="card-header bg-success text-white">';
-                    $html .= '<h6 class="mb-0"><i class="la la-check-circle"></i> Solicitud Aprobada</h6>';
+                    $tituloTarjeta = $entry->status === 'Completada' ? 'Registro de aprobación' : 'Solicitud aprobada';
+                    $html .= '<h6 class="mb-0"><i class="la la-check-circle"></i> ' . e($tituloTarjeta) . '</h6>';
                     $html .= '</div>';
                     $html .= '<div class="card-body">';
-                    
-                    if ($entry->approvedBy) {
-                        $html .= '<p class="mb-2"><strong>Aprobada por:</strong> ' . e($entry->approvedBy->name) . '</p>';
+
+                    if ($entry->status === 'Completada') {
+                        $html .= '<p class="mb-2"><span class="badge bg-secondary">Solicitud completada</span></p>';
                     }
-                    
+
+                    $aprobador = $entry->approvedBy;
+                    if (! $aprobador && $entry->approved_by) {
+                        $aprobador = \App\Models\User::find($entry->approved_by);
+                    }
+                    if (! $aprobador && $entry->is_direct_purchase && $entry->directPurchaseAuthorizedBy) {
+                        $aprobador = $entry->directPurchaseAuthorizedBy;
+                    }
+
+                    if ($aprobador) {
+                        $html .= '<p class="mb-2"><strong>Aprobada por:</strong> ' . e($aprobador->name);
+                        if (method_exists($aprobador, 'hasRole')) {
+                            if ($aprobador->hasRole('role_representante_legal', 'backpack')) {
+                                $html .= ' <span class="badge bg-info text-white">Representante legal</span>';
+                            } elseif ($aprobador->hasRole('role_apoderado', 'backpack')) {
+                                $html .= ' <span class="badge bg-info text-white">Apoderado</span>';
+                            } elseif ($aprobador->hasRole('role_admin_institucion', 'backpack')) {
+                                $html .= ' <span class="badge bg-primary">Administrador del instituto</span>';
+                            } elseif ($aprobador->hasRole('role_responsable_compras', 'backpack')) {
+                                $html .= ' <span class="badge bg-secondary">Responsable de compras</span>';
+                            }
+                        }
+                        $html .= '</p>';
+                    } elseif ($entry->selectedBy) {
+                        $html .= '<p class="mb-2"><strong>Consta aprobación vía selección de cotización por:</strong> ' . e($entry->selectedBy->name) . '</p>';
+                    } else {
+                        $html .= '<p class="mb-2 text-muted"><strong>Aprobación:</strong> no hay usuario asociado a la firma en base de datos.</p>';
+                    }
+
                     if ($entry->approved_date) {
-                        $approvedDate = $entry->approved_date instanceof \Carbon\Carbon 
-                            ? $entry->approved_date->format('d/m/Y H:i') 
+                        $approvedDate = $entry->approved_date instanceof \Carbon\Carbon
+                            ? $entry->approved_date->format('d/m/Y H:i')
                             : \Carbon\Carbon::parse($entry->approved_date)->format('d/m/Y H:i');
                         $html .= '<p class="mb-2"><strong>Fecha de aprobación:</strong> ' . $approvedDate . '</p>';
                     }
-                    
+
                     if ($entry->approval_justification) {
                         $html .= '<p class="mb-0"><strong>Justificación:</strong> ' . nl2br(e($entry->approval_justification)) . '</p>';
                     }
-                    
+
                     $html .= '</div>';
                     $html .= '</div>';
-                    
+
                     return $html;
                 }
                 
@@ -4671,7 +4807,7 @@ class PurchaseRequestCrudController extends CrudController
                     return $html;
                 }
                 
-                // Si está completada, no mostrar nada
+                // Completada sin approved_by / approved_date: sin bloque de aprobación (el resumen ya se mostró arriba si existía)
                 if ($entry->status === 'Completada') {
                     return '';
                 }
