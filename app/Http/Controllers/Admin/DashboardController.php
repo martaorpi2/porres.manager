@@ -241,6 +241,12 @@ class DashboardController extends Controller
                 ->get();
         }
 
+        // Responsable de compras: solicitudes con ≥3 cotizaciones y sin cotización elegida (listas para seleccionar y seguir)
+        $purchaseRequestsAwaitingQuoteSelectionCount = 0;
+        if ($isResponsableCompras) {
+            $purchaseRequestsAwaitingQuoteSelectionCount = PurchaseRequest::purchaseRequestsAwaitingQuoteSelectionAfterThreeQuotationsCount();
+        }
+
         // Responsable de compras: solicitudes ya aprobadas por un usuario de nivel superior (no por compras)
         $superiorApprovedPurchaseRequestsCount = 0;
         if ($isResponsableCompras) {
@@ -500,6 +506,7 @@ class DashboardController extends Controller
             'isApoderado',
             'isRepresentanteLegal',
             'superiorApprovedPurchaseRequestsCount',
+            'purchaseRequestsAwaitingQuoteSelectionCount',
             'purchaseOrdersPendingPaymentAfterConformeCount',
             'pendingApprovalRequests',
             'stockAlerts',

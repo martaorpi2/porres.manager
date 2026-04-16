@@ -191,6 +191,20 @@
       70% { box-shadow: 0 0 0 10px rgba(25, 135, 84, 0); }
       100% { box-shadow: 0 0 0 0 rgba(25, 135, 84, 0); }
   }
+
+  .compras-seleccion-cotizacion-alert {
+      border-left: 6px solid #fd7e14;
+      background: #fff4e6;
+      color: #7a2e0a;
+      box-shadow: 0 4px 10px rgba(253, 126, 20, 0.15);
+      animation: comprasSeleccionCotPulse 1.8s ease-in-out infinite;
+  }
+
+  @keyframes comprasSeleccionCotPulse {
+      0% { box-shadow: 0 0 0 0 rgba(253, 126, 20, 0.25); }
+      70% { box-shadow: 0 0 0 10px rgba(253, 126, 20, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(253, 126, 20, 0); }
+  }
   
   /* Estados de Solicitudes Generales */
   .process-item-status.status-creada { background: #6c757d !important; color: #fff !important; }
@@ -1153,6 +1167,18 @@
     </div>
     @endif
 
+    @if(isset($isResponsableCompras) && $isResponsableCompras && ($purchaseRequestsAwaitingQuoteSelectionCount ?? 0) > 0)
+    <div class="alert compras-seleccion-cotizacion-alert d-flex justify-content-between align-items-center mb-4" role="alert">
+        <div>
+            <i class="la la-bell mr-2"></i>
+            <strong>Selección de cotización:</strong> hay {{ $purchaseRequestsAwaitingQuoteSelectionCount }} solicitud(es) de compra con al menos 3 cotizaciones cargadas y aún sin cotización elegida. Debe seleccionar una cotización ganadora (o asignar cotización por producto) para poder continuar con la orden de compra.
+        </div>
+        <a href="{{ backpack_url('purchase-request?pendiente_seleccion_cotizacion=1') }}" class="btn btn-sm btn-warning text-dark">
+            Ver solicitudes
+        </a>
+    </div>
+    @endif
+
     @if(isset($isResponsableCompras) && $isResponsableCompras && ($superiorApprovedPurchaseRequestsCount ?? 0) > 0)
     <div class="alert compras-superior-approval-alert d-flex justify-content-between align-items-center mb-4" role="alert">
         <div>
@@ -1225,9 +1251,21 @@
         </div>
     </div>
 
+    @php
+        /* Compras sin solicitudes generales: se oculta la 1ª tarjeta pero las otras quedaban en col-md-3 (9/12 → hueco). */
+        $comprasTresTarjetasProceso = isset($isResponsableCompras) && $isResponsableCompras
+            && (int) ($stats['general_requests'] ?? 0) === 0
+            && (!isset($isPersonal) || !$isPersonal)
+            && (!isset($isResponsableArea) || !$isResponsableArea);
+        $procesoColGeneralYPr = isset($isPersonal) && $isPersonal
+            ? '6'
+            : ((isset($isResponsableArea) && $isResponsableArea) ? '4' : ($comprasTresTarjetasProceso ? '4' : '3'));
+        $procesoColOrdenes = $comprasTresTarjetasProceso ? '4' : '3';
+    @endphp
+
     <div class="row mb-3">
         @if(!isset($isResponsableCompras) || !$isResponsableCompras || (isset($isResponsableCompras) && $isResponsableCompras && $stats['general_requests'] > 0))
-        <div class="col-md-{{ isset($isPersonal) && $isPersonal ? '6' : (isset($isResponsableArea) && $isResponsableArea ? '4' : '3') }}">
+        <div class="col-md-{{ $procesoColGeneralYPr }}">
             <div class="stat-card">
                 <div class="stat-card-icon">
                     <i class="la la-file-alt"></i>
@@ -1257,7 +1295,7 @@
         </div>
         @endif
         @if((isset($isResponsableArea) && $isResponsableArea) || (!isset($isPersonal) || !$isPersonal))
-        <div class="col-md-{{ isset($isPersonal) && $isPersonal ? '6' : (isset($isResponsableArea) && $isResponsableArea ? '4' : '3') }}">
+        <div class="col-md-{{ $procesoColGeneralYPr }}">
             <div class="stat-card">
                 <div class="stat-card-icon">
                     <i class="la la-shopping-cart"></i>
@@ -1303,7 +1341,7 @@
         </div>
         @endif
         @if((!isset($isPersonal) || !$isPersonal) && (!isset($isResponsableArea) || !$isResponsableArea))
-        <div class="col-md-3">
+        <div class="col-md-{{ $procesoColOrdenes }}">
             <div class="stat-card">
                 <div class="stat-card-icon">
                     <i class="la la-clipboard-list"></i>
@@ -1313,7 +1351,7 @@
                 <div class="stat-card-pending">{{ $stats['purchase_orders_pending'] }} Pendientes</div>
             </div>
         </div>
-        <div class="col-md-3">
+        <div class="col-md-{{ $procesoColOrdenes }}">
             <div class="stat-card">
                 <div class="stat-card-icon">
                     <i class="la la-money-bill-wave"></i>

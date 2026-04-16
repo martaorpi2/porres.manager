@@ -824,6 +824,29 @@ html body header .navbar .nav-item .nav-link .backpack-avatar-menu-container div
 .backpack-avatar-menu-container * {
     color: white !important;
 }
+
+/* Alertas y superficies amarillas: texto oscuro (evita heredar blanco de .text-white / fondos primarios) */
+.alert.alert-warning,
+.alert.alert-warning strong,
+.alert.alert-warning i,
+.alert.alert-warning span,
+.alert.alert-warning p,
+.card.text-white .alert.alert-warning,
+.card.text-white .alert.alert-warning *,
+.text-white .alert.alert-warning,
+.text-white .alert.alert-warning *,
+[class*="bg-primary"] .alert.alert-warning,
+[class*="bg-primary"] .alert.alert-warning * {
+    color: #212529 !important;
+}
+
+.alert.alert-warning a {
+    color: #871f1f !important;
+}
+
+.badge.bg-warning {
+    color: #212529 !important;
+}
 </style>
 
 <script>

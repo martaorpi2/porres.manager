@@ -345,4 +345,64 @@ class PurchaseRequest extends Model
 
         return \App\Models\Product::whereIn('id', $productIdsWithFewer)->get();
     }
+
+    /**
+     * Montos mayores a este umbral exigen al menos 3 cotizaciones y cobertura por producto antes de generar OC.
+     */
+    public static function quotationCoverageThresholdAmount(): float
+    {
+        return 60000.0;
+    }
+
+    /**
+     * Cumple la regla de cobertura (cada producto en ≥3 cotizaciones) cuando el monto la exige.
+     */
+    public function meetsMandatoryQuotationCoveragePerProduct(): bool
+    {
+        if ((float) $this->total_amount <= self::quotationCoverageThresholdAmount()) {
+            return true;
+        }
+
+        return $this->getProductsWithFewerThanThreeQuotations()->isEmpty();
+    }
+
+    /**
+     * Solicitudes aprobadas sin OC, con al menos N cotizaciones, sin cotización global elegida
+     * y con al menos un ítem sin cotización asignada (flujo mixto / por producto).
+     *
+     * @return \Illuminate\Database\Eloquent\Builder<static>
+     */
+    public static function queryAwaitingQuoteSelectionWithMinimumQuotations(int $minQuotations = 3): \Illuminate\Database\Eloquent\Builder
+    {
+        return static::query()
+            ->where('status', 'Aprobada')
+            ->whereDoesntHave('purchaseOrders')
+            ->where(function ($q) {
+                $q->where('is_direct_purchase', false)
+                    ->orWhereNull('direct_purchase_authorized_by')
+                    ->orWhere('direct_purchase_authorization_rejected', true);
+            })
+            ->withCount('marketRates')
+            ->having('market_rates_count', '>=', $minQuotations)
+            ->whereNull('selected_market_rate_id')
+            ->whereHas('details', function ($d) {
+                $d->whereNull('selected_market_rate_id');
+            });
+    }
+
+    /**
+     * @return \Illuminate\Support\Collection<int, static>
+     */
+    public static function purchaseRequestsAwaitingQuoteSelectionAfterThreeQuotations(): \Illuminate\Support\Collection
+    {
+        return static::queryAwaitingQuoteSelectionWithMinimumQuotations(3)
+            ->get()
+            ->filter(fn (self $pr) => $pr->meetsMandatoryQuotationCoveragePerProduct())
+            ->values();
+    }
+
+    public static function purchaseRequestsAwaitingQuoteSelectionAfterThreeQuotationsCount(): int
+    {
+        return static::purchaseRequestsAwaitingQuoteSelectionAfterThreeQuotations()->count();
+    }
 }

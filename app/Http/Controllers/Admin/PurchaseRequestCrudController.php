@@ -146,6 +146,7 @@ class PurchaseRequestCrudController extends CrudController
         // Backpack agrega 'persistent-table=true' cuando restaura desde localStorage
         $hasPendientes = request()->query('pendientes') == '1';
         $hasAprobadasPorSuperior = request()->query('aprobadas_por_superior') == '1';
+        $hasPendienteSeleccionCotizacion = request()->query('pendiente_seleccion_cotizacion') == '1';
         $isPersistentRestore = request()->query('persistent-table') == 'true';
         
         // Solo aplicar el filtro si:
@@ -171,6 +172,18 @@ class PurchaseRequestCrudController extends CrudController
                     ->whereHas('approvedBy.roles', function ($q) use ($supervisorRoleNames) {
                         $q->where('guard_name', 'backpack')->whereIn('name', $supervisorRoleNames);
                     });
+            });
+        }
+
+        // Desde aviso del dashboard de compras: ≥3 cotizaciones y falta elegir cotización para continuar
+        if ($hasPendienteSeleccionCotizacion && !$isPersistentRestore && $user && $user->hasRole('role_responsable_compras', 'backpack')) {
+            $ids = \App\Models\PurchaseRequest::purchaseRequestsAwaitingQuoteSelectionAfterThreeQuotations()->pluck('id');
+            CRUD::addClause(function ($query) use ($ids) {
+                if ($ids->isEmpty()) {
+                    $query->whereRaw('1 = 0');
+                } else {
+                    $query->whereIn($query->getModel()->getQualifiedKeyName(), $ids);
+                }
             });
         }
     }
