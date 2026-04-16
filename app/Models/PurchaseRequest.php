@@ -367,27 +367,56 @@ class PurchaseRequest extends Model
     }
 
     /**
-     * Solicitudes aprobadas sin OC, con al menos N cotizaciones, sin cotización global elegida
-     * y con al menos un ítem sin cotización asignada (flujo mixto / por producto).
+     * Indica si ya hay una cotización elegida (cabecera, bandera en cotización o asignación en todos los ítems).
+     */
+    public function hasQuotationSelectionResolved(): bool
+    {
+        if (! empty($this->selected_market_rate_id)) {
+            return true;
+        }
+
+        if ($this->relationLoaded('marketRates')) {
+            if ($this->marketRates->contains(fn ($mr) => (bool) ($mr->is_selected ?? false))) {
+                return true;
+            }
+        } elseif ($this->marketRates()->where('is_selected', true)->exists()) {
+            return true;
+        }
+
+        $this->loadMissing('details');
+
+        if ($this->details->isEmpty()) {
+            return false;
+        }
+
+        return $this->details->every(fn ($d) => ! empty($d->selected_market_rate_id));
+    }
+
+    /**
+     * Solicitudes sin OC, con al menos una cotización cargada, sin selección aplicada
+     * (alineado con la lógica de show / generar OC: selected_market_rate_id, is_selected o ítems asignados).
+     *
+     * Estados: aprobada, en proceso o pendiente (compras puede cargar cotizaciones antes de que cambie el estado).
      *
      * @return \Illuminate\Database\Eloquent\Builder<static>
      */
-    public static function queryAwaitingQuoteSelectionWithMinimumQuotations(int $minQuotations = 3): \Illuminate\Database\Eloquent\Builder
+    public static function queryAwaitingQuoteSelectionWithMinimumQuotations(int $minQuotations = 1): \Illuminate\Database\Eloquent\Builder
     {
+        $min = max(1, $minQuotations);
+
         return static::query()
-            ->where('status', 'Aprobada')
+            ->whereIn('status', ['Aprobada', 'En Proceso', 'Pendiente'])
             ->whereDoesntHave('purchaseOrders')
             ->where(function ($q) {
                 $q->where('is_direct_purchase', false)
                     ->orWhereNull('direct_purchase_authorized_by')
                     ->orWhere('direct_purchase_authorization_rejected', true);
             })
-            ->withCount('marketRates')
-            ->having('market_rates_count', '>=', $minQuotations)
-            ->whereNull('selected_market_rate_id')
-            ->whereHas('details', function ($d) {
-                $d->whereNull('selected_market_rate_id');
-            });
+            ->whereHas('details')
+            ->whereRaw(
+                '(select count(*) from market_rates where market_rates.purchase_request_id = purchase_requests.id) >= ?',
+                [$min]
+            );
     }
 
     /**
@@ -395,9 +424,10 @@ class PurchaseRequest extends Model
      */
     public static function purchaseRequestsAwaitingQuoteSelectionAfterThreeQuotations(): \Illuminate\Support\Collection
     {
-        return static::queryAwaitingQuoteSelectionWithMinimumQuotations(3)
+        return static::queryAwaitingQuoteSelectionWithMinimumQuotations(1)
+            ->with(['marketRates', 'details'])
             ->get()
-            ->filter(fn (self $pr) => $pr->meetsMandatoryQuotationCoveragePerProduct())
+            ->filter(fn (self $pr) => ! $pr->hasQuotationSelectionResolved())
             ->values();
     }
 

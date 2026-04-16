@@ -234,6 +234,29 @@
       box-shadow: 0 4px 8px rgba(0,0,0,0.15);
   }
 
+  a.stat-card-link {
+      text-decoration: none;
+      color: inherit;
+      cursor: pointer;
+  }
+
+  a.stat-card-link:hover,
+  a.stat-card-link:focus {
+      text-decoration: none;
+      color: inherit;
+  }
+
+  a.stat-card-link .stat-card-icon,
+  a.stat-card-link .stat-card-number {
+      color: #871f1f !important;
+  }
+
+  a.stat-card-link .stat-card-label,
+  a.stat-card-link .stat-card-pending,
+  a.stat-card-link .stat-card-pending small {
+      color: #6c757d !important;
+  }
+
   .stat-card-icon {
       font-size: 28px;
       color: #871f1f;
@@ -1171,7 +1194,7 @@
     <div class="alert compras-seleccion-cotizacion-alert d-flex justify-content-between align-items-center mb-4" role="alert">
         <div>
             <i class="la la-bell mr-2"></i>
-            <strong>Selección de cotización:</strong> hay {{ $purchaseRequestsAwaitingQuoteSelectionCount }} solicitud(es) de compra con al menos 3 cotizaciones cargadas y aún sin cotización elegida. Debe seleccionar una cotización ganadora (o asignar cotización por producto) para poder continuar con la orden de compra.
+            <strong>Selección de cotización:</strong> hay {{ $purchaseRequestsAwaitingQuoteSelectionCount }} solicitud(es) de compra con cotizaciones cargadas y aún sin cotización elegida (cabecera, cotización marcada como seleccionada o asignación por ítem). Revise cada solicitud y elija opción para continuar. Si el monto supera $60.000, además cada producto debe figurar en al menos 3 cotizaciones antes de generar la orden de compra.
         </div>
         <a href="{{ backpack_url('purchase-request?pendiente_seleccion_cotizacion=1') }}" class="btn btn-sm btn-warning text-dark">
             Ver solicitudes
@@ -1296,48 +1319,51 @@
         @endif
         @if((isset($isResponsableArea) && $isResponsableArea) || (!isset($isPersonal) || !$isPersonal))
         <div class="col-md-{{ $procesoColGeneralYPr }}">
+            @if(isset($isResponsableCompras) && $isResponsableCompras && isset($stats['purchase_requests_pending']) && $stats['purchase_requests_pending'] > 0)
+            <a href="{{ backpack_url('purchase-request?pendientes=1') }}" class="stat-card stat-card-link">
+                <div class="stat-card-icon">
+                    <i class="la la-shopping-cart"></i>
+                </div>
+                <div class="stat-card-number" style="font-size: 2.5rem; font-weight: bold;">
+                    {{ $stats['purchase_requests_pending'] }}
+                </div>
+                <div class="stat-card-label">{{ isset($isResponsableArea) && $isResponsableArea ? 'Mis Solicitudes de Compra' : 'Solicitudes de Compra' }}</div>
+                <div class="stat-card-pending" style="font-size: 0.85rem; color: #6c757d;">
+                    Total: {{ $stats['purchase_requests'] }}
+                    @if(isset($purchaseRequestsAgeStats) && isset($purchaseRequestsAgeStats['has_pending']) && $purchaseRequestsAgeStats['has_pending'])
+                        <br>
+                        <small style="color: #6c757d;">
+                            <i class="la la-hourglass-half"></i> 
+                            Más antigua: {{ (int)$purchaseRequestsAgeStats['max_days'] }} día(s)
+                            @if($purchaseRequestsAgeStats['average_days'] >= 0)
+                                | Promedio: {{ (int)$purchaseRequestsAgeStats['average_days'] }} día(s)
+                            @endif
+                        </small>
+                    @endif
+                </div>
+            </a>
+            @else
             <div class="stat-card">
                 <div class="stat-card-icon">
                     <i class="la la-shopping-cart"></i>
                 </div>
-                @if(isset($isResponsableCompras) && $isResponsableCompras && isset($stats['purchase_requests_pending']) && $stats['purchase_requests_pending'] > 0)
-                    <div class="stat-card-number" style="font-size: 2.5rem; font-weight: bold;">
-                        <a href="{{ backpack_url('purchase-request?pendientes=1') }}" style="color: inherit; text-decoration: none;">
-                            {{ $stats['purchase_requests_pending'] }}
-                        </a>
-                    </div>
-                    <div class="stat-card-label">{{ isset($isResponsableArea) && $isResponsableArea ? 'Mis Solicitudes de Compra' : 'Solicitudes de Compra' }}</div>
-                    <div class="stat-card-pending" style="font-size: 0.85rem; color: #6c757d;">
-                        Total: {{ $stats['purchase_requests'] }}
-                        @if(isset($purchaseRequestsAgeStats) && isset($purchaseRequestsAgeStats['has_pending']) && $purchaseRequestsAgeStats['has_pending'])
-                            <br>
-                            <small style="color: #6c757d;">
-                                <i class="la la-hourglass-half"></i> 
-                                Más antigua: {{ (int)$purchaseRequestsAgeStats['max_days'] }} día(s)
-                                @if($purchaseRequestsAgeStats['average_days'] >= 0)
-                                    | Promedio: {{ (int)$purchaseRequestsAgeStats['average_days'] }} día(s)
-                                @endif
-                            </small>
-                        @endif
-                    </div>
-                @else
-                    <div class="stat-card-number">{{ $stats['purchase_requests'] }}</div>
-                    <div class="stat-card-label">{{ isset($isResponsableArea) && $isResponsableArea ? 'Mis Solicitudes de Compra' : 'Solicitudes de Compra' }}</div>
-                    <div class="stat-card-pending">
-                        {{ $stats['purchase_requests_pending'] }} Pendientes
-                        @if(isset($purchaseRequestsAgeStats) && $purchaseRequestsAgeStats['max_days'] > 0)
-                            <br>
-                            <small style="color: #6c757d; font-size: 0.85rem;">
-                                <i class="la la-hourglass-half"></i> 
-                                Más antigua: {{ (int)$purchaseRequestsAgeStats['max_days'] }} día(s)
-                                @if($purchaseRequestsAgeStats['average_days'] > 0)
-                                    | Promedio: {{ (int)$purchaseRequestsAgeStats['average_days'] }} día(s)
-                                @endif
-                            </small>
-                        @endif
-                    </div>
-                @endif
+                <div class="stat-card-number">{{ $stats['purchase_requests'] }}</div>
+                <div class="stat-card-label">{{ isset($isResponsableArea) && $isResponsableArea ? 'Mis Solicitudes de Compra' : 'Solicitudes de Compra' }}</div>
+                <div class="stat-card-pending">
+                    {{ $stats['purchase_requests_pending'] }} Pendientes
+                    @if(isset($purchaseRequestsAgeStats) && $purchaseRequestsAgeStats['max_days'] > 0)
+                        <br>
+                        <small style="color: #6c757d; font-size: 0.85rem;">
+                            <i class="la la-hourglass-half"></i> 
+                            Más antigua: {{ (int)$purchaseRequestsAgeStats['max_days'] }} día(s)
+                            @if($purchaseRequestsAgeStats['average_days'] > 0)
+                                | Promedio: {{ (int)$purchaseRequestsAgeStats['average_days'] }} día(s)
+                            @endif
+                        </small>
+                    @endif
+                </div>
             </div>
+            @endif
         </div>
         @endif
         @if((!isset($isPersonal) || !$isPersonal) && (!isset($isResponsableArea) || !$isResponsableArea))
