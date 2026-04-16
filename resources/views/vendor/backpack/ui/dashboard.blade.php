@@ -193,17 +193,17 @@
   }
 
   .compras-seleccion-cotizacion-alert {
-      border-left: 6px solid #fd7e14;
-      background: #fff4e6;
-      color: #7a2e0a;
-      box-shadow: 0 4px 10px rgba(253, 126, 20, 0.15);
+      border-left: 6px solid #dc3545;
+      background: #f8d7da;
+      color: #842029;
+      box-shadow: 0 4px 10px rgba(220, 53, 69, 0.15);
       animation: comprasSeleccionCotPulse 1.8s ease-in-out infinite;
   }
 
   @keyframes comprasSeleccionCotPulse {
-      0% { box-shadow: 0 0 0 0 rgba(253, 126, 20, 0.25); }
-      70% { box-shadow: 0 0 0 10px rgba(253, 126, 20, 0); }
-      100% { box-shadow: 0 0 0 0 rgba(253, 126, 20, 0); }
+      0% { box-shadow: 0 0 0 0 rgba(220, 53, 69, 0.28); }
+      70% { box-shadow: 0 0 0 10px rgba(220, 53, 69, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(220, 53, 69, 0); }
   }
   
   /* Estados de Solicitudes Generales */
@@ -1194,9 +1194,9 @@
     <div class="alert compras-seleccion-cotizacion-alert d-flex justify-content-between align-items-center mb-4" role="alert">
         <div>
             <i class="la la-bell mr-2"></i>
-            <strong>Selección de cotización:</strong> hay {{ $purchaseRequestsAwaitingQuoteSelectionCount }} solicitud(es) de compra con cotizaciones cargadas y aún sin cotización elegida (cabecera, cotización marcada como seleccionada o asignación por ítem). Revise cada solicitud y elija opción para continuar. Si el monto supera $60.000, además cada producto debe figurar en al menos 3 cotizaciones antes de generar la orden de compra.
+            <strong>Selección de cotización:</strong> hay {{ $purchaseRequestsAwaitingQuoteSelectionCount }} solicitud(es) de compra con cotizaciones cargadas y aún sin cotización elegida.
         </div>
-        <a href="{{ backpack_url('purchase-request?pendiente_seleccion_cotizacion=1') }}" class="btn btn-sm btn-warning text-dark">
+        <a href="{{ backpack_url('purchase-request?pendiente_seleccion_cotizacion=1') }}" class="btn btn-sm btn-danger">
             Ver solicitudes
         </a>
     </div>
