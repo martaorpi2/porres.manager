@@ -1208,8 +1208,8 @@
             <i class="la la-bell mr-2"></i>
             <strong>Compras:</strong> hay {{ $superiorApprovedPurchaseRequestsCount }} solicitud(es) de compra aprobada(s) por un usuario superior (listas para continuar el proceso de cotización / OC).
         </div>
-        <a href="{{ backpack_url('purchase-request?aprobadas_por_superior=1') }}" class="btn btn-sm btn-primary">
-            Ver solicitudes
+        <a href="#purchase-requests-process-section" class="btn btn-sm btn-primary">
+            Revisar ahora
         </a>
     </div>
     @endif
