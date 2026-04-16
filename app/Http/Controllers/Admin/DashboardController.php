@@ -215,7 +215,7 @@ class DashboardController extends Controller
                 $userLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_representante_legal');
             }
             
-            $pendingApprovalRequests = PurchaseRequest::with(['requestingUser', 'responsibilityArea', 'details.product', 'directPurchaseSupplier'])
+            $pendingApprovalRequests = PurchaseRequest::with(['requestingUser', 'responsibilityArea', 'details.product', 'directPurchaseSupplier', 'marketRates'])
                 ->where('status', 'Pendiente')
                 ->where(function($query) use ($userLimit, $comprasLimit) {
                     // Solicitudes normales que requieren aprobación de administrador
@@ -238,7 +238,16 @@ class DashboardController extends Controller
                 })
                 ->orderBy('created_at', 'asc') // Ordenar por más antiguas primero
                 ->limit(12)
-                ->get();
+                ->get()
+                // Sin cotización elegida aún no corresponde aviso/listado de aprobación (salvo compra directa)
+                ->filter(function (PurchaseRequest $pr) {
+                    if ($pr->is_direct_purchase) {
+                        return true;
+                    }
+
+                    return $pr->hasQuotationSelectionResolved();
+                })
+                ->values();
         }
 
         // Responsable de compras: solicitudes con ≥3 cotizaciones y sin cotización elegida (listas para seleccionar y seguir)
