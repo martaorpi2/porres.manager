@@ -1196,8 +1196,8 @@
             <i class="la la-bell mr-2"></i>
             <strong>Selección de cotización:</strong> hay {{ $purchaseRequestsAwaitingQuoteSelectionCount }} solicitud(es) de compra con cotizaciones cargadas y aún sin cotización elegida.
         </div>
-        <a href="{{ backpack_url('purchase-request?pendiente_seleccion_cotizacion=1') }}" class="btn btn-sm btn-danger">
-            Ver solicitudes
+        <a href="#purchase-requests-process-section" class="btn btn-sm btn-danger">
+            Revisar ahora
         </a>
     </div>
     @endif
@@ -1734,7 +1734,7 @@
 
     @if((isset($isResponsableArea) && $isResponsableArea) || (!isset($isPersonal) || !$isPersonal))
     <!-- Paso 2: Solicitudes de Compra -->
-    <div class="process-step">
+    <div id="purchase-requests-process-section" class="process-step">
         <div class="process-step-header">
             <div class="process-step-title">
                 <i class="la la-shopping-cart process-step-icon"></i>
