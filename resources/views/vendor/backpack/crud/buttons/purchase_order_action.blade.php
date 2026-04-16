@@ -1,7 +1,8 @@
 @php
-    // Verificar que el usuario no sea role_responsable_area
+    // Responsable de área: sin acciones de OC. Representante legal: puede ver OC existente, no generar.
     $user = backpack_user();
     $canAccess = !($user && $user->hasRole('role_responsable_area', 'backpack'));
+    $representanteLegalNoGeneraOc = $user && $user->hasRole('role_representante_legal', 'backpack');
     
     // Obtener la entrada actual (funciona tanto en list como en show)
     $currentEntry = null;
@@ -65,7 +66,7 @@
            title="Ver Orden de Compra Generada">
             <i class="la la-eye"></i> <span>Ver OC</span>
         </a>
-    @elseif ($canGenerate && $currentEntry->status != 'Completada')
+    @elseif ($canGenerate && ! $representanteLegalNoGeneraOc && $currentEntry->status != 'Completada')
         {{-- Si puede generar y no está completada, mostrar botón para generar --}}
         @if ($entryId)
             <form method="POST" action="{{ route('purchase-request.generate-purchase-order', $entryId) }}" style="display: inline;">

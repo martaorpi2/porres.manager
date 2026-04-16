@@ -2893,6 +2893,9 @@ class PurchaseRequestCrudController extends CrudController
         if ($user && $user->hasRole('role_responsable_area', 'backpack')) {
             abort(403, 'Los responsables de área no pueden asignar cotizaciones.');
         }
+        if ($user && $user->hasRole('role_representante_legal', 'backpack')) {
+            abort(403, 'El representante legal no puede asignar cotización por producto.');
+        }
 
         $purchaseRequest = \App\Models\PurchaseRequest::with(['details.product', 'marketRates.quoteDetails'])->findOrFail($id);
         if ($purchaseRequest->status === 'Completada') {
@@ -2941,10 +2944,13 @@ class PurchaseRequestCrudController extends CrudController
      */
     public function generatePurchaseOrder($id)
     {
-        // Verificar que el usuario no sea role_responsable_area
+        // Verificar que el usuario no sea role_responsable_area ni representante legal
         $user = backpack_user();
         if ($user && $user->hasRole('role_responsable_area', 'backpack')) {
             abort(403, 'Los responsables de área no pueden generar órdenes de compra.');
+        }
+        if ($user && $user->hasRole('role_representante_legal', 'backpack')) {
+            abort(403, 'El representante legal no puede generar órdenes de compra.');
         }
         
         $purchaseRequest = \App\Models\PurchaseRequest::with([
@@ -3358,7 +3364,12 @@ class PurchaseRequestCrudController extends CrudController
         CRUD::column('request_date')->label('Fecha');
         CRUD::column('status')->label('Estado');
         CRUD::column('priority')->label('Prioridad');
-        CRUD::column('justification')->label('Motivo');
+        CRUD::column('justification')->label('Motivo')->type('custom_html')
+            ->value(function ($entry) {
+                $text = $entry->justification ?? '';
+
+                return '<div class="text-break" style="white-space: pre-wrap; word-break: break-word;">' . e($text) . '</div>';
+            });
         CRUD::column('observations')->label('Observaciones');
         CRUD::column('responsibilityArea.name')->label('Área');
         CRUD::column('requestingUser.name')->label('Solicitante');
@@ -4031,6 +4042,9 @@ class PurchaseRequestCrudController extends CrudController
                 // Usar la relación del modelo en lugar de consulta directa
                 $entry->load(['marketRates.supplier', 'marketRates.quoteDetails.product']);
                 $marketRates = $entry->marketRates;
+
+                $quotationsViewer = backpack_user();
+                $representanteLegalSinAsignarPorProducto = $quotationsViewer && $quotationsViewer->hasRole('role_representante_legal', 'backpack');
                 
                 $html = '';
                 
@@ -4178,9 +4192,9 @@ class PurchaseRequestCrudController extends CrudController
                         }
                     }
 
-                    // Asignar cotización por producto (para OC con varios proveedores)
+                    // Asignar cotización por producto (para OC con varios proveedores) — no aplica a representante legal
                     $entry->load(['details.product', 'details.selectedMarketRate.supplier']);
-                    if ($quotationsCount >= 2 && $entry->status === 'Aprobada' && $entry->status !== 'Completada') {
+                    if ($quotationsCount >= 2 && $entry->status === 'Aprobada' && $entry->status !== 'Completada' && ! $representanteLegalSinAsignarPorProducto) {
                         $html .= '<div class="card mt-3 border-info">';
                         $html .= '<div class="card-header bg-info text-white"><strong><i class="la la-link"></i> Asignar cotización por producto</strong></div>';
                         $html .= '<div class="card-body">';
@@ -4215,7 +4229,8 @@ class PurchaseRequestCrudController extends CrudController
                 // Lógica para mostrar botón de generar orden según el monto
                 // El rol role_responsable_area no puede generar órdenes de compra
                 $user = backpack_user();
-                $canGenerateOrder = !($user && $user->hasRole('role_responsable_area', 'backpack'));
+                $canGenerateOrder = !($user && $user->hasRole('role_responsable_area', 'backpack'))
+                    && !($user && $user->hasRole('role_representante_legal', 'backpack'));
                 
                 $entry->load('marketRates.quoteDetails');
                 $totalAmount = $this->recalculateSelectedQuotationsTotalForPurchaseRequest($entry);
@@ -4300,7 +4315,10 @@ class PurchaseRequestCrudController extends CrudController
                                 $canGenerateWithQuote = $entry->selected_market_rate_id || $allDetailsAssigned;
                                 if (!$canGenerateWithQuote) {
                                     $html .= '<div class="mt-3 alert alert-warning">';
-                                    $html .= '<i class="la la-exclamation-triangle"></i> <strong>Atención:</strong> Debe seleccionar una cotización para toda la solicitud, o asignar una cotización por producto en la sección de arriba.';
+                                    $html .= '<i class="la la-exclamation-triangle"></i> <strong>Atención:</strong> ';
+                                    $html .= $representanteLegalSinAsignarPorProducto
+                                        ? 'Debe seleccionar una cotización para toda la solicitud.'
+                                        : 'Debe seleccionar una cotización para toda la solicitud, o asignar una cotización por producto en la sección de arriba.';
                                     $html .= '</div>';
                                 } else {
                                 // Hay 3 cotizaciones, todos los productos con 3+ cotizaciones y (una seleccionada o asignación por producto), mostrar formulario
@@ -4385,7 +4403,10 @@ class PurchaseRequestCrudController extends CrudController
                                     $html .= '</button></form>';
                                 } else {
                                     $html .= '<div class="alert alert-warning">';
-                                    $html .= '<i class="la la-exclamation-triangle"></i> <strong>Atención:</strong> Tiene ' . $quotationsCount . ' cotización(es). Seleccione una para toda la solicitud o asigne una cotización por producto en la sección de arriba.';
+                                    $html .= '<i class="la la-exclamation-triangle"></i> <strong>Atención:</strong> Tiene ' . $quotationsCount . ' cotización(es). ';
+                                    $html .= $representanteLegalSinAsignarPorProducto
+                                        ? 'Seleccione una para toda la solicitud.'
+                                        : 'Seleccione una para toda la solicitud o asigne una cotización por producto en la sección de arriba.';
                                     $html .= '</div>';
                                 }
                             }
