@@ -2348,6 +2348,7 @@ class PurchaseRequestCrudController extends CrudController
     public function selectMarketRate($id, $marketRateId)
     {
         $purchaseRequest = \App\Models\PurchaseRequest::findOrFail($id);
+        $this->assertComprasCanMutateQuotationSelection($purchaseRequest);
         $marketRate = \App\Models\MarketRate::with('quoteDetails')->findOrFail($marketRateId);
 
         // Calcular el monto total de la cotización desde los detalles si no está disponible
@@ -2385,6 +2386,32 @@ class PurchaseRequestCrudController extends CrudController
     }
 
     /**
+     * Responsable de compras sin rol de administración del sistema o del instituto.
+     */
+    private function userIsResponsableComprasSinAdmin(?\App\Models\User $user): bool
+    {
+        if (! $user || ! $user->hasRole('role_responsable_compras', 'backpack')) {
+            return false;
+        }
+        if ($user->hasRole('role_admin_sistema', 'backpack') || $user->hasRole('role_admin_institucion', 'backpack')) {
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * Compras (sin admin) solo puede alterar cotizaciones / asignación por producto si la solicitud sigue pendiente.
+     */
+    private function assertComprasCanMutateQuotationSelection(\App\Models\PurchaseRequest $purchaseRequest): void
+    {
+        $user = backpack_user();
+        if ($this->userIsResponsableComprasSinAdmin($user) && $purchaseRequest->status !== 'Pendiente') {
+            abort(403, 'No se puede modificar cotizaciones ni la asignación por producto: la solicitud ya no está pendiente.');
+        }
+    }
+
+    /**
      * Show form to select market rate with justification
      */
     public function showSelectMarketRateForm($id, $marketRateId)
@@ -2393,6 +2420,8 @@ class PurchaseRequestCrudController extends CrudController
             'responsibilityArea',
             'details.product',
         ])->findOrFail($id);
+
+        $this->assertComprasCanMutateQuotationSelection($purchaseRequest);
 
         $marketRate = \App\Models\MarketRate::with([
             'supplier',
@@ -2423,6 +2452,7 @@ class PurchaseRequestCrudController extends CrudController
         }
 
         $purchaseRequest = \App\Models\PurchaseRequest::findOrFail($id);
+        $this->assertComprasCanMutateQuotationSelection($purchaseRequest);
         $marketRate = \App\Models\MarketRate::with('quoteDetails')->findOrFail($marketRateId);
 
         $request = request();
@@ -2506,6 +2536,7 @@ class PurchaseRequestCrudController extends CrudController
         }
 
         $purchaseRequest = \App\Models\PurchaseRequest::with('marketRates')->findOrFail($id);
+        $this->assertComprasCanMutateQuotationSelection($purchaseRequest);
         $marketRate = \App\Models\MarketRate::where('purchase_request_id', $id)->findOrFail($marketRateId);
 
         $newValue = ! (bool) $marketRate->is_selected;
@@ -3054,6 +3085,12 @@ class PurchaseRequestCrudController extends CrudController
         $purchaseRequest = \App\Models\PurchaseRequest::with(['details.product', 'marketRates.quoteDetails'])->findOrFail($id);
         if ($purchaseRequest->status === 'Completada') {
             \Alert::error('No se puede modificar la asignación: la solicitud ya está completada.')->flash();
+
+            return redirect()->back();
+        }
+
+        if ($this->userIsResponsableComprasSinAdmin($user) && $purchaseRequest->status !== 'Pendiente') {
+            \Alert::error('No se puede modificar la asignación por producto: la solicitud ya no está pendiente.')->flash();
 
             return redirect()->back();
         }
@@ -4186,6 +4223,12 @@ class PurchaseRequestCrudController extends CrudController
                     }
                 }
 
+                $comprasSinAdmin = $quotationsViewer
+                    && $quotationsViewer->hasRole('role_responsable_compras', 'backpack')
+                    && ! $quotationsViewer->hasRole('role_admin_sistema', 'backpack')
+                    && ! $quotationsViewer->hasRole('role_admin_institucion', 'backpack');
+                $comprasPuedeEditarSeleccionCotizaciones = ! $comprasSinAdmin || $entry->status === 'Pendiente';
+
                 $html = '';
 
                 if ($marketRates->isEmpty()) {
@@ -4288,7 +4331,7 @@ class PurchaseRequestCrudController extends CrudController
                             }
                         }
 
-                        if ($entry->status != 'Completada' && $canSelectQuotations) {
+                        if ($entry->status != 'Completada' && $canSelectQuotations && $comprasPuedeEditarSeleccionCotizaciones) {
                             $html .= '<form method="POST" action="'.e(backpack_url('purchase-request/'.$entry->id.'/toggle-market-rate/'.$marketRate->id)).'" style="display:inline-block;" class="me-1">';
                             $html .= csrf_field();
                             if ($isSelected) {
@@ -4307,7 +4350,7 @@ class PurchaseRequestCrudController extends CrudController
                     $html .= '</table>';
                     $html .= '</div>';
 
-                    if ($canSelectQuotations && PurchaseRequestNotificationService::isAwaitingSuperiorQuotationApproval($entry)) {
+                    if ($canSelectQuotations && $comprasPuedeEditarSeleccionCotizaciones && PurchaseRequestNotificationService::isAwaitingSuperiorQuotationApproval($entry)) {
                         $html .= '<div class="alert alert-warning mt-3 mb-0">';
                         $html .= '<p class="mb-2"><strong>Autorización de nivel superior</strong></p>';
                         $html .= '<p class="mb-2 small">Cuando tenga definida(s) la(s) cotización(es) a utilizar, envíe la notificación por correo al nivel que deba aprobar (según monto y roles).</p>';
@@ -4332,9 +4375,9 @@ class PurchaseRequestCrudController extends CrudController
                         }
                     }
 
-                    // Asignar cotización por producto (para OC con varios proveedores) — no aplica a representante legal
+                    // Asignar cotización por producto (para OC con varios proveedores) — no aplica a representante legal; compras solo con solicitud pendiente
                     $entry->load(['details.product', 'details.selectedMarketRate.supplier']);
-                    if ($quotationsCount >= 2 && $entry->status === 'Aprobada' && $entry->status !== 'Completada' && ! $representanteLegalSinAsignarPorProducto) {
+                    if ($quotationsCount >= 2 && $entry->status !== 'Completada' && ! $representanteLegalSinAsignarPorProducto && $comprasPuedeEditarSeleccionCotizaciones) {
                         $html .= '<div class="card mt-3 border-info">';
                         $html .= '<div class="card-header bg-info text-white"><strong><i class="la la-link"></i> Asignar cotización por producto</strong></div>';
                         $html .= '<div class="card-body">';

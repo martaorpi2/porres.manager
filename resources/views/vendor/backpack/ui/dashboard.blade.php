@@ -47,6 +47,14 @@
       transition: transform 0.2s, box-shadow 0.2s;
   }
 
+  .process-step[id] {
+      scroll-margin-top: 5.5rem;
+  }
+
+  #purchase-request-types-section {
+      scroll-margin-top: 5.5rem;
+  }
+
   .process-step:hover {
       transform: translateY(-2px);
       box-shadow: 0 4px 8px rgba(0,0,0,0.15);
@@ -1176,6 +1184,7 @@
 <div class="container-fluid">
     @php
         $pendingLegalApprovalsCount = isset($pendingApprovalRequests) ? $pendingApprovalRequests->count() : 0;
+        $dashboardPanel = backpack_url('dashboard');
     @endphp
 
     @if(($isAdminInstitucion ?? false) || ($isApoderado ?? false) || ($isRepresentanteLegal ?? false))
@@ -1186,8 +1195,8 @@
             <strong>Atención:</strong> hay {{ $pendingLegalApprovalsCount }} solicitud(es) de compra pendiente(s) de aprobación según su perfil.
         </div>
         <div class="d-flex flex-wrap gap-2">
-            <a href="{{ backpack_url('dashboard') }}#pending-approval-section" class="btn btn-sm btn-danger">Ir al bloque en el panel</a>
-            <a href="{{ backpack_url('purchase-request') }}" class="btn btn-sm btn-outline-danger">Listado de solicitudes de compra</a>
+            <a href="{{ $dashboardPanel }}#pending-approval-section" class="btn btn-sm btn-danger">Ir al bloque en el panel</a>
+            <a href="{{ $dashboardPanel }}#purchase-requests-process-section" class="btn btn-sm btn-outline-danger">Ver panel de solicitudes de compra</a>
         </div>
     </div>
         @endif
@@ -1200,8 +1209,7 @@
             <strong>Selección de cotización:</strong> hay {{ $purchaseRequestsAwaitingQuoteSelectionCount }} solicitud(es) de compra con cotizaciones cargadas y aún sin cotización elegida.
         </div>
         <div class="d-flex flex-wrap gap-2">
-            <a href="{{ backpack_url('purchase-request?pendiente_seleccion_cotizacion=1') }}" class="btn btn-sm btn-danger">Abrir listado filtrado</a>
-            <a href="#purchase-requests-process-section" class="btn btn-sm btn-outline-danger">Ver en este panel</a>
+            <a href="{{ $dashboardPanel }}#purchase-requests-process-section" class="btn btn-sm btn-danger">Ir al panel de solicitudes de compra</a>
         </div>
     </div>
     @endif
@@ -1213,8 +1221,7 @@
             <strong>Compras:</strong> hay {{ $superiorApprovedPurchaseRequestsCount }} solicitud(es) de compra aprobada(s) por un usuario superior (listas para continuar el proceso de cotización / OC).
         </div>
         <div class="d-flex flex-wrap gap-2">
-            <a href="{{ backpack_url('purchase-request?aprobadas_por_superior=1') }}" class="btn btn-sm btn-primary">Abrir listado filtrado</a>
-            <a href="#purchase-requests-process-section" class="btn btn-sm btn-outline-primary">Ver en este panel</a>
+            <a href="{{ $dashboardPanel }}#purchase-requests-process-section" class="btn btn-sm btn-primary">Ir al panel de solicitudes de compra</a>
         </div>
     </div>
     @endif
@@ -1225,8 +1232,8 @@
             <i class="la la-bell mr-2"></i>
             <strong>Orden de pago:</strong> hay {{ $purchaseOrdersPendingPaymentAfterConformeCount }} orden(es) de compra sin orden de pago. Puede generarla desde el detalle de cada orden de compra (no requiere recepción conforme).
         </div>
-        <a href="{{ backpack_url('purchase-order?pendiente_op_tras_conforme=1') }}" class="btn btn-sm btn-success">
-            Ver órdenes de compra
+        <a href="{{ $dashboardPanel }}#purchase-orders-process-section" class="btn btn-sm btn-success">
+            Ir al panel de órdenes de compra
         </a>
     </div>
     @endif
@@ -1243,7 +1250,7 @@
     </div>
     <div class="row mb-4">
         <div class="col-md-4 mb-3 mb-md-0">
-            <a href="{{ backpack_url('general-request') }}" class="stat-card stat-card-link" style="border-left: 4px solid var(--dashboard-positive-bg); display: block;">
+            <a href="{{ $dashboardPanel }}#general-requests-process-section" class="stat-card stat-card-link" style="border-left: 4px solid var(--dashboard-positive-bg); display: block;">
                 <div class="stat-card-icon" style="color: var(--dashboard-positive-bg);">
                     <i class="la la-check-circle"></i>
                 </div>
@@ -1252,7 +1259,7 @@
             </a>
         </div>
         <div class="col-md-4 mb-3 mb-md-0">
-            <a href="{{ backpack_url('general-request') }}" class="stat-card stat-card-link" style="border-left: 4px solid var(--dashboard-positive-bg); display: block;">
+            <a href="{{ $dashboardPanel }}#general-requests-process-section" class="stat-card stat-card-link" style="border-left: 4px solid var(--dashboard-positive-bg); display: block;">
                 <div class="stat-card-icon" style="color: var(--dashboard-positive-bg);">
                     <i class="la la-truck"></i>
                 </div>
@@ -1261,7 +1268,7 @@
             </a>
         </div>
         <div class="col-md-4">
-            <a href="{{ backpack_url('general-request?estado=archivada') }}" class="stat-card stat-card-link" style="border-left: 4px solid #dc3545; display: block;">
+            <a href="{{ $dashboardPanel }}#general-requests-process-section" class="stat-card stat-card-link" style="border-left: 4px solid #dc3545; display: block;">
                 <div class="stat-card-icon" style="color: #dc3545;">
                     <i class="la la-times-circle"></i>
                 </div>
@@ -1294,12 +1301,7 @@
     <div class="row mb-3">
         @if(!isset($isResponsableCompras) || !$isResponsableCompras || (isset($isResponsableCompras) && $isResponsableCompras && $stats['general_requests'] > 0))
         <div class="col-md-{{ $procesoColGeneralYPr }}">
-            @php
-                $urlGeneralProceso = (isset($isResponsableArea) && $isResponsableArea && isset($stats['general_requests_pending_delivery']) && $stats['general_requests_pending_delivery'] > 0)
-                    ? backpack_url('general-request?sin_entregas=1&explicit=1')
-                    : backpack_url('general-request');
-            @endphp
-            <a href="{{ $urlGeneralProceso }}" class="stat-card stat-card-link" style="display: block;">
+            <a href="{{ $dashboardPanel }}#general-requests-process-section" class="stat-card stat-card-link" style="display: block;">
                 <div class="stat-card-icon">
                     <i class="la la-file-alt"></i>
                 </div>
@@ -1330,7 +1332,7 @@
         @if((isset($isResponsableArea) && $isResponsableArea) || (!isset($isPersonal) || !$isPersonal))
         <div class="col-md-{{ $procesoColGeneralYPr }}">
             @if(isset($isResponsableCompras) && $isResponsableCompras && isset($stats['purchase_requests_pending']) && $stats['purchase_requests_pending'] > 0)
-            <a href="{{ backpack_url('purchase-request?pendientes=1') }}" class="stat-card stat-card-link" style="display: block;">
+            <a href="{{ $dashboardPanel }}#purchase-requests-process-section" class="stat-card stat-card-link" style="display: block;">
                 <div class="stat-card-icon">
                     <i class="la la-shopping-cart"></i>
                 </div>
@@ -1353,7 +1355,7 @@
                 </div>
             </a>
             @else
-            <a href="{{ backpack_url('purchase-request') }}" class="stat-card stat-card-link" style="display: block;">
+            <a href="{{ $dashboardPanel }}#purchase-requests-process-section" class="stat-card stat-card-link" style="display: block;">
                 <div class="stat-card-icon">
                     <i class="la la-shopping-cart"></i>
                 </div>
@@ -1378,7 +1380,7 @@
         @endif
         @if((!isset($isPersonal) || !$isPersonal) && (!isset($isResponsableArea) || !$isResponsableArea))
         <div class="col-md-{{ $procesoColOrdenes }}">
-            <a href="{{ backpack_url('purchase-order') }}" class="stat-card stat-card-link" style="display: block;">
+            <a href="{{ $dashboardPanel }}#purchase-orders-process-section" class="stat-card stat-card-link" style="display: block;">
                 <div class="stat-card-icon">
                     <i class="la la-clipboard-list"></i>
                 </div>
@@ -1388,7 +1390,7 @@
             </a>
         </div>
         <div class="col-md-{{ $procesoColOrdenes }}">
-            <a href="{{ backpack_url('payment-order?estado=Pendiente') }}" class="stat-card stat-card-link" style="display: block;">
+            <a href="{{ $dashboardPanel }}#payment-orders-process-section" class="stat-card stat-card-link" style="display: block;">
                 <div class="stat-card-icon">
                     <i class="la la-money-bill-wave"></i>
                 </div>
@@ -1400,7 +1402,7 @@
         @endif
         @if(isset($isPersonal) && $isPersonal || (isset($isResponsableArea) && $isResponsableArea))
         <div class="col-md-{{ isset($isPersonal) && $isPersonal ? '6' : '4' }}">
-            <a href="{{ backpack_url('delivery') }}" class="stat-card stat-card-link" style="display: block;">
+            <a href="{{ $dashboardPanel }}#deliveries-process-section" class="stat-card stat-card-link" style="display: block;">
                 <div class="stat-card-icon">
                     <i class="la la-people-carry"></i>
                 </div>
@@ -1416,7 +1418,7 @@
     <div class="row mb-3">
         @if((!isset($isPersonal) || !$isPersonal) && (!isset($isResponsableArea) || !$isResponsableArea))
         <div class="col-md-4">
-            <a href="{{ backpack_url('delivery') }}" class="stat-card stat-card-link" style="display: block;">
+            <a href="{{ $dashboardPanel }}#deliveries-process-section" class="stat-card stat-card-link" style="display: block;">
                 <div class="stat-card-icon">
                     <i class="la la-people-carry"></i>
                 </div>
@@ -1426,7 +1428,7 @@
         </div>
         @endif
         <div class="col-md-{{ (!isset($isPersonal) || !$isPersonal) && (!isset($isResponsableArea) || !$isResponsableArea) ? '4' : '6' }}">
-            <a href="{{ backpack_url('reception') }}" class="stat-card stat-card-link" style="display: block;">
+            <a href="{{ $dashboardPanel }}#receptions-process-section" class="stat-card stat-card-link" style="display: block;">
                 <div class="stat-card-icon">
                     <i class="la la-truck-loading"></i>
                 </div>
@@ -1435,7 +1437,7 @@
             </a>
         </div>
         <div class="col-md-{{ (!isset($isPersonal) || !$isPersonal) && (!isset($isResponsableArea) || !$isResponsableArea) ? '4' : '6' }}">
-            <a href="{{ backpack_url('devolution') }}" class="stat-card stat-card-link" style="display: block;">
+            <a href="{{ $dashboardPanel }}#devolutions-process-section" class="stat-card stat-card-link" style="display: block;">
                 <div class="stat-card-icon">
                     <i class="la la-undo-alt"></i>
                 </div>
@@ -1453,9 +1455,9 @@
             <h2 class="section-title" style="margin-bottom: 15px;">Tipos de Compras</h2>
         </div>
     </div>
-    <div class="row mb-3">
+    <div class="row mb-3" id="purchase-request-types-section">
         <div class="col-md-4 mb-3 mb-md-0">
-            <a href="{{ backpack_url('purchase-request?compra_tipo=normal') }}" class="stat-card stat-card-link" style="border-left: 4px solid #6c757d; display: block;">
+            <a href="{{ $dashboardPanel }}#purchase-request-types-section" class="stat-card stat-card-link" style="border-left: 4px solid #6c757d; display: block;">
                 <div class="stat-card-icon" style="color: #6c757d;">
                     <i class="la la-shopping-bag"></i>
                 </div>
@@ -1465,7 +1467,7 @@
             </a>
         </div>
         <div class="col-md-4 mb-3 mb-md-0">
-            <a href="{{ backpack_url('purchase-request?compra_tipo=directa') }}" class="stat-card stat-card-link" style="border-left: 4px solid #17a2b8; display: block;">
+            <a href="{{ $dashboardPanel }}#purchase-request-types-section" class="stat-card stat-card-link" style="border-left: 4px solid #17a2b8; display: block;">
                 <div class="stat-card-icon" style="color: #17a2b8;">
                     <i class="la la-hand-pointer"></i>
                 </div>
@@ -1475,7 +1477,7 @@
             </a>
         </div>
         <div class="col-md-4">
-            <a href="{{ backpack_url('purchase-request?compra_tipo=rapida') }}" class="stat-card stat-card-link" style="border-left: 4px solid #ffc107; display: block;">
+            <a href="{{ $dashboardPanel }}#purchase-request-types-section" class="stat-card stat-card-link" style="border-left: 4px solid #ffc107; display: block;">
                 <div class="stat-card-icon" style="color: #ffc107;">
                     <i class="la la-bolt"></i>
                 </div>
@@ -1555,7 +1557,7 @@
             </button>
         </div>
     </div>
-    <div class="process-step" style="border-left: 4px solid #dc3545;">
+    <div id="stock-alerts-process-section" class="process-step" style="border-left: 4px solid #dc3545;">
         <div class="process-step-header" style="background-color: #f8d7da;">
             <div class="process-step-title">
                 <i class="la la-exclamation-circle process-step-icon" style="color: #721c24;"></i>
@@ -1610,7 +1612,7 @@
 
     <!-- Paso 1: Solicitudes Generales -->
     @if(!isset($isResponsableCompras) || !$isResponsableCompras || (isset($isResponsableCompras) && $isResponsableCompras && $generalRequests->count() > 0))
-    <div class="process-step">
+    <div id="general-requests-process-section" class="process-step">
         <div class="process-step-header">
             <div class="process-step-title">
                 <i class="la la-file-alt process-step-icon"></i>
@@ -1783,7 +1785,7 @@
 
     @if((!isset($isPersonal) || !$isPersonal) && (!isset($isResponsableArea) || !$isResponsableArea))
     <!-- Paso 3: Órdenes de Compra -->
-    <div class="process-step">
+    <div id="purchase-orders-process-section" class="process-step">
         <div class="process-step-header">
             <div class="process-step-title">
                 <i class="la la-clipboard-list process-step-icon"></i>
@@ -1813,7 +1815,7 @@
 
     @if(!isset($isPersonal) || !$isPersonal)
     <!-- Paso {{ (isset($isResponsableArea) && $isResponsableArea) ? '3' : '4' }}: Recepciones -->
-    <div class="process-step">
+    <div id="receptions-process-section" class="process-step">
         <div class="process-step-header">
             <div class="process-step-title">
                 <i class="la la-truck-loading process-step-icon"></i>
@@ -1847,7 +1849,7 @@
 
     @if((!isset($isPersonal) || !$isPersonal) && (!isset($isResponsableArea) || !$isResponsableArea))
     <!-- Paso 5: Órdenes de Pago -->
-    <div class="process-step">
+    <div id="payment-orders-process-section" class="process-step">
         <div class="process-step-header">
             <div class="process-step-title">
                 <i class="la la-money-bill-wave process-step-icon"></i>
@@ -1878,7 +1880,7 @@
     </div>
 
     <!-- Paso 6: Devoluciones -->
-    <div class="process-step">
+    <div id="devolutions-process-section" class="process-step">
         <div class="process-step-header">
             <div class="process-step-title">
                 <i class="la la-undo-alt process-step-icon"></i>
@@ -1906,7 +1908,7 @@
     @endif
 
     <!-- Paso {{ (isset($isPersonal) && $isPersonal) ? '2' : ((isset($isResponsableArea) && $isResponsableArea) ? '4' : '7') }}: Entregas -->
-    <div class="process-step">
+    <div id="deliveries-process-section" class="process-step">
         <div class="process-step-header">
             <div class="process-step-title">
                 <i class="la la-people-carry process-step-icon"></i>
