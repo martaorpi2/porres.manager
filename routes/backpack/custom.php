@@ -18,6 +18,7 @@ Route::group([
     'namespace' => 'App\Http\Controllers\Admin',
 ], function () { // custom admin routes
     Route::crud('supplier', 'SupplierCrudController');
+    Route::crud('supplier-invoice', 'SupplierInvoiceCrudController');
     Route::get('supplier/export/excel', 'SupplierCrudController@exportExcel')->name('supplier.export.excel');
     Route::get('supplier/export/pdf', 'SupplierCrudController@exportPdf')->name('supplier.export.pdf');
     Route::crud('supplier-rating', 'SupplierRatingCrudController');
@@ -28,6 +29,9 @@ Route::group([
     Route::get('payment-order/{id}/pdf', 'PaymentOrderCrudController@generatePdf')->name('payment-order.pdf');
     Route::get('payment-order/{id}/anular', 'PaymentOrderCrudController@showAnularForm')->name('payment-order.anular');
     Route::post('payment-order/{id}/anular', 'PaymentOrderCrudController@anular')->name('payment-order.anular.store');
+    Route::get('supplier-invoice/{id}/imputar', 'SupplierInvoiceCrudController@showImputeForm')->name('supplier-invoice.imputar');
+    Route::post('supplier-invoice/{id}/imputar', 'SupplierInvoiceCrudController@storeImputation')->name('supplier-invoice.imputar.store');
+    Route::crud('supplier-invoice', 'SupplierInvoiceCrudController');
     Route::crud('sector', 'SectorCrudController');
     Route::crud('product', 'ProductCrudController');
     Route::get('product/export/excel', 'ProductCrudController@exportExcel')->name('product.export.excel');

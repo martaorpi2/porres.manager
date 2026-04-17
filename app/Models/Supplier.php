@@ -93,6 +93,51 @@ class Supplier extends Model
     {
         return $this->hasMany(\App\Models\SupplierSuggestion::class);
     }
+
+    public function invoices()
+    {
+        return $this->hasMany(SupplierInvoice::class);
+    }
+
+    /**
+     * Proveedores visibles en Backpack para el usuario (misma regla que el listado de proveedores).
+     *
+     * @param  \Illuminate\Database\Eloquent\Builder<\App\Models\Supplier>  $query
+     */
+    public function scopeVisibleForBackpackUser($query, $user)
+    {
+        if (! $user || ! $user->hasRole('role_responsable_area', 'backpack')) {
+            return $query;
+        }
+
+        $userAreas = ResponsibilityArea::where('responsible_user_id', $user->id)->get();
+        if ($userAreas->isEmpty()) {
+            return $query->whereRaw('1 = 0');
+        }
+
+        $areaRubroMap = [
+            'Informática' => ['Tecnología', 'Plataforma de e-commerce', 'Plataforma e-commerce'],
+            'Salud' => ['Salud'],
+            'Insumos de Salud' => ['Salud'],
+            'Mantenimiento' => ['Herramientas'],
+            'Insumos Generales' => ['Oficina'],
+        ];
+
+        $allowedRubroNames = collect();
+        foreach ($userAreas as $area) {
+            $areaName = $area->name;
+            if (isset($areaRubroMap[$areaName])) {
+                $allowedRubroNames = $allowedRubroNames->merge($areaRubroMap[$areaName]);
+            }
+        }
+
+        $allowedRubroIds = SuppliersHeading::whereIn('name', $allowedRubroNames->unique())->pluck('id');
+        if ($allowedRubroIds->isEmpty()) {
+            return $query->whereRaw('1 = 0');
+        }
+
+        return $query->whereIn('supplier_heading_id', $allowedRubroIds);
+    }
     /*
      * |--------------------------------------------------------------------------
      * | SCOPES

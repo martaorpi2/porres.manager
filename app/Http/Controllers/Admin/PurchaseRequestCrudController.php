@@ -4381,9 +4381,9 @@ class PurchaseRequestCrudController extends CrudController
                         }
                     }
 
-                    // Asignar cotización por producto (para OC con varios proveedores) — no aplica a representante legal; compras solo con solicitud pendiente
+                    // Asignar cotización por producto (para OC con varios proveedores) — solo quien puede seleccionar cotizaciones (compras/admins); no responsable de área ni representante legal; compras sin admin solo con solicitud pendiente
                     $entry->load(['details.product', 'details.selectedMarketRate.supplier']);
-                    if ($quotationsCount >= 2 && $entry->status !== 'Completada' && ! $representanteLegalSinAsignarPorProducto && $comprasPuedeEditarSeleccionCotizaciones) {
+                    if ($quotationsCount >= 2 && $entry->status !== 'Completada' && ! $representanteLegalSinAsignarPorProducto && $comprasPuedeEditarSeleccionCotizaciones && $canSelectQuotations) {
                         $html .= '<div class="card mt-3 border-info">';
                         $html .= '<div class="card-header bg-info text-white"><strong><i class="la la-link"></i> Asignar cotización por producto</strong></div>';
                         $html .= '<div class="card-body">';

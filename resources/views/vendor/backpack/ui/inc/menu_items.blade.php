@@ -25,12 +25,14 @@
     <x-backpack::menu-item title="Cotizaciones" icon="la la-calculator" :link="backpack_url('market-rate')" />
     <x-backpack::menu-item title="Ordenes de Compra" icon="la la-clipboard-list" :link="backpack_url('purchase-order')" />
     <x-backpack::menu-item title="Ordenes de Pago" icon="la la-money-bill-wave" :link="backpack_url('payment-order')" />
+    <x-backpack::menu-item title="Facturas proveedor" icon="la la-file-invoice-dollar" :link="backpack_url('supplier-invoice')" />
 @elseif(backpack_user() && backpack_user()->hasRole('role_representante_legal', 'backpack'))
     {{-- Menú para usuarios con rol role_representante_legal --}}
     <x-backpack::menu-item title="Solicitudes de Compra" icon="la la-shopping-cart" :link="backpack_url('purchase-request')" />
     <x-backpack::menu-item title="Cotizaciones" icon="la la-calculator" :link="backpack_url('market-rate')" />
     <x-backpack::menu-item title="Ordenes de Compra" icon="la la-clipboard-list" :link="backpack_url('purchase-order')" />
     <x-backpack::menu-item title="Ordenes de Pago" icon="la la-money-bill-wave" :link="backpack_url('payment-order')" />
+    <x-backpack::menu-item title="Facturas proveedor" icon="la la-file-invoice-dollar" :link="backpack_url('supplier-invoice')" />
     <x-backpack::menu-dropdown title="Inventario" icon="la la-boxes" trigger="click">
         <x-backpack::menu-dropdown-item title="Productos" :link="backpack_url('product')" />
         <x-backpack::menu-dropdown-item title="Categorías" :link="backpack_url('category')" />
@@ -42,6 +44,7 @@
     {{-- Menú completo para otros roles --}}
     <x-backpack::menu-dropdown title="Proveedores" icon="la la-truck" trigger="click">
         <x-backpack::menu-dropdown-item title="Listado" :link="backpack_url('supplier')" />
+        <x-backpack::menu-dropdown-item title="Facturas de proveedores" :link="backpack_url('supplier-invoice')" />
         <x-backpack::menu-dropdown-item title="Calificaciones" :link="backpack_url('supplier-rating')" />
         <x-backpack::menu-dropdown-item title="Rubros" :link="backpack_url('suppliers-heading')" />
         <x-backpack::menu-dropdown-item title="Sectores" :link="backpack_url('sector')" />
@@ -74,6 +77,7 @@
 
     <x-backpack::menu-item title="Ordenes de Compra" icon="la la-shopping-cart" :link="backpack_url('purchase-order')" />
     <x-backpack::menu-item title="Ordenes de Pago" icon="la la-money-bill-wave" :link="backpack_url('payment-order')" />
+    <x-backpack::menu-item title="Facturas proveedor" icon="la la-file-invoice-dollar" :link="backpack_url('supplier-invoice')" />
 
     <x-backpack::menu-item title="Recepciones" icon="la la-truck-loading" :link="backpack_url('reception')" />
     <x-backpack::menu-item title="Devoluciones" icon="la la-undo-alt" :link="backpack_url('devolution')" />

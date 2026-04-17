@@ -78,6 +78,11 @@ class PurchaseOrder extends Model
         return $this->hasMany(\App\Models\PaymentOrder::class, 'purchase_order_id');
     }
 
+    public function supplierInvoices()
+    {
+        return $this->hasMany(SupplierInvoice::class, 'purchase_order_id');
+    }
+
     /**
      * Hay al menos una orden de pago no anulada: la OC no debe editarse ni eliminarse.
      */

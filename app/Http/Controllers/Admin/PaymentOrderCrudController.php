@@ -86,6 +86,18 @@ class PaymentOrderCrudController extends CrudController
         CRUD::column('payment_number')->label('Número');
         CRUD::column('date')->label('Fecha');
         CRUD::column('total_amount')->label('Monto Total');
+        CRUD::addColumn([
+            'name' => 'billing_kind',
+            'label' => 'Tipo',
+            'type' => 'closure',
+            'function' => function ($entry) {
+                return $entry->billing_kind === 'anticipo'
+                    ? '<span class="badge bg-info">Anticipo</span>'
+                    : '<span class="badge bg-secondary">Normal</span>';
+            },
+            'escaped' => false,
+        ]);
+        CRUD::column('currency_code')->label('Mon.');
         CRUD::column('status')->label('Estado');
         CRUD::addColumn([
             'name' => 'purchase_order_id',
@@ -230,6 +242,25 @@ class PaymentOrderCrudController extends CrudController
             ],
         ]);
         CRUD::field('date')->label('Fecha');
+        CRUD::addField([
+            'name' => 'billing_kind',
+            'label' => 'Tipo de orden de pago',
+            'type' => 'select_from_array',
+            'options' => [
+                'normal' => 'Normal (cancela deuda al imputarse a la factura)',
+                'anticipo' => 'Anticipo (pago sin factura; genera crédito hasta imputar)',
+            ],
+            'default' => 'normal',
+            'allows_null' => false,
+            'hint' => 'Anticipo: puede existir sin factura asociada; luego se vincula en Facturas proveedor → Imputar.',
+        ]);
+        CRUD::addField([
+            'name' => 'currency_code',
+            'label' => 'Moneda (ISO 4217)',
+            'type' => 'text',
+            'attributes' => ['maxlength' => 3, 'placeholder' => 'ARS', 'style' => 'text-transform:uppercase'],
+            'hint' => 'Opcional; si queda vacío se asume ARS al comparar con facturas.',
+        ]);
         CRUD::field('total_amount')->label('Monto Total')->default($defaultTotal);
         CRUD::addField([
             'name' => 'status',
@@ -480,12 +511,24 @@ class PaymentOrderCrudController extends CrudController
      */
     protected function setupShowOperation()
     {
-        CRUD::addClause('with', ['opDetails']);
+        CRUD::addClause('with', ['opDetails', 'supplierInvoices']);
 
         // Configurar las columnas que se mostrarán en la vista de detalles
         CRUD::column('payment_number')->label('Número de Orden de Pago');
         CRUD::column('date')->label('Fecha');
         CRUD::column('total_amount')->label('Monto Total');
+        CRUD::addColumn([
+            'name' => 'billing_kind',
+            'label' => 'Tipo',
+            'type' => 'closure',
+            'function' => function ($entry) {
+                return $entry->billing_kind === 'anticipo'
+                    ? '<span class="badge bg-info">Anticipo (crédito hasta imputar a factura)</span>'
+                    : '<span class="badge bg-secondary">Normal</span>';
+            },
+            'escaped' => false,
+        ]);
+        CRUD::column('currency_code')->label('Moneda');
         CRUD::column('status')->label('Estado');
         
         CRUD::addColumn([
@@ -512,6 +555,36 @@ class PaymentOrderCrudController extends CrudController
             'name' => 'payment_date',
             'label' => 'Fecha de Pago',
             'type' => 'date',
+        ]);
+
+        CRUD::addColumn([
+            'name' => 'imputaciones_facturas',
+            'label' => 'Imputaciones a facturas',
+            'type' => 'closure',
+            'function' => function ($entry) {
+                $rows = $entry->relationLoaded('supplierInvoices')
+                    ? $entry->supplierInvoices
+                    : $entry->supplierInvoices()->get();
+                if ($rows->isEmpty()) {
+                    return '<p class="text-muted mb-0">Sin imputaciones a facturas registradas en la tabla pivote.</p>';
+                }
+                $html = '<div class="table-responsive"><table class="table table-sm table-bordered mb-0"><thead><tr>'
+                    . '<th>Factura</th><th>Fecha fact.</th><th>Monto imputado</th><th>Fecha imputación</th></tr></thead><tbody>';
+                foreach ($rows as $inv) {
+                    $html .= '<tr><td>' . e($inv->invoice_number) . '</td><td>' . e($inv->invoice_date?->format('d/m/Y') ?? '') . '</td>'
+                        . '<td class="text-end">$' . number_format((float) $inv->pivot->amount_applied, 2) . '</td>'
+                        . '<td>' . e($inv->pivot->imputed_at) . '</td></tr>';
+                }
+                $html .= '</tbody></table></div>';
+                if ($entry->billing_kind === 'anticipo') {
+                    $imputed = (float) $rows->sum(fn ($i) => (float) $i->pivot->amount_applied);
+                    $avail = max(0, (float) $entry->total_amount - $imputed);
+                    $html .= '<p class="mt-2 mb-0"><strong>Anticipo disponible:</strong> $' . number_format($avail, 2) . '</p>';
+                }
+
+                return $html;
+            },
+            'escaped' => false,
         ]);
 
         // Información de anulación (si está anulada)

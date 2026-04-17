@@ -6,6 +6,7 @@ use Backpack\CRUD\app\Models\Traits\CrudTrait;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 
 class PaymentOrder extends Model
 {
@@ -29,6 +30,11 @@ class PaymentOrder extends Model
         'date' => 'date',
         'payment_date' => 'date',
         'annulled_at' => 'datetime',
+        'total_amount' => 'decimal:2',
+    ];
+
+    protected $attributes = [
+        'billing_kind' => 'normal',
     ];
 
     protected static function booted(): void
@@ -118,6 +124,18 @@ class PaymentOrder extends Model
     public function opDetails()
     {
         return $this->hasMany(OpDetail::class, 'payment_order_id')->orderBy('id');
+    }
+
+    public function supplierInvoices(): BelongsToMany
+    {
+        return $this->belongsToMany(SupplierInvoice::class, 'payment_order_invoice', 'payment_order_id', 'supplier_invoice_id')
+            ->withPivot(['amount_applied', 'imputed_at'])
+            ->withTimestamps();
+    }
+
+    public function isAnticipo(): bool
+    {
+        return $this->billing_kind === 'anticipo';
     }
 
     public function isAnnulled(): bool

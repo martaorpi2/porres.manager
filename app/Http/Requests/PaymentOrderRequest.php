@@ -31,38 +31,44 @@ class PaymentOrderRequest extends FormRequest
                 'required',
                 'exists:purchase_orders,id',
             ],
+            'billing_kind' => ['required', 'in:normal,anticipo'],
+            'currency_code' => ['nullable', 'string', 'size:3'],
             'total_amount' => [
                 'required',
                 'numeric',
                 'min:0.01',
                 function ($attribute, $value, $fail) use ($paymentOrderId) {
+                    if (($this->input('billing_kind') ?? 'normal') === 'anticipo') {
+                        return;
+                    }
+
                     // Obtener el purchase_order_id del input
                     $purchaseOrderId = $this->input('purchase_order_id');
-                    
-                    if (!$purchaseOrderId) {
+
+                    if (! $purchaseOrderId) {
                         return;
                     }
-                    
+
                     $purchaseOrder = \App\Models\PurchaseOrder::with('details')->find($purchaseOrderId);
-                    
-                    if (!$purchaseOrder) {
+
+                    if (! $purchaseOrder) {
                         return;
                     }
-                    
+
                     // Calcular el total de la orden de compra
                     $purchaseOrderTotal = $purchaseOrder->total;
-                    
+
                     // Obtener todas las órdenes de pago relacionadas (excluyendo la actual si es una actualización)
                     $existingPaymentOrders = \App\Models\PaymentOrder::where('purchase_order_id', $purchaseOrderId);
-                    
+
                     if ($paymentOrderId) {
                         $existingPaymentOrders->where('id', '!=', $paymentOrderId);
                     }
-                    
+
                     // Calcular el total pagado sumando los detalles (op_details) de las órdenes de pago existentes
                     $existingPaymentOrderIds = $existingPaymentOrders->pluck('id')->toArray();
                     $totalPaidFromDetails = 0;
-                    if (!empty($existingPaymentOrderIds)) {
+                    if (! empty($existingPaymentOrderIds)) {
                         $totalPaidFromDetails = \Illuminate\Support\Facades\DB::table('op_details')
                             ->whereIn('payment_order_id', $existingPaymentOrderIds)
                             ->sum('amount');
@@ -117,6 +123,18 @@ class PaymentOrderRequest extends FormRequest
         $merge = [];
         if ($this->has('payment_date') && $this->input('payment_date') === '') {
             $merge['payment_date'] = null;
+        }
+
+        $bk = $this->input('billing_kind');
+        if (! in_array($bk, ['normal', 'anticipo'], true)) {
+            $merge['billing_kind'] = 'normal';
+        }
+
+        $cc = strtoupper(trim((string) $this->input('currency_code', '')));
+        if ($cc === '') {
+            $merge['currency_code'] = null;
+        } else {
+            $merge['currency_code'] = $cc;
         }
 
         $raw = $this->input('payment_details');
@@ -178,6 +196,8 @@ class PaymentOrderRequest extends FormRequest
     {
         return [
             'purchase_order_id' => 'orden de compra',
+            'billing_kind' => 'tipo de orden de pago',
+            'currency_code' => 'moneda',
             'total_amount' => 'monto total',
             'date' => 'fecha',
             'payment_date' => 'fecha de pago',

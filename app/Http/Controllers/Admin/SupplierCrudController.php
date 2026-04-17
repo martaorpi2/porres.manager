@@ -87,6 +87,8 @@ class SupplierCrudController extends CrudController
             }
         }
         
+        CRUD::addButton('line', 'invoices', 'view', 'crud::buttons.supplier_invoices', 'end');
+
         // Agregar botón personalizado de exportación
         CRUD::addButton('top', 'export_excel', 'view', 'crud::buttons.export_excel', 'end');
         CRUD::addButton('top', 'export_pdf', 'view', 'crud::buttons.export_pdf', 'end');
