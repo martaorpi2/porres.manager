@@ -4768,7 +4768,7 @@ class PurchaseRequestCrudController extends CrudController
                 $entry->load(['purchaseOrders.paymentOrders']);
                 $purchaseOrders = $entry->purchaseOrders;
                 if ($purchaseOrders->isEmpty()) {
-                    return '<p class="mb-0" style="color:#000;">No hay orden de compra asociada. Cuando exista una OC, la administradora del instituto podrá generar la orden de pago (no depende de la recepción conforme).</p>';
+                    return '<p class="mb-0" style="color:#000;">No hay orden de compra asociada. Cuando exista una OC, la administradora del instituto podrá generar la orden de pago.</p>';
                 }
 
                 $isAdmin = $user instanceof \App\Models\User && $user->hasAdministradoraInstitucionRole();

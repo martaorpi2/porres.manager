@@ -126,7 +126,7 @@ class PurchaseRequestNotificationService
             ? e(route('purchase-order.show', $first->id, absolute: true))
             : '';
 
-        $html = '<p>'.e('Se generó la orden de compra vinculada a la solicitud. Puede generar la orden de pago desde el detalle de cada orden de compra (no depende de la recepción conforme).').'</p>'
+        $html = '<p>'.e('Se generó la orden de compra vinculada a la solicitud. Puede generar la orden de pago desde el detalle de cada orden de compra.').'</p>'
             .'<p><strong>Solicitud de compra:</strong> '.$prNum.'</p>'
             .'<p><strong>Orden(es) de compra:</strong></p><ul>'.$items.'</ul>'
             .($firstUrl !== '' ? '<p><a href="'.$firstUrl.'">Abrir orden de compra</a></p>' : '')
