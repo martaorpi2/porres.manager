@@ -137,14 +137,12 @@ class PurchaseOrderCrudController extends CrudController
             }
         }
 
-        // Desde dashboard (compras): OC con recepción conforme y sin orden de pago
+        // Desde dashboard (administradora): OC aún sin orden de pago registrada
         $hasPendienteOpTrasConforme = request()->query('pendiente_op_tras_conforme') == '1';
         $isPersistentRestore = request()->query('persistent-table') == 'true';
         if ($hasPendienteOpTrasConforme && ! $isPersistentRestore) {
             CRUD::addClause(function ($query) {
-                $query->whereHas('receptions', function ($q) {
-                    $q->where('according', 'Si');
-                })->whereDoesntHave('paymentOrders');
+                $query->whereDoesntHave('paymentOrders');
             });
         }
 
@@ -405,7 +403,7 @@ class PurchaseOrderCrudController extends CrudController
             CRUD::removeButton('delete');
         }
         
-        // Botón Crear Orden de Pago: solo responsable de compras, cuando hay recepción conforme (3 conformidades + ARCA + comprobante) y sin OP aún
+        // Botón Crear Orden de Pago: solo administradora del instituto, tras la OC (no depende de recepción conforme)
         CRUD::addColumn([
             'name' => 'create_payment_order',
             'label' => 'Acciones',
@@ -415,16 +413,12 @@ class PurchaseOrderCrudController extends CrudController
                 if ($user && $user->hasRole('role_responsable_area', 'backpack')) {
                     return '';
                 }
-                if (! $user instanceof User || ! $user->hasResponsableComprasRole()) {
-                    return '';
-                }
-                $entry->load(['purchaseRequest', 'receptions', 'paymentOrders']);
+                $entry->load(['purchaseRequest', 'paymentOrders']);
                 if ($entry->paymentOrders->isNotEmpty()) {
                     return '';
                 }
-                $hasConformeReception = $entry->receptions->contains(fn (\App\Models\Reception $r) => $r->isAccordingComplete());
-                if (! $hasConformeReception) {
-                    return '<div class="mt-3"><span class="text-muted"><i class="la la-info-circle"></i> La orden de pago la genera el responsable de compras cuando la recepción esté conforme (tres conformidades en Sí, corroboración ARCA y comprobante válido).</span></div>';
+                if (! $user instanceof User || ! $user->hasAdministradoraInstitucionRole()) {
+                    return '<div class="mt-3"><span class="text-muted"><i class="la la-info-circle"></i> La orden de pago la genera la administradora del instituto desde aquí cuando corresponda (luego de emitida la orden de compra; no requiere recepción conforme).</span></div>';
                 }
                 $html = '<div class="mt-3">';
                 $html .= '<a href="' . backpack_url('payment-order/create?purchase_order_id=' . $entry->id) . '" class="btn btn-success">';

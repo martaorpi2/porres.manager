@@ -2,36 +2,37 @@
 
 namespace App\Http\Controllers\Admin;
 
-use Backpack\CRUD\app\Http\Controllers\CrudController;
-use Backpack\CRUD\app\Library\CrudPanel\CrudPanelFacade as CRUD;
 use App\Http\Requests\PurchaseRequestRequest;
 use App\Models\MarketRate;
+use App\Services\PurchaseRequestNotificationService;
+use Backpack\CRUD\app\Http\Controllers\CrudController;
+use Backpack\CRUD\app\Library\CrudPanel\CrudPanelFacade as CRUD;
 use Illuminate\Support\Str;
 
 /**
  * Class PurchaseRequestCrudController
- * @package App\Http\Controllers\Admin
+ *
  * @property-read \Backpack\CRUD\app\Library\CrudPanel\CrudPanel $crud
  */
 class PurchaseRequestCrudController extends CrudController
 {
-    use \Backpack\CRUD\app\Http\Controllers\Operations\ListOperation;
     use \Backpack\CRUD\app\Http\Controllers\Operations\CreateOperation;
-    use \Backpack\CRUD\app\Http\Controllers\Operations\UpdateOperation;
     use \Backpack\CRUD\app\Http\Controllers\Operations\DeleteOperation;
+    use \Backpack\CRUD\app\Http\Controllers\Operations\ListOperation;
     use \Backpack\CRUD\app\Http\Controllers\Operations\ShowOperation;
+    use \Backpack\CRUD\app\Http\Controllers\Operations\UpdateOperation;
 
     /**
      * Configure the CrudPanel object. Apply settings to all operations.
-     * 
+     *
      * @return void
      */
     public function setup()
     {
         CRUD::setModel(\App\Models\PurchaseRequest::class);
-        CRUD::setRoute(config('backpack.base.route_prefix') . '/purchase-request');
+        CRUD::setRoute(config('backpack.base.route_prefix').'/purchase-request');
         CRUD::setEntityNameStrings('solicitud de compra', 'solicitudes de compra');
-        
+
         // Usar FormRequest personalizado
         CRUD::setValidation(PurchaseRequestRequest::class);
 
@@ -44,17 +45,18 @@ class PurchaseRequestCrudController extends CrudController
 
     /**
      * Define what happens when the List operation is loaded.
-     * 
+     *
      * @see  https://backpackforlaravel.com/docs/crud-operation-list-entries
+     *
      * @return void
      */
     protected function setupListOperation()
     {
         // Habilitar tabla responsiva
         CRUD::enableResponsiveTable();
-        
+
         CRUD::addClause('with', ['responsibilityArea', 'requestingUser', 'details', 'purchaseOrders', 'marketRates']);
-        
+
         // Filtrar solicitudes según el rol del usuario
         $user = backpack_user();
         if ($user) {
@@ -67,13 +69,13 @@ class PurchaseRequestCrudController extends CrudController
                     break;
                 }
             }
-            
-            if (!$isAdmin) {
+
+            if (! $isAdmin) {
                 // Todos los usuarios (incluyendo responsables de área) solo ven sus propias solicitudes
                 CRUD::addClause('where', 'requesting_user_id', $user->id);
             }
         }
-        
+
         CRUD::column('request_number')->label('Número de Solicitud');
         CRUD::column('request_date')->label('Fecha');
         CRUD::column('responsibilityArea.name')->label('Área');
@@ -83,7 +85,7 @@ class PurchaseRequestCrudController extends CrudController
             'name' => 'purchase_type',
             'label' => 'Tipo de Compra',
             'type' => 'closure',
-            'function' => function($entry) {
+            'function' => function ($entry) {
                 $type = $entry->purchase_type ?? 'normal';
                 $badges = [
                     'normal' => '<span class="badge bg-secondary">Normal</span>',
@@ -91,28 +93,30 @@ class PurchaseRequestCrudController extends CrudController
                     'directa' => '<span class="badge bg-info">Directa</span>',
                     'internet' => '<span class="badge bg-primary">Por internet</span>',
                 ];
+
                 return $badges[$type] ?? $badges['normal'];
             },
             'escaped' => false,
         ]);
         CRUD::column('priority')->label('Prioridad');
         CRUD::column('total_amount')->label('Monto Total')->type('number')->decimals(2)->prefix('$');
-        
+
         // Agregar columna personalizada para mostrar cantidad de productos
         CRUD::column('details_count')->label('Productos')->type('custom_html')
-            ->value(function($entry) {
+            ->value(function ($entry) {
                 $count = $entry->details->count();
-                return '<span class="badge bg-info">' . $count . ' productos</span>';
+
+                return '<span class="badge bg-info">'.$count.' productos</span>';
             });
 
         // Agregar columna personalizada para mostrar cantidad de cotizaciones
         CRUD::column('quotations_count')->label('Cotizaciones')->type('custom_html')
-            ->value(function($entry) {
+            ->value(function ($entry) {
                 // Evitar consultas por fila: marketRates ya viene eager-loaded.
                 $quotationsCount = $entry->marketRates->count();
-                
+
                 if ($quotationsCount > 0) {
-                    return '<span class="badge bg-success">' . $quotationsCount . ' cotizaciones</span>';
+                    return '<span class="badge bg-success">'.$quotationsCount.' cotizaciones</span>';
                 } else {
                     return '<span class="badge bg-warning">Sin cotizaciones</span>';
                 }
@@ -120,7 +124,7 @@ class PurchaseRequestCrudController extends CrudController
 
         // Remover botón de edición por defecto y usar el personalizado
         CRUD::removeButton('update');
-        
+
         // Ocultar botones de crear, editar y eliminar para roles sin edición manual de solicitudes.
         if ($user && (
             $user->hasRole('role_admin_institucion', 'backpack')
@@ -134,12 +138,12 @@ class PurchaseRequestCrudController extends CrudController
         } else {
             CRUD::addButton('line', 'edit_purchase_request', 'view', 'crud::buttons.edit_purchase_request', 'beginning');
         }
-        
+
         // Botón para ver orden de compra (solo si existe y para usuarios que no sean role_responsable_area)
-        if (!$user || !$user->hasRole('role_responsable_area', 'backpack')) {
+        if (! $user || ! $user->hasRole('role_responsable_area', 'backpack')) {
             CRUD::addButton('line', 'view_purchase_order', 'view', 'crud::buttons.view_purchase_order', 'end');
         }
-        
+
         // Filtro personalizado para solicitudes pendientes
         // Solo aplicar si el parámetro está explícitamente en la URL actual
         // No aplicar si viene de una restauración automática de Backpack desde localStorage
@@ -148,17 +152,17 @@ class PurchaseRequestCrudController extends CrudController
         $hasAprobadasPorSuperior = request()->query('aprobadas_por_superior') == '1';
         $hasPendienteSeleccionCotizacion = request()->query('pendiente_seleccion_cotizacion') == '1';
         $isPersistentRestore = request()->query('persistent-table') == 'true';
-        
+
         // Solo aplicar el filtro si:
         // 1. El parámetro pendientes está presente
         // 2. NO es una restauración automática desde localStorage (sin persistent-table)
         // Esto asegura que cuando el usuario accede desde el menú, se muestre todo
-        if ($hasPendientes && !$isPersistentRestore) {
+        if ($hasPendientes && ! $isPersistentRestore) {
             CRUD::addClause('where', 'status', 'Pendiente');
         }
 
         // Solicitudes aprobadas por nivel superior (desde aviso del dashboard de compras)
-        if ($hasAprobadasPorSuperior && !$isPersistentRestore && $user && $user->hasRole('role_responsable_compras', 'backpack')) {
+        if ($hasAprobadasPorSuperior && ! $isPersistentRestore && $user && $user->hasRole('role_responsable_compras', 'backpack')) {
             $supervisorRoleNames = [
                 'role_admin_sistema',
                 'role_admin_institucion',
@@ -176,7 +180,7 @@ class PurchaseRequestCrudController extends CrudController
         }
 
         // Desde aviso del dashboard de compras: ≥3 cotizaciones y falta elegir cotización para continuar
-        if ($hasPendienteSeleccionCotizacion && !$isPersistentRestore && $user && $user->hasRole('role_responsable_compras', 'backpack')) {
+        if ($hasPendienteSeleccionCotizacion && ! $isPersistentRestore && $user && $user->hasRole('role_responsable_compras', 'backpack')) {
             $ids = \App\Models\PurchaseRequest::purchaseRequestsAwaitingQuoteSelectionAfterThreeQuotations()->pluck('id');
             CRUD::addClause(function ($query) use ($ids) {
                 if ($ids->isEmpty()) {
@@ -186,12 +190,27 @@ class PurchaseRequestCrudController extends CrudController
                 }
             });
         }
+
+        // Desde dashboard: filtrar por tipo de compra (normal / directa / rápida / internet)
+        $compraTipo = request()->query('compra_tipo');
+        if ($compraTipo && ! $isPersistentRestore && in_array($compraTipo, ['normal', 'directa', 'rapida', 'internet'], true)) {
+            if ($compraTipo === 'normal') {
+                CRUD::addClause(function ($query) {
+                    $query->where(function ($q) {
+                        $q->where('purchase_type', 'normal')->orWhereNull('purchase_type');
+                    });
+                });
+            } else {
+                CRUD::addClause('where', 'purchase_type', $compraTipo);
+            }
+        }
     }
 
     /**
      * Define what happens when the Create operation is loaded.
-     * 
+     *
      * @see https://backpackforlaravel.com/docs/crud-operation-create
+     *
      * @return void
      */
     protected function setupCreateOperation()
@@ -200,11 +219,11 @@ class PurchaseRequestCrudController extends CrudController
         $convertedFrom = request()->get('converted_from');
         $generalRequest = null;
         $existingProducts = [];
-        
+
         if ($convertedFrom) {
             // Cargar la solicitud general con detalles, productos (incluyendo stockLevels) y entregas
             $generalRequest = \App\Models\GeneralRequest::with(['details.product.stockLevels', 'deliveries.details'])->find($convertedFrom);
-            
+
             // Cargar productos de la solicitud general para pre-cargarlos en el formulario
             // Solo mostrar productos con cantidades faltantes (no totalmente entregados)
             // Los precios se establecen en 0, ya que el sector de compras los asignará después
@@ -221,16 +240,16 @@ class PurchaseRequestCrudController extends CrudController
                                 }
                             }
                         }
-                        
+
                         // Calcular cantidad faltante
                         $requestedQuantity = $detail->requested_quantity ?? 0;
                         $pendingQuantity = max(0, $requestedQuantity - $deliveredQuantity);
-                        
+
                         // Solo incluir productos con cantidad faltante > 0
                         if ($pendingQuantity > 0) {
                             // Calcular stock total del producto
                             $stockTotal = $detail->product->stockLevels->sum('quantity') ?? 0;
-                            
+
                             $existingProducts[] = [
                                 'product_id' => $detail->product_id,
                                 'product_name' => $detail->product->name ?? 'Producto no encontrado',
@@ -242,7 +261,7 @@ class PurchaseRequestCrudController extends CrudController
                                 'specifications' => $detail->specifications ?? '',
                                 'product_description' => $detail->product_description ?? '',
                                 'minimum_stock' => $detail->product->minimum_stock ?? 0,
-                                'stock_total' => $stockTotal
+                                'stock_total' => $stockTotal,
                             ];
                         }
                     }
@@ -252,14 +271,14 @@ class PurchaseRequestCrudController extends CrudController
 
         // Setup common fields
         $this->setupCreateFields();
-        
+
         // Si hay productos existentes de la solicitud general, reemplazar el campo de productos
-        if (!empty($existingProducts)) {
+        if (! empty($existingProducts)) {
             CRUD::modifyField('products_selection', [
-                'value' => $this->getProductsSelectionHtml($existingProducts, $generalRequest->area_id ?? null)
+                'value' => $this->getProductsSelectionHtml($existingProducts, $generalRequest->area_id ?? null),
             ]);
         }
-        
+
         // Override defaults if converting from general request
         if ($generalRequest) {
             $user = backpack_user();
@@ -268,7 +287,7 @@ class PurchaseRequestCrudController extends CrudController
             CRUD::modifyField('requesting_user_id', ['default' => $user ? $user->id : $generalRequest->created_by]);
             CRUD::modifyField('priority', ['default' => $generalRequest->priority]);
             CRUD::modifyField('justification', ['default' => $generalRequest->description]);
-            
+
             // Asegurar que los valores por defecto se establezcan correctamente
             if ($generalRequest->area_id) {
                 CRUD::modifyField('responsibility_area_id', ['value' => $generalRequest->area_id]);
@@ -278,12 +297,12 @@ class PurchaseRequestCrudController extends CrudController
                 CRUD::modifyField('requesting_user_id', ['value' => $user->id]);
             }
         }
-        
+
         // Campo oculto para la conversión
         if ($convertedFrom) {
             // Establecer el valor del campo oculto que ya está definido en setupCreateFields
             CRUD::modifyField('converted_from_general_request_id', ['value' => $convertedFrom]);
-            
+
             // Mostrar información de la solicitud general
             $generalRequestInfo = '';
             if ($convertedFrom) {
@@ -294,28 +313,28 @@ class PurchaseRequestCrudController extends CrudController
                     $deliveryNote = $hasDeliveries ? ' Solo se muestran los productos con cantidades faltantes (no totalmente entregados).' : '';
                     $generalRequestInfo = '<div class="alert alert-info">
                         <h5><i class="la la-info-circle"></i> Conversión desde Solicitud General</h5>
-                        <p><strong>Número:</strong> ' . ($generalRequest->number ?? 'N/A') . '</p>
-                        <p><strong>Título:</strong> ' . ($generalRequest->title ?? 'N/A') . '</p>
-                        <p><strong>Descripción:</strong> ' . ($generalRequest->description ?? 'N/A') . '</p>
-                        <p><strong>Productos:</strong> ' . $productsCount . ' producto(s) con cantidades faltantes cargado(s) desde la solicitud general.' . $deliveryNote . ' Puede editarlos o eliminarlos antes de guardar.</p>
+                        <p><strong>Número:</strong> '.($generalRequest->number ?? 'N/A').'</p>
+                        <p><strong>Título:</strong> '.($generalRequest->title ?? 'N/A').'</p>
+                        <p><strong>Descripción:</strong> '.($generalRequest->description ?? 'N/A').'</p>
+                        <p><strong>Productos:</strong> '.$productsCount.' producto(s) con cantidades faltantes cargado(s) desde la solicitud general.'.$deliveryNote.' Puede editarlos o eliminarlos antes de guardar.</p>
                     </div>';
                 }
             }
-            
+
             CRUD::field('general_request_info')->label('Información de Solicitud General')->type('custom_html')
-                ->value($generalRequestInfo . '
+                ->value($generalRequestInfo.'
                 <script>
                 document.addEventListener("DOMContentLoaded", function() {
                     // Asegurar que el campo oculto tenga el valor correcto
                     var hiddenField = document.querySelector("input[name=\'converted_from_general_request_id\']");
                     if (hiddenField) {
-                        hiddenField.value = "' . $convertedFrom . '";
+                        hiddenField.value = "'.$convertedFrom.'";
                     } else {
                         // Si no existe, crearlo
                         hiddenField = document.createElement("input");
                         hiddenField.type = "hidden";
                         hiddenField.name = "converted_from_general_request_id";
-                        hiddenField.value = "' . $convertedFrom . '";
+                        hiddenField.value = "'.$convertedFrom.'";
                         document.querySelector("form").appendChild(hiddenField);
                     }
                 });
@@ -325,53 +344,54 @@ class PurchaseRequestCrudController extends CrudController
 
     /**
      * Define what happens when the Update operation is loaded.
-     * 
+     *
      * @see https://backpackforlaravel.com/docs/crud-operation-update
+     *
      * @return void
      */
     protected function setupUpdateOperation()
     {
         // Verificar permisos y que el usuario solo pueda editar sus propias solicitudes
         $user = backpack_user();
-        if (!$user) {
+        if (! $user) {
             abort(403, 'No tienes permiso para editar solicitudes de compra.');
         }
-        
+
         $entry = $this->crud->getCurrentEntry();
-        if (!$entry) {
+        if (! $entry) {
             abort(404, 'Solicitud de compra no encontrada.');
         }
-        
+
         // Verificar roles de administrador
         $isAdminSistema = $user->hasRole('role_admin_sistema', 'backpack');
         $isAdminInstitucion = $user->hasRole('role_admin_institucion', 'backpack');
         $isResponsableCompras = $user->hasRole('role_responsable_compras', 'backpack');
-        
+
         $isOwnRequest = $entry->requesting_user_id == $user->id;
-        
+
         // Verificar si el usuario es responsable de área
         $isResponsableArea = $user && $user->hasRole('role_responsable_area', 'backpack');
-        
+
         // Si es administrador del sistema o responsable de compras, puede editar cualquier solicitud
         if ($isAdminSistema || $isResponsableCompras) {
             // Pueden editar cualquier solicitud
         } elseif ($isAdminInstitucion) {
             // El administrador del instituto solo puede editar sus propias solicitudes
-            if (!$isOwnRequest) {
+            if (! $isOwnRequest) {
                 abort(403, 'Solo puedes editar las solicitudes de compra que creaste.');
             }
         } else {
             // Todos los demás usuarios solo pueden editar sus propias solicitudes
-            if (!$isOwnRequest) {
+            if (! $isOwnRequest) {
                 abort(403, 'Solo puedes editar las solicitudes de compra que creaste.');
             }
-            
+
             // Solo puede editar si el estado es "Pendiente"
             if ($entry->status !== 'Pendiente') {
                 abort(403, 'Solo puedes editar solicitudes de compra con estado "Pendiente".');
             }
         }
-        
+
         // Si es responsable de área, solo puede modificar prioridad, justificación y productos
         if ($isResponsableArea) {
             // Campos de solo lectura (información) - se muestran como inputs bloqueados con readonly
@@ -379,31 +399,31 @@ class PurchaseRequestCrudController extends CrudController
                 ->type('text')
                 ->default($entry->request_number)
                 ->attributes(['readonly' => 'readonly']);
-            
+
             CRUD::field('request_date')->label('Fecha de Solicitud')
                 ->type('date')
                 ->default($entry->request_date ? $entry->request_date->format('Y-m-d') : '')
                 ->attributes(['readonly' => 'readonly']);
-            
+
             // Para el área, mostrar el nombre pero mantener el ID
             CRUD::field('responsibility_area_display')->label('Área de Responsabilidad')
                 ->type('text')
                 ->default($entry->responsibilityArea ? $entry->responsibilityArea->name : '')
                 ->attributes(['readonly' => 'readonly']);
             CRUD::field('responsibility_area_id')->type('hidden')->value($entry->responsibility_area_id);
-            
+
             // Para el usuario, mostrar el nombre pero mantener el ID
             CRUD::field('requesting_user_display')->label('Usuario Solicitante')
                 ->type('text')
                 ->default($entry->requestingUser ? $entry->requestingUser->name : '')
                 ->attributes(['readonly' => 'readonly']);
             CRUD::field('requesting_user_id')->type('hidden')->value($entry->requesting_user_id);
-            
+
             // Campos ocultos que deben mantenerse con sus valores actuales
             CRUD::field('status')->type('hidden')->value($entry->status);
             CRUD::field('total_amount')->type('hidden')->value($entry->total_amount);
             CRUD::field('observations')->type('hidden')->value($entry->observations);
-            
+
             // Campos editables para responsable de área
             CRUD::field('priority')->label('Prioridad')
                 ->type('select_from_array')
@@ -411,12 +431,12 @@ class PurchaseRequestCrudController extends CrudController
                     'Baja' => 'Baja',
                     'Media' => 'Media',
                     'Alta' => 'Alta',
-                    'Urgente' => 'Urgente'
+                    'Urgente' => 'Urgente',
                 ])
                 ->default($entry->priority ?? 'Media');
-            
+
             CRUD::field('justification')->label('Justificación')->type('textarea')->default($entry->justification);
-            
+
             // Campo para seleccionar productos - solo si no está aprobada
             if ($entry->status !== 'Aprobada') {
                 CRUD::addField([
@@ -426,7 +446,7 @@ class PurchaseRequestCrudController extends CrudController
                 ]);
                 $entry->load('details.product');
                 if ($entry->details && $entry->details->count() > 0) {
-                    $existingProducts = $entry->details->map(function($detail) {
+                    $existingProducts = $entry->details->map(function ($detail) {
                         return [
                             'product_id' => $detail->product_id,
                             'product_name' => $detail->product ? $detail->product->name : 'N/A',
@@ -435,10 +455,10 @@ class PurchaseRequestCrudController extends CrudController
                             'quantity' => $detail->requested_quantity ?? 0,
                             'price' => $detail->estimated_unit_price ?? 0,
                             'specifications' => $detail->specifications ?? '',
-                            'product_description' => $detail->product_description ?? ''
+                            'product_description' => $detail->product_description ?? '',
                         ];
                     })->toArray();
-                    
+
                     CRUD::field('products_selection')->label('Productos Solicitados')->type('custom_html')
                         ->value($this->getProductsSelectionHtml($existingProducts, $entry->responsibility_area_id));
                 } else {
@@ -454,14 +474,14 @@ class PurchaseRequestCrudController extends CrudController
         } else {
             // Para administradores, usar todos los campos
             $this->setupCreateFields();
-            
+
             // Cargar productos existentes para edición - solo si no está aprobada
             if ($entry && $entry->status !== 'Aprobada') {
                 // Cargar la relación con productos
                 $entry->load('details.product');
-                
+
                 if ($entry->details && $entry->details->count() > 0) {
-                    $existingProducts = $entry->details->map(function($detail) {
+                    $existingProducts = $entry->details->map(function ($detail) {
                         return [
                             'product_id' => $detail->product_id,
                             'product_name' => $detail->product ? $detail->product->name : 'N/A',
@@ -470,59 +490,59 @@ class PurchaseRequestCrudController extends CrudController
                             'quantity' => $detail->requested_quantity ?? 0,
                             'price' => $detail->estimated_unit_price ?? 0,
                             'specifications' => $detail->specifications ?? '',
-                            'product_description' => $detail->product_description ?? ''
+                            'product_description' => $detail->product_description ?? '',
                         ];
                     })->toArray();
-                    
+
                     // Modificar el campo de productos para incluir los existentes
                     CRUD::modifyField('products_selection', [
-                        'value' => $this->getProductsSelectionHtml($existingProducts)
+                        'value' => $this->getProductsSelectionHtml($existingProducts),
                     ]);
                 }
             } elseif ($entry && $entry->status === 'Aprobada') {
                 // Si está aprobada, mostrar productos como solo lectura
                 $entry->load('details.product');
                 CRUD::modifyField('products_selection', [
-                    'value' => $this->getProductsReadOnlyHtml($entry)
+                    'value' => $this->getProductsReadOnlyHtml($entry),
                 ]);
             }
-            
+
             // Agregar campos adicionales para actualización
             // Obtener la entrada actual para verificar el monto
             $entry = $this->crud->getCurrentEntry();
             $user = backpack_user();
-            
+
             // Determinar las opciones de estado disponibles según el usuario y el monto
             $statusOptions = [
                 'Pendiente' => 'Pendiente',
                 'Rechazada' => 'Rechazada',
                 'En Proceso' => 'En Proceso',
-                'Completada' => 'Completada'
+                'Completada' => 'Completada',
             ];
-            
+
             // Verificar si el usuario puede aprobar esta solicitud
             $canApprove = false;
             if ($entry && $user) {
                 $canApprove = $entry->canBeApprovedBy($user);
             }
-            
+
             // Solo agregar la opción "Aprobada" si el usuario puede aprobar
             if ($canApprove) {
                 $statusOptions['Aprobada'] = 'Aprobada';
             }
-            
+
             CRUD::field('status')->label('Estado')
                 ->type('select_from_array')
                 ->options($statusOptions)
                 ->hint($canApprove ? '' : ($entry && $entry->requires_admin_approval ? 'Esta solicitud requiere aprobación del administrador del instituto debido a que supera el límite de autorización.' : ''));
-            
+
             // Solo mostrar campos de aprobación si el usuario puede aprobar
             if ($canApprove) {
                 CRUD::field('approved_by')->label('Aprobado por')
                     ->type('select')
                     ->model('App\Models\User')
                     ->attribute('name');
-                    
+
                 CRUD::field('approved_date')->label('Fecha de Aprobación')->type('date');
             }
         }
@@ -534,35 +554,35 @@ class PurchaseRequestCrudController extends CrudController
     private function setupCreateFields()
     {
         CRUD::field('request_number')->label('Número de Solicitud')->default(\App\Models\PurchaseRequest::generateNextNumber())->attributes(['readonly' => 'readonly']);
-        
+
         CRUD::field('request_date')->label('Fecha de Solicitud')->type('date')->default(now()->format('Y-m-d'));
-        
+
         CRUD::field('responsibility_area_id')->label('Área de Responsabilidad')
             ->type('select')
             ->model('App\Models\ResponsibilityArea')
             ->attribute('name')
             ->validationRules('required|exists:responsibility_areas,id');
-            
+
         CRUD::field('requesting_user_id')->label('Usuario Solicitante')
             ->type('select')
             ->model('App\Models\User')
             ->attribute('name')
             ->default(auth()->id() ?? 1)
             ->validationRules('required|exists:users,id');
-            
+
         CRUD::field('priority')->label('Prioridad')
             ->type('select_from_array')
             ->options([
                 'Baja' => 'Baja',
                 'Media' => 'Media',
                 'Alta' => 'Alta',
-                'Urgente' => 'Urgente'
+                'Urgente' => 'Urgente',
             ])
             ->default('Media');
-            
+
         CRUD::field('justification')->label('Justificación')->type('textarea');
         CRUD::field('observations')->label('Observaciones')->type('textarea');
-        
+
         // Campos ocultos con valores por defecto
         CRUD::field('status')->type('hidden')->default('Pendiente');
         CRUD::addField([
@@ -571,23 +591,23 @@ class PurchaseRequestCrudController extends CrudController
             'type' => 'select_from_array',
             'options' => [
                 'normal' => 'Normal',
-                'internet' => 'Por internet (Mercado Libre, etc.) — la OP se genera al aprobar un nivel superior',
+                'internet' => 'Por internet (Mercado Libre, etc.)',
             ],
             'default' => 'normal',
-            'hint' => 'Marque "Por internet" si la compra es por Mercado Libre u otro canal online; en ese caso la orden de pago se genera automáticamente al aprobar la solicitud (nivel superior por monto).',
+            'hint' => 'Marque "Por internet" si la compra es por Mercado Libre u otro canal online. La orden de pago la registra la administradora del instituto después de generada la orden de compra.',
         ]);
         CRUD::field('total_amount')->type('hidden')->default(0);
-        
+
         // Campo oculto para conversión desde solicitud general (se establecerá dinámicamente)
         CRUD::field('converted_from_general_request_id')->type('hidden')->attributes(['name' => 'converted_from_general_request_id']);
-        
+
         // Mismo patrón que GeneralRequest: el input debe existir en el formulario para que el POST siempre incluya la clave
         CRUD::addField([
             'name' => 'selected_products',
             'type' => 'hidden',
             'value' => '[]',
         ]);
-        
+
         // Campo para seleccionar productos
         CRUD::field('products_selection')->label('Productos Solicitados')->type('custom_html')
             ->value('
@@ -647,7 +667,7 @@ class PurchaseRequestCrudController extends CrudController
                 
                 // Función para cargar productos
                 function loadProducts() {
-                    fetch("' . backpack_url('api/productos') . '")
+                    fetch("'.backpack_url('api/productos').'")
                         .then(response => response.json())
                         .then(data => {
                             const select = document.getElementById("product-select");
@@ -892,7 +912,7 @@ class PurchaseRequestCrudController extends CrudController
             </script>
             ');
     }
-    
+
     /**
      * Get products filtered by responsibility area
      * Muestra solo productos de las categorías relacionadas con el área
@@ -901,11 +921,11 @@ class PurchaseRequestCrudController extends CrudController
     {
         $areaId = request()->get('area_id');
         $query = \App\Models\Product::with(['category', 'stockLevels']);
-        
+
         if ($areaId) {
             // Obtener el área
             $area = \App\Models\ResponsibilityArea::find($areaId);
-            
+
             if ($area) {
                 // Mapeo de áreas a categorías permitidas
                 $areaCategoryMap = [
@@ -915,16 +935,16 @@ class PurchaseRequestCrudController extends CrudController
                     'Mantenimiento' => ['Herramientas', 'Repuestos', 'Limpieza'],
                     'Insumos Generales' => ['Material de Oficina', 'Limpieza', 'Insumos Generales'],
                 ];
-                
+
                 // Obtener las categorías permitidas para esta área
                 $areaName = $area->name;
                 if (isset($areaCategoryMap[$areaName])) {
                     $allowedCategoryNames = $areaCategoryMap[$areaName];
-                    
+
                     // Obtener los IDs de las categorías permitidas
                     $categoryIds = \App\Models\Category::whereIn('name', $allowedCategoryNames)
                         ->pluck('id');
-                    
+
                     if ($categoryIds->isNotEmpty()) {
                         // Filtrar productos por las categorías permitidas
                         $query->whereIn('category_id', $categoryIds);
@@ -941,11 +961,12 @@ class PurchaseRequestCrudController extends CrudController
                 $query->where('id', 0);
             }
         }
-        
+
         // Obtener productos filtrados
         $productos = $query->get()
-            ->map(function($producto) {
+            ->map(function ($producto) {
                 $stockTotal = $producto->stockLevels->sum('quantity');
+
                 return [
                     'id' => $producto->id,
                     'name' => $producto->name,
@@ -960,14 +981,14 @@ class PurchaseRequestCrudController extends CrudController
 
         return response()->json($productos);
     }
-    
+
     /**
      * Generate HTML for products selection with existing products
      */
     private function getProductsSelectionHtml($existingProducts = [], $areaId = null)
     {
         $existingProductsJson = json_encode($existingProducts);
-        
+
         return '
         <div id="products-container">
             <div class="row mb-3">
@@ -1001,7 +1022,7 @@ class PurchaseRequestCrudController extends CrudController
         <script>
         (function purchaseRequestProductsInitEdit() {
             function init() {
-            const existingProducts = ' . $existingProductsJson . ';
+            const existingProducts = '.$existingProductsJson.';
             
             // Cargar productos existentes
             loadProducts();
@@ -1047,8 +1068,8 @@ class PurchaseRequestCrudController extends CrudController
             
             // Función para cargar productos
             function loadProducts() {
-                const areaId = ' . ($areaId ? $areaId : 'null') . ';
-                const url = areaId ? "' . backpack_url('api/productos-por-area') . '?area_id=" + areaId : "' . backpack_url('api/productos') . '";
+                const areaId = '.($areaId ? $areaId : 'null').';
+                const url = areaId ? "'.backpack_url('api/productos-por-area').'?area_id=" + areaId : "'.backpack_url('api/productos').'";
                 
                 fetch(url)
                     .then(response => response.json())
@@ -1310,39 +1331,41 @@ class PurchaseRequestCrudController extends CrudController
 
         // Obtener datos para guardar
         $dataToSave = $this->crud->getStrippedSaveRequest($request);
-        
+
         // Verificar si viene de una solicitud general desde el parámetro URL o del request
         $convertedFrom = request()->get('converted_from') ?? $request->input('converted_from_general_request_id');
-        
+
         // Validar permisos para convertir solicitudes generales
         $user = backpack_user();
         if ($convertedFrom && $user) {
             // Validar que el usuario personal no pueda convertir
             if ($user->hasRole('role_personal', 'backpack')) {
                 \Alert::error('No tienes permisos para convertir solicitudes generales a solicitudes de compra.')->flash();
+
                 return redirect()->back();
             }
-            
+
             // Validar que el responsable de área solo pueda convertir solicitudes de su área
             if ($user->hasRole('role_responsable_area', 'backpack')) {
                 $generalRequest = \App\Models\GeneralRequest::find($convertedFrom);
                 if ($generalRequest) {
                     $userAreas = \App\Models\ResponsibilityArea::where('responsible_user_id', $user->id)->pluck('id');
-                    
+
                     // Solo puede convertir si la solicitud pertenece a su área
                     // NO puede convertir solicitudes que él creó para otras áreas
-                    if (!$generalRequest->area_id || !$userAreas->contains($generalRequest->area_id)) {
+                    if (! $generalRequest->area_id || ! $userAreas->contains($generalRequest->area_id)) {
                         \Alert::error('Solo puedes convertir a compra las solicitudes que pertenecen a tu depósito/área.')->flash();
+
                         return redirect()->back();
                     }
                 }
             }
         }
-        
+
         \Log::info('Parámetro converted_from desde URL:', ['converted_from' => request()->get('converted_from')]);
         \Log::info('Campo converted_from_general_request_id en request:', ['field' => $request->input('converted_from_general_request_id')]);
         \Log::info('Campo converted_from_general_request_id en datos:', ['field' => $dataToSave['converted_from_general_request_id'] ?? 'no existe']);
-        
+
         // Si viene de una conversión, asegurar que se guarde el ID
         if ($convertedFrom) {
             $dataToSave['converted_from_general_request_id'] = $convertedFrom;
@@ -1356,13 +1379,13 @@ class PurchaseRequestCrudController extends CrudController
         }
 
         // Asegurar que los campos requeridos tengan valores por defecto
-        if (!isset($dataToSave['status'])) {
+        if (! isset($dataToSave['status'])) {
             $dataToSave['status'] = 'Pendiente';
         }
-        if (!isset($dataToSave['priority'])) {
+        if (! isset($dataToSave['priority'])) {
             $dataToSave['priority'] = 'Media';
         }
-        if (!isset($dataToSave['total_amount'])) {
+        if (! isset($dataToSave['total_amount'])) {
             $dataToSave['total_amount'] = 0;
         }
 
@@ -1373,18 +1396,18 @@ class PurchaseRequestCrudController extends CrudController
             // insert item in the db
             $item = $this->crud->create($dataToSave);
             $this->data['entry'] = $this->crud->entry = $item;
-            
+
             // Recargar el item para asegurar que tiene el converted_from_general_request_id
             $item->refresh();
             \Log::info('Item creado:', ['id' => $item->id, 'converted_from_general_request_id' => $item->converted_from_general_request_id]);
 
             // Verificar si el usuario seleccionó productos manualmente
             $selectedProducts = $request->input('selected_products');
-            $hasManualProducts = !empty($selectedProducts) && $selectedProducts !== '[]';
+            $hasManualProducts = ! empty($selectedProducts) && $selectedProducts !== '[]';
 
             // Si viene de una solicitud general y NO hay productos seleccionados manualmente,
             // replicar automáticamente los productos de la solicitud general
-            if ($item->converted_from_general_request_id && !$hasManualProducts) {
+            if ($item->converted_from_general_request_id && ! $hasManualProducts) {
                 \Log::info('Replicando productos desde solicitud general');
                 $this->replicateProductsFromGeneralRequest($item);
             }
@@ -1394,13 +1417,17 @@ class PurchaseRequestCrudController extends CrudController
                 \Log::info('Procesando productos seleccionados manualmente');
                 $this->processSelectedProducts($item, $request);
             }
-            
+
             // Verificar si requiere aprobación de administrador después de calcular el total
             $item->refresh();
             if ($item->total_amount > 0) {
                 $comprasLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_responsable_compras');
                 $requiresAdminApproval = $item->total_amount > $comprasLimit;
                 $item->update(['requires_admin_approval' => $requiresAdminApproval]);
+            }
+
+            if ($user && $user->hasRole('role_responsable_area', 'backpack')) {
+                PurchaseRequestNotificationService::notifyComprasNewRequestFromArea($item);
             }
 
             // show a success message
@@ -1419,17 +1446,17 @@ class PurchaseRequestCrudController extends CrudController
                     $hasAnyDelivery = false;
                     $allDelivered = true;
                     $hasDetails = false;
-                    
+
                     // Verificar el estado de entrega de cada producto
                     foreach ($generalRequest->details as $detail) {
                         $requestedQty = $detail->requested_quantity ?? 0;
-                        
+
                         if ($requestedQty <= 0) {
                             continue;
                         }
-                        
+
                         $hasDetails = true;
-                        
+
                         // Calcular cantidad entregada
                         $deliveredQty = 0;
                         foreach ($generalRequest->deliveries as $delivery) {
@@ -1438,20 +1465,20 @@ class PurchaseRequestCrudController extends CrudController
                                 $deliveredQty += $deliveryDetail->delivered_quantity ?? 0;
                             }
                         }
-                        
+
                         if ($deliveredQty > 0) {
                             $hasAnyDelivery = true;
                         }
-                        
+
                         // Si este producto no está completamente entregado, entonces no todos están entregados
                         if ($deliveredQty < $requestedQty) {
                             $allDelivered = false;
                         }
                     }
-                    
+
                     // Determinar el estado según las entregas
                     $newStatus = 'revisada_area'; // Por defecto, si no hay entregas
-                    
+
                     if ($hasDetails && $hasAnyDelivery) {
                         // Si hay entregas, determinar si es parcial o total
                         if ($allDelivered) {
@@ -1460,26 +1487,26 @@ class PurchaseRequestCrudController extends CrudController
                             $newStatus = 'entregada_parcialmente';
                         }
                     }
-                    
+
                     // No cambiar el estado si está archivada
                     if ($generalRequest->status === 'archivada') {
                         $newStatus = 'archivada';
                     }
-                    
+
                     // Actualizar la solicitud general
                     $generalRequest->update([
                         'is_converted' => true,
-                        'status' => $newStatus
+                        'status' => $newStatus,
                     ]);
-                    
+
                     \Log::info('Solicitud general actualizada exitosamente:', [
                         'id' => $generalRequest->id,
                         'is_converted' => $generalRequest->is_converted,
                         'status' => $newStatus,
-                        'has_deliveries' => $hasAnyDelivery
+                        'has_deliveries' => $hasAnyDelivery,
                     ]);
-                    
-                    \Alert::info('La solicitud general ' . $generalRequest->number . ' ha sido marcada como convertida a compra y su estado ha sido actualizado a: ' . ucfirst(str_replace('_', ' ', $newStatus)) . '.')->flash();
+
+                    \Alert::info('La solicitud general '.$generalRequest->number.' ha sido marcada como convertida a compra y su estado ha sido actualizado a: '.ucfirst(str_replace('_', ' ', $newStatus)).'.')->flash();
                 } else {
                     \Log::error('No se encontró la solicitud general con ID:', ['id' => $item->converted_from_general_request_id]);
                 }
@@ -1489,8 +1516,9 @@ class PurchaseRequestCrudController extends CrudController
 
             return $this->crud->performSaveAction($item->getKey());
         } catch (\Exception $e) {
-            \Log::error('Error al guardar PurchaseRequest: ' . $e->getMessage());
-            \Alert::error('Error al guardar la solicitud de compra: ' . $e->getMessage())->flash();
+            \Log::error('Error al guardar PurchaseRequest: '.$e->getMessage());
+            \Alert::error('Error al guardar la solicitud de compra: '.$e->getMessage())->flash();
+
             return redirect()->back()->withInput();
         }
     }
@@ -1505,21 +1533,23 @@ class PurchaseRequestCrudController extends CrudController
             $generalRequest = \App\Models\GeneralRequest::with(['details.product', 'deliveries.details'])
                 ->find($purchaseRequest->converted_from_general_request_id);
 
-            if (!$generalRequest) {
+            if (! $generalRequest) {
                 \Log::warning('Solicitud general no encontrada para replicar productos', [
-                    'general_request_id' => $purchaseRequest->converted_from_general_request_id
+                    'general_request_id' => $purchaseRequest->converted_from_general_request_id,
                 ]);
+
                 return;
             }
 
             // Verificar si ya hay detalles en la solicitud de compra
             $existingDetailsCount = \App\Models\PurchaseRequestDetail::where('purchase_request_id', $purchaseRequest->id)->count();
-            
+
             if ($existingDetailsCount > 0) {
                 \Log::info('La solicitud de compra ya tiene productos. No se replicarán automáticamente.', [
                     'purchase_request_id' => $purchaseRequest->id,
-                    'existing_details_count' => $existingDetailsCount
+                    'existing_details_count' => $existingDetailsCount,
                 ]);
+
                 return;
             }
 
@@ -1529,10 +1559,11 @@ class PurchaseRequestCrudController extends CrudController
             // Replicar cada detalle de la solicitud general
             // Solo incluir productos con cantidades faltantes (no totalmente entregados)
             foreach ($generalRequest->details as $generalDetail) {
-                if (!$generalDetail->product) {
+                if (! $generalDetail->product) {
                     \Log::warning('Producto no encontrado en detalle de solicitud general', [
-                        'general_request_detail_id' => $generalDetail->id
+                        'general_request_detail_id' => $generalDetail->id,
                     ]);
+
                     continue;
                 }
 
@@ -1546,19 +1577,20 @@ class PurchaseRequestCrudController extends CrudController
                         }
                     }
                 }
-                
+
                 // Calcular cantidad faltante
-                $requestedQuantity = (float)($generalDetail->requested_quantity ?? 0);
+                $requestedQuantity = (float) ($generalDetail->requested_quantity ?? 0);
                 $pendingQuantity = max(0, $requestedQuantity - $deliveredQuantity);
-                
+
                 // Solo replicar productos con cantidad faltante > 0
                 if ($pendingQuantity <= 0) {
                     \Log::info('Producto omitido porque ya está totalmente entregado', [
                         'general_request_detail_id' => $generalDetail->id,
                         'product_id' => $generalDetail->product_id,
                         'requested_quantity' => $requestedQuantity,
-                        'delivered_quantity' => $deliveredQuantity
+                        'delivered_quantity' => $deliveredQuantity,
                     ]);
+
                     continue;
                 }
 
@@ -1572,7 +1604,7 @@ class PurchaseRequestCrudController extends CrudController
                     'justification' => $generalDetail->justification,
                     'estimated_unit_price' => 0, // Precio inicial en 0, el sector de compras lo asignará
                     'estimated_total' => 0, // Total inicial en 0
-                    'status' => 'Pendiente'
+                    'status' => 'Pendiente',
                 ]);
 
                 $totalAmount += $purchaseRequestDetail->estimated_total;
@@ -1585,7 +1617,7 @@ class PurchaseRequestCrudController extends CrudController
                     'product_name' => $generalDetail->product->name ?? 'N/A',
                     'requested_quantity' => $requestedQuantity,
                     'delivered_quantity' => $deliveredQuantity,
-                    'pending_quantity' => $pendingQuantity
+                    'pending_quantity' => $pendingQuantity,
                 ]);
             }
 
@@ -1596,16 +1628,16 @@ class PurchaseRequestCrudController extends CrudController
                 'general_request_id' => $generalRequest->id,
                 'purchase_request_id' => $purchaseRequest->id,
                 'products_replicated' => $replicatedCount,
-                'total_amount' => $totalAmount
+                'total_amount' => $totalAmount,
             ]);
 
-            \Alert::info($replicatedCount . ' producto(s) replicado(s) desde la solicitud general ' . $generalRequest->number)->flash();
+            \Alert::info($replicatedCount.' producto(s) replicado(s) desde la solicitud general '.$generalRequest->number)->flash();
 
         } catch (\Exception $e) {
             \Log::error('Error al replicar productos desde solicitud general', [
                 'purchase_request_id' => $purchaseRequest->id,
                 'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
+                'trace' => $e->getTraceAsString(),
             ]);
         }
     }
@@ -1625,30 +1657,30 @@ class PurchaseRequestCrudController extends CrudController
 
         $user = backpack_user();
         $entry = $this->crud->getCurrentEntry();
-        
-        if (!$entry) {
+
+        if (! $entry) {
             abort(404, 'Solicitud de compra no encontrada.');
         }
-        
+
         // Validar que el usuario solo pueda editar sus propias solicitudes (para role_admin_institucion)
         $isAdminSistema = $user->hasRole('role_admin_sistema', 'backpack');
         $isAdminInstitucion = $user->hasRole('role_admin_institucion', 'backpack');
         $isResponsableCompras = $user->hasRole('role_responsable_compras', 'backpack');
         $isOwnRequest = $entry->requesting_user_id == $user->id;
-        
+
         // Si no es administrador del sistema ni responsable de compras, verificar restricciones
-        if (!$isAdminSistema && !$isResponsableCompras) {
+        if (! $isAdminSistema && ! $isResponsableCompras) {
             if ($isAdminInstitucion) {
                 // El administrador del instituto solo puede editar sus propias solicitudes
-                if (!$isOwnRequest) {
+                if (! $isOwnRequest) {
                     abort(403, 'Solo puedes editar las solicitudes de compra que creaste.');
                 }
             } else {
                 // Todos los demás usuarios solo pueden editar sus propias solicitudes
-                if (!$isOwnRequest) {
+                if (! $isOwnRequest) {
                     abort(403, 'Solo puedes editar las solicitudes de compra que creaste.');
                 }
-                
+
                 // Solo puede editar si el estado es "Pendiente"
                 if ($entry->status !== 'Pendiente') {
                     abort(403, 'Solo puedes editar solicitudes de compra con estado "Pendiente".');
@@ -1675,7 +1707,7 @@ class PurchaseRequestCrudController extends CrudController
                 // Si está aprobada, no permitir modificar productos
                 \Alert::warning('No se pueden modificar los productos de una solicitud aprobada.')->flash();
             }
-            
+
             // Verificar si requiere aprobación de administrador después de actualizar el total
             $item->refresh();
             if ($item->total_amount > 0 && $item->status === 'Pendiente') {
@@ -1692,17 +1724,19 @@ class PurchaseRequestCrudController extends CrudController
 
             return $this->crud->performSaveAction($item->getKey());
         } catch (\Exception $e) {
-            \Log::error('Error al actualizar PurchaseRequest: ' . $e->getMessage());
-            \Log::error('Stack trace: ' . $e->getTraceAsString());
-            \Alert::error('Error al actualizar la solicitud de compra: ' . $e->getMessage())->flash();
+            \Log::error('Error al actualizar PurchaseRequest: '.$e->getMessage());
+            \Log::error('Stack trace: '.$e->getTraceAsString());
+            \Alert::error('Error al actualizar la solicitud de compra: '.$e->getMessage())->flash();
+
             return redirect()->back()->withInput();
         }
     }
 
     /**
      * Define what happens when the Delete operation is loaded.
-     * 
+     *
      * @see https://backpackforlaravel.com/docs/crud-operation-delete
+     *
      * @return void
      */
     protected function setupDeleteOperation()
@@ -1718,14 +1752,14 @@ class PurchaseRequestCrudController extends CrudController
             abort(403, 'No se puede eliminar una solicitud de compra que ya fue aprobada, está en proceso o está completada.');
         }
     }
-    
+
     /**
      * Remove the specified resource from storage.
      */
     public function destroy($id)
     {
         $this->crud->hasAccessOrFail('delete');
-        
+
         // Bloquear eliminación para role_admin_institucion
         $user = backpack_user();
         if ($user && $user->hasRole('role_admin_institucion', 'backpack')) {
@@ -1739,9 +1773,10 @@ class PurchaseRequestCrudController extends CrudController
                 return response()->json(['error' => [$message]]);
             }
             \Alert::error($message)->flash();
+
             return redirect()->back();
         }
-        
+
         return $this->crud->delete($id);
     }
 
@@ -1751,11 +1786,11 @@ class PurchaseRequestCrudController extends CrudController
     private function getProductsReadOnlyHtml($entry)
     {
         $entry->load('details.product');
-        
-        if (!$entry->details || $entry->details->count() === 0) {
+
+        if (! $entry->details || $entry->details->count() === 0) {
             return '<div class="alert alert-info">No hay productos seleccionados.</div>';
         }
-        
+
         $html = '<div class="table-responsive">';
         $html .= '<table class="table table-bordered table-striped">';
         $html .= '<thead class="thead-dark">';
@@ -1769,7 +1804,7 @@ class PurchaseRequestCrudController extends CrudController
         $html .= '</tr>';
         $html .= '</thead>';
         $html .= '<tbody>';
-        
+
         $total = 0;
         foreach ($entry->details as $detail) {
             $productName = $detail->product ? $detail->product->name : 'N/A';
@@ -1779,22 +1814,22 @@ class PurchaseRequestCrudController extends CrudController
             $subtotal = $quantity * $price;
             $total += $subtotal;
             $descSpecs = $detail->specifications ?? $detail->product_description ?? '';
-            
+
             $html .= '<tr>';
-            $html .= '<td>' . e($productName) . '</td>';
-            $html .= '<td>' . e($unit) . '</td>';
-            $html .= '<td class="text-right">' . number_format($quantity, 2) . '</td>';
-            $html .= '<td class="text-right">$' . number_format($price, 2) . '</td>';
-            $html .= '<td class="text-right">$' . number_format($subtotal, 2) . '</td>';
-            $html .= '<td><small>' . ($descSpecs ? nl2br(e($descSpecs)) : '-') . '</small></td>';
+            $html .= '<td>'.e($productName).'</td>';
+            $html .= '<td>'.e($unit).'</td>';
+            $html .= '<td class="text-right">'.number_format($quantity, 2).'</td>';
+            $html .= '<td class="text-right">$'.number_format($price, 2).'</td>';
+            $html .= '<td class="text-right">$'.number_format($subtotal, 2).'</td>';
+            $html .= '<td><small>'.($descSpecs ? nl2br(e($descSpecs)) : '-').'</small></td>';
             $html .= '</tr>';
         }
-        
+
         $html .= '</tbody>';
         $html .= '<tfoot>';
         $html .= '<tr class="font-weight-bold">';
         $html .= '<td colspan="4" class="text-right">Total:</td>';
-        $html .= '<td class="text-right">$' . number_format($total, 2) . '</td>';
+        $html .= '<td class="text-right">$'.number_format($total, 2).'</td>';
         $html .= '<td></td>';
         $html .= '</tr>';
         $html .= '</tfoot>';
@@ -1803,7 +1838,7 @@ class PurchaseRequestCrudController extends CrudController
         $html .= '<div class="alert alert-warning mt-2">';
         $html .= '<i class="la la-lock"></i> <strong>Nota:</strong> Los productos no pueden ser modificados porque la solicitud está aprobada.';
         $html .= '</div>';
-        
+
         return $html;
     }
 
@@ -1813,14 +1848,14 @@ class PurchaseRequestCrudController extends CrudController
     private function processSelectedProducts($purchaseRequest, $request, $isUpdate = false)
     {
         $selectedProducts = $request->input('selected_products');
-        
-        if (!$selectedProducts || $selectedProducts === '[]' || $selectedProducts === '') {
+
+        if (! $selectedProducts || $selectedProducts === '[]' || $selectedProducts === '') {
             \Log::info('No hay productos seleccionados');
             $this->resetPurchaseRequestTotalsAfterProductSync($purchaseRequest);
 
             return;
         }
-        
+
         // Si ya es un array, usarlo directamente, sino decodificar JSON
         if (is_array($selectedProducts)) {
             $products = $selectedProducts;
@@ -1829,35 +1864,36 @@ class PurchaseRequestCrudController extends CrudController
             if (json_last_error() !== JSON_ERROR_NONE) {
                 \Log::error('Error al decodificar JSON de productos:', [
                     'json_error' => json_last_error_msg(),
-                    'raw_value' => $selectedProducts
+                    'raw_value' => $selectedProducts,
                 ]);
                 $this->resetPurchaseRequestTotalsAfterProductSync($purchaseRequest);
 
                 return;
             }
         }
-        
-        if (!$products || !is_array($products) || empty($products)) {
+
+        if (! $products || ! is_array($products) || empty($products)) {
             \Log::warning('Productos seleccionados está vacío o no es un array válido');
             $this->resetPurchaseRequestTotalsAfterProductSync($purchaseRequest);
 
             return;
         }
-        
+
         \Log::info('Productos a procesar:', ['count' => count($products), 'products' => $products]);
-        
+
         $totalAmount = 0;
-        
+
         foreach ($products as $productData) {
-            if (!isset($productData['product_id'])) {
+            if (! isset($productData['product_id'])) {
                 \Log::warning('Producto sin product_id', ['data' => $productData]);
+
                 continue;
             }
-            
+
             $productIdRaw = $productData['product_id'] ?? null;
             // Convertir a números para evitar errores de multiplicación
-            $quantity = (float)($productData['quantity'] ?? 0);
-            $price = (float)($productData['price'] ?? 0);
+            $quantity = (float) ($productData['quantity'] ?? 0);
+            $price = (float) ($productData['price'] ?? 0);
             $specifications = $productData['specifications'] ?? '';
             // Unificado: descripción/especificaciones se guarda en ambos campos para compatibilidad
             $productDescription = $productData['product_description'] ?? $specifications;
@@ -1888,12 +1924,13 @@ class PurchaseRequestCrudController extends CrudController
                 // Validar que el producto existe
                 $productId = (int) $productIdRaw;
                 $product = \App\Models\Product::find($productId);
-                if (!$product) {
+                if (! $product) {
                     \Log::warning('Producto no encontrado:', ['product_id' => $productId]);
+
                     continue;
                 }
             }
-            
+
             // Crear el detalle de la solicitud de compra
             $detail = \App\Models\PurchaseRequestDetail::create([
                 'purchase_request_id' => $purchaseRequest->id,
@@ -1903,20 +1940,20 @@ class PurchaseRequestCrudController extends CrudController
                 'specifications' => $specifications,
                 'estimated_unit_price' => $price,
                 'estimated_total' => $price * $quantity,
-                'status' => 'Pendiente'
+                'status' => 'Pendiente',
             ]);
-            
+
             $totalAmount += $price * $quantity;
             \Log::info('Detalle creado:', ['detail_id' => $detail->id, 'product_id' => $productId]);
         }
-        
+
         // Actualizar el monto total de la solicitud y verificar si requiere aprobación de administrador
         $comprasLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_responsable_compras');
         $requiresAdminApproval = $totalAmount > $comprasLimit;
-        
+
         $purchaseRequest->update([
             'total_amount' => $totalAmount,
-            'requires_admin_approval' => $requiresAdminApproval
+            'requires_admin_approval' => $requiresAdminApproval,
         ]);
         \Log::info('Monto total actualizado:', ['total' => $totalAmount, 'requires_admin_approval' => $requiresAdminApproval]);
     }
@@ -1956,7 +1993,7 @@ class PurchaseRequestCrudController extends CrudController
 
         foreach ($marketRateIds as $mrId) {
             $mr = \App\Models\MarketRate::query()->find($mrId);
-            if (!$mr) {
+            if (! $mr) {
                 continue;
             }
             $total = (float) \App\Models\QuoteDetail::query()
@@ -1974,49 +2011,49 @@ class PurchaseRequestCrudController extends CrudController
     {
         $purchaseRequest = \App\Models\PurchaseRequest::with([
             'details.product',
-            'responsibilityArea'
+            'responsibilityArea',
         ])->findOrFail($id);
 
         // Get all market rates for this purchase request (incluye cotizaciones globales sin detalle por producto)
         $productIds = $purchaseRequest->details->pluck('product_id')->toArray();
         $marketRates = \App\Models\MarketRate::with([
             'supplier',
-            'quoteDetails.product'
+            'quoteDetails.product',
         ])->where('purchase_request_id', $purchaseRequest->id)->get();
 
         // Group market rates by supplier
         $suppliers = $marketRates->groupBy('supplier_id');
-        
+
         // Generate Excel in memory
-        $filename = 'Planilla_Comparativa_' . $purchaseRequest->request_number . '_' . date('Y-m-d') . '.xlsx';
-        
+        $filename = 'Planilla_Comparativa_'.$purchaseRequest->request_number.'_'.date('Y-m-d').'.xlsx';
+
         // Create Excel file in memory
-        $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
+        $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet;
         $sheet = $spreadsheet->getActiveSheet();
-        
+
         // Set headers
         $sheet->setCellValue('A1', 'Planilla Comparativa de Cotizaciones');
-        $sheet->setCellValue('A2', 'Solicitud: ' . $purchaseRequest->request_number);
-        $sheet->setCellValue('A3', 'Fecha: ' . date('d/m/Y'));
-        $sheet->setCellValue('A4', 'Área: ' . ($purchaseRequest->responsibilityArea->name ?? 'N/A'));
-        
+        $sheet->setCellValue('A2', 'Solicitud: '.$purchaseRequest->request_number);
+        $sheet->setCellValue('A3', 'Fecha: '.date('d/m/Y'));
+        $sheet->setCellValue('A4', 'Área: '.($purchaseRequest->responsibilityArea->name ?? 'N/A'));
+
         $row = 6;
         // Resumen de monto total por proveedor para facilitar comparación.
-        $sheet->setCellValue('A' . $row, 'Resumen total por proveedor');
-        $sheet->getStyle('A' . $row)->getFont()->setBold(true);
+        $sheet->setCellValue('A'.$row, 'Resumen total por proveedor');
+        $sheet->getStyle('A'.$row)->getFont()->setBold(true);
         $row++;
 
-        $sheet->setCellValue('A' . $row, 'Proveedor');
-        $sheet->setCellValue('B' . $row, 'Subtotal');
-        $sheet->setCellValue('C' . $row, 'IVA');
-        $sheet->setCellValue('D' . $row, 'Total + IVA');
-        $sheet->setCellValue('E' . $row, 'Productos incluidos');
-        $sheet->getStyle('A' . $row . ':E' . $row)->getFont()->setBold(true);
+        $sheet->setCellValue('A'.$row, 'Proveedor');
+        $sheet->setCellValue('B'.$row, 'Subtotal');
+        $sheet->setCellValue('C'.$row, 'IVA');
+        $sheet->setCellValue('D'.$row, 'Total + IVA');
+        $sheet->setCellValue('E'.$row, 'Productos incluidos');
+        $sheet->getStyle('A'.$row.':E'.$row)->getFont()->setBold(true);
         $row++;
 
         foreach ($suppliers as $supplierId => $supplierRates) {
             $supplier = $supplierRates->first()->supplier;
-            $supplierName = $supplier->company_name ?? ('Proveedor ' . $supplierId);
+            $supplierName = $supplier->company_name ?? ('Proveedor '.$supplierId);
             $effectiveTotal = 0.0;
             $vatAmount = 0.0;
             $totalWithVat = 0.0;
@@ -2026,7 +2063,7 @@ class PurchaseRequestCrudController extends CrudController
 
             foreach ($supplierRates as $rate) {
                 foreach ($rate->quoteDetails as $qd) {
-                    $name = $qd->product->name ?? ('Producto #' . ($qd->product_id ?? 'N/A'));
+                    $name = $qd->product->name ?? ('Producto #'.($qd->product_id ?? 'N/A'));
                     if (is_string($name) && trim($name) !== '') {
                         $productNames[] = trim($name);
                     }
@@ -2060,31 +2097,31 @@ class PurchaseRequestCrudController extends CrudController
                 $totalWithVat += max(0, $rateTotalWithVat);
                 $totalQty += max(0, $rateTotalQty);
             }
-            $sheet->setCellValue('A' . $row, $supplierName);
-            $sheet->setCellValue('B' . $row, $effectiveTotal > 0 ? '$' . number_format($effectiveTotal, 2) : 'Sin monto informado');
-            $sheet->setCellValue('C' . $row, $vatAmount > 0 ? '$' . number_format($vatAmount, 2) : '$0.00');
-            $sheet->setCellValue('D' . $row, $totalWithVat > 0 ? '$' . number_format($totalWithVat, 2) : 'Sin monto informado');
+            $sheet->setCellValue('A'.$row, $supplierName);
+            $sheet->setCellValue('B'.$row, $effectiveTotal > 0 ? '$'.number_format($effectiveTotal, 2) : 'Sin monto informado');
+            $sheet->setCellValue('C'.$row, $vatAmount > 0 ? '$'.number_format($vatAmount, 2) : '$0.00');
+            $sheet->setCellValue('D'.$row, $totalWithVat > 0 ? '$'.number_format($totalWithVat, 2) : 'Sin monto informado');
             $productNames = array_values(array_unique($productNames));
             $productsLabel = empty($productNames) ? 'Sin detalle de productos' : implode(', ', $productNames);
             if ($hasGlobalWithoutDetails) {
                 $productsLabel .= empty($productNames) ? 'Cotización global (sin detalle)' : ' + Cotización global sin detalle';
             }
-            $sheet->setCellValue('E' . $row, $productsLabel);
+            $sheet->setCellValue('E'.$row, $productsLabel);
             $row++;
         }
-        
+
         // Auto-size columns
         foreach (range('A', 'E') as $column) {
             $sheet->getColumnDimension($column)->setAutoSize(true);
         }
-        
+
         // Create writer and output to memory
         $writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
-        
+
         // Create temporary file in memory
         $tempFile = tempnam(sys_get_temp_dir(), 'excel_');
         $writer->save($tempFile);
-        
+
         // Return download response without saving to project
         return response()->download($tempFile, $filename)->deleteFileAfterSend(true);
     }
@@ -2094,111 +2131,113 @@ class PurchaseRequestCrudController extends CrudController
      */
     private function generateExcelFile($purchaseRequest, $suppliers, $filePath)
     {
-        $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
+        $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet;
         $sheet = $spreadsheet->getActiveSheet();
-        
+
         // Set title
         $sheet->setTitle('Planilla Comparativa');
-        
+
         // Header information
         $sheet->setCellValue('A1', 'PLANILLA COMPARATIVA DE COTIZACIONES');
-        $sheet->setCellValue('A2', 'Solicitud de Compra: ' . $purchaseRequest->request_number);
-        $sheet->setCellValue('A3', 'Área: ' . $purchaseRequest->responsibilityArea->name);
-        $sheet->setCellValue('A4', 'Fecha: ' . date('d/m/Y'));
-        
+        $sheet->setCellValue('A2', 'Solicitud de Compra: '.$purchaseRequest->request_number);
+        $sheet->setCellValue('A3', 'Área: '.$purchaseRequest->responsibilityArea->name);
+        $sheet->setCellValue('A4', 'Fecha: '.date('d/m/Y'));
+
         // Merge title cells
         $sheet->mergeCells('A1:Z1');
         $sheet->getStyle('A1')->getFont()->setBold(true)->setSize(16);
         $sheet->getStyle('A1')->getAlignment()->setHorizontal(\PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER);
-        
+
         // Start data from row 6
         $currentRow = 6;
-        
+
         // Create header row
         $header = ['Producto', 'Cantidad', 'Unidad'];
         $supplierColumns = [];
         $col = 'D'; // Start from column D
-        
+
         foreach ($suppliers as $supplierId => $marketRates) {
             $supplier = $marketRates->first()->supplier;
             $supplierColumns[$supplierId] = [
                 'name' => $supplier->company_name,
                 'price_col' => $col,
                 'subtotal_col' => chr(ord($col) + 1),
-                'delivery_col' => chr(ord($col) + 2)
+                'delivery_col' => chr(ord($col) + 2),
             ];
-            
-            $header[] = $supplier->company_name . ' - Precio Unit.';
-            $header[] = $supplier->company_name . ' - Subtotal';
-            $header[] = $supplier->company_name . ' - Plazo';
-            
+
+            $header[] = $supplier->company_name.' - Precio Unit.';
+            $header[] = $supplier->company_name.' - Subtotal';
+            $header[] = $supplier->company_name.' - Plazo';
+
             $col = chr(ord($col) + 3);
         }
-        
+
         $header[] = 'Recomendación';
         $header[] = 'Observaciones';
-        
+
         // Write header
         $col = 'A';
         foreach ($header as $headerText) {
-            $sheet->setCellValue($col . $currentRow, $headerText);
-            $sheet->getStyle($col . $currentRow)->getFont()->setBold(true);
-            $sheet->getStyle($col . $currentRow)->getFill()
+            $sheet->setCellValue($col.$currentRow, $headerText);
+            $sheet->getStyle($col.$currentRow)->getFont()->setBold(true);
+            $sheet->getStyle($col.$currentRow)->getFill()
                 ->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)
                 ->getStartColor()->setRGB('4472C4');
-            $sheet->getStyle($col . $currentRow)->getFont()->getColor()->setRGB('FFFFFF');
+            $sheet->getStyle($col.$currentRow)->getFont()->getColor()->setRGB('FFFFFF');
             $col++;
         }
-        
+
         $currentRow++;
-        
+
         // Data rows
         foreach ($purchaseRequest->details as $detail) {
             $row = [
                 $detail->product->name ?? 'Producto no encontrado',
                 $detail->requested_quantity,
-                $detail->product->unit ?? 'Unidad'
+                $detail->product->unit ?? 'Unidad',
             ];
-            
+
             $bestOption = null;
             $bestPrice = null;
             $bestScore = 0;
             $observations = [];
             $supplierData = [];
             $recommendations = [];
-            
+
             // Collect data for each supplier
             foreach ($suppliers as $supplierId => $marketRates) {
                 $supplier = $marketRates->first()->supplier;
                 $quoteDetail = null;
-                
+
                 // Find quote detail for this product
                 foreach ($marketRates as $marketRate) {
                     $quoteDetail = $marketRate->quoteDetails->where('product_id', $detail->product_id)->first();
-                    if ($quoteDetail) break;
+                    if ($quoteDetail) {
+                        break;
+                    }
                 }
-                
+
                 if ($quoteDetail) {
                     $unitPrice = $quoteDetail->unit_price;
                     $subtotal = $quoteDetail->quantity * $unitPrice;
                     $deliveryTime = 15; // Default days
-                    
+
                     $supplierData[$supplierId] = [
                         'name' => $supplier->company_name,
                         'unit_price' => $unitPrice,
                         'subtotal' => $subtotal,
                         'delivery_time' => $deliveryTime,
-                        'score' => $this->calculateSupplierScore($subtotal, $deliveryTime)
+                        'score' => $this->calculateSupplierScore($subtotal, $deliveryTime),
                     ];
-                    
-                    $observations[] = $supplier->company_name . ': $' . number_format($subtotal, 2) . ' (' . $deliveryTime . ' días)';
-                    
+
+                    $observations[] = $supplier->company_name.': $'.number_format($subtotal, 2).' ('.$deliveryTime.' días)';
+
                     // Add to recommendations
                     $recommendations[] = [
                         'name' => $supplier->company_name,
                         'price' => $subtotal,
                         'delivery' => $deliveryTime,
-                        'score' => $this->calculateSupplierScore($subtotal, $deliveryTime)
+                        'score' => $this->calculateSupplierScore($subtotal, $deliveryTime),
                     ];
                 } else {
                     $supplierData[$supplierId] = [
@@ -2206,88 +2245,88 @@ class PurchaseRequestCrudController extends CrudController
                         'unit_price' => null,
                         'subtotal' => null,
                         'delivery_time' => null,
-                        'score' => 0
+                        'score' => 0,
                     ];
                 }
             }
-            
+
             // Determine recommendation based on score (but don't auto-select)
             $recommendation = 'Sin recomendación';
-            if (!empty($recommendations)) {
+            if (! empty($recommendations)) {
                 // Sort by score (highest first)
-                usort($recommendations, function($a, $b) {
+                usort($recommendations, function ($a, $b) {
                     return $b['score'] <=> $a['score'];
                 });
-                
+
                 $topRecommendation = $recommendations[0];
-                $recommendation = $topRecommendation['name'] . ' (Puntuación: ' . number_format($topRecommendation['score'], 1) . ')';
-                
+                $recommendation = $topRecommendation['name'].' (Puntuación: '.number_format($topRecommendation['score'], 1).')';
+
                 // Add additional recommendations if there are multiple good options
                 if (count($recommendations) > 1) {
                     $secondBest = $recommendations[1];
                     if ($secondBest['score'] > $topRecommendation['score'] * 0.8) { // Within 80% of best
-                        $recommendation .= ' | ' . $secondBest['name'] . ' (Alt.)';
+                        $recommendation .= ' | '.$secondBest['name'].' (Alt.)';
                     }
                 }
             }
-            
+
             // Write product data
             $col = 'A';
-            $sheet->setCellValue($col . $currentRow, $row[0]);
+            $sheet->setCellValue($col.$currentRow, $row[0]);
             $col++;
-            $sheet->setCellValue($col . $currentRow, $row[1]);
+            $sheet->setCellValue($col.$currentRow, $row[1]);
             $col++;
-            $sheet->setCellValue($col . $currentRow, $row[2]);
+            $sheet->setCellValue($col.$currentRow, $row[2]);
             $col++;
-            
+
             // Write supplier data
             foreach ($supplierColumns as $supplierId => $columns) {
                 $data = $supplierData[$supplierId] ?? null;
-                
+
                 if ($data && $data['unit_price'] !== null) {
-                    $sheet->setCellValue($columns['price_col'] . $currentRow, $data['unit_price']);
-                    $sheet->setCellValue($columns['subtotal_col'] . $currentRow, $data['subtotal']);
-                    $sheet->setCellValue($columns['delivery_col'] . $currentRow, $data['delivery_time'] . ' días');
-                    
+                    $sheet->setCellValue($columns['price_col'].$currentRow, $data['unit_price']);
+                    $sheet->setCellValue($columns['subtotal_col'].$currentRow, $data['subtotal']);
+                    $sheet->setCellValue($columns['delivery_col'].$currentRow, $data['delivery_time'].' días');
+
                     // Format currency
-                    $sheet->getStyle($columns['price_col'] . $currentRow)->getNumberFormat()
+                    $sheet->getStyle($columns['price_col'].$currentRow)->getNumberFormat()
                         ->setFormatCode('$#,##0.00');
-                    $sheet->getStyle($columns['subtotal_col'] . $currentRow)->getNumberFormat()
+                    $sheet->getStyle($columns['subtotal_col'].$currentRow)->getNumberFormat()
                         ->setFormatCode('$#,##0.00');
                 } else {
-                    $sheet->setCellValue($columns['price_col'] . $currentRow, 'Sin cotización');
-                    $sheet->setCellValue($columns['subtotal_col'] . $currentRow, 'Sin cotización');
-                    $sheet->setCellValue($columns['delivery_col'] . $currentRow, 'Sin cotización');
+                    $sheet->setCellValue($columns['price_col'].$currentRow, 'Sin cotización');
+                    $sheet->setCellValue($columns['subtotal_col'].$currentRow, 'Sin cotización');
+                    $sheet->setCellValue($columns['delivery_col'].$currentRow, 'Sin cotización');
                 }
             }
-            
+
             // Write recommendation and observations
-            $sheet->setCellValue($col . $currentRow, $recommendation);
+            $sheet->setCellValue($col.$currentRow, $recommendation);
             $col++;
-            $sheet->setCellValue($col . $currentRow, implode(' | ', $observations));
-            
+            $sheet->setCellValue($col.$currentRow, implode(' | ', $observations));
+
             // Highlight recommended supplier row (if any)
-            if (!empty($recommendations)) {
-                $sheet->getStyle('A' . $currentRow . ':' . $col . $currentRow)->getFill()
+            if (! empty($recommendations)) {
+                $sheet->getStyle('A'.$currentRow.':'.$col.$currentRow)->getFill()
                     ->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)
                     ->getStartColor()->setRGB('FFF2CC'); // Light yellow for recommendation
             }
-            
+
             $currentRow++;
         }
-        
+
         // Auto-size columns
         foreach (range('A', $col) as $column) {
             $sheet->getColumnDimension($column)->setAutoSize(true);
         }
-        
+
         // Add borders
-        $sheet->getStyle('A6:' . $col . ($currentRow - 1))->getBorders()->getAllBorders()
+        $sheet->getStyle('A6:'.$col.($currentRow - 1))->getBorders()->getAllBorders()
             ->setBorderStyle(\PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THIN);
-        
+
         // Save file
         $writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
-        $writer->save(storage_path('app/public/' . $filePath));
+        $writer->save(storage_path('app/public/'.$filePath));
     }
 
     /**
@@ -2299,7 +2338,7 @@ class PurchaseRequestCrudController extends CrudController
         // Price weight: 70%, Delivery time weight: 30%
         $priceScore = max(0, 100 - ($subtotal / 100)); // Normalize price
         $deliveryScore = max(0, 100 - ($deliveryTime * 2)); // Normalize delivery time
-        
+
         return ($priceScore * 0.7) + ($deliveryScore * 0.3);
     }
 
@@ -2310,38 +2349,38 @@ class PurchaseRequestCrudController extends CrudController
     {
         $purchaseRequest = \App\Models\PurchaseRequest::findOrFail($id);
         $marketRate = \App\Models\MarketRate::with('quoteDetails')->findOrFail($marketRateId);
-        
+
         // Calcular el monto total de la cotización desde los detalles si no está disponible
         $newTotalAmount = $marketRate->total_amount;
-        if (!$newTotalAmount || $newTotalAmount == 0) {
+        if (! $newTotalAmount || $newTotalAmount == 0) {
             // Recalcular desde los detalles de la cotización
-            $newTotalAmount = $marketRate->quoteDetails->sum(function($detail) {
+            $newTotalAmount = $marketRate->quoteDetails->sum(function ($detail) {
                 return ($detail->quantity ?? 0) * ($detail->unit_price ?? 0);
             });
-            
+
             // Si se calculó un monto, actualizar la cotización
             if ($newTotalAmount > 0) {
                 $marketRate->update(['total_amount' => $newTotalAmount]);
             }
         }
-        
+
         // Si aún no hay monto, mantener el de la solicitud de compra
-        if (!$newTotalAmount || $newTotalAmount == 0) {
+        if (! $newTotalAmount || $newTotalAmount == 0) {
             $newTotalAmount = $purchaseRequest->total_amount ?? 0;
         }
-        
+
         $comprasLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_responsable_compras');
         $requiresAdminApproval = $newTotalAmount > $comprasLimit;
-        
+
         $purchaseRequest->update([
             'selected_market_rate_id' => $marketRateId,
             'total_amount' => $newTotalAmount,
             'requires_admin_approval' => $requiresAdminApproval,
-            'status' => 'Aprobada'
+            'status' => 'Aprobada',
         ]);
-        
-        \Alert::success('Cotización seleccionada exitosamente. El monto total de la solicitud se ha actualizado a $' . number_format($newTotalAmount, 2) . '.')->flash();
-        
+
+        \Alert::success('Cotización seleccionada exitosamente. El monto total de la solicitud se ha actualizado a $'.number_format($newTotalAmount, 2).'.')->flash();
+
         return redirect()->back();
     }
 
@@ -2352,14 +2391,14 @@ class PurchaseRequestCrudController extends CrudController
     {
         $purchaseRequest = \App\Models\PurchaseRequest::with([
             'responsibilityArea',
-            'details.product'
+            'details.product',
         ])->findOrFail($id);
-        
+
         $marketRate = \App\Models\MarketRate::with([
             'supplier',
-            'quoteDetails.product'
+            'quoteDetails.product',
         ])->findOrFail($marketRateId);
-        
+
         return view('admin.purchase-request.select-market-rate', compact('purchaseRequest', 'marketRate'));
     }
 
@@ -2378,32 +2417,33 @@ class PurchaseRequestCrudController extends CrudController
                 break;
             }
         }
-        
-        if (!$isAdmin) {
+
+        if (! $isAdmin) {
             abort(403, 'Solo el responsable de compras puede seleccionar cotizaciones.');
         }
-        
+
         $purchaseRequest = \App\Models\PurchaseRequest::findOrFail($id);
+        $wasAwaitingSuperiorQuotes = PurchaseRequestNotificationService::isAwaitingSuperiorQuotationApproval($purchaseRequest);
         $marketRate = \App\Models\MarketRate::with('quoteDetails')->findOrFail($marketRateId);
-        
+
         $request = request();
-        
+
         // Calcular monto efectivo de la cotización (prioriza total con IVA).
         $newTotalAmount = $this->getMarketRateEffectiveTotal($marketRate);
-        if (!$newTotalAmount || $newTotalAmount == 0) {
+        if (! $newTotalAmount || $newTotalAmount == 0) {
             $newTotalAmount = (float) ($purchaseRequest->total_amount ?? 0);
         }
-        
+
         $comprasLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_responsable_compras');
         $requiresAdminApproval = $newTotalAmount > $comprasLimit;
-        
+
         // Verificar si el usuario puede aprobar esta solicitud (usando el nuevo monto)
         // Crear una solicitud temporal con el nuevo monto para verificar
         $tempRequest = clone $purchaseRequest;
         $tempRequest->total_amount = $newTotalAmount;
         $canApprove = $tempRequest->canBeApprovedBy($user);
-        
-        if (!$canApprove) {
+
+        if (! $canApprove) {
             // Si no puede aprobar, solo seleccionar la cotización pero no aprobar
             $purchaseRequest->update([
                 'selected_market_rate_id' => $marketRateId,
@@ -2413,8 +2453,8 @@ class PurchaseRequestCrudController extends CrudController
                 'total_amount' => $newTotalAmount,
                 'requires_admin_approval' => $requiresAdminApproval,
             ]);
-            
-            \Alert::warning('Cotización seleccionada. El monto total se ha actualizado a $' . number_format($newTotalAmount, 2) . '. La solicitud requiere aprobación del administrador del instituto debido a que supera el límite de autorización.')->flash();
+
+            \Alert::warning('Cotización seleccionada. El monto total se ha actualizado a $'.number_format($newTotalAmount, 2).'. La solicitud requiere aprobación del administrador del instituto debido a que supera el límite de autorización.')->flash();
         } else {
             // Si puede aprobar, seleccionar la cotización y aprobar
             $purchaseRequest->update([
@@ -2429,7 +2469,7 @@ class PurchaseRequestCrudController extends CrudController
                 'approved_date' => now(),
                 'approval_justification' => $request->input('justification'), // Usar la misma justificación de selección
             ]);
-            
+
             \Alert::success('Cotización seleccionada y solicitud aprobada exitosamente.')->flash();
         }
 
@@ -2442,7 +2482,12 @@ class PurchaseRequestCrudController extends CrudController
             'total_amount' => $recalculatedTotal,
             'requires_admin_approval' => $recalculatedTotal > $comprasLimit,
         ]);
-        
+
+        $purchaseRequest->refresh();
+        if (PurchaseRequestNotificationService::isAwaitingSuperiorQuotationApproval($purchaseRequest) && ! $wasAwaitingSuperiorQuotes) {
+            PurchaseRequestNotificationService::notifySuperiorsQuotationApprovalNeeded($purchaseRequest);
+        }
+
         return redirect()->route('purchase-request.show', $id);
     }
 
@@ -2467,6 +2512,7 @@ class PurchaseRequestCrudController extends CrudController
         }
 
         $purchaseRequest = \App\Models\PurchaseRequest::with('marketRates')->findOrFail($id);
+        $wasAwaitingSuperiorQuotes = PurchaseRequestNotificationService::isAwaitingSuperiorQuotationApproval($purchaseRequest);
         $marketRate = \App\Models\MarketRate::where('purchase_request_id', $id)->findOrFail($marketRateId);
 
         $newValue = ! (bool) $marketRate->is_selected;
@@ -2500,7 +2546,13 @@ class PurchaseRequestCrudController extends CrudController
             'requires_admin_approval' => $recalculatedTotal > $comprasLimit,
         ]);
 
+        $purchaseRequest->refresh();
+        if (PurchaseRequestNotificationService::isAwaitingSuperiorQuotationApproval($purchaseRequest) && ! $wasAwaitingSuperiorQuotes) {
+            PurchaseRequestNotificationService::notifySuperiorsQuotationApprovalNeeded($purchaseRequest);
+        }
+
         \Alert::success($newValue ? 'Cotización seleccionada.' : 'Cotización deseleccionada.')->flash();
+
         return redirect()->route('purchase-request.show', $id);
     }
 
@@ -2511,17 +2563,17 @@ class PurchaseRequestCrudController extends CrudController
     {
         $purchaseRequest = \App\Models\PurchaseRequest::with([
             'responsibilityArea',
-            'details.product'
+            'details.product',
         ])->findOrFail($id);
-        
+
         // Verificar que el usuario sea responsable de área
         $user = backpack_user();
-        if (!$user || !$user->hasRole('role_responsable_area', 'backpack')) {
+        if (! $user || ! $user->hasRole('role_responsable_area', 'backpack')) {
             abort(403, 'Solo los responsables de área pueden sugerir proveedores.');
         }
-        
+
         $suppliers = \App\Models\Supplier::all();
-        
+
         return view('admin.purchase-request.suggest-supplier', compact('purchaseRequest', 'suppliers'));
     }
 
@@ -2532,33 +2584,34 @@ class PurchaseRequestCrudController extends CrudController
     {
         // Verificar que el usuario sea responsable de área
         $user = backpack_user();
-        if (!$user || !$user->hasRole('role_responsable_area', 'backpack')) {
+        if (! $user || ! $user->hasRole('role_responsable_area', 'backpack')) {
             abort(403, 'Solo los responsables de área pueden sugerir proveedores.');
         }
-        
+
         $purchaseRequest = \App\Models\PurchaseRequest::findOrFail($id);
         $request = request();
-        
+
         // Validar que no exista ya una sugerencia del mismo usuario para el mismo proveedor
         $existingSuggestion = \App\Models\SupplierSuggestion::where('purchase_request_id', $id)
             ->where('supplier_id', $request->input('supplier_id'))
             ->where('suggested_by', $user->id)
             ->first();
-        
+
         if ($existingSuggestion) {
             \Alert::error('Ya has sugerido este proveedor para esta solicitud.')->flash();
+
             return redirect()->back();
         }
-        
+
         \App\Models\SupplierSuggestion::create([
             'purchase_request_id' => $id,
             'supplier_id' => $request->input('supplier_id'),
             'suggested_by' => $user->id,
             'justification' => $request->input('justification'),
         ]);
-        
+
         \Alert::success('Proveedor sugerido exitosamente.')->flash();
-        
+
         return redirect()->route('purchase-request.show', $id);
     }
 
@@ -2569,43 +2622,44 @@ class PurchaseRequestCrudController extends CrudController
     {
         $purchaseRequest = \App\Models\PurchaseRequest::with('marketRates')->findOrFail($id);
         $user = backpack_user();
-        
-        if (!$user) {
+
+        if (! $user) {
             abort(403, 'No tienes permiso para aprobar solicitudes de compra.');
         }
-        
+
         // Verificar si el usuario puede aprobar esta solicitud
-        if (!$purchaseRequest->canBeApprovedBy($user)) {
+        if (! $purchaseRequest->canBeApprovedBy($user)) {
             // Verificar si es administrador del instituto y supera su límite
             if ($user->hasRole('role_admin_institucion', 'backpack')) {
                 $adminLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_admin_institucion');
-                abort(403, 'No puedes aprobar esta solicitud de compra porque supera tu límite de autorización de $' . number_format($adminLimit, 2) . '. El monto de la solicitud es $' . number_format($purchaseRequest->total_amount, 2) . '.');
+                abort(403, 'No puedes aprobar esta solicitud de compra porque supera tu límite de autorización de $'.number_format($adminLimit, 2).'. El monto de la solicitud es $'.number_format($purchaseRequest->total_amount, 2).'.');
             }
             // Verificar si es apoderado y supera su límite
             if ($user->hasRole('role_apoderado', 'backpack')) {
                 $apoderadoLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_apoderado');
-                abort(403, 'No puedes aprobar esta solicitud de compra porque supera tu límite de autorización de $' . number_format($apoderadoLimit, 2) . '. El monto de la solicitud es $' . number_format($purchaseRequest->total_amount, 2) . '.');
+                abort(403, 'No puedes aprobar esta solicitud de compra porque supera tu límite de autorización de $'.number_format($apoderadoLimit, 2).'. El monto de la solicitud es $'.number_format($purchaseRequest->total_amount, 2).'.');
             }
             // Verificar si es representante legal y supera su límite
             if ($user->hasRole('role_representante_legal', 'backpack')) {
                 $representanteLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_representante_legal');
-                abort(403, 'No puedes aprobar esta solicitud de compra porque supera tu límite de autorización de $' . number_format($representanteLimit, 2) . '. El monto de la solicitud es $' . number_format($purchaseRequest->total_amount, 2) . '.');
+                abort(403, 'No puedes aprobar esta solicitud de compra porque supera tu límite de autorización de $'.number_format($representanteLimit, 2).'. El monto de la solicitud es $'.number_format($purchaseRequest->total_amount, 2).'.');
             }
             abort(403, 'No tienes permiso para aprobar esta solicitud de compra.');
         }
-        
+
         // Validar que la solicitud esté en estado pendiente
         if ($purchaseRequest->status !== 'Pendiente') {
             abort(403, 'Solo se pueden aprobar solicitudes con estado "Pendiente".');
         }
 
         // No permitir aprobar sin cotización seleccionada (salvo compra directa).
-        $hasAnySelectedQuotation = !empty($purchaseRequest->selected_market_rate_id)
+        $hasAnySelectedQuotation = ! empty($purchaseRequest->selected_market_rate_id)
             || $purchaseRequest->marketRates->contains(function ($mr) {
                 return (bool) ($mr->is_selected ?? false);
             });
         if (! $purchaseRequest->is_direct_purchase && ! $hasAnySelectedQuotation) {
             \Alert::error('Debe seleccionar al menos una cotización antes de aprobar la solicitud.')->flash();
+
             return redirect()->route('purchase-request.show', $id);
         }
 
@@ -2617,12 +2671,12 @@ class PurchaseRequestCrudController extends CrudController
             'requires_admin_approval' => $effectiveTotal > $comprasLimit,
         ]);
         $purchaseRequest->refresh();
-        
+
         $request = request();
         $request->validate([
             'approval_justification' => 'required|string|max:1000',
         ]);
-        
+
         // Actualizar la solicitud como aprobada
         $purchaseRequest->update([
             'status' => 'Aprobada',
@@ -2631,9 +2685,16 @@ class PurchaseRequestCrudController extends CrudController
             'approval_justification' => $request->input('approval_justification'),
             'requires_admin_approval' => false,
         ]);
-        
+
+        $approverIsSuperior = $user->hasRole('role_admin_institucion', 'backpack')
+            || $user->hasRole('role_apoderado', 'backpack')
+            || $user->hasRole('role_representante_legal', 'backpack');
+        if ($approverIsSuperior) {
+            PurchaseRequestNotificationService::notifyComprasRequestApprovedBySuperior($purchaseRequest->fresh());
+        }
+
         \Alert::success('Solicitud de compra aprobada exitosamente.')->flash();
-        
+
         return redirect()->route('purchase-request.show', $id);
     }
 
@@ -2675,7 +2736,7 @@ class PurchaseRequestCrudController extends CrudController
             });
         }
 
-        if (!empty($purchaseRequest->selected_market_rate_id)) {
+        if (! empty($purchaseRequest->selected_market_rate_id)) {
             $single = \App\Models\MarketRate::with('quoteDetails')->find($purchaseRequest->selected_market_rate_id);
             if ($single) {
                 return $this->getMarketRateEffectiveTotal($single);
@@ -2692,30 +2753,30 @@ class PurchaseRequestCrudController extends CrudController
     {
         $purchaseRequest = \App\Models\PurchaseRequest::findOrFail($id);
         $user = backpack_user();
-        
-        if (!$user) {
+
+        if (! $user) {
             abort(403, 'No tienes permiso para rechazar solicitudes de compra.');
         }
-        
+
         // Verificar si el usuario puede aprobar/rechazar esta solicitud
-        if (!$purchaseRequest->canBeApprovedBy($user)) {
+        if (! $purchaseRequest->canBeApprovedBy($user)) {
             abort(403, 'No tienes permiso para rechazar esta solicitud de compra.');
         }
-        
+
         // Validar que la solicitud esté en estado pendiente
         if ($purchaseRequest->status !== 'Pendiente') {
             abort(403, 'Solo se pueden rechazar solicitudes con estado "Pendiente".');
         }
-        
+
         // Actualizar la solicitud como rechazada
         $purchaseRequest->update([
             'status' => 'Rechazada',
             'approved_by' => $user->id,
             'approved_date' => now(),
         ]);
-        
+
         \Alert::warning('Solicitud de compra rechazada.')->flash();
-        
+
         return redirect()->route('purchase-request.show', $id);
     }
 
@@ -2726,27 +2787,27 @@ class PurchaseRequestCrudController extends CrudController
     {
         $purchaseRequest = \App\Models\PurchaseRequest::findOrFail($id);
         $user = backpack_user();
-        
-        if (!$user) {
+
+        if (! $user) {
             abort(403, 'No tienes permiso para marcar compras directas.');
         }
-        
+
         // Solo responsables de compras pueden marcar como compra directa
-        if (!$user->hasRole('role_responsable_compras', 'backpack')) {
+        if (! $user->hasRole('role_responsable_compras', 'backpack')) {
             abort(403, 'Solo el sector de compras puede marcar compras directas.');
         }
-        
+
         // Validar que la solicitud esté en estado pendiente
         if ($purchaseRequest->status !== 'Pendiente') {
             abort(403, 'Solo se pueden marcar como compra directa las solicitudes con estado "Pendiente".');
         }
-        
+
         $request = request();
         $request->validate([
             'direct_purchase_supplier_id' => 'required|exists:suppliers,id',
             'direct_purchase_justification' => 'required|string|max:1000',
         ]);
-        
+
         // Marcar como compra directa y solicitar autorización automáticamente
         $purchaseRequest->update([
             'is_direct_purchase' => true,
@@ -2756,9 +2817,11 @@ class PurchaseRequestCrudController extends CrudController
             'direct_purchase_authorization_requested_by' => $user->id,
             'direct_purchase_authorization_requested_at' => now(),
         ]);
-        
+
+        PurchaseRequestNotificationService::notifySuperiorsDirectPurchaseAuthorizationRequested($purchaseRequest->fresh());
+
         \Alert::success('Solicitud marcada como compra directa y autorización solicitada exitosamente. La solicitud está pendiente de aprobación por parte del administrador, apoderado o representante legal.')->flash();
-        
+
         return redirect()->route('purchase-request.show', $id);
     }
 
@@ -2769,38 +2832,38 @@ class PurchaseRequestCrudController extends CrudController
     {
         $purchaseRequest = \App\Models\PurchaseRequest::findOrFail($id);
         $user = backpack_user();
-        
-        if (!$user) {
+
+        if (! $user) {
             abort(403, 'No tienes permiso para aprobar compras directas.');
         }
-        
+
         // Solo administrador, apoderado o representante legal pueden aprobar
-        $canApprove = $user->hasRole('role_admin_institucion', 'backpack') 
-                   || $user->hasRole('role_apoderado', 'backpack') 
+        $canApprove = $user->hasRole('role_admin_institucion', 'backpack')
+                   || $user->hasRole('role_apoderado', 'backpack')
                    || $user->hasRole('role_representante_legal', 'backpack');
-        
-        if (!$canApprove) {
+
+        if (! $canApprove) {
             abort(403, 'Solo el administrador del instituto, apoderado o representante legal pueden aprobar compras directas.');
         }
-        
+
         // Validar que sea una compra directa y que se haya solicitado autorización
-        if (!$purchaseRequest->is_direct_purchase) {
+        if (! $purchaseRequest->is_direct_purchase) {
             abort(403, 'Esta solicitud no está marcada como compra directa.');
         }
-        
-        if (!$purchaseRequest->direct_purchase_authorization_requested) {
+
+        if (! $purchaseRequest->direct_purchase_authorization_requested) {
             abort(403, 'No se ha solicitado autorización para esta compra directa.');
         }
-        
+
         // Validar que no esté ya aprobada o rechazada
         if ($purchaseRequest->direct_purchase_authorized_by || $purchaseRequest->direct_purchase_authorization_rejected) {
             abort(403, 'Esta compra directa ya ha sido procesada.');
         }
-        
+
         // Validar que el usuario tenga límite suficiente para aprobar
         $userLimit = 0;
         $userRoleName = '';
-        
+
         if ($user->hasRole('role_admin_institucion', 'backpack')) {
             $userLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_admin_institucion');
             $userRoleName = 'administrador del instituto';
@@ -2811,11 +2874,11 @@ class PurchaseRequestCrudController extends CrudController
             $userLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_representante_legal');
             $userRoleName = 'representante legal';
         }
-        
+
         if ($userLimit > 0 && $purchaseRequest->total_amount > $userLimit) {
-            abort(403, 'No puedes aprobar esta compra directa porque supera tu límite de autorización de $' . number_format($userLimit, 2) . '. El monto de la compra directa es $' . number_format($purchaseRequest->total_amount, 2) . '.');
+            abort(403, 'No puedes aprobar esta compra directa porque supera tu límite de autorización de $'.number_format($userLimit, 2).'. El monto de la compra directa es $'.number_format($purchaseRequest->total_amount, 2).'.');
         }
-        
+
         // Aprobar la compra directa y la solicitud, y cambiar el tipo de compra
         $purchaseRequest->update([
             'direct_purchase_authorized_by' => $user->id,
@@ -2827,9 +2890,11 @@ class PurchaseRequestCrudController extends CrudController
             'requires_admin_approval' => false,
             'purchase_type' => 'directa',
         ]);
-        
+
+        PurchaseRequestNotificationService::notifyComprasRequestApprovedBySuperior($purchaseRequest->fresh());
+
         \Alert::success('Compra directa aprobada exitosamente. La solicitud de compra ha sido aprobada.')->flash();
-        
+
         return redirect()->route('purchase-request.show', $id);
     }
 
@@ -2840,47 +2905,47 @@ class PurchaseRequestCrudController extends CrudController
     {
         $purchaseRequest = \App\Models\PurchaseRequest::findOrFail($id);
         $user = backpack_user();
-        
-        if (!$user) {
+
+        if (! $user) {
             abort(403, 'No tienes permiso para rechazar compras directas.');
         }
-        
+
         // Solo administrador, apoderado o representante legal pueden rechazar
-        $canReject = $user->hasRole('role_admin_institucion', 'backpack') 
-                  || $user->hasRole('role_apoderado', 'backpack') 
+        $canReject = $user->hasRole('role_admin_institucion', 'backpack')
+                  || $user->hasRole('role_apoderado', 'backpack')
                   || $user->hasRole('role_representante_legal', 'backpack');
-        
-        if (!$canReject) {
+
+        if (! $canReject) {
             abort(403, 'Solo el administrador del instituto, apoderado o representante legal pueden rechazar compras directas.');
         }
-        
+
         // Validar que sea una compra directa y que se haya solicitado autorización
-        if (!$purchaseRequest->is_direct_purchase) {
+        if (! $purchaseRequest->is_direct_purchase) {
             abort(403, 'Esta solicitud no está marcada como compra directa.');
         }
-        
-        if (!$purchaseRequest->direct_purchase_authorization_requested) {
+
+        if (! $purchaseRequest->direct_purchase_authorization_requested) {
             abort(403, 'No se ha solicitado autorización para esta compra directa.');
         }
-        
+
         // Validar que no esté ya aprobada o rechazada
         if ($purchaseRequest->direct_purchase_authorized_by || $purchaseRequest->direct_purchase_authorization_rejected) {
             abort(403, 'Esta compra directa ya ha sido procesada.');
         }
-        
+
         $request = request();
         $request->validate([
             'rejection_reason' => 'required|string|max:1000',
         ]);
-        
+
         // Rechazar la autorización
         $purchaseRequest->update([
             'direct_purchase_authorization_rejected' => true,
             'direct_purchase_authorization_rejection_reason' => $request->input('rejection_reason'),
         ]);
-        
+
         \Alert::warning('Autorización de compra directa rechazada.')->flash();
-        
+
         return redirect()->route('purchase-request.show', $id);
     }
 
@@ -2900,6 +2965,7 @@ class PurchaseRequestCrudController extends CrudController
         $purchaseRequest = \App\Models\PurchaseRequest::with(['details.product', 'marketRates.quoteDetails'])->findOrFail($id);
         if ($purchaseRequest->status === 'Completada') {
             \Alert::error('No se puede modificar la asignación: la solicitud ya está completada.')->flash();
+
             return redirect()->back();
         }
 
@@ -2908,6 +2974,7 @@ class PurchaseRequestCrudController extends CrudController
         } catch (\Throwable $e) {
             \Log::error('ensureSelectedMarketRateIdColumnExists failed', ['exception' => $e]);
             \Alert::error('No se pudo preparar la base de datos para asignar cotizaciones. Ejecute: php artisan migrate --path=database/migrations/2026_04_15_130000_ensure_selected_market_rate_id_on_purchase_request_details_table.php')->flash();
+
             return redirect()->back();
         }
 
@@ -2919,22 +2986,26 @@ class PurchaseRequestCrudController extends CrudController
             $marketRateId = isset($detailQuotes[$detail->id]) ? (int) $detailQuotes[$detail->id] : null;
             if ($marketRateId === null) {
                 \App\Models\PurchaseRequestDetail::where('id', $detail->id)->update(['selected_market_rate_id' => null]);
+
                 continue;
             }
-            if (!in_array($marketRateId, $marketRateIds)) {
-                \Alert::error('Cotización inválida para el producto ' . ($detail->product->name ?? '') . '.')->flash();
+            if (! in_array($marketRateId, $marketRateIds)) {
+                \Alert::error('Cotización inválida para el producto '.($detail->product->name ?? '').'.')->flash();
+
                 return redirect()->back();
             }
             $quoteDetail = $purchaseRequest->marketRates->firstWhere('id', $marketRateId)
                 ->quoteDetails->firstWhere('product_id', $detail->product_id);
-            if (!$quoteDetail) {
-                \Alert::error('La cotización seleccionada no incluye el producto: ' . ($detail->product->name ?? '') . '.')->flash();
+            if (! $quoteDetail) {
+                \Alert::error('La cotización seleccionada no incluye el producto: '.($detail->product->name ?? '').'.')->flash();
+
                 return redirect()->back();
             }
             \App\Models\PurchaseRequestDetail::where('id', $detail->id)->update(['selected_market_rate_id' => $marketRateId]);
         }
 
         \Alert::success('Asignación por producto guardada correctamente.')->flash();
+
         return redirect()->back();
     }
 
@@ -2952,14 +3023,14 @@ class PurchaseRequestCrudController extends CrudController
         if ($user && $user->hasRole('role_representante_legal', 'backpack')) {
             abort(403, 'El representante legal no puede generar órdenes de compra.');
         }
-        
+
         $purchaseRequest = \App\Models\PurchaseRequest::with([
             'selectedMarketRate.supplier',
             'selectedMarketRate.quoteDetails.product',
             'details.product',
             'details.selectedMarketRate.supplier',
             'details.selectedMarketRate.quoteDetails.product',
-            'responsibilityArea'
+            'responsibilityArea',
         ])->findOrFail($id);
 
         try {
@@ -2973,7 +3044,7 @@ class PurchaseRequestCrudController extends CrudController
         } catch (\Throwable $e) {
             \Log::error('ensure purchase request / OC detail columns failed', ['exception' => $e]);
         }
-        
+
         // Verificar que la solicitud esté aprobada antes de generar la orden
         if ($purchaseRequest->status !== 'Aprobada') {
             if ($purchaseRequest->requires_admin_approval) {
@@ -2981,17 +3052,18 @@ class PurchaseRequestCrudController extends CrudController
             } else {
                 \Alert::error('No se puede generar la orden de compra. La solicitud debe estar aprobada primero.')->flash();
             }
+
             return redirect()->back();
         }
-        
+
         // Si es compra directa autorizada, generar orden directamente sin cotizaciones
-        if ($purchaseRequest->is_direct_purchase 
-            && $purchaseRequest->direct_purchase_authorized_by 
+        if ($purchaseRequest->is_direct_purchase
+            && $purchaseRequest->direct_purchase_authorized_by
             && $purchaseRequest->direct_purchase_supplier_id
-            && !$purchaseRequest->direct_purchase_authorization_rejected) {
+            && ! $purchaseRequest->direct_purchase_authorization_rejected) {
             return $this->generatePurchaseOrderWithoutQuote($purchaseRequest, $purchaseRequest->direct_purchase_supplier_id);
         }
-        
+
         $totalAmount = $this->recalculateSelectedQuotationsTotalForPurchaseRequest($purchaseRequest);
         $purchaseRequest->update([
             'total_amount' => $totalAmount,
@@ -2999,44 +3071,53 @@ class PurchaseRequestCrudController extends CrudController
         $threshold = 60000;
         $quotationsCount = $this->countQuotationsForPurchaseRequest($purchaseRequest);
         $allDetailsHaveAssignment = $purchaseRequest->details->isNotEmpty()
-            && $purchaseRequest->details->every(fn ($d) => !empty($d->selected_market_rate_id));
+            && $purchaseRequest->details->every(fn ($d) => ! empty($d->selected_market_rate_id));
 
         // Flujo: asignación por producto (una OC con varios proveedores)
         if ($allDetailsHaveAssignment) {
             if ($totalAmount > $threshold && $quotationsCount < 3) {
-                \Alert::error('Para solicitudes mayores a $' . number_format($threshold, 2) . ' se requieren al menos 3 cotizaciones.')->flash();
+                \Alert::error('Para solicitudes mayores a $'.number_format($threshold, 2).' se requieren al menos 3 cotizaciones.')->flash();
+
                 return redirect()->back();
             }
             $productsWithFewer = $purchaseRequest->getProductsWithFewerThanThreeQuotations();
             if ($totalAmount > $threshold && $productsWithFewer->isNotEmpty()) {
-                \Alert::error('Cada producto debe estar en al menos 3 cotizaciones. Productos faltantes: ' . $productsWithFewer->pluck('name')->implode(', ') . '.')->flash();
+                \Alert::error('Cada producto debe estar en al menos 3 cotizaciones. Productos faltantes: '.$productsWithFewer->pluck('name')->implode(', ').'.')->flash();
+
                 return redirect()->back();
             }
+
             return $this->generatePurchaseOrderFromPerProductAssignment($purchaseRequest);
         }
 
         // Flujo clásico: una cotización para toda la solicitud
         if ($totalAmount > $threshold) {
             if ($quotationsCount < 3) {
-                \Alert::error('Para solicitudes de compra mayores a $' . number_format($threshold, 2) . ' se requieren OBLIGATORIAMENTE 3 cotizaciones. Actualmente hay ' . $quotationsCount . ' cotización(es). Debe agregar ' . (3 - $quotationsCount) . ' cotización(es) más antes de generar la orden de compra.')->flash();
+                \Alert::error('Para solicitudes de compra mayores a $'.number_format($threshold, 2).' se requieren OBLIGATORIAMENTE 3 cotizaciones. Actualmente hay '.$quotationsCount.' cotización(es). Debe agregar '.(3 - $quotationsCount).' cotización(es) más antes de generar la orden de compra.')->flash();
+
                 return redirect()->back();
             }
             $productsWithFewerQuotations = $purchaseRequest->getProductsWithFewerThanThreeQuotations();
             if ($productsWithFewerQuotations->isNotEmpty()) {
                 $names = $productsWithFewerQuotations->pluck('name')->implode(', ');
-                \Alert::error('No se puede generar la orden: los siguientes productos deben estar cotizados en al menos 3 cotizaciones distintas: ' . $names . '. Agregue estos productos a más cotizaciones antes de generar la orden de compra.')->flash();
+                \Alert::error('No se puede generar la orden: los siguientes productos deben estar cotizados en al menos 3 cotizaciones distintas: '.$names.'. Agregue estos productos a más cotizaciones antes de generar la orden de compra.')->flash();
+
                 return redirect()->back();
             }
-            if (!$purchaseRequest->selected_market_rate_id) {
+            if (! $purchaseRequest->selected_market_rate_id) {
                 \Alert::error('Debe seleccionar una cotización antes de generar la orden de compra, o asignar una cotización por producto en la sección inferior.')->flash();
+
                 return redirect()->back();
             }
+
             return $this->generatePurchaseOrderFromQuote($purchaseRequest);
         }
-        if (!$purchaseRequest->selected_market_rate_id) {
+        if (! $purchaseRequest->selected_market_rate_id) {
             \Alert::error('Debe seleccionar una cotización antes de generar la orden de compra, o asignar una cotización por producto en la sección inferior.')->flash();
+
             return redirect()->back();
         }
+
         return $this->generatePurchaseOrderFromQuote($purchaseRequest);
     }
 
@@ -3052,20 +3133,20 @@ class PurchaseRequestCrudController extends CrudController
         $paymentConditionsBySupplierId = [];
         foreach ($purchaseRequest->details as $requestDetail) {
             $marketRate = $requestDetail->selectedMarketRate;
-            if (!$marketRate || !$requestDetail->product) {
+            if (! $marketRate || ! $requestDetail->product) {
                 continue;
             }
             $quoteDetail = $marketRate->quoteDetails->firstWhere('product_id', $requestDetail->product_id);
-            if (!$quoteDetail) {
+            if (! $quoteDetail) {
                 continue;
             }
             $input = $this->findOrCreateInputFromProduct($quoteDetail->product);
-            if (!$input) {
+            if (! $input) {
                 continue;
             }
             $unitPrice = $this->parseMonetaryValue($quoteDetail->unit_price);
             $sid = $marketRate->supplier_id;
-            if (!isset($linesBySupplier[$sid])) {
+            if (! isset($linesBySupplier[$sid])) {
                 $linesBySupplier[$sid] = [];
             }
             $pm = $marketRate->payment_method;
@@ -3081,6 +3162,7 @@ class PurchaseRequestCrudController extends CrudController
 
         if ($linesBySupplier === []) {
             \Alert::error('No se pudo generar la orden: no hay líneas válidas con cotización asignada.')->flash();
+
             return redirect()->back();
         }
 
@@ -3133,25 +3215,25 @@ class PurchaseRequestCrudController extends CrudController
 
         $numbers = collect($createdOrders)->pluck('number')->implode(', ');
         $msg = count($createdOrders) > 1
-            ? 'Órdenes de compra generadas (' . count($createdOrders) . ' proveedores): ' . $numbers
-            : 'Orden de compra generada exitosamente: ' . $numbers;
+            ? 'Órdenes de compra generadas ('.count($createdOrders).' proveedores): '.$numbers
+            : 'Orden de compra generada exitosamente: '.$numbers;
         \Alert::success($msg)->flash();
 
         return redirect()->route('purchase-order.show', $createdOrders[0]->id);
     }
-    
+
     /**
      * Generate purchase order from selected quote
      */
     private function generatePurchaseOrderFromQuote($purchaseRequest)
     {
         $request = request();
-        
+
         $orderNumber = \App\Models\PurchaseOrder::allocateNextFormattedNumber($purchaseRequest->responsibilityArea, 1);
 
         // Obtener fecha de emisión del request o usar la fecha actual
         $issueDate = $request->input('issue_date') ? \Carbon\Carbon::parse($request->input('issue_date')) : now();
-        
+
         $quoteDetails = $purchaseRequest->selectedMarketRate->quoteDetails;
 
         $supplierId = $purchaseRequest->selectedMarketRate->supplier_id;
@@ -3166,12 +3248,12 @@ class PurchaseRequestCrudController extends CrudController
             'purchase_request_id' => $purchaseRequest->id,
             'payment_conditions' => $purchaseRequest->selectedMarketRate?->payment_method,
         ]);
-        
+
         // Create purchase order details from quote (cada línea con su proveedor)
         foreach ($quoteDetails as $quoteDetail) {
             // Buscar o crear el Input correspondiente al Product
             $input = $this->findOrCreateInputFromProduct($quoteDetail->product);
-            
+
             if ($input) {
                 $unitPrice = $this->parseMonetaryValue($quoteDetail->unit_price);
                 \App\Models\PurchaseOrderDetail::create([
@@ -3183,43 +3265,44 @@ class PurchaseRequestCrudController extends CrudController
                 ]);
             }
         }
-        
+
         // Update purchase request status and type (preservar 'internet' si aplica)
         $newType = ($purchaseRequest->purchase_type === 'internet') ? 'internet' : 'normal';
         $purchaseRequest->update([
             'status' => 'Completada',
-            'purchase_type' => $newType
+            'purchase_type' => $newType,
         ]);
-        \Alert::success('Orden de compra generada exitosamente: ' . $purchaseOrder->number)->flash();
+        \Alert::success('Orden de compra generada exitosamente: '.$purchaseOrder->number)->flash();
+
         return redirect()->route('purchase-order.show', $purchaseOrder->id);
     }
-    
+
     /**
      * Generate purchase order without quote (for amounts <= 60000)
      */
     private function generatePurchaseOrderWithoutQuote($purchaseRequest, $supplierId)
     {
         $request = request();
-        
+
         // Validar que el proveedor existe
         $supplier = \App\Models\Supplier::findOrFail($supplierId);
-        
+
         $orderNumber = \App\Models\PurchaseOrder::allocateNextFormattedNumber($purchaseRequest->responsibilityArea, 1);
 
         // Obtener fecha de emisión del request o usar la fecha actual
         $issueDate = $request->input('issue_date') ? \Carbon\Carbon::parse($request->input('issue_date')) : now();
-        
+
         // Obtener precios del request
         $prices = $request->input('prices', []);
         $lines = [];
 
         foreach ($purchaseRequest->details as $requestDetail) {
-            if (!$requestDetail->product) {
+            if (! $requestDetail->product) {
                 continue;
             }
 
             $input = $this->findOrCreateInputFromProduct($requestDetail->product);
-            if (!$input) {
+            if (! $input) {
                 continue;
             }
 
@@ -3235,9 +3318,10 @@ class PurchaseRequestCrudController extends CrudController
 
         if (empty($lines)) {
             \Alert::error('No se pudo generar la orden: no hay líneas válidas para crear la OC.')->flash();
+
             return redirect()->back();
         }
-        
+
         // Create purchase order
         $purchaseOrder = \App\Models\PurchaseOrder::create([
             'number' => $orderNumber,
@@ -3249,7 +3333,7 @@ class PurchaseRequestCrudController extends CrudController
             'purchase_request_id' => $purchaseRequest->id,
             'payment_conditions' => $purchaseRequest->selectedMarketRate?->payment_method,
         ]);
-        
+
         // Create purchase order details from purchase request details (cada línea con el mismo proveedor)
         foreach ($lines as $line) {
             \App\Models\PurchaseOrderDetail::create([
@@ -3260,7 +3344,7 @@ class PurchaseRequestCrudController extends CrudController
                 'unit_price' => $line['unit_price'],
             ]);
         }
-        
+
         // Determinar el tipo de compra (preservar 'internet' si ya estaba marcada)
         $purchaseType = ($purchaseRequest->purchase_type === 'internet') ? 'internet' : 'normal';
         $totalAmount = $this->recalculateSelectedQuotationsTotalForPurchaseRequest($purchaseRequest);
@@ -3272,13 +3356,14 @@ class PurchaseRequestCrudController extends CrudController
                 $purchaseType = 'rapida';
             }
         }
-        
+
         // Update purchase request status and type
         $purchaseRequest->update([
             'status' => 'Completada',
-            'purchase_type' => $purchaseType
+            'purchase_type' => $purchaseType,
         ]);
-        \Alert::success('Orden de compra generada exitosamente: ' . $purchaseOrder->number)->flash();
+        \Alert::success('Orden de compra generada exitosamente: '.$purchaseOrder->number)->flash();
+
         return redirect()->route('purchase-order.show', $purchaseOrder->id);
     }
 
@@ -3306,12 +3391,13 @@ class PurchaseRequestCrudController extends CrudController
             $value = str_replace(',', '.', $value);
         }
         $value = preg_replace('/[^0-9.\-]/', '', $value);
-        if ($value === '' || !is_numeric($value)) {
+        if ($value === '' || ! is_numeric($value)) {
             return 0.0;
         }
+
         return (float) $value;
     }
-    
+
     /**
      * Find or create Input from Product
      */
@@ -3319,7 +3405,7 @@ class PurchaseRequestCrudController extends CrudController
     {
         // Intentar encontrar un input con el mismo nombre
         $input = \App\Models\Input::where('name', $product->name)->first();
-        
+
         if ($input) {
             return $input;
         }
@@ -3336,36 +3422,37 @@ class PurchaseRequestCrudController extends CrudController
             \Log::info('Input creado desde Product', [
                 'product_id' => $product->id,
                 'input_id' => $input->id,
-                'name' => $input->name
+                'name' => $input->name,
             ]);
 
             return $input;
         } catch (\Exception $e) {
             \Log::error('Error al crear input desde Product', [
                 'product_id' => $product->id,
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ]);
+
             return null;
         }
     }
 
-
     /**
      * Define what happens when the Show operation is loaded.
-     * 
+     *
      * @see https://backpackforlaravel.com/docs/crud-operation-show
+     *
      * @return void
      */
     protected function setupShowOperation()
     {
         CRUD::addClause('with', ['responsibilityArea', 'requestingUser', 'approvedBy', 'details.product', 'details.selectedMarketRate.supplier', 'selectedMarketRate.supplier', 'selectedBy', 'convertedFromGeneralRequest', 'deliveries.details', 'purchaseOrders.paymentOrders', 'purchaseOrders.receptions', 'directPurchaseSupplier', 'directPurchaseAuthorizationRequestedBy', 'directPurchaseAuthorizedBy', 'marketRates']);
-        
+
         // Ocultar botón de eliminar para role_admin_institucion, role_apoderado y role_representante_legal
         $user = backpack_user();
         if ($user && ($user->hasRole('role_admin_institucion', 'backpack') || $user->hasRole('role_apoderado', 'backpack') || $user->hasRole('role_representante_legal', 'backpack'))) {
             CRUD::removeButton('delete');
         }
-        
+
         CRUD::column('request_number')->label('Número de Solicitud');
         CRUD::column('request_date')->label('Fecha');
         CRUD::column('status')->label('Estado');
@@ -3374,7 +3461,7 @@ class PurchaseRequestCrudController extends CrudController
             ->value(function ($entry) {
                 $text = $entry->justification ?? '';
 
-                return '<div class="text-break" style="white-space: pre-wrap; word-break: break-word;">' . e($text) . '</div>';
+                return '<div class="text-break" style="white-space: pre-wrap; word-break: break-word;">'.e($text).'</div>';
             });
         CRUD::column('observations')->label('Observaciones');
         CRUD::column('responsibilityArea.name')->label('Área');
@@ -3382,10 +3469,10 @@ class PurchaseRequestCrudController extends CrudController
         CRUD::column('approvedBy.name')->label('Aprobada por');
         CRUD::column('approved_date')->label('Fecha Aprobación');
         CRUD::column('total_amount')->label('Monto total');
-        
+
         // Columna para mostrar si requiere aprobación de administrador
         CRUD::column('approval_status')->label('Estado de Aprobación')->type('custom_html')
-            ->value(function($entry) {
+            ->value(function ($entry) {
                 if ($entry->status === 'Rechazada') {
                     return '<span class="badge bg-danger">Rechazada</span>';
                 }
@@ -3409,34 +3496,34 @@ class PurchaseRequestCrudController extends CrudController
                     }
 
                     if ($requiredRole) {
-                        return '<span class="badge bg-warning">Requiere aprobación de ' . e($requiredRole) . ' (Monto: $' . number_format($total, 2) . ')</span>';
+                        return '<span class="badge bg-warning">Requiere aprobación de '.e($requiredRole).' (Monto: $'.number_format($total, 2).')</span>';
                     }
 
-                    return '<span class="badge bg-danger">Monto supera todos los límites de aprobación (Monto: $' . number_format($total, 2) . ')</span>';
+                    return '<span class="badge bg-danger">Monto supera todos los límites de aprobación (Monto: $'.number_format($total, 2).')</span>';
                 } else {
                     return '<span class="badge bg-secondary">Pendiente</span>';
                 }
             });
 
         CRUD::column('total_amount')->label('Monto Total')->type('number')->decimals(2)->prefix('$');
-        
+
         // Eliminar completamente la sección de adjuntos
         CRUD::removeColumn('attachments');
 
         // Agregar campo personalizado para mostrar información de la solicitud general de origen
         CRUD::column('general_request_info')->label('Solicitud General de Origen')->type('custom_html')
-            ->value(function($entry) {
-                if (!$entry->convertedFromGeneralRequest) {
+            ->value(function ($entry) {
+                if (! $entry->convertedFromGeneralRequest) {
                     return '<div class="alert alert-secondary text-dark">
                         <i class="la la-info-circle"></i> Esta solicitud de compra no fue convertida desde una solicitud general.
                     </div>';
                 }
-                
+
                 $generalRequest = $entry->convertedFromGeneralRequest;
                 // Cargar los detalles de productos con entregas
                 $generalRequest->load('details.product', 'deliveries.details');
                 $generalDetails = $generalRequest->details;
-                
+
                 $html = '<div class="card border-info">';
                 $html .= '<div class="card-header bg-info text-white">';
                 $html .= '<h6 class="mb-0"><i class="la la-file-alt"></i> Solicitud General de Origen</h6>';
@@ -3444,8 +3531,8 @@ class PurchaseRequestCrudController extends CrudController
                 $html .= '<div class="card-body">';
                 $html .= '<div class="row">';
                 $html .= '<div class="col-md-6">';
-                $html .= '<p class="mb-1"><strong>Número:</strong> ' . e($generalRequest->number ?? 'N/A') . '</p>';
-                $html .= '<p class="mb-1"><strong>Título:</strong> ' . e($generalRequest->title ?? 'N/A') . '</p>';
+                $html .= '<p class="mb-1"><strong>Número:</strong> '.e($generalRequest->number ?? 'N/A').'</p>';
+                $html .= '<p class="mb-1"><strong>Título:</strong> '.e($generalRequest->title ?? 'N/A').'</p>';
                 $html .= '<p class="mb-1"><strong>Estado:</strong> ';
                 $status = $generalRequest->status ?? 'N/A';
                 $statusClass = strtolower(str_replace([' ', '_'], '-', $status));
@@ -3458,29 +3545,29 @@ class PurchaseRequestCrudController extends CrudController
                     'entregada-totalmente' => 'success',
                 ];
                 $badgeColor = $statusColors[$statusClass] ?? 'secondary';
-                $html .= '<span class="badge bg-' . $badgeColor . '">' . ucfirst(str_replace('_', ' ', $status)) . '</span>';
+                $html .= '<span class="badge bg-'.$badgeColor.'">'.ucfirst(str_replace('_', ' ', $status)).'</span>';
                 $html .= '</p>';
                 $html .= '</div>';
                 $html .= '<div class="col-md-6">';
-                $html .= '<p class="mb-1"><strong>Área:</strong> ' . e($generalRequest->area->name ?? 'N/A') . '</p>';
-                $html .= '<p class="mb-1"><strong>Creada por:</strong> ' . e($generalRequest->createdBy->name ?? 'N/A') . '</p>';
-                $html .= '<p class="mb-1"><strong>Fecha de creación:</strong> ' . ($generalRequest->created_at ? $generalRequest->created_at->format('d/m/Y H:i') : 'N/A') . '</p>';
+                $html .= '<p class="mb-1"><strong>Área:</strong> '.e($generalRequest->area->name ?? 'N/A').'</p>';
+                $html .= '<p class="mb-1"><strong>Creada por:</strong> '.e($generalRequest->createdBy->name ?? 'N/A').'</p>';
+                $html .= '<p class="mb-1"><strong>Fecha de creación:</strong> '.($generalRequest->created_at ? $generalRequest->created_at->format('d/m/Y H:i') : 'N/A').'</p>';
                 $html .= '</div>';
                 $html .= '</div>';
                 if ($generalRequest->description) {
                     $html .= '<div class="row mt-2">';
                     $html .= '<div class="col-12">';
                     $html .= '<p class="mb-1"><strong>Descripción:</strong></p>';
-                    $html .= '<p class="text-muted small mb-2">' . nl2br(e($generalRequest->description)) . '</p>';
+                    $html .= '<p class="text-muted small mb-2">'.nl2br(e($generalRequest->description)).'</p>';
                     $html .= '</div>';
                     $html .= '</div>';
                 }
-                
+
                 // Mostrar productos de la solicitud general
                 if ($generalDetails->isNotEmpty()) {
                     $html .= '<div class="row mt-3">';
                     $html .= '<div class="col-12">';
-                    $html .= '<p class="mb-2"><strong>Productos Solicitados (' . $generalDetails->count() . '):</strong></p>';
+                    $html .= '<p class="mb-2"><strong>Productos Solicitados ('.$generalDetails->count().'):</strong></p>';
                     $html .= '<div class="table-responsive" style="max-height: 300px; overflow-y: auto;">';
                     $html .= '<table class="table table-sm table-bordered table-striped mb-0" style="font-size: 0.95rem;">';
                     $html .= '<thead class="table-light" style="position: sticky; top: 0; z-index: 10;">';
@@ -3494,7 +3581,7 @@ class PurchaseRequestCrudController extends CrudController
                     $html .= '</tr>';
                     $html .= '</thead>';
                     $html .= '<tbody>';
-                    
+
                     foreach ($generalDetails as $detail) {
                         $productName = $detail->product->name ?? 'Producto no encontrado';
                         if (is_array($productName)) {
@@ -3505,7 +3592,7 @@ class PurchaseRequestCrudController extends CrudController
                             $unit = '';
                         }
                         $requestedQuantity = $detail->requested_quantity ?? 0;
-                        
+
                         // Calcular cantidad entregada
                         $deliveredQuantity = 0;
                         if ($generalRequest->deliveries) {
@@ -3516,9 +3603,9 @@ class PurchaseRequestCrudController extends CrudController
                                 }
                             }
                         }
-                        
+
                         $pendingQuantity = max(0, $requestedQuantity - $deliveredQuantity);
-                        
+
                         // Determinar estado de entrega
                         $deliveryStatus = 'Pendiente';
                         $deliveryStatusColor = 'secondary';
@@ -3536,26 +3623,26 @@ class PurchaseRequestCrudController extends CrudController
                             $deliveryStatusColor = 'warning';
                             $deliveryStatusIcon = 'exclamation-triangle';
                         }
-                        
+
                         $specifications = $detail->specifications ?? '';
                         if (is_array($specifications)) {
                             $specifications = '';
                         }
-                        
+
                         $html .= '<tr>';
-                        $html .= '<td><small><strong>' . e($productName) . '</strong>';
+                        $html .= '<td><small><strong>'.e($productName).'</strong>';
                         if ($unit) {
-                            $html .= '<br><span class="text-muted">(' . e($unit) . ')</span>';
+                            $html .= '<br><span class="text-muted">('.e($unit).')</span>';
                         }
                         $html .= '</small></td>';
-                        $html .= '<td class="text-center"><small><strong>' . number_format($requestedQuantity) . '</strong></small></td>';
-                        $html .= '<td class="text-center"><small>' . number_format($deliveredQuantity) . '</small></td>';
-                        $html .= '<td class="text-center"><small>' . number_format($pendingQuantity) . '</small></td>';
-                        $html .= '<td class="text-center"><small><span class="badge bg-' . $deliveryStatusColor . '" title="' . $deliveryStatus . '"><i class="la la-' . $deliveryStatusIcon . '"></i> ' . $deliveryStatus . '</span></small></td>';
-                        $html .= '<td><small class="text-muted">' . ($specifications ? e(substr($specifications, 0, 40)) . (strlen($specifications) > 40 ? '...' : '') : '-') . '</small></td>';
+                        $html .= '<td class="text-center"><small><strong>'.number_format($requestedQuantity).'</strong></small></td>';
+                        $html .= '<td class="text-center"><small>'.number_format($deliveredQuantity).'</small></td>';
+                        $html .= '<td class="text-center"><small>'.number_format($pendingQuantity).'</small></td>';
+                        $html .= '<td class="text-center"><small><span class="badge bg-'.$deliveryStatusColor.'" title="'.$deliveryStatus.'"><i class="la la-'.$deliveryStatusIcon.'"></i> '.$deliveryStatus.'</span></small></td>';
+                        $html .= '<td><small class="text-muted">'.($specifications ? e(substr($specifications, 0, 40)).(strlen($specifications) > 40 ? '...' : '') : '-').'</small></td>';
                         $html .= '</tr>';
                     }
-                    
+
                     $html .= '</tbody>';
                     $html .= '</table>';
                     $html .= '</div>';
@@ -3568,26 +3655,26 @@ class PurchaseRequestCrudController extends CrudController
                     $html .= '</div>';
                     $html .= '</div>';
                 }
-                
+
                 $html .= '</div>';
                 $html .= '</div>';
-                
+
                 return $html;
             });
 
         // Agregar campo personalizado para mostrar detalles de productos
         CRUD::column('details_table')->label('Detalles de Productos')->type('custom_html')
-            ->value(function($entry) {
+            ->value(function ($entry) {
                 $entry->loadMissing(['details.product']);
                 $details = $entry->details;
-                
+
                 if ($details->isEmpty()) {
                     return '<div class="alert alert-info">No hay productos solicitados.</div>';
                 }
-                
+
                 $html = '<div class="card border-primary">';
                 $html .= '<div class="card-header bg-primary text-white">';
-                $html .= '<h6 class="mb-0"><i class="la la-shopping-cart"></i> Productos Solicitados <span class="badge bg-light text-primary ms-1">' . $details->count() . '</span></h6>';
+                $html .= '<h6 class="mb-0"><i class="la la-shopping-cart"></i> Productos Solicitados <span class="badge bg-light text-primary ms-1">'.$details->count().'</span></h6>';
                 $html .= '</div>';
                 $html .= '<div class="card-body p-0">';
                 $html .= '<div class="table-responsive">';
@@ -3603,13 +3690,13 @@ class PurchaseRequestCrudController extends CrudController
                 $html .= '</tr>';
                 $html .= '</thead>';
                 $html .= '<tbody>';
-                
+
                 foreach ($details as $index => $detail) {
                     $deliveredQuantity = $detail->delivered_quantity ?? 0;
                     $requestedQuantity = $detail->requested_quantity ?? 0;
                     $deliveryStatus = $detail->delivery_status ?? 'Pendiente';
                     $isFullyDelivered = $detail->is_fully_delivered ?? false;
-                    
+
                     // Determinar estado de recepción
                     $deliveryStatusColor = 'secondary';
                     $deliveryStatusIcon = 'clock';
@@ -3623,7 +3710,7 @@ class PurchaseRequestCrudController extends CrudController
                         $deliveryStatusColor = 'secondary';
                         $deliveryStatusIcon = 'clock';
                     }
-                    
+
                     $html .= '<tr>';
                     $lineNo = $index + 1;
                     $rawCatalogName = null;
@@ -3635,57 +3722,57 @@ class PurchaseRequestCrudController extends CrudController
                     $isGenericCatalog = is_string($rawCatalogName) && preg_match('/^producto\s+nuevo$/iu', $rawCatalogName);
 
                     $html .= '<td>';
-                    $html .= '<span class="badge bg-secondary me-1">#' . $lineNo . '</span>';
+                    $html .= '<span class="badge bg-secondary me-1">#'.$lineNo.'</span>';
                     if ($isGenericCatalog && $specLine !== '') {
-                        $html .= '<strong>' . e($specLine) . '</strong>';
-                        $html .= '<br><small class="text-muted">Catálogo: ' . e((string) $rawCatalogName) . ' · ID ' . (int) $detail->product_id . '</small>';
+                        $html .= '<strong>'.e($specLine).'</strong>';
+                        $html .= '<br><small class="text-muted">Catálogo: '.e((string) $rawCatalogName).' · ID '.(int) $detail->product_id.'</small>';
                     } elseif ($isGenericCatalog) {
-                        $html .= '<strong>' . e('Ítem #' . $lineNo . ' (sin descripción en la línea)') . '</strong>';
-                        $html .= '<br><small class="text-muted">Nombre en catálogo: ' . e((string) $rawCatalogName) . ' · ID ' . (int) $detail->product_id . '</small>';
+                        $html .= '<strong>'.e('Ítem #'.$lineNo.' (sin descripción en la línea)').'</strong>';
+                        $html .= '<br><small class="text-muted">Nombre en catálogo: '.e((string) $rawCatalogName).' · ID '.(int) $detail->product_id.'</small>';
                     } else {
                         $label = ($rawCatalogName !== null && $rawCatalogName !== '') ? (string) $rawCatalogName : 'Sin catálogo';
-                        $html .= '<strong>' . e($label) . '</strong>';
+                        $html .= '<strong>'.e($label).'</strong>';
                         if ($detail->product_id) {
-                            $html .= '<br><small class="text-muted">ID producto ' . (int) $detail->product_id . '</small>';
+                            $html .= '<br><small class="text-muted">ID producto '.(int) $detail->product_id.'</small>';
                         }
                     }
-                    if ($detail->product && $detail->product->description && !is_array($detail->product->description)) {
-                        $html .= '<br><small class="text-muted">' . e($detail->product->description) . '</small>';
+                    if ($detail->product && $detail->product->description && ! is_array($detail->product->description)) {
+                        $html .= '<br><small class="text-muted">'.e($detail->product->description).'</small>';
                     }
                     $html .= '</td>';
-                    $html .= '<td class="text-center"><span class="badge bg-primary">' . number_format($requestedQuantity) . '</span>';
-                    if ($detail->product && $detail->product->unit_measurement && !is_array($detail->product->unit_measurement)) {
-                        $html .= '<br><small class="text-muted">' . e($detail->product->unit_measurement) . '</small>';
+                    $html .= '<td class="text-center"><span class="badge bg-primary">'.number_format($requestedQuantity).'</span>';
+                    if ($detail->product && $detail->product->unit_measurement && ! is_array($detail->product->unit_measurement)) {
+                        $html .= '<br><small class="text-muted">'.e($detail->product->unit_measurement).'</small>';
                     }
                     $html .= '</td>';
                     $html .= '<td class="text-center">';
-                    $html .= '<span class="badge bg-' . ($deliveredQuantity > 0 ? ($isFullyDelivered ? 'success' : 'warning') : 'secondary') . '" title="Cantidad recibida: ' . number_format($deliveredQuantity) . ' de ' . number_format($requestedQuantity) . '">';
-                    $html .= number_format($deliveredQuantity) . ' / ' . number_format($requestedQuantity);
+                    $html .= '<span class="badge bg-'.($deliveredQuantity > 0 ? ($isFullyDelivered ? 'success' : 'warning') : 'secondary').'" title="Cantidad recibida: '.number_format($deliveredQuantity).' de '.number_format($requestedQuantity).'">';
+                    $html .= number_format($deliveredQuantity).' / '.number_format($requestedQuantity);
                     $html .= '</span>';
                     $html .= '</td>';
                     $html .= '<td class="text-center">';
-                    $html .= '<span class="badge bg-' . $deliveryStatusColor . '" title="Estado de recepción: ' . e($deliveryStatus) . '">';
-                    $html .= '<i class="la la-' . $deliveryStatusIcon . '"></i> ' . e($deliveryStatus);
+                    $html .= '<span class="badge bg-'.$deliveryStatusColor.'" title="Estado de recepción: '.e($deliveryStatus).'">';
+                    $html .= '<i class="la la-'.$deliveryStatusIcon.'"></i> '.e($deliveryStatus);
                     $html .= '</span>';
                     $html .= '</td>';
                     $descSpecs = $detail->specifications ?? $detail->product_description ?? '';
                     if (is_array($descSpecs)) {
                         $descSpecs = '';
                     }
-                    $html .= '<td><small>' . ($descSpecs ? e($descSpecs) : '-') . '</small></td>';
+                    $html .= '<td><small>'.($descSpecs ? e($descSpecs) : '-').'</small></td>';
                     $status = $detail->status ?? 'Pendiente';
                     if (is_array($status)) {
                         $status = 'Pendiente';
                     }
-                    $html .= '<td class="text-center"><span class="badge bg-' . ($detail->status == 'Aprobada' ? 'success' : ($detail->status == 'Rechazada' ? 'danger' : 'warning')) . '">' . e((string) $status) . '</span></td>';
+                    $html .= '<td class="text-center"><span class="badge bg-'.($detail->status == 'Aprobada' ? 'success' : ($detail->status == 'Rechazada' ? 'danger' : 'warning')).'">'.e((string) $status).'</span></td>';
                     $html .= '</tr>';
                 }
-                
+
                 $html .= '</tbody>';
                 $html .= '</table>';
                 $html .= '</div>';
                 $html .= '</div>';
-                
+
                 // Agregar botón para editar/agregar productos si el usuario tiene permisos
                 $user = backpack_user();
                 if ($user) {
@@ -3697,10 +3784,10 @@ class PurchaseRequestCrudController extends CrudController
                             break;
                         }
                     }
-                    
+
                     $isOwnRequest = $entry->requesting_user_id == $user->id;
                     $isResponsableArea = $user->hasRole('role_responsable_area', 'backpack');
-                    
+
                     // Verificar si puede editar (solicitud completada: no editar productos desde aquí)
                     $canEdit = false;
                     if ($entry->status !== 'Completada') {
@@ -3715,28 +3802,28 @@ class PurchaseRequestCrudController extends CrudController
 
                     if ($canEdit) {
                         $html .= '<div class="card-footer bg-light text-end">';
-                        $html .= '<a href="' . backpack_url('purchase-request/' . $entry->id . '/edit') . '" class="btn btn-primary">';
+                        $html .= '<a href="'.backpack_url('purchase-request/'.$entry->id.'/edit').'" class="btn btn-primary">';
                         $html .= '<i class="la la-edit"></i> Editar Productos';
                         $html .= '</a>';
                         $html .= '</div>';
                     }
                 }
-                
+
                 $html .= '</div>';
-                
+
                 return $html;
             });
 
         // Agregar columna para acciones de compra directa (después de Detalles de Productos)
         CRUD::column('direct_purchase_actions')->label('Sugerencia de Compra Directa')->type('custom_html')
-            ->value(function($entry) {
+            ->value(function ($entry) {
                 $user = backpack_user();
-                if (!$user) {
+                if (! $user) {
                     return '';
                 }
-                
+
                 $html = '';
-                
+
                 // Si es una compra directa, mostrar información
                 if ($entry->is_direct_purchase) {
                     $html .= '<div class="card border-info mt-3">';
@@ -3744,41 +3831,41 @@ class PurchaseRequestCrudController extends CrudController
                     $html .= '<h6 class="mb-0"><i class="la la-hand-pointer"></i> Sugerencia de Compra Directa</h6>';
                     $html .= '</div>';
                     $html .= '<div class="card-body">';
-                    
+
                     // Mostrar proveedor
                     if ($entry->directPurchaseSupplier) {
-                        $html .= '<p class="mb-2"><strong>Proveedor:</strong> ' . e($entry->directPurchaseSupplier->company_name) . '</p>';
+                        $html .= '<p class="mb-2"><strong>Proveedor:</strong> '.e($entry->directPurchaseSupplier->company_name).'</p>';
                     }
-                    
+
                     // Mostrar justificación
                     if ($entry->direct_purchase_justification) {
-                        $html .= '<p class="mb-2"><strong>Justificación:</strong> ' . nl2br(e($entry->direct_purchase_justification)) . '</p>';
+                        $html .= '<p class="mb-2"><strong>Justificación:</strong> '.nl2br(e($entry->direct_purchase_justification)).'</p>';
                     }
-                    
+
                     // Si se solicitó autorización
                     if ($entry->direct_purchase_authorization_requested) {
                         if ($entry->directPurchaseAuthorizationRequestedBy) {
-                            $html .= '<p class="mb-2"><strong>Solicitud de autorización por:</strong> ' . e($entry->directPurchaseAuthorizationRequestedBy->name) . '</p>';
+                            $html .= '<p class="mb-2"><strong>Solicitud de autorización por:</strong> '.e($entry->directPurchaseAuthorizationRequestedBy->name).'</p>';
                         }
                         if ($entry->direct_purchase_authorization_requested_at) {
-                            $requestedAt = $entry->direct_purchase_authorization_requested_at instanceof \Carbon\Carbon 
-                                ? $entry->direct_purchase_authorization_requested_at->format('d/m/Y H:i') 
+                            $requestedAt = $entry->direct_purchase_authorization_requested_at instanceof \Carbon\Carbon
+                                ? $entry->direct_purchase_authorization_requested_at->format('d/m/Y H:i')
                                 : \Carbon\Carbon::parse($entry->direct_purchase_authorization_requested_at)->format('d/m/Y H:i');
-                            $html .= '<p class="mb-2"><strong>Fecha de solicitud:</strong> ' . $requestedAt . '</p>';
+                            $html .= '<p class="mb-2"><strong>Fecha de solicitud:</strong> '.$requestedAt.'</p>';
                         }
-                        
+
                         // Si está autorizada
                         if ($entry->direct_purchase_authorized_by) {
                             $html .= '<div class="alert alert-success mt-2">';
                             $html .= '<i class="la la-check-circle"></i> <strong>Autorizada</strong>';
                             if ($entry->directPurchaseAuthorizedBy) {
-                                $html .= ' por ' . e($entry->directPurchaseAuthorizedBy->name);
+                                $html .= ' por '.e($entry->directPurchaseAuthorizedBy->name);
                             }
                             if ($entry->direct_purchase_authorized_at) {
-                                $authorizedAt = $entry->direct_purchase_authorized_at instanceof \Carbon\Carbon 
-                                    ? $entry->direct_purchase_authorized_at->format('d/m/Y H:i') 
+                                $authorizedAt = $entry->direct_purchase_authorized_at instanceof \Carbon\Carbon
+                                    ? $entry->direct_purchase_authorized_at->format('d/m/Y H:i')
                                     : \Carbon\Carbon::parse($entry->direct_purchase_authorized_at)->format('d/m/Y H:i');
-                                $html .= ' el ' . $authorizedAt;
+                                $html .= ' el '.$authorizedAt;
                             }
                             $html .= '</div>';
                         }
@@ -3787,7 +3874,7 @@ class PurchaseRequestCrudController extends CrudController
                             $html .= '<div class="alert alert-danger mt-2">';
                             $html .= '<i class="la la-times-circle"></i> <strong>Autorización Rechazada</strong>';
                             if ($entry->direct_purchase_authorization_rejection_reason) {
-                                $html .= '<br><strong>Razón:</strong> ' . nl2br(e($entry->direct_purchase_authorization_rejection_reason));
+                                $html .= '<br><strong>Razón:</strong> '.nl2br(e($entry->direct_purchase_authorization_rejection_reason));
                             }
                             $html .= '</div>';
                         }
@@ -3796,12 +3883,12 @@ class PurchaseRequestCrudController extends CrudController
                             $html .= '<div class="alert alert-warning mt-2">';
                             $html .= '<i class="la la-clock"></i> <strong>Pendiente de autorización</strong>';
                             $html .= '</div>';
-                            
+
                             // Verificar si el usuario puede aprobar según su límite
                             $canApproveByLimit = false;
                             $userLimit = 0;
                             $userRoleName = '';
-                            
+
                             if ($user->hasRole('role_admin_institucion', 'backpack')) {
                                 $userLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_admin_institucion');
                                 $userRoleName = 'administrador del instituto';
@@ -3815,66 +3902,66 @@ class PurchaseRequestCrudController extends CrudController
                                 $userRoleName = 'representante legal';
                                 $canApproveByLimit = $entry->total_amount <= $userLimit;
                             }
-                            
+
                             // Si el usuario tiene el rol pero supera su límite, mostrar mensaje
-                            if (($user->hasRole('role_admin_institucion', 'backpack') || $user->hasRole('role_apoderado', 'backpack') || $user->hasRole('role_representante_legal', 'backpack')) && !$canApproveByLimit) {
+                            if (($user->hasRole('role_admin_institucion', 'backpack') || $user->hasRole('role_apoderado', 'backpack') || $user->hasRole('role_representante_legal', 'backpack')) && ! $canApproveByLimit) {
                                 $adminLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_admin_institucion');
                                 $apoderadoLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_apoderado');
                                 $representanteLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_representante_legal');
-                                
+
                                 $html .= '<div class="alert alert-danger mt-2">';
                                 $html .= '<i class="la la-exclamation-triangle"></i> ';
-                                $html .= '<strong>Límite excedido:</strong> Esta compra directa ($' . number_format($entry->total_amount, 2) . ') supera tu límite de autorización de $' . number_format($userLimit, 2) . '. ';
+                                $html .= '<strong>Límite excedido:</strong> Esta compra directa ($'.number_format($entry->total_amount, 2).') supera tu límite de autorización de $'.number_format($userLimit, 2).'. ';
                                 $html .= 'No puedes aprobar esta compra directa. ';
-                                
+
                                 // Mostrar quién puede aprobar
                                 $canApproveList = [];
                                 if ($entry->total_amount <= $adminLimit) {
-                                    $canApproveList[] = 'administrador del instituto (límite: $' . number_format($adminLimit, 2) . ')';
+                                    $canApproveList[] = 'administrador del instituto (límite: $'.number_format($adminLimit, 2).')';
                                 }
                                 if ($entry->total_amount <= $apoderadoLimit) {
-                                    $canApproveList[] = 'apoderado (límite: $' . number_format($apoderadoLimit, 2) . ')';
+                                    $canApproveList[] = 'apoderado (límite: $'.number_format($apoderadoLimit, 2).')';
                                 }
                                 if ($entry->total_amount <= $representanteLimit) {
-                                    $canApproveList[] = 'representante legal (límite: $' . number_format($representanteLimit, 2) . ')';
+                                    $canApproveList[] = 'representante legal (límite: $'.number_format($representanteLimit, 2).')';
                                 }
-                                
-                                if (!empty($canApproveList)) {
-                                    $html .= 'Puede ser aprobada por: ' . implode(', ', $canApproveList) . '.';
+
+                                if (! empty($canApproveList)) {
+                                    $html .= 'Puede ser aprobada por: '.implode(', ', $canApproveList).'.';
                                 } else {
                                     $html .= 'Ningún usuario tiene límite suficiente para aprobar esta compra directa.';
                                 }
-                                
+
                                 $html .= '</div>';
                             }
                             // Si el usuario puede aprobar, mostrar botones
                             elseif ($canApproveByLimit) {
                                 $html .= '<div class="mt-3">';
-                                
+
                                 // Formulario para aprobar
-                                $html .= '<form method="POST" action="' . route('purchase-request.approve-direct-purchase', $entry->id) . '" class="d-inline">';
+                                $html .= '<form method="POST" action="'.route('purchase-request.approve-direct-purchase', $entry->id).'" class="d-inline">';
                                 $html .= csrf_field();
                                 $html .= '<button type="submit" class="btn btn-success btn-sm" onclick="return confirm(\'¿Está seguro de aprobar esta compra directa?\')">';
                                 $html .= '<i class="la la-check"></i> Aprobar Compra Directa';
                                 $html .= '</button>';
                                 $html .= '</form>';
-                                
+
                                 // Botón para rechazar (con modal)
-                                $html .= '<button type="button" class="btn btn-danger btn-sm ms-2" data-toggle="modal" data-target="#rejectDirectPurchaseModal' . $entry->id . '">';
+                                $html .= '<button type="button" class="btn btn-danger btn-sm ms-2" data-toggle="modal" data-target="#rejectDirectPurchaseModal'.$entry->id.'">';
                                 $html .= '<i class="la la-times"></i> Rechazar Autorización';
                                 $html .= '</button>';
-                                
+
                                 $html .= '</div>';
-                                
+
                                 // Modal para rechazar
-                                $html .= '<div class="modal fade" id="rejectDirectPurchaseModal' . $entry->id . '" tabindex="-1" role="dialog">';
+                                $html .= '<div class="modal fade" id="rejectDirectPurchaseModal'.$entry->id.'" tabindex="-1" role="dialog">';
                                 $html .= '<div class="modal-dialog" role="document">';
                                 $html .= '<div class="modal-content">';
                                 $html .= '<div class="modal-header bg-danger text-white">';
                                 $html .= '<h5 class="modal-title">Rechazar Autorización de Compra Directa</h5>';
                                 $html .= '<button type="button" class="close text-white" data-dismiss="modal">&times;</button>';
                                 $html .= '</div>';
-                                $html .= '<form method="POST" action="' . route('purchase-request.reject-direct-purchase-authorization', $entry->id) . '">';
+                                $html .= '<form method="POST" action="'.route('purchase-request.reject-direct-purchase-authorization', $entry->id).'">';
                                 $html .= csrf_field();
                                 $html .= '<div class="modal-body">';
                                 $html .= '<div class="form-group">';
@@ -3893,7 +3980,7 @@ class PurchaseRequestCrudController extends CrudController
                             }
                         }
                     }
-                    
+
                     $html .= '</div>';
                     $html .= '</div>';
                 }
@@ -3906,42 +3993,42 @@ class PurchaseRequestCrudController extends CrudController
                     $html .= '<div class="card-body">';
                     $html .= '<p class="mb-3">Si existe un único proveedor para los productos solicitados (por especialidad), puede marcar esta solicitud como compra directa. Al marcarla, se solicitará automáticamente la autorización a nivel superior.</p>';
                     $html .= '<p class="mb-3 text-muted"><small><i class="la la-info-circle"></i> El responsable de área puede sugerir proveedores desde la sección de sugerencias de proveedores.</small></p>';
-                    
+
                     // Botón para abrir modal
-                    $modalId = 'markDirectPurchaseModal' . $entry->id;
-                    $supplierFieldId = 'direct_purchase_supplier_id_' . $entry->id;
-                    $justificationFieldId = 'direct_purchase_justification_' . $entry->id;
+                    $modalId = 'markDirectPurchaseModal'.$entry->id;
+                    $supplierFieldId = 'direct_purchase_supplier_id_'.$entry->id;
+                    $justificationFieldId = 'direct_purchase_justification_'.$entry->id;
                     $suppliers = \App\Models\Supplier::orderBy('company_name')->get();
-                    
-                    $html .= '<button type="button" class="btn btn-info btn-sm" data-toggle="modal" data-target="#' . $modalId . '">';
+
+                    $html .= '<button type="button" class="btn btn-info btn-sm" data-toggle="modal" data-target="#'.$modalId.'">';
                     $html .= '<i class="la la-hand-pointer"></i> Sugerir Compra Directa';
                     $html .= '</button>';
-                    
+
                     // Modal para marcar como compra directa
-                    $html .= '<div class="modal fade" id="' . $modalId . '" tabindex="-1" role="dialog" aria-labelledby="' . $modalId . 'Label" aria-hidden="true">';
+                    $html .= '<div class="modal fade" id="'.$modalId.'" tabindex="-1" role="dialog" aria-labelledby="'.$modalId.'Label" aria-hidden="true">';
                     $html .= '<div class="modal-dialog modal-lg" role="document">';
                     $html .= '<div class="modal-content">';
                     $html .= '<div class="modal-header bg-info text-white">';
-                    $html .= '<h5 class="modal-title" id="' . $modalId . 'Label">Sugerir Compra Directa</h5>';
+                    $html .= '<h5 class="modal-title" id="'.$modalId.'Label">Sugerir Compra Directa</h5>';
                     $html .= '<button type="button" class="close text-white" data-dismiss="modal" aria-label="Cerrar">';
                     $html .= '<span aria-hidden="true">&times;</span>';
                     $html .= '</button>';
                     $html .= '</div>';
-                    $html .= '<form method="POST" action="' . route('purchase-request.mark-direct-purchase', $entry->id) . '">';
+                    $html .= '<form method="POST" action="'.route('purchase-request.mark-direct-purchase', $entry->id).'">';
                     $html .= csrf_field();
                     $html .= '<div class="modal-body">';
                     $html .= '<div class="form-group">';
-                    $html .= '<label for="' . $supplierFieldId . '">Proveedor <span class="text-danger">*</span></label>';
-                    $html .= '<select name="direct_purchase_supplier_id" id="' . $supplierFieldId . '" class="form-control" required>';
+                    $html .= '<label for="'.$supplierFieldId.'">Proveedor <span class="text-danger">*</span></label>';
+                    $html .= '<select name="direct_purchase_supplier_id" id="'.$supplierFieldId.'" class="form-control" required>';
                     $html .= '<option value="">Seleccione un proveedor</option>';
                     foreach ($suppliers as $supplier) {
-                        $html .= '<option value="' . $supplier->id . '">' . e($supplier->company_name) . '</option>';
+                        $html .= '<option value="'.$supplier->id.'">'.e($supplier->company_name).'</option>';
                     }
                     $html .= '</select>';
                     $html .= '</div>';
                     $html .= '<div class="form-group">';
-                    $html .= '<label for="' . $justificationFieldId . '">Justificación <span class="text-danger">*</span></label>';
-                    $html .= '<textarea name="direct_purchase_justification" id="' . $justificationFieldId . '" class="form-control" rows="4" required placeholder="Explique por qué este proveedor es el único disponible para estos productos (especialidad, exclusividad, etc.)"></textarea>';
+                    $html .= '<label for="'.$justificationFieldId.'">Justificación <span class="text-danger">*</span></label>';
+                    $html .= '<textarea name="direct_purchase_justification" id="'.$justificationFieldId.'" class="form-control" rows="4" required placeholder="Explique por qué este proveedor es el único disponible para estos productos (especialidad, exclusividad, etc.)"></textarea>';
                     $html .= '</div>';
                     $html .= '</div>';
                     $html .= '<div class="modal-footer">';
@@ -3952,12 +4039,12 @@ class PurchaseRequestCrudController extends CrudController
                     $html .= '</div>';
                     $html .= '</div>';
                     $html .= '</div>';
-                    
+
                     // JavaScript para mover el modal al body y asegurar que funcione
                     $html .= '<script>
                     (function() {
                         function initDirectPurchaseModal() {
-                            var modal = document.getElementById("' . $modalId . '");
+                            var modal = document.getElementById("'.$modalId.'");
                             if (!modal) return;
                             
                             // Mover el modal al body si no está ahí
@@ -3967,9 +4054,9 @@ class PurchaseRequestCrudController extends CrudController
                             
                             // Asegurar que el botón funcione con jQuery
                             if (typeof jQuery !== "undefined" && jQuery.fn.modal) {
-                                jQuery("button[data-target=\'#' . $modalId . '\']").off("click").on("click", function(e) {
+                                jQuery("button[data-target=\'#'.$modalId.'\']").off("click").on("click", function(e) {
                                     e.preventDefault();
-                                    jQuery("#' . $modalId . '").appendTo("body").modal("show");
+                                    jQuery("#'.$modalId.'").appendTo("body").modal("show");
                                 });
                             }
                         }
@@ -3985,164 +4072,164 @@ class PurchaseRequestCrudController extends CrudController
                         setTimeout(initDirectPurchaseModal, 100);
                     })();
                     </script>';
-                    
+
                     $html .= '</div>';
                     $html .= '</div>';
                 }
-                
+
                 return $html;
             });
 
         // Agregar campo para mostrar cotizaciones disponibles.
         CRUD::column('market_rates_table')->label('Cotizaciones Disponibles')->type('custom_html')
-            ->value(function($entry) {
+            ->value(function ($entry) {
                 // Usar la relación del modelo en lugar de consulta directa
                 $entry->load(['marketRates.supplier', 'marketRates.quoteDetails.product']);
                 $marketRates = $entry->marketRates;
 
                 $quotationsViewer = backpack_user();
                 $representanteLegalSinAsignarPorProducto = $quotationsViewer && $quotationsViewer->hasRole('role_representante_legal', 'backpack');
-                
+
                 $html = '';
-                
+
                 if ($marketRates->isEmpty()) {
                     $html .= '<div class="alert alert-warning">No hay cotizaciones disponibles para los productos de esta solicitud.</div>';
                 } else {
                     $html .= '<div class="table-responsive">';
-                $html .= '<table class="table table-striped table-bordered">';
-                $html .= '<thead class="thead-dark">';
-                $html .= '<tr>';
-                $html .= '<th>Proveedor</th>';
-                $html .= '<th>Fecha</th>';
-                $html .= '<th>Total</th>';
-                $html .= '<th>Productos</th>';
-                $html .= '<th>Estado</th>';
-                $html .= '<th>Acciones</th>';
-                $html .= '</tr>';
-                $html .= '</thead>';
-                $html .= '<tbody>';
-                
-                foreach ($marketRates as $marketRate) {
-                    $isSelected = (bool) ($marketRate->is_selected || $entry->selected_market_rate_id == $marketRate->id);
-                    $rowClass = $isSelected ? 'table-success' : '';
-                    
-                    $html .= '<tr class="' . $rowClass . '">';
-                    $supplierName = $marketRate->supplier->company_name ?? 'Proveedor no encontrado';
-                    if (is_array($supplierName)) {
-                        $supplierName = 'Proveedor no encontrado';
-                    }
-                    $html .= '<td><strong>' . $supplierName . '</strong></td>';
-                    $date = $marketRate->date;
-                    if (is_string($date)) {
-                        $date = \Carbon\Carbon::parse($date);
-                    }
-                    $html .= '<td>' . ($date ? $date->format('d/m/Y') : 'N/A') . '</td>';
-                    $subtotal = (float) ($marketRate->total_amount ?? 0);
-                    $vatAmount = (float) ($marketRate->vat_amount ?? 0);
-                    $totalWithVat = (float) ($marketRate->total_amount_with_vat ?? 0);
-                    if ($totalWithVat <= 0 && ($subtotal > 0 || $vatAmount > 0)) {
-                        $totalWithVat = $subtotal + $vatAmount;
-                    }
-                    $html .= '<td class="text-end"><strong>$' . number_format($totalWithVat > 0 ? $totalWithVat : $subtotal, 2) . '</strong>';
-                    if ($vatAmount > 0) {
-                        $html .= '<br><small class="text-muted">Subtotal: $' . number_format($subtotal, 2) . ' + IVA: $' . number_format($vatAmount, 2) . '</small>';
-                    }
-                    $html .= '</td>';
-                    $documentFiles = MarketRate::normalizeDocumentFilesToPathList($marketRate->document_files);
-
-                    if ($marketRate->quoteDetails->isEmpty()) {
-                        $productsHtml = '<span class="text-muted">Sin productos</span>';
-                    } else {
-                        $productsHtml = '<div><span class="badge bg-info mb-1">' . $marketRate->quoteDetails->count() . ' productos</span></div>';
-                        $productsHtml .= '<ul class="mb-0 ps-3">';
-                        foreach ($marketRate->quoteDetails as $detail) {
-                            $productName = $detail->product->name ?? ('Producto #' . $detail->product_id);
-                            if (is_array($productName)) {
-                                $productName = 'Producto no encontrado';
-                            }
-                            $productsHtml .= '<li>' . e($productName);
-                            $detailDescription = $detail->product_description ?? ($detail->product->description ?? null);
-                            if ($detailDescription && !is_array($detailDescription)) {
-                                $productsHtml .= '<br><small class="text-muted">' . e($detailDescription) . '</small>';
-                            }
-                            $productsHtml .= ' - Cant: ' . (float) $detail->quantity . ' - $' . number_format((float) $detail->unit_price, 2) . '/u</li>';
-                        }
-                        $productsHtml .= '</ul>';
-                    }
-                    $html .= '<td>' . $productsHtml . '</td>';
-                    $html .= '<td>';
-                    if ($isSelected) {
-                        $html .= '<span class="badge bg-success">Seleccionada</span>';
-                    } else {
-                        $html .= '<span class="badge bg-secondary">Disponible</span>';
-                    }
-                    $html .= '</td>';
-                    $html .= '<td>';
-                    
-                    // Solo el responsable de compras puede seleccionar cotizaciones
-                    $user = backpack_user();
-                    $adminRoles = ['role_admin_sistema', 'role_admin_institucion', 'role_responsable_compras'];
-                    $canSelect = false;
-                    foreach ($adminRoles as $role) {
-                        if ($user && $user->hasRole($role, 'backpack')) {
-                            $canSelect = true;
-                            break;
-                        }
-                    }
-                    
-                    $html .= '<a href="' . route('market-rate.pdf', $marketRate->id) . '" class="btn btn-sm btn-outline-primary me-1" target="_blank">';
-                    $html .= '<i class="la la-file-pdf-o"></i> PDF';
-                    $html .= '</a>';
-
-                    if ($documentFiles !== []) {
-                        foreach ($documentFiles as $idx => $filePath) {
-                            $label = $idx === 0 ? 'Archivo subido' : ('Archivo ' . ($idx + 1));
-                            $fileUrl = route('market-rate.uploaded-file', ['id' => $marketRate->id, 'index' => $idx]);
-                            $html .= '<a href="' . e($fileUrl) . '" class="btn btn-sm btn-outline-secondary me-1" target="_blank" rel="noopener">';
-                            $html .= '<i class="la la-paperclip"></i> ' . e($label);
-                            $html .= '</a>';
-                        }
-                    }
-
-                    $referenceUrls = MarketRate::referenceLinkUrlsList($marketRate->reference_links);
-                    if ($referenceUrls !== []) {
-                        foreach ($referenceUrls as $idx => $linkUrl) {
-                            $linkLabel = count($referenceUrls) === 1
-                                ? 'Enlace (Mercado Libre u otros)'
-                                : ('Enlace ' . ($idx + 1));
-                            $html .= '<a href="' . e($linkUrl) . '" class="btn btn-sm btn-outline-info me-1" target="_blank" rel="noopener" title="' . e($linkUrl) . '">';
-                            $html .= '<i class="la la-external-link"></i> ' . e($linkLabel);
-                            $html .= '</a>';
-                        }
-                    }
-
-                    if ($entry->status != 'Completada' && $canSelect) {
-                        $html .= '<form method="POST" action="' . e(backpack_url('purchase-request/' . $entry->id . '/toggle-market-rate/' . $marketRate->id)) . '" style="display:inline-block;" class="me-1">';
-                        $html .= csrf_field();
-                        if ($isSelected) {
-                            $html .= '<button type="submit" class="btn btn-sm btn-warning"><i class="la la-minus-circle"></i> Deseleccionar</button>';
-                        } else {
-                            $html .= '<button type="submit" class="btn btn-sm btn-success"><i class="la la-check"></i> Seleccionar</button>';
-                        }
-                        $html .= '</form>';
-                    }
-                    
-                    $html .= '</td>';
+                    $html .= '<table class="table table-striped table-bordered">';
+                    $html .= '<thead class="thead-dark">';
+                    $html .= '<tr>';
+                    $html .= '<th>Proveedor</th>';
+                    $html .= '<th>Fecha</th>';
+                    $html .= '<th>Total</th>';
+                    $html .= '<th>Productos</th>';
+                    $html .= '<th>Estado</th>';
+                    $html .= '<th>Acciones</th>';
                     $html .= '</tr>';
-                }
-                
+                    $html .= '</thead>';
+                    $html .= '<tbody>';
+
+                    foreach ($marketRates as $marketRate) {
+                        $isSelected = (bool) ($marketRate->is_selected || $entry->selected_market_rate_id == $marketRate->id);
+                        $rowClass = $isSelected ? 'table-success' : '';
+
+                        $html .= '<tr class="'.$rowClass.'">';
+                        $supplierName = $marketRate->supplier->company_name ?? 'Proveedor no encontrado';
+                        if (is_array($supplierName)) {
+                            $supplierName = 'Proveedor no encontrado';
+                        }
+                        $html .= '<td><strong>'.$supplierName.'</strong></td>';
+                        $date = $marketRate->date;
+                        if (is_string($date)) {
+                            $date = \Carbon\Carbon::parse($date);
+                        }
+                        $html .= '<td>'.($date ? $date->format('d/m/Y') : 'N/A').'</td>';
+                        $subtotal = (float) ($marketRate->total_amount ?? 0);
+                        $vatAmount = (float) ($marketRate->vat_amount ?? 0);
+                        $totalWithVat = (float) ($marketRate->total_amount_with_vat ?? 0);
+                        if ($totalWithVat <= 0 && ($subtotal > 0 || $vatAmount > 0)) {
+                            $totalWithVat = $subtotal + $vatAmount;
+                        }
+                        $html .= '<td class="text-end"><strong>$'.number_format($totalWithVat > 0 ? $totalWithVat : $subtotal, 2).'</strong>';
+                        if ($vatAmount > 0) {
+                            $html .= '<br><small class="text-muted">Subtotal: $'.number_format($subtotal, 2).' + IVA: $'.number_format($vatAmount, 2).'</small>';
+                        }
+                        $html .= '</td>';
+                        $documentFiles = MarketRate::normalizeDocumentFilesToPathList($marketRate->document_files);
+
+                        if ($marketRate->quoteDetails->isEmpty()) {
+                            $productsHtml = '<span class="text-muted">Sin productos</span>';
+                        } else {
+                            $productsHtml = '<div><span class="badge bg-info mb-1">'.$marketRate->quoteDetails->count().' productos</span></div>';
+                            $productsHtml .= '<ul class="mb-0 ps-3">';
+                            foreach ($marketRate->quoteDetails as $detail) {
+                                $productName = $detail->product->name ?? ('Producto #'.$detail->product_id);
+                                if (is_array($productName)) {
+                                    $productName = 'Producto no encontrado';
+                                }
+                                $productsHtml .= '<li>'.e($productName);
+                                $detailDescription = $detail->product_description ?? ($detail->product->description ?? null);
+                                if ($detailDescription && ! is_array($detailDescription)) {
+                                    $productsHtml .= '<br><small class="text-muted">'.e($detailDescription).'</small>';
+                                }
+                                $productsHtml .= ' - Cant: '.(float) $detail->quantity.' - $'.number_format((float) $detail->unit_price, 2).'/u</li>';
+                            }
+                            $productsHtml .= '</ul>';
+                        }
+                        $html .= '<td>'.$productsHtml.'</td>';
+                        $html .= '<td>';
+                        if ($isSelected) {
+                            $html .= '<span class="badge bg-success">Seleccionada</span>';
+                        } else {
+                            $html .= '<span class="badge bg-secondary">Disponible</span>';
+                        }
+                        $html .= '</td>';
+                        $html .= '<td>';
+
+                        // Solo el responsable de compras puede seleccionar cotizaciones
+                        $user = backpack_user();
+                        $adminRoles = ['role_admin_sistema', 'role_admin_institucion', 'role_responsable_compras'];
+                        $canSelect = false;
+                        foreach ($adminRoles as $role) {
+                            if ($user && $user->hasRole($role, 'backpack')) {
+                                $canSelect = true;
+                                break;
+                            }
+                        }
+
+                        $html .= '<a href="'.route('market-rate.pdf', $marketRate->id).'" class="btn btn-sm btn-outline-primary me-1" target="_blank">';
+                        $html .= '<i class="la la-file-pdf-o"></i> PDF';
+                        $html .= '</a>';
+
+                        if ($documentFiles !== []) {
+                            foreach ($documentFiles as $idx => $filePath) {
+                                $label = $idx === 0 ? 'Archivo subido' : ('Archivo '.($idx + 1));
+                                $fileUrl = route('market-rate.uploaded-file', ['id' => $marketRate->id, 'index' => $idx]);
+                                $html .= '<a href="'.e($fileUrl).'" class="btn btn-sm btn-outline-secondary me-1" target="_blank" rel="noopener">';
+                                $html .= '<i class="la la-paperclip"></i> '.e($label);
+                                $html .= '</a>';
+                            }
+                        }
+
+                        $referenceUrls = MarketRate::referenceLinkUrlsList($marketRate->reference_links);
+                        if ($referenceUrls !== []) {
+                            foreach ($referenceUrls as $idx => $linkUrl) {
+                                $linkLabel = count($referenceUrls) === 1
+                                    ? 'Enlace (Mercado Libre u otros)'
+                                    : ('Enlace '.($idx + 1));
+                                $html .= '<a href="'.e($linkUrl).'" class="btn btn-sm btn-outline-info me-1" target="_blank" rel="noopener" title="'.e($linkUrl).'">';
+                                $html .= '<i class="la la-external-link"></i> '.e($linkLabel);
+                                $html .= '</a>';
+                            }
+                        }
+
+                        if ($entry->status != 'Completada' && $canSelect) {
+                            $html .= '<form method="POST" action="'.e(backpack_url('purchase-request/'.$entry->id.'/toggle-market-rate/'.$marketRate->id)).'" style="display:inline-block;" class="me-1">';
+                            $html .= csrf_field();
+                            if ($isSelected) {
+                                $html .= '<button type="submit" class="btn btn-sm btn-warning"><i class="la la-minus-circle"></i> Deseleccionar</button>';
+                            } else {
+                                $html .= '<button type="submit" class="btn btn-sm btn-success"><i class="la la-check"></i> Seleccionar</button>';
+                            }
+                            $html .= '</form>';
+                        }
+
+                        $html .= '</td>';
+                        $html .= '</tr>';
+                    }
+
                     $html .= '</tbody>';
                     $html .= '</table>';
                     $html .= '</div>';
-                    
+
                     // Botón para descargar planilla comparativa (solo si hay más de una cotización)
                     $quotationsCount = $marketRates->count();
                     if ($quotationsCount > 1) {
                         $user = backpack_user();
                         // Solo mostrar si el usuario no es role_responsable_area
-                        if (!$user || !$user->hasRole('role_responsable_area', 'backpack')) {
+                        if (! $user || ! $user->hasRole('role_responsable_area', 'backpack')) {
                             $html .= '<div class="mt-3">';
-                            $html .= '<a href="' . route('purchase-request.comparative-excel', $entry->id) . '" class="btn btn-success">';
+                            $html .= '<a href="'.route('purchase-request.comparative-excel', $entry->id).'" class="btn btn-success">';
                             $html .= '<i class="la la-file-excel"></i> Descargar Planilla Comparativa';
                             $html .= '</a>';
                             $html .= '</div>';
@@ -4156,24 +4243,24 @@ class PurchaseRequestCrudController extends CrudController
                         $html .= '<div class="card-header bg-info text-white"><strong><i class="la la-link"></i> Asignar cotización por producto</strong></div>';
                         $html .= '<div class="card-body">';
                         $html .= '<p class="text-muted small">Asigne para cada producto qué cotización usar. Luego puede generar <strong>una sola orden de compra</strong> con ítems de distintos proveedores.</p>';
-                        $html .= '<form method="POST" action="' . route('purchase-request.assign-quotations', $entry->id) . '">';
+                        $html .= '<form method="POST" action="'.route('purchase-request.assign-quotations', $entry->id).'">';
                         $html .= csrf_field();
                         $html .= '<div class="table-responsive"><table class="table table-sm table-bordered">';
                         $html .= '<thead><tr><th>Producto</th><th>Cantidad</th><th>Cotización a usar</th></tr></thead><tbody>';
                         foreach ($entry->details as $detail) {
-                            $productName = $detail->product ? $detail->product->name : 'Producto #' . $detail->id;
+                            $productName = $detail->product ? $detail->product->name : 'Producto #'.$detail->id;
                             $ratesWithProduct = $marketRates->filter(function ($mr) use ($detail) {
                                 return $mr->quoteDetails->contains('product_id', $detail->product_id);
                             });
-                            $html .= '<tr><td>' . e($productName) . '</td><td>' . (int)$detail->requested_quantity . '</td><td>';
-                            $html .= '<select name="detail_quote[' . $detail->id . ']" class="form-control form-control-sm">';
+                            $html .= '<tr><td>'.e($productName).'</td><td>'.(int) $detail->requested_quantity.'</td><td>';
+                            $html .= '<select name="detail_quote['.$detail->id.']" class="form-control form-control-sm">';
                             $html .= '<option value="">— Sin asignar —</option>';
                             foreach ($ratesWithProduct as $mr) {
                                 $qd = $mr->quoteDetails->firstWhere('product_id', $detail->product_id);
                                 $price = $qd ? number_format($qd->unit_price, 2) : '—';
                                 $supplierName = $mr->supplier ? $mr->supplier->company_name : 'Proveedor';
                                 $selected = $detail->selected_market_rate_id == $mr->id ? ' selected' : '';
-                                $html .= '<option value="' . $mr->id . '"' . $selected . '>' . e($supplierName) . ' — $' . $price . '/u</option>';
+                                $html .= '<option value="'.$mr->id.'"'.$selected.'>'.e($supplierName).' — $'.$price.'/u</option>';
                             }
                             $html .= '</select></td></tr>';
                         }
@@ -4182,20 +4269,20 @@ class PurchaseRequestCrudController extends CrudController
                         $html .= '</form></div></div>';
                     }
                 }
-                
+
                 // Lógica para mostrar botón de generar orden según el monto
                 // El rol role_responsable_area no puede generar órdenes de compra
                 $user = backpack_user();
-                $canGenerateOrder = !($user && $user->hasRole('role_responsable_area', 'backpack'))
-                    && !($user && $user->hasRole('role_representante_legal', 'backpack'));
-                
+                $canGenerateOrder = ! ($user && $user->hasRole('role_responsable_area', 'backpack'))
+                    && ! ($user && $user->hasRole('role_representante_legal', 'backpack'));
+
                 $entry->load('marketRates.quoteDetails');
                 $totalAmount = $this->recalculateSelectedQuotationsTotalForPurchaseRequest($entry);
                 $threshold = 60000;
                 // Usar la relación del modelo en lugar de consulta directa
                 $entry->load('marketRates');
                 $quotationsCount = $entry->marketRates->count();
-                
+
                 // Botón para agregar nueva cotización (compras, admin y responsable de área; solo si no está aprobada/completada)
                 $user = backpack_user();
                 $adminRoles = ['role_admin_sistema', 'role_admin_institucion', 'role_responsable_compras', 'role_responsable_area'];
@@ -4206,23 +4293,23 @@ class PurchaseRequestCrudController extends CrudController
                         break;
                     }
                 }
-                
+
                 // Solo mostrar el botón si tiene permiso Y la solicitud no está aprobada
                 if ($canCreateQuotation && $entry->status !== 'Aprobada' && $entry->status !== 'Completada') {
                     $html .= '<div class="mt-3">';
-                    $html .= '<a href="' . backpack_url('market-rate/create?purchase_request_id=' . $entry->id) . '" class="btn btn-success">';
+                    $html .= '<a href="'.backpack_url('market-rate/create?purchase_request_id='.$entry->id).'" class="btn btn-success">';
                     $html .= '<i class="la la-plus"></i> Agregar Nueva Cotización';
                     $html .= '</a>';
                     $html .= '</div>';
                 }
-                
+
                 if ($entry->status != 'Completada' && $canGenerateOrder) {
                     // Verificar si es compra directa autorizada
-                    $isDirectPurchaseAuthorized = $entry->is_direct_purchase 
-                                               && $entry->direct_purchase_authorized_by 
+                    $isDirectPurchaseAuthorized = $entry->is_direct_purchase
+                                               && $entry->direct_purchase_authorized_by
                                                && $entry->direct_purchase_supplier_id
-                                               && !$entry->direct_purchase_authorization_rejected;
-                    
+                                               && ! $entry->direct_purchase_authorization_rejected;
+
                     if ($isDirectPurchaseAuthorized) {
                         // Para compras directas autorizadas, mostrar formulario para generar orden sin cotizaciones
                         if ($entry->status !== 'Aprobada') {
@@ -4234,12 +4321,12 @@ class PurchaseRequestCrudController extends CrudController
                             $html .= '<div class="alert alert-success">';
                             $html .= '<i class="la la-check-circle"></i> <strong>Compra Directa Autorizada:</strong> Esta compra directa ha sido autorizada. Puede proceder a generar la orden de compra sin necesidad de cotizaciones.';
                             $html .= '</div>';
-                            $html .= '<form method="POST" action="' . route('purchase-request.generate-purchase-order', $entry->id) . '">';
+                            $html .= '<form method="POST" action="'.route('purchase-request.generate-purchase-order', $entry->id).'">';
                             $html .= csrf_field();
                             $html .= '<div class="row mb-3">';
                             $html .= '<div class="col-md-4">';
                             $html .= '<label for="issue_date" class="form-label">Fecha de Emisión:</label>';
-                            $html .= '<input type="date" name="issue_date" id="issue_date" class="form-control" value="' . date('Y-m-d') . '" required>';
+                            $html .= '<input type="date" name="issue_date" id="issue_date" class="form-control" value="'.date('Y-m-d').'" required>';
                             $html .= '</div>';
                             $html .= '</div>';
                             $html .= '<button type="submit" class="btn btn-primary" onclick="return confirm(\'¿Está seguro de generar la orden de compra?\')">';
@@ -4257,7 +4344,7 @@ class PurchaseRequestCrudController extends CrudController
                         } elseif ($quotationsCount < 3) {
                             // Mostrar mensaje de error indicando que es obligatorio tener 3 cotizaciones
                             $html .= '<div class="mt-3 alert alert-danger">';
-                            $html .= '<i class="la la-exclamation-triangle"></i> <strong>No se puede generar la orden de compra:</strong> Para solicitudes mayores a $' . number_format($threshold, 2) . ' se requieren <strong>OBLIGATORIAMENTE 3 cotizaciones</strong>. Actualmente hay ' . $quotationsCount . ' cotización(es). Debe agregar ' . (3 - $quotationsCount) . ' cotización(es) más antes de poder generar la orden de compra.';
+                            $html .= '<i class="la la-exclamation-triangle"></i> <strong>No se puede generar la orden de compra:</strong> Para solicitudes mayores a $'.number_format($threshold, 2).' se requieren <strong>OBLIGATORIAMENTE 3 cotizaciones</strong>. Actualmente hay '.$quotationsCount.' cotización(es). Debe agregar '.(3 - $quotationsCount).' cotización(es) más antes de poder generar la orden de compra.';
                             $html .= '</div>';
                         } else {
                             // Validar que cada producto esté cotizado en al menos 3 cotizaciones distintas
@@ -4265,12 +4352,12 @@ class PurchaseRequestCrudController extends CrudController
                             if ($productsWithFewerQuotations->isNotEmpty()) {
                                 $productNames = $productsWithFewerQuotations->pluck('name')->implode(', ');
                                 $html .= '<div class="mt-3 alert alert-danger">';
-                                $html .= '<i class="la la-exclamation-triangle"></i> <strong>No se puede generar la orden de compra:</strong> Los siguientes productos deben estar cotizados en <strong>al menos 3 cotizaciones distintas</strong>: ' . e($productNames) . '. Agregue estos productos a más cotizaciones antes de poder generar la orden.';
+                                $html .= '<i class="la la-exclamation-triangle"></i> <strong>No se puede generar la orden de compra:</strong> Los siguientes productos deben estar cotizados en <strong>al menos 3 cotizaciones distintas</strong>: '.e($productNames).'. Agregue estos productos a más cotizaciones antes de poder generar la orden.';
                                 $html .= '</div>';
                             } else {
-                                $allDetailsAssigned = $entry->details->isNotEmpty() && $entry->details->every(fn ($d) => !empty($d->selected_market_rate_id));
+                                $allDetailsAssigned = $entry->details->isNotEmpty() && $entry->details->every(fn ($d) => ! empty($d->selected_market_rate_id));
                                 $canGenerateWithQuote = $entry->selected_market_rate_id || $allDetailsAssigned;
-                                if (!$canGenerateWithQuote) {
+                                if (! $canGenerateWithQuote) {
                                     $html .= '<div class="mt-3 alert alert-warning">';
                                     $html .= '<i class="la la-exclamation-triangle"></i> <strong>Atención:</strong> ';
                                     $html .= $representanteLegalSinAsignarPorProducto
@@ -4278,24 +4365,24 @@ class PurchaseRequestCrudController extends CrudController
                                         : 'Debe seleccionar una cotización para toda la solicitud, o asignar una cotización por producto en la sección de arriba.';
                                     $html .= '</div>';
                                 } else {
-                                // Hay 3 cotizaciones, todos los productos con 3+ cotizaciones y (una seleccionada o asignación por producto), mostrar formulario
-                                $html .= '<div class="mt-3">';
-                                $html .= '<div class="alert alert-success">';
-                                $html .= '<i class="la la-check-circle"></i> <strong>Listo para generar orden:</strong> ' . ($allDetailsAssigned ? 'Tiene asignada una cotización por producto. Se generará una OC con varios proveedores.' : 'Tiene una cotización seleccionada.') . ' Puede proceder a generar la orden de compra.';
-                            $html .= '</div>';
-                            $html .= '<form method="POST" action="' . route('purchase-request.generate-purchase-order', $entry->id) . '">';
-                            $html .= csrf_field();
-                            $html .= '<div class="row mb-3">';
-                            $html .= '<div class="col-md-4">';
-                            $html .= '<label for="issue_date" class="form-label">Fecha de Emisión:</label>';
-                            $html .= '<input type="date" name="issue_date" id="issue_date" class="form-control" value="' . date('Y-m-d') . '" required>';
-                            $html .= '</div>';
-                            $html .= '</div>';
-                            $html .= '<button type="submit" class="btn btn-primary" onclick="return confirm(\'¿Está seguro de generar la orden de compra?\')">';
-                            $html .= '<i class="la la-shopping-cart"></i> Generar Orden de Compra';
-                            $html .= '</button>';
-                            $html .= '</form>';
-                            $html .= '</div>';
+                                    // Hay 3 cotizaciones, todos los productos con 3+ cotizaciones y (una seleccionada o asignación por producto), mostrar formulario
+                                    $html .= '<div class="mt-3">';
+                                    $html .= '<div class="alert alert-success">';
+                                    $html .= '<i class="la la-check-circle"></i> <strong>Listo para generar orden:</strong> '.($allDetailsAssigned ? 'Tiene asignada una cotización por producto. Se generará una OC con varios proveedores.' : 'Tiene una cotización seleccionada.').' Puede proceder a generar la orden de compra.';
+                                    $html .= '</div>';
+                                    $html .= '<form method="POST" action="'.route('purchase-request.generate-purchase-order', $entry->id).'">';
+                                    $html .= csrf_field();
+                                    $html .= '<div class="row mb-3">';
+                                    $html .= '<div class="col-md-4">';
+                                    $html .= '<label for="issue_date" class="form-label">Fecha de Emisión:</label>';
+                                    $html .= '<input type="date" name="issue_date" id="issue_date" class="form-control" value="'.date('Y-m-d').'" required>';
+                                    $html .= '</div>';
+                                    $html .= '</div>';
+                                    $html .= '<button type="submit" class="btn btn-primary" onclick="return confirm(\'¿Está seguro de generar la orden de compra?\')">';
+                                    $html .= '<i class="la la-shopping-cart"></i> Generar Orden de Compra';
+                                    $html .= '</button>';
+                                    $html .= '</form>';
+                                    $html .= '</div>';
                                 }
                             }
                         }
@@ -4310,9 +4397,9 @@ class PurchaseRequestCrudController extends CrudController
                             // Para montos <= 60000, se requiere una sola cotización
                             if ($quotationsCount == 0) {
                                 $html .= '<div class="alert alert-info">';
-                                $html .= '<i class="la la-info-circle"></i> <strong>Información:</strong> Esta solicitud tiene un monto de $' . number_format($totalAmount, 2) . ', por lo que requiere seleccionar un proveedor y subir su cotización (una sola cotización).';
+                                $html .= '<i class="la la-info-circle"></i> <strong>Información:</strong> Esta solicitud tiene un monto de $'.number_format($totalAmount, 2).', por lo que requiere seleccionar un proveedor y subir su cotización (una sola cotización).';
                                 $html .= '</div>';
-                            } elseif ($quotationsCount == 1 && !$entry->selected_market_rate_id) {
+                            } elseif ($quotationsCount == 1 && ! $entry->selected_market_rate_id) {
                                 $html .= '<div class="alert alert-warning">';
                                 $html .= '<i class="la la-exclamation-triangle"></i> <strong>Atención:</strong> Tiene una cotización cargada. Debe seleccionarla antes de generar la orden de compra.';
                                 $html .= '</div>';
@@ -4327,12 +4414,12 @@ class PurchaseRequestCrudController extends CrudController
                                     $html .= '<div class="alert alert-success">';
                                     $html .= '<i class="la la-check-circle"></i> <strong>Listo para generar orden:</strong> Tiene una cotización cargada y seleccionada. Puede proceder a generar la orden de compra.';
                                     $html .= '</div>';
-                                    $html .= '<form method="POST" action="' . route('purchase-request.generate-purchase-order', $entry->id) . '">';
+                                    $html .= '<form method="POST" action="'.route('purchase-request.generate-purchase-order', $entry->id).'">';
                                     $html .= csrf_field();
                                     $html .= '<div class="row mb-3">';
                                     $html .= '<div class="col-md-4">';
                                     $html .= '<label for="issue_date" class="form-label">Fecha de Emisión:</label>';
-                                    $html .= '<input type="date" name="issue_date" id="issue_date" class="form-control" value="' . date('Y-m-d') . '" required>';
+                                    $html .= '<input type="date" name="issue_date" id="issue_date" class="form-control" value="'.date('Y-m-d').'" required>';
                                     $html .= '</div>';
                                     $html .= '</div>';
                                     $html .= '<div class="text-end">';
@@ -4344,23 +4431,23 @@ class PurchaseRequestCrudController extends CrudController
                                 }
                             } else {
                                 // Hay más de una cotización: puede seleccionar una global o asignar por producto
-                                $allDetailsAssignedLow = $entry->details->isNotEmpty() && $entry->details->every(fn ($d) => !empty($d->selected_market_rate_id));
+                                $allDetailsAssignedLow = $entry->details->isNotEmpty() && $entry->details->every(fn ($d) => ! empty($d->selected_market_rate_id));
                                 if ($entry->selected_market_rate_id || $allDetailsAssignedLow) {
                                     $html .= '<div class="alert alert-success">';
-                                    $html .= '<i class="la la-check-circle"></i> <strong>Listo para generar orden:</strong> ' . ($allDetailsAssignedLow ? 'Tiene asignada una cotización por producto.' : 'Tiene una cotización seleccionada.') . ' Puede proceder a generar la orden de compra.';
+                                    $html .= '<i class="la la-check-circle"></i> <strong>Listo para generar orden:</strong> '.($allDetailsAssignedLow ? 'Tiene asignada una cotización por producto.' : 'Tiene una cotización seleccionada.').' Puede proceder a generar la orden de compra.';
                                     $html .= '</div>';
-                                    $html .= '<form method="POST" action="' . route('purchase-request.generate-purchase-order', $entry->id) . '">';
+                                    $html .= '<form method="POST" action="'.route('purchase-request.generate-purchase-order', $entry->id).'">';
                                     $html .= csrf_field();
                                     $html .= '<div class="row mb-3"><div class="col-md-4">';
                                     $html .= '<label for="issue_date" class="form-label">Fecha de Emisión:</label>';
-                                    $html .= '<input type="date" name="issue_date" id="issue_date" class="form-control" value="' . date('Y-m-d') . '" required>';
+                                    $html .= '<input type="date" name="issue_date" id="issue_date" class="form-control" value="'.date('Y-m-d').'" required>';
                                     $html .= '</div></div>';
                                     $html .= '<button type="submit" class="btn btn-primary" onclick="return confirm(\'¿Está seguro de generar la orden de compra?\')">';
                                     $html .= '<i class="la la-shopping-cart"></i> Generar Orden de Compra';
                                     $html .= '</button></form>';
                                 } else {
                                     $html .= '<div class="alert alert-warning">';
-                                    $html .= '<i class="la la-exclamation-triangle"></i> <strong>Atención:</strong> Tiene ' . $quotationsCount . ' cotización(es). ';
+                                    $html .= '<i class="la la-exclamation-triangle"></i> <strong>Atención:</strong> Tiene '.$quotationsCount.' cotización(es). ';
                                     $html .= $representanteLegalSinAsignarPorProducto
                                         ? 'Seleccione una para toda la solicitud.'
                                         : 'Seleccione una para toda la solicitud o asigne una cotización por producto en la sección de arriba.';
@@ -4371,13 +4458,13 @@ class PurchaseRequestCrudController extends CrudController
                         $html .= '</div>';
                     }
                 }
-                
+
                 return $html;
             });
 
         // Agregar campo para mostrar sugerencias de proveedores
         CRUD::column('supplier_suggestions_table')->label('Sugerencias de Proveedores')->type('custom_html')
-            ->value(function($entry) {
+            ->value(function ($entry) {
                 try {
                     $entry->load(['supplierSuggestions.supplier', 'supplierSuggestions.suggestedBy']);
                     $suggestions = $entry->supplierSuggestions;
@@ -4385,21 +4472,21 @@ class PurchaseRequestCrudController extends CrudController
                     // Si hay un error al cargar las sugerencias (por ejemplo, tabla no existe), usar colección vacía
                     $suggestions = collect([]);
                 }
-                
+
                 $html = '';
-                
+
                 $user = backpack_user();
                 $isResponsableArea = $user && $user->hasRole('role_responsable_area', 'backpack');
-                
+
                 // Botón para sugerir proveedor (solo responsables de área)
                 if ($isResponsableArea && $entry->status != 'Completada') {
                     $html .= '<div class="mb-3">';
-                    $html .= '<a href="' . route('purchase-request.suggest-supplier', $entry->id) . '" class="btn btn-info">';
+                    $html .= '<a href="'.route('purchase-request.suggest-supplier', $entry->id).'" class="btn btn-info">';
                     $html .= '<i class="la la-lightbulb"></i> Sugerir Proveedor';
                     $html .= '</a>';
                     $html .= '</div>';
                 }
-                
+
                 if ($suggestions->isEmpty()) {
                     $html .= '-';
                 } else {
@@ -4414,50 +4501,50 @@ class PurchaseRequestCrudController extends CrudController
                     $html .= '</tr>';
                     $html .= '</thead>';
                     $html .= '<tbody>';
-                    
+
                     foreach ($suggestions as $suggestion) {
                         $html .= '<tr>';
                         $supplierName = $suggestion->supplier->company_name ?? 'Proveedor no encontrado';
                         if (is_array($supplierName)) {
                             $supplierName = 'Proveedor no encontrado';
                         }
-                        $html .= '<td><strong>' . $supplierName . '</strong></td>';
+                        $html .= '<td><strong>'.$supplierName.'</strong></td>';
                         $suggestedByName = $suggestion->suggestedBy->name ?? 'Usuario no encontrado';
                         if (is_array($suggestedByName)) {
                             $suggestedByName = 'Usuario no encontrado';
                         }
-                        $html .= '<td>' . $suggestedByName . '</td>';
+                        $html .= '<td>'.$suggestedByName.'</td>';
                         $justification = $suggestion->justification ?? 'Sin justificación';
                         if (is_array($justification)) {
                             $justification = 'Sin justificación';
                         }
-                        $html .= '<td>' . $justification . '</td>';
+                        $html .= '<td>'.$justification.'</td>';
                         $createdAt = $suggestion->created_at;
                         if (is_string($createdAt)) {
                             $createdAt = \Carbon\Carbon::parse($createdAt);
                         }
-                        $html .= '<td>' . ($createdAt ? $createdAt->format('d/m/Y H:i') : 'N/A') . '</td>';
+                        $html .= '<td>'.($createdAt ? $createdAt->format('d/m/Y H:i') : 'N/A').'</td>';
                         $html .= '</tr>';
                     }
-                    
+
                     $html .= '</tbody>';
                     $html .= '</table>';
                     $html .= '</div>';
                 }
-                
+
                 return $html;
             });
 
         // Agregar campo para mostrar órdenes de compra asociadas (debajo de sugerencias de proveedores)
         CRUD::column('purchase_orders_table')->label('Órdenes de Compra Asociadas')->type('custom_html')
-            ->value(function($entry) {
+            ->value(function ($entry) {
                 $entry->load('purchaseOrders.supplier', 'purchaseOrders.details');
                 $purchaseOrders = $entry->purchaseOrders;
-                
+
                 if ($purchaseOrders->isEmpty()) {
                     return '<div class="alert alert-info">No hay órdenes de compra asociadas a esta solicitud.</div>';
                 }
-                
+
                 $html = '<div class="table-responsive">';
                 $html .= '<table class="table table-striped table-bordered">';
                 $html .= '<thead class="thead-dark">';
@@ -4471,82 +4558,86 @@ class PurchaseRequestCrudController extends CrudController
                 $html .= '</tr>';
                 $html .= '</thead>';
                 $html .= '<tbody>';
-                
+
                 foreach ($purchaseOrders as $purchaseOrder) {
-                    $statusBadge = match($purchaseOrder->status) {
+                    $statusBadge = match ($purchaseOrder->status) {
                         'Pendiente' => 'bg-warning',
                         'Aprobada' => 'bg-success',
                         'Recibida' => 'bg-info',
                         default => 'bg-secondary'
                     };
-                    
+
                     $html .= '<tr>';
-                    $html .= '<td><strong>' . e($purchaseOrder->number ?? 'N/A') . '</strong></td>';
-                    $html .= '<td>' . ($purchaseOrder->date ? $purchaseOrder->date->format('d/m/Y') : 'N/A') . '</td>';
-                    $html .= '<td>' . e($purchaseOrder->supplier_display_name) . '</td>';
-                    $html .= '<td><span class="badge ' . $statusBadge . '">' . e($purchaseOrder->status ?? 'N/A') . '</span></td>';
-                    $html .= '<td><strong>$' . number_format($purchaseOrder->total ?? 0, 2) . '</strong></td>';
+                    $html .= '<td><strong>'.e($purchaseOrder->number ?? 'N/A').'</strong></td>';
+                    $html .= '<td>'.($purchaseOrder->date ? $purchaseOrder->date->format('d/m/Y') : 'N/A').'</td>';
+                    $html .= '<td>'.e($purchaseOrder->supplier_display_name).'</td>';
+                    $html .= '<td><span class="badge '.$statusBadge.'">'.e($purchaseOrder->status ?? 'N/A').'</span></td>';
+                    $html .= '<td><strong>$'.number_format($purchaseOrder->total ?? 0, 2).'</strong></td>';
                     $html .= '<td>';
-                    $html .= '<a href="' . backpack_url('purchase-order/' . $purchaseOrder->id . '/show') . '" class="btn btn-sm btn-info">';
+                    $html .= '<a href="'.backpack_url('purchase-order/'.$purchaseOrder->id.'/show').'" class="btn btn-sm btn-info">';
                     $html .= '<i class="la la-eye"></i> Ver';
                     $html .= '</a>';
                     $html .= '</td>';
                     $html .= '</tr>';
                 }
-                
+
                 $html .= '</tbody>';
                 $html .= '</table>';
                 $html .= '</div>';
-                
+
                 return $html;
             });
 
-        // Generar orden de pago desde la solicitud (misma regla que en el detalle de la OC)
+        // Órdenes de pago desde la solicitud (misma regla que en el detalle de la OC: solo administradora del instituto)
         CRUD::column('create_payment_orders_from_pr')->label('Órdenes de Pago')->type('custom_html')
             ->value(function ($entry) {
                 $user = backpack_user();
                 if ($user && $user->hasRole('role_responsable_area', 'backpack')) {
                     return '';
                 }
-                if (! $user instanceof \App\Models\User || ! $user->hasResponsableComprasRole()) {
+                if (! $user instanceof \App\Models\User) {
+                    return '';
+                }
+                if (! $user->hasAdministradoraInstitucionRole() && ! $user->hasResponsableComprasRole()) {
                     return '';
                 }
 
-                $entry->load(['purchaseOrders.receptions', 'purchaseOrders.paymentOrders']);
+                $entry->load(['purchaseOrders.paymentOrders']);
                 $purchaseOrders = $entry->purchaseOrders;
                 if ($purchaseOrders->isEmpty()) {
-                    return '<div class="alert alert-secondary mb-0"><i class="la la-info-circle"></i> No hay orden de compra asociada; la orden de pago se crea cuando exista una OC con recepción conforme.</div>';
+                    return '<div class="alert alert-secondary mb-0"><i class="la la-info-circle"></i> No hay orden de compra asociada. Cuando exista una OC, la administradora del instituto podrá generar la orden de pago (no depende de la recepción conforme).</div>';
                 }
+
+                $isAdmin = $user instanceof \App\Models\User && $user->hasAdministradoraInstitucionRole();
 
                 $html = '<div class="card border-success mt-1">';
                 $html .= '<div class="card-header bg-success text-white py-2"><h6 class="mb-0"><i class="la la-money-bill-wave"></i> Orden de pago desde esta solicitud</h6></div>';
                 $html .= '<div class="card-body">';
 
                 foreach ($purchaseOrders as $purchaseOrder) {
-                    $purchaseOrder->loadMissing(['receptions', 'paymentOrders']);
-                    $hasConformeReception = $purchaseOrder->receptions->contains(fn (\App\Models\Reception $r) => $r->isAccordingComplete());
+                    $purchaseOrder->loadMissing(['paymentOrders']);
                     $hasPaymentOrders = $purchaseOrder->paymentOrders->isNotEmpty();
 
                     $html .= '<div class="mb-3 pb-3 border-bottom">';
-                    $html .= '<p class="mb-2"><strong>OC ' . e($purchaseOrder->number ?? 'N/A') . '</strong>';
+                    $html .= '<p class="mb-2"><strong>OC '.e($purchaseOrder->number ?? 'N/A').'</strong>';
 
                     if ($hasPaymentOrders) {
                         $html .= '</p>';
                         foreach ($purchaseOrder->paymentOrders as $paymentOrder) {
-                            $opLabel = e($paymentOrder->payment_number ?? ('OP #' . $paymentOrder->id));
-                            $html .= '<a href="' . backpack_url('payment-order/' . $paymentOrder->id . '/show') . '" class="btn btn-sm btn-primary me-1 mb-1">';
-                            $html .= '<i class="la la-eye"></i> Ver orden de pago: ' . $opLabel;
+                            $opLabel = e($paymentOrder->payment_number ?? ('OP #'.$paymentOrder->id));
+                            $html .= '<a href="'.backpack_url('payment-order/'.$paymentOrder->id.'/show').'" class="btn btn-sm btn-primary me-1 mb-1">';
+                            $html .= '<i class="la la-eye"></i> Ver orden de pago: '.$opLabel;
                             $html .= '</a>';
                         }
                         $html .= '<p class="text-muted small mb-0 mt-2"><i class="la la-check"></i> Orden(es) de pago asociada(s) a esta OC.</p>';
                     } else {
-                        $html .= ' <a href="' . backpack_url('purchase-order/' . $purchaseOrder->id . '/show') . '" class="btn btn-sm btn-outline-info ms-1">Ver OC</a></p>';
-                        if (! $hasConformeReception) {
-                            $html .= '<p class="text-muted small mb-0"><i class="la la-info-circle"></i> La orden de pago se habilita cuando haya una <strong>recepción conforme</strong> (tres conformidades en Sí, corroboración ARCA y comprobante válido).</p>';
-                        } else {
-                            $html .= '<a href="' . backpack_url('payment-order/create?purchase_order_id=' . $purchaseOrder->id) . '" class="btn btn-success">';
+                        $html .= ' <a href="'.backpack_url('purchase-order/'.$purchaseOrder->id.'/show').'" class="btn btn-sm btn-outline-info ms-1">Ver OC</a></p>';
+                        if ($isAdmin) {
+                            $html .= '<a href="'.backpack_url('payment-order/create?purchase_order_id='.$purchaseOrder->id).'" class="btn btn-success">';
                             $html .= '<i class="la la-money-bill-wave"></i> Crear Orden de Pago';
                             $html .= '</a>';
+                        } else {
+                            $html .= '<p class="text-muted small mb-0"><i class="la la-info-circle"></i> La orden de pago la genera la <strong>administradora del instituto</strong> luego de la orden de compra; no requiere recepción conforme.</p>';
                         }
                     }
                     $html .= '</div>';
@@ -4559,29 +4650,29 @@ class PurchaseRequestCrudController extends CrudController
 
         // Agregar información de selección si existe
         CRUD::field('selection_info')->label('Información de Selección')->type('custom_html')
-            ->value(function($entry) {
-                if (!$entry->selected_market_rate_id) {
+            ->value(function ($entry) {
+                if (! $entry->selected_market_rate_id) {
                     return '';
                 }
-                
+
                 // Verificar que las relaciones estén cargadas
-                if (!$entry->selectedMarketRate || !$entry->selectedMarketRate->supplier) {
+                if (! $entry->selectedMarketRate || ! $entry->selectedMarketRate->supplier) {
                     return '<div class="alert alert-warning">Información de cotización seleccionada no disponible.</div>';
                 }
-                
+
                 $html = '<div class="alert alert-success">';
                 $html .= '<h5><i class="la la-check-circle"></i> Cotización Seleccionada</h5>';
                 $supplierName = $entry->selectedMarketRate->supplier->company_name ?? 'Proveedor no encontrado';
                 if (is_array($supplierName)) {
                     $supplierName = 'Proveedor no encontrado';
                 }
-                $html .= '<p><strong>Proveedor:</strong> ' . $supplierName . '</p>';
-                $html .= '<p><strong>Total:</strong> $' . number_format($entry->selectedMarketRate->total_amount ?? 0, 2) . '</p>';
+                $html .= '<p><strong>Proveedor:</strong> '.$supplierName.'</p>';
+                $html .= '<p><strong>Total:</strong> $'.number_format($entry->selectedMarketRate->total_amount ?? 0, 2).'</p>';
                 $selectedByName = $entry->selectedBy->name ?? 'Usuario no encontrado';
                 if (is_array($selectedByName)) {
                     $selectedByName = 'Usuario no encontrado';
                 }
-                $html .= '<p><strong>Seleccionado por:</strong> ' . $selectedByName . '</p>';
+                $html .= '<p><strong>Seleccionado por:</strong> '.$selectedByName.'</p>';
                 $selectedAt = $entry->selected_at;
                 if ($selectedAt) {
                     if (is_string($selectedAt)) {
@@ -4591,17 +4682,18 @@ class PurchaseRequestCrudController extends CrudController
                 } else {
                     $selectedAtFormatted = 'No disponible';
                 }
-                $html .= '<p><strong>Fecha de selección:</strong> ' . $selectedAtFormatted . '</p>';
-                if ($entry->selection_justification && !is_array($entry->selection_justification)) {
-                    $html .= '<p><strong>Justificación:</strong> ' . $entry->selection_justification . '</p>';
+                $html .= '<p><strong>Fecha de selección:</strong> '.$selectedAtFormatted.'</p>';
+                if ($entry->selection_justification && ! is_array($entry->selection_justification)) {
+                    $html .= '<p><strong>Justificación:</strong> '.$entry->selection_justification.'</p>';
                 }
                 $html .= '</div>';
+
                 return $html;
             });
 
         // Agregar botones para crear entregas y recepciones (solo para role_responsable_area) y estado de recepción (todos los perfiles)
         CRUD::column('delivery_reception_actions')->label('Acciones de Entrega y Recepción')->type('custom_html')
-            ->value(function($entry) {
+            ->value(function ($entry) {
                 $user = backpack_user();
                 $isResponsableArea = $user && $user->hasRole('role_responsable_area', 'backpack');
 
@@ -4610,22 +4702,22 @@ class PurchaseRequestCrudController extends CrudController
                 $receptionsLines = [];
                 foreach ($entry->purchaseOrders as $purchaseOrder) {
                     foreach ($purchaseOrder->receptions as $reception) {
-                        $recLabel = e($reception->number ?? 'REC-' . $reception->id);
+                        $recLabel = e($reception->number ?? 'REC-'.$reception->id);
                         $ocLabel = e($purchaseOrder->number ?? 'N/A');
                         $isConforme = ($reception->according ?? '') === 'Si';
                         $badge = $isConforme
                             ? '<span class="badge bg-success ms-1">Conforme</span>'
                             : '<span class="badge bg-secondary ms-1">No conforme</span>';
                         $receptionsLines[] = '<li class="mb-1">'
-                            . '<a href="' . backpack_url('reception/' . $reception->id . '/show') . '">' . $recLabel . '</a>'
-                            . ' <span class="text-muted">(OC ' . $ocLabel . ')</span> ' . $badge . '</li>';
+                            .'<a href="'.backpack_url('reception/'.$reception->id.'/show').'">'.$recLabel.'</a>'
+                            .' <span class="text-muted">(OC '.$ocLabel.')</span> '.$badge.'</li>';
                     }
                 }
 
                 $receptionsBlock = '';
                 if ($receptionsLines !== []) {
                     $receptionsBlock .= '<div class="mb-3"><strong><i class="la la-truck-loading"></i> Recepciones registradas</strong>';
-                    $receptionsBlock .= '<ul class="mb-0 ps-3">' . implode('', $receptionsLines) . '</ul></div>';
+                    $receptionsBlock .= '<ul class="mb-0 ps-3">'.implode('', $receptionsLines).'</ul></div>';
                 }
 
                 if (! $isResponsableArea) {
@@ -4634,11 +4726,11 @@ class PurchaseRequestCrudController extends CrudController
                     }
 
                     return '<div class="card border-info mt-3">'
-                        . '<div class="card-header bg-info text-white">'
-                        . '<h6 class="mb-0"><i class="la la-truck-loading"></i> Entrega y recepción</h6>'
-                        . '</div>'
-                        . '<div class="card-body">' . $receptionsBlock . '</div>'
-                        . '</div>';
+                        .'<div class="card-header bg-info text-white">'
+                        .'<h6 class="mb-0"><i class="la la-truck-loading"></i> Entrega y recepción</h6>'
+                        .'</div>'
+                        .'<div class="card-body">'.$receptionsBlock.'</div>'
+                        .'</div>';
                 }
 
                 // Verificar condiciones para acciones (responsable de área):
@@ -4667,7 +4759,7 @@ class PurchaseRequestCrudController extends CrudController
 
                 $html = '<div class="card border-success mt-3">';
                 $html .= '<div class="card-header bg-success text-white">';
-                $html .= '<h6 class="mb-0"><i class="la la-tasks"></i> ' . ($canShowActionButtons ? 'Acciones disponibles' : 'Entrega y recepción') . '</h6>';
+                $html .= '<h6 class="mb-0"><i class="la la-tasks"></i> '.($canShowActionButtons ? 'Acciones disponibles' : 'Entrega y recepción').'</h6>';
                 $html .= '</div>';
                 $html .= '<div class="card-body">';
                 if ($receptionsBlock !== '') {
@@ -4678,7 +4770,7 @@ class PurchaseRequestCrudController extends CrudController
                     $html .= '<div class="row">';
                     // Botón para crear entrega
                     $html .= '<div class="col-md-6 mb-2">';
-                    $html .= '<a href="' . backpack_url('delivery/create?purchase_request_id=' . $entry->id) . '" class="btn btn-primary btn-block">';
+                    $html .= '<a href="'.backpack_url('delivery/create?purchase_request_id='.$entry->id).'" class="btn btn-primary btn-block">';
                     $html .= '<i class="la la-people-carry"></i> Crear Entrega';
                     $html .= '</a>';
                     $html .= '</div>';
@@ -4687,7 +4779,7 @@ class PurchaseRequestCrudController extends CrudController
                     $firstPurchaseOrder = $entry->purchaseOrders->first();
                     if ($firstPurchaseOrder && $firstPurchaseOrder->receptions->isEmpty()) {
                         $html .= '<div class="col-md-6 mb-2">';
-                        $html .= '<a href="' . backpack_url('reception/create?purchase_order_id=' . $firstPurchaseOrder->id) . '" class="btn btn-success btn-block">';
+                        $html .= '<a href="'.backpack_url('reception/create?purchase_order_id='.$firstPurchaseOrder->id).'" class="btn btn-success btn-block">';
                         $html .= '<i class="la la-truck-loading"></i> Crear Recepción';
                         $html .= '</a>';
                         $html .= '</div>';
@@ -4700,25 +4792,25 @@ class PurchaseRequestCrudController extends CrudController
 
                 return $html;
             });
-        
+
         // Agregar botones de acción en la vista previa
         // Botón para generar planilla comparativa (solo para usuarios que no sean role_responsable_area)
         $user = backpack_user();
-        if (!$user || !$user->hasRole('role_responsable_area', 'backpack')) {
+        if (! $user || ! $user->hasRole('role_responsable_area', 'backpack')) {
             CRUD::addButton('top', 'comparative_excel', 'view', 'crud::buttons.comparative_excel', 'end');
-            
+
             // Botón para generar/ver orden de compra (solo para usuarios que no sean role_responsable_area)
             CRUD::addButton('top', 'purchase_order_action', 'view', 'crud::buttons.purchase_order_action', 'end');
         }
-        
+
         // Agregar columna para botones de aprobación o información de aprobación
         CRUD::column('approval_actions')->label('Aprobación')->type('custom_html')
-            ->value(function($entry) {
+            ->value(function ($entry) {
                 $user = backpack_user();
-                if (!$user) {
+                if (! $user) {
                     return '';
                 }
-                
+
                 // Aprobada, o completada pero conservando datos de aprobación (antes «Completada» devolvía vacío → «-» en la vista)
                 $mostrarResumenAprobacion = $entry->status === 'Aprobada'
                     || ($entry->status === 'Completada' && ($entry->approved_by || $entry->approved_date));
@@ -4729,7 +4821,7 @@ class PurchaseRequestCrudController extends CrudController
                     $html = '<div class="card border-success mt-3">';
                     $html .= '<div class="card-header bg-success text-white">';
                     $tituloTarjeta = $entry->status === 'Completada' ? 'Registro de aprobación' : 'Solicitud aprobada';
-                    $html .= '<h6 class="mb-0"><i class="la la-check-circle"></i> ' . e($tituloTarjeta) . '</h6>';
+                    $html .= '<h6 class="mb-0"><i class="la la-check-circle"></i> '.e($tituloTarjeta).'</h6>';
                     $html .= '</div>';
                     $html .= '<div class="card-body">';
 
@@ -4746,7 +4838,7 @@ class PurchaseRequestCrudController extends CrudController
                     }
 
                     if ($aprobador) {
-                        $html .= '<p class="mb-2"><strong>Aprobada por:</strong> ' . e($aprobador->name);
+                        $html .= '<p class="mb-2"><strong>Aprobada por:</strong> '.e($aprobador->name);
                         if (method_exists($aprobador, 'hasRole')) {
                             if ($aprobador->hasRole('role_representante_legal', 'backpack')) {
                                 $html .= ' <span class="badge bg-info text-white">Representante legal</span>';
@@ -4760,7 +4852,7 @@ class PurchaseRequestCrudController extends CrudController
                         }
                         $html .= '</p>';
                     } elseif ($entry->selectedBy) {
-                        $html .= '<p class="mb-2"><strong>Consta aprobación vía selección de cotización por:</strong> ' . e($entry->selectedBy->name) . '</p>';
+                        $html .= '<p class="mb-2"><strong>Consta aprobación vía selección de cotización por:</strong> '.e($entry->selectedBy->name).'</p>';
                     } else {
                         $html .= '<p class="mb-2 text-muted"><strong>Aprobación:</strong> no hay usuario asociado a la firma en base de datos.</p>';
                     }
@@ -4769,11 +4861,11 @@ class PurchaseRequestCrudController extends CrudController
                         $approvedDate = $entry->approved_date instanceof \Carbon\Carbon
                             ? $entry->approved_date->format('d/m/Y H:i')
                             : \Carbon\Carbon::parse($entry->approved_date)->format('d/m/Y H:i');
-                        $html .= '<p class="mb-2"><strong>Fecha de aprobación:</strong> ' . $approvedDate . '</p>';
+                        $html .= '<p class="mb-2"><strong>Fecha de aprobación:</strong> '.$approvedDate.'</p>';
                     }
 
                     if ($entry->approval_justification) {
-                        $html .= '<p class="mb-0"><strong>Justificación:</strong> ' . nl2br(e($entry->approval_justification)) . '</p>';
+                        $html .= '<p class="mb-0"><strong>Justificación:</strong> '.nl2br(e($entry->approval_justification)).'</p>';
                     }
 
                     $html .= '</div>';
@@ -4781,7 +4873,7 @@ class PurchaseRequestCrudController extends CrudController
 
                     return $html;
                 }
-                
+
                 // Si la solicitud está rechazada, mostrar información
                 if ($entry->status === 'Rechazada') {
                     $html = '<div class="card border-danger mt-3">';
@@ -4789,32 +4881,32 @@ class PurchaseRequestCrudController extends CrudController
                     $html .= '<h6 class="mb-0"><i class="la la-times-circle"></i> Solicitud Rechazada</h6>';
                     $html .= '</div>';
                     $html .= '<div class="card-body">';
-                    
+
                     if ($entry->approvedBy) {
-                        $html .= '<p class="mb-2"><strong>Rechazada por:</strong> ' . e($entry->approvedBy->name) . '</p>';
+                        $html .= '<p class="mb-2"><strong>Rechazada por:</strong> '.e($entry->approvedBy->name).'</p>';
                     }
-                    
+
                     if ($entry->approved_date) {
-                        $rejectedDate = $entry->approved_date instanceof \Carbon\Carbon 
-                            ? $entry->approved_date->format('d/m/Y H:i') 
+                        $rejectedDate = $entry->approved_date instanceof \Carbon\Carbon
+                            ? $entry->approved_date->format('d/m/Y H:i')
                             : \Carbon\Carbon::parse($entry->approved_date)->format('d/m/Y H:i');
-                        $html .= '<p class="mb-0"><strong>Fecha de rechazo:</strong> ' . $rejectedDate . '</p>';
+                        $html .= '<p class="mb-0"><strong>Fecha de rechazo:</strong> '.$rejectedDate.'</p>';
                     }
-                    
+
                     $html .= '</div>';
                     $html .= '</div>';
-                    
+
                     return $html;
                 }
-                
+
                 // Completada sin approved_by / approved_date: sin bloque de aprobación (el resumen ya se mostró arriba si existía)
                 if ($entry->status === 'Completada') {
                     return '';
                 }
-                
+
                 // Si es una compra directa pendiente de autorización, no mostrar nada aquí
                 // (se maneja en la columna direct_purchase_actions)
-                if ($entry->is_direct_purchase && $entry->direct_purchase_authorization_requested && !$entry->direct_purchase_authorized_by && !$entry->direct_purchase_authorization_rejected) {
+                if ($entry->is_direct_purchase && $entry->direct_purchase_authorization_requested && ! $entry->direct_purchase_authorized_by && ! $entry->direct_purchase_authorization_rejected) {
                     return '';
                 }
 
@@ -4824,60 +4916,66 @@ class PurchaseRequestCrudController extends CrudController
                 $entryForApproval = clone $entry;
                 $entryForApproval->total_amount = $effectiveTotal;
                 $entryForApproval->requires_admin_approval = $effectiveTotal > $comprasLimit;
-                
+
                 // Verificar si el usuario puede aprobar esta solicitud
-                if (!$entryForApproval->canBeApprovedBy($user)) {
+                if (! $entryForApproval->canBeApprovedBy($user)) {
                     // Si es responsable de compras y supera su límite
                     if ($user->hasRole('role_responsable_compras', 'backpack')) {
                         $adminLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_admin_institucion');
                         $apoderadoLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_apoderado');
                         $representanteLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_representante_legal');
+
                         return '<div class="alert alert-warning mt-3">
                             <i class="la la-exclamation-triangle"></i> 
-                            <strong>Límite excedido:</strong> Esta solicitud ($' . number_format($effectiveTotal, 2) . ') supera tu límite de autorización de $' . number_format($comprasLimit, 2) . '. No puedes aprobar esta solicitud. Requiere aprobación del administrador del instituto (límite: $' . number_format($adminLimit, 2) . '), apoderado (límite: $' . number_format($apoderadoLimit, 2) . ') o representante legal (límite: $' . number_format($representanteLimit, 2) . ').
+                            <strong>Límite excedido:</strong> Esta solicitud ($'.number_format($effectiveTotal, 2).') supera tu límite de autorización de $'.number_format($comprasLimit, 2).'. No puedes aprobar esta solicitud. Requiere aprobación del administrador del instituto (límite: $'.number_format($adminLimit, 2).'), apoderado (límite: $'.number_format($apoderadoLimit, 2).') o representante legal (límite: $'.number_format($representanteLimit, 2).').
                         </div>';
                     }
-                    
+
                     // Si es administrador del instituto y supera su límite
                     if ($user->hasRole('role_admin_institucion', 'backpack')) {
                         $adminLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_admin_institucion');
+
                         return '<div class="alert alert-danger mt-3">
                             <i class="la la-exclamation-triangle"></i> 
-                            <strong>Límite excedido:</strong> Esta solicitud ($' . number_format($effectiveTotal, 2) . ') supera tu límite de autorización de $' . number_format($adminLimit, 2) . '. No puedes aprobar esta solicitud.
+                            <strong>Límite excedido:</strong> Esta solicitud ($'.number_format($effectiveTotal, 2).') supera tu límite de autorización de $'.number_format($adminLimit, 2).'. No puedes aprobar esta solicitud.
                         </div>';
                     }
-                    
+
                     // Si es apoderado y supera su límite
                     if ($user->hasRole('role_apoderado', 'backpack')) {
                         $apoderadoLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_apoderado');
+
                         return '<div class="alert alert-danger mt-3">
                             <i class="la la-exclamation-triangle"></i> 
-                            <strong>Límite excedido:</strong> Esta solicitud ($' . number_format($effectiveTotal, 2) . ') supera tu límite de autorización de $' . number_format($apoderadoLimit, 2) . '. No puedes aprobar esta solicitud.
+                            <strong>Límite excedido:</strong> Esta solicitud ($'.number_format($effectiveTotal, 2).') supera tu límite de autorización de $'.number_format($apoderadoLimit, 2).'. No puedes aprobar esta solicitud.
                         </div>';
                     }
-                    
+
                     // Si es representante legal y supera su límite
                     if ($user->hasRole('role_representante_legal', 'backpack')) {
                         $representanteLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_representante_legal');
+
                         return '<div class="alert alert-danger mt-3">
                             <i class="la la-exclamation-triangle"></i> 
-                            <strong>Límite excedido:</strong> Esta solicitud ($' . number_format($effectiveTotal, 2) . ') supera tu límite de autorización de $' . number_format($representanteLimit, 2) . '. No puedes aprobar esta solicitud.
+                            <strong>Límite excedido:</strong> Esta solicitud ($'.number_format($effectiveTotal, 2).') supera tu límite de autorización de $'.number_format($representanteLimit, 2).'. No puedes aprobar esta solicitud.
                         </div>';
                     }
-                    
+
                     // Si requiere aprobación de administrador y el usuario no es admin, apoderado ni representante legal
                     if ($entryForApproval->requires_admin_approval) {
                         $adminLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_admin_institucion');
                         $apoderadoLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_apoderado');
                         $representanteLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_representante_legal');
+
                         return '<div class="alert alert-warning mt-3">
                             <i class="la la-exclamation-triangle"></i> 
-                            <strong>Requiere aprobación:</strong> Esta solicitud ($' . number_format($effectiveTotal, 2) . ') supera el límite de autorización del responsable de compras ($' . number_format($comprasLimit, 2) . '). Requiere aprobación del administrador del instituto (límite: $' . number_format($adminLimit, 2) . '), apoderado (límite: $' . number_format($apoderadoLimit, 2) . ') o representante legal (límite: $' . number_format($representanteLimit, 2) . ').
+                            <strong>Requiere aprobación:</strong> Esta solicitud ($'.number_format($effectiveTotal, 2).') supera el límite de autorización del responsable de compras ($'.number_format($comprasLimit, 2).'). Requiere aprobación del administrador del instituto (límite: $'.number_format($adminLimit, 2).'), apoderado (límite: $'.number_format($apoderadoLimit, 2).') o representante legal (límite: $'.number_format($representanteLimit, 2).').
                         </div>';
                     }
+
                     return '';
                 }
-                
+
                 // Mostrar formulario de aprobación/rechazo
                 $html = '<div class="card border-primary mt-3">';
                 $html .= '<div class="card-header bg-primary text-white">';
@@ -4885,17 +4983,17 @@ class PurchaseRequestCrudController extends CrudController
                 $html .= '</div>';
                 $html .= '<div class="card-body">';
 
-                $hasSelectedQuotation = !empty($entry->selected_market_rate_id)
+                $hasSelectedQuotation = ! empty($entry->selected_market_rate_id)
                     || $entry->marketRates()->where('is_selected', true)->exists();
-                if (!$entry->is_direct_purchase && !$hasSelectedQuotation) {
+                if (! $entry->is_direct_purchase && ! $hasSelectedQuotation) {
                     $html .= '<div class="alert alert-warning mb-3">';
                     $html .= '<i class="la la-exclamation-triangle"></i> Debe seleccionar al menos una cotización en "Cotizaciones Disponibles" antes de aprobar.';
                     $html .= '</div>';
                 }
-                
+
                 // Formulario para aprobar
                 if ($entry->is_direct_purchase || $hasSelectedQuotation) {
-                    $html .= '<form method="POST" action="' . route('purchase-request.approve', $entry->id) . '" class="d-inline">';
+                    $html .= '<form method="POST" action="'.route('purchase-request.approve', $entry->id).'" class="d-inline">';
                     $html .= csrf_field();
                     $html .= '<div class="mb-3">';
                     $html .= '<label for="approval_justification" class="form-label">Justificación de Aprobación:</label>';
@@ -4906,18 +5004,18 @@ class PurchaseRequestCrudController extends CrudController
                     $html .= '</button>';
                     $html .= '</form>';
                 }
-                
+
                 // Botón para rechazar
-                $html .= '<form method="POST" action="' . route('purchase-request.reject', $entry->id) . '" class="d-inline ms-2">';
+                $html .= '<form method="POST" action="'.route('purchase-request.reject', $entry->id).'" class="d-inline ms-2">';
                 $html .= csrf_field();
                 $html .= '<button type="submit" class="btn btn-danger" onclick="return confirm(\'¿Está seguro de rechazar esta solicitud de compra?\')">';
                 $html .= '<i class="la la-times"></i> Rechazar Solicitud';
                 $html .= '</button>';
                 $html .= '</form>';
-                
+
                 $html .= '</div>';
                 $html .= '</div>';
-                
+
                 return $html;
             });
 
@@ -4930,12 +5028,12 @@ class PurchaseRequestCrudController extends CrudController
     {
         $purchaseRequest = \App\Models\PurchaseRequest::with(['details.product'])
             ->findOrFail($id);
-        
+
         return response()->json([
             'id' => $purchaseRequest->id,
             'request_number' => $purchaseRequest->request_number,
             'total_amount' => $purchaseRequest->total_amount,
-            'details' => $purchaseRequest->details->map(function($detail) {
+            'details' => $purchaseRequest->details->map(function ($detail) {
                 return [
                     'id' => $detail->id,
                     'product_id' => $detail->product_id,
@@ -4947,7 +5045,7 @@ class PurchaseRequestCrudController extends CrudController
                     'requested_quantity' => $detail->requested_quantity,
                     'estimated_unit_price' => $detail->estimated_unit_price,
                 ];
-            })
+            }),
         ]);
     }
 
@@ -4957,8 +5055,7 @@ class PurchaseRequestCrudController extends CrudController
     public function getSuppliers()
     {
         $suppliers = \App\Models\Supplier::select('id', 'company_name')->get();
+
         return response()->json($suppliers);
     }
-
 }
-

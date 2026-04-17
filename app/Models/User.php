@@ -86,4 +86,20 @@ class User extends Authenticatable
 
         return $this->getRoleNames()->contains('role_responsable_compras');
     }
+
+    /**
+     * Administradora del instituto (órdenes de pago, anulaciones, etc.).
+     */
+    public function hasAdministradoraInstitucionRole(): bool
+    {
+        if ($this->hasRole('role_admin_institucion', 'backpack')) {
+            return true;
+        }
+
+        if ($this->hasRole('role_admin_institucion', 'web')) {
+            return true;
+        }
+
+        return $this->getRoleNames()->contains('role_admin_institucion');
+    }
 }

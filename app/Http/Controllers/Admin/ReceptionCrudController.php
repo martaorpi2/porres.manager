@@ -245,7 +245,7 @@ class ReceptionCrudController extends CrudController
         CRUD::addField([
             'name' => 'according_info',
             'type' => 'custom_html',
-            'value' => '<p class="text-muted small">La recepción queda <strong>conforme</strong> solo cuando las tres conformidades son <strong>Sí</strong>, el área de <strong>contabilidad</strong> ha registrado la <strong>corroboración ARCA</strong> y, en un paso posterior, el <strong>comprobante válido</strong> (factura). Recién entonces el <strong>responsable de compras</strong> podrá generar la orden de pago desde el detalle de la orden de compra.</p>',
+            'value' => '<p class="text-muted small">La recepción queda <strong>conforme</strong> solo cuando las tres conformidades son <strong>Sí</strong>, el área de <strong>contabilidad</strong> ha registrado la <strong>corroboración ARCA</strong> y, en un paso posterior, el <strong>comprobante válido</strong> (factura). La <strong>orden de pago</strong> la registra la <strong>administradora del instituto</strong> desde el detalle de la orden de compra cuando corresponda, <strong>sin depender</strong> de que esta recepción esté conforme.</p>',
         ]);
         
         // Campo oculto: en crear, responsable = usuario actual; en editar, no fijar «value» (Backpack usa el del modelo).

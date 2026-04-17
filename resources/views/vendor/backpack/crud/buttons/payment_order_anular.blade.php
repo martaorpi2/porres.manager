@@ -1,6 +1,6 @@
 @php
     $user = backpack_user();
-    $canAnular = $user && $user->hasRole('role_admin_institucion', 'backpack') && $entry->status !== 'Anulada';
+    $canAnular = $user instanceof \App\Models\User && $user->hasAdministradoraInstitucionRole() && $entry->status !== 'Anulada';
 @endphp
 @if ($canAnular)
     <a href="{{ url($crud->route.'/'.$entry->getKey().'/anular') }}"

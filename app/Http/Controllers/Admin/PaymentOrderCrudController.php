@@ -39,6 +39,11 @@ class PaymentOrderCrudController extends CrudController
         if ($user && $user->hasRole('role_responsable_area')) {
             abort(403, 'No tienes permiso para acceder a órdenes de pago.');
         }
+
+        // Crear órdenes de pago: solo administradora del instituto
+        if ($user instanceof User && ! $user->hasAdministradoraInstitucionRole()) {
+            CRUD::denyAccess('create');
+        }
         
         CRUD::setModel(\App\Models\PaymentOrder::class);
         CRUD::setRoute(config('backpack.base.route_prefix') . '/payment-order');
@@ -69,7 +74,6 @@ class PaymentOrderCrudController extends CrudController
                 || $user->hasRole('role_representante_legal', 'backpack')
             );
         if ($esSoloPerfilRestringidoSinCompras) {
-            CRUD::removeButton('create');
             CRUD::removeButton('update');
         }
 
@@ -157,23 +161,10 @@ class PaymentOrderCrudController extends CrudController
         $this->crud->hasAccessOrFail('create');
 
         $user = backpack_user();
-        if (! $user instanceof User || ! $user->hasResponsableComprasRole()) {
-            \Alert::error('Solo el responsable de compras puede crear órdenes de pago.')->flash();
+        if (! $user instanceof User || ! $user->hasAdministradoraInstitucionRole()) {
+            \Alert::error('Solo la administradora del instituto puede crear órdenes de pago.')->flash();
 
             return redirect()->back()->withInput();
-        }
-
-        $purchaseOrderId = request()->input('purchase_order_id');
-        if ($purchaseOrderId) {
-            $po = \App\Models\PurchaseOrder::with(['receptions'])->find($purchaseOrderId);
-            if ($po) {
-                $hasConformeReception = $po->receptions->contains(fn (\App\Models\Reception $r) => $r->isAccordingComplete());
-                if (! $hasConformeReception) {
-                    \Alert::error('La orden de pago solo puede generarse cuando exista una recepción conforme (tres conformidades en Sí, corroboración ARCA y comprobante válido) para esta orden de compra.')->flash();
-
-                    return redirect()->back()->withInput();
-                }
-            }
         }
 
         return DB::transaction(function () {
@@ -531,7 +522,7 @@ class PaymentOrderCrudController extends CrudController
             'function' => function ($entry) {
                 if ($entry->status !== 'Anulada') {
                     $user = backpack_user();
-                    if ($user && $user->hasRole('role_admin_institucion', 'backpack')) {
+                    if ($user instanceof User && $user->hasAdministradoraInstitucionRole()) {
                         return '<a href="' . backpack_url('payment-order/' . $entry->id . '/anular') . '" class="btn btn-sm btn-warning"><i class="la la-ban"></i> Anular orden de pago</a>';
                     }
                     return '—';
@@ -654,7 +645,7 @@ class PaymentOrderCrudController extends CrudController
         $paymentOrder = PaymentOrder::with('purchase_order')->findOrFail($id);
         $user = backpack_user();
 
-        if (!$user || !$user->hasRole('role_admin_institucion', 'backpack')) {
+        if (! $user instanceof User || ! $user->hasAdministradoraInstitucionRole()) {
             abort(403, 'Solo la administradora puede anular órdenes de pago.');
         }
 
@@ -678,7 +669,7 @@ class PaymentOrderCrudController extends CrudController
         $paymentOrder = PaymentOrder::findOrFail($id);
         $user = backpack_user();
 
-        if (!$user || !$user->hasRole('role_admin_institucion', 'backpack')) {
+        if (! $user instanceof User || ! $user->hasAdministradoraInstitucionRole()) {
             abort(403, 'Solo la administradora puede anular órdenes de pago.');
         }
 

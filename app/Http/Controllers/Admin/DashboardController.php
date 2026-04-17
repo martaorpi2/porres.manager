@@ -37,6 +37,11 @@ class DashboardController extends Controller
         $isAdminInstitucion = $user->hasRole('role_admin_institucion', 'backpack');
         $isApoderado = $user->hasRole('role_apoderado', 'backpack');
         $isRepresentanteLegal = $user->hasRole('role_representante_legal', 'backpack');
+
+        $requestActivitySessionKey = 'dashboard_requests_last_seen_'.$user->id;
+        $requestActivitySince = session($requestActivitySessionKey)
+            ? \Illuminate\Support\Carbon::parse(session($requestActivitySessionKey))
+            : now()->subHours(48);
         
         // Estadísticas generales
         if ($isPersonal) {
@@ -275,13 +280,10 @@ class DashboardController extends Controller
             $superiorApprovedPurchaseRequestsCount = (clone $superiorApprovedQuery)->count();
         }
 
-        // Responsable de compras: OC con al menos una recepción conforme y sin orden de pago asociada
+        // Administradora del instituto: OC sin orden de pago asociada (la OP no depende de la recepción)
         $purchaseOrdersPendingPaymentAfterConformeCount = 0;
-        if ($isResponsableCompras) {
+        if ($isAdminInstitucion) {
             $purchaseOrdersPendingPaymentAfterConformeCount = PurchaseOrder::query()
-                ->whereHas('receptions', function ($q) {
-                    $q->where('according', 'Si');
-                })
                 ->whereDoesntHave('paymentOrders')
                 ->count();
         }
@@ -497,6 +499,15 @@ class DashboardController extends Controller
             'has_pending' => $hasPendingPurchaseRequests,
         ];
 
+        $requestActivityItems = $this->buildRequestActivityItems(
+            $requestActivitySince,
+            $user,
+            $isPersonal,
+            $isResponsableArea,
+            $isResponsableCompras
+        );
+        session([$requestActivitySessionKey => now()->toDateTimeString()]);
+
         return view('vendor.backpack.ui.dashboard', compact(
             'stats',
             'generalRequests',
@@ -522,7 +533,8 @@ class DashboardController extends Controller
             'stockAlertsHtml',
             'user',
             'generalRequestsAgeStats',
-            'purchaseRequestsAgeStats'
+            'purchaseRequestsAgeStats',
+            'requestActivityItems'
         ));
     }
 
@@ -919,6 +931,60 @@ class DashboardController extends Controller
 
         // Ordenar por déficit (mayor déficit primero)
         return $alerts->sortByDesc('deficit')->values();
+    }
+
+    /**
+     * Actividad reciente en solicitudes (generales y de compra) desde la última visita al panel.
+     *
+     * @param  \Illuminate\Support\Carbon  $since
+     * @return array<int, array{label: string, url: string, ts: int}>
+     */
+    private function buildRequestActivityItems($since, $user, bool $isPersonal, bool $isResponsableArea, bool $isResponsableCompras): array
+    {
+        $items = [];
+
+        $grQuery = GeneralRequest::query()->where('updated_at', '>', $since);
+        if ($isPersonal) {
+            $grQuery->where('created_by', $user->id);
+        } elseif ($isResponsableArea) {
+            $userAreas = \App\Models\ResponsibilityArea::where('responsible_user_id', $user->id)->pluck('id');
+            $grQuery->where(function ($q) use ($user, $userAreas) {
+                $q->where('created_by', $user->id);
+                if ($userAreas->isNotEmpty()) {
+                    $q->orWhereIn('area_id', $userAreas);
+                }
+            });
+        } elseif ($isResponsableCompras) {
+            $grQuery->where('created_by', $user->id);
+        }
+
+        foreach ($grQuery->orderByDesc('updated_at')->limit(8)->get() as $row) {
+            $items[] = [
+                'label' => 'Solicitud general '.$row->number.' — actualizada '.$row->updated_at->diffForHumans(),
+                'url' => backpack_url('general-request/'.$row->id.'/show'),
+                'ts' => $row->updated_at->timestamp,
+            ];
+        }
+
+        $prQuery = PurchaseRequest::query()->where('updated_at', '>', $since);
+        if ($isPersonal || $isResponsableArea) {
+            $prQuery->where('requesting_user_id', $user->id);
+        }
+
+        foreach ($prQuery->orderByDesc('updated_at')->limit(8)->get() as $row) {
+            $num = $row->request_number ?? ('SC-'.$row->id);
+            $items[] = [
+                'label' => 'Solicitud de compra '.$num.' — actualizada '.$row->updated_at->diffForHumans(),
+                'url' => backpack_url('purchase-request/'.$row->id.'/show'),
+                'ts' => $row->updated_at->timestamp,
+            ];
+        }
+
+        usort($items, static function (array $a, array $b) {
+            return $b['ts'] <=> $a['ts'];
+        });
+
+        return array_slice($items, 0, 12);
     }
 }
 
