@@ -2414,13 +2414,22 @@ class PurchaseRequestCrudController extends CrudController
     }
 
     /**
-     * Compras (sin admin) solo puede alterar cotizaciones / asignación por producto si la solicitud sigue pendiente.
+     * Estados en los que compras (sin admin institucional/sistema) puede seleccionar o alternar cotizaciones.
+     * Incluye «En Proceso»: el área puede pasar a ese estado al notificar a compras.
+     */
+    private function statusAllowsComprasSinAdminQuotationSelection(string $status): bool
+    {
+        return in_array($status, ['Pendiente', 'En Proceso'], true);
+    }
+
+    /**
+     * Compras (sin admin) solo puede alterar cotizaciones / asignación por producto en Pendiente o En proceso.
      */
     private function assertComprasCanMutateQuotationSelection(\App\Models\PurchaseRequest $purchaseRequest): void
     {
         $user = backpack_user();
-        if ($this->userIsResponsableComprasSinAdmin($user) && $purchaseRequest->status !== 'Pendiente') {
-            abort(403, 'No se puede modificar cotizaciones ni la asignación por producto: la solicitud ya no está pendiente.');
+        if ($this->userIsResponsableComprasSinAdmin($user) && ! $this->statusAllowsComprasSinAdminQuotationSelection((string) $purchaseRequest->status)) {
+            abort(403, 'No se puede modificar cotizaciones ni la asignación por producto: la solicitud debe estar Pendiente o En proceso.');
         }
     }
 
@@ -2610,7 +2619,7 @@ class PurchaseRequestCrudController extends CrudController
         $purchaseRequest->load('marketRates');
 
         if (! PurchaseRequestNotificationService::isAwaitingSuperiorQuotationApproval($purchaseRequest)) {
-            \Alert::error('No se puede enviar la solicitud: la solicitud debe estar pendiente, con cotización(es) seleccionada(s) y monto que requiera aprobación de nivel superior.')->flash();
+            \Alert::error('No se puede enviar la solicitud: la solicitud debe estar pendiente o en proceso, con cotización(es) seleccionada(s) y monto que requiera aprobación de nivel superior.')->flash();
 
             return redirect()->route('purchase-request.show', $id);
         }
@@ -3146,8 +3155,8 @@ class PurchaseRequestCrudController extends CrudController
             return redirect()->back();
         }
 
-        if ($this->userIsResponsableComprasSinAdmin($user) && $purchaseRequest->status !== 'Pendiente') {
-            \Alert::error('No se puede modificar la asignación por producto: la solicitud ya no está pendiente.')->flash();
+        if ($this->userIsResponsableComprasSinAdmin($user) && ! $this->statusAllowsComprasSinAdminQuotationSelection((string) $purchaseRequest->status)) {
+            \Alert::error('No se puede modificar la asignación por producto: la solicitud debe estar Pendiente o En proceso.')->flash();
 
             return redirect()->back();
         }
@@ -4292,7 +4301,7 @@ class PurchaseRequestCrudController extends CrudController
                     && $quotationsViewer->hasRole('role_responsable_compras', 'backpack')
                     && ! $quotationsViewer->hasRole('role_admin_sistema', 'backpack')
                     && ! $quotationsViewer->hasRole('role_admin_institucion', 'backpack');
-                $comprasPuedeEditarSeleccionCotizaciones = ! $comprasSinAdmin || $entry->status === 'Pendiente';
+                $comprasPuedeEditarSeleccionCotizaciones = ! $comprasSinAdmin || $this->statusAllowsComprasSinAdminQuotationSelection((string) $entry->status);
 
                 $html = '';
 
@@ -4440,7 +4449,7 @@ class PurchaseRequestCrudController extends CrudController
                         }
                     }
 
-                    // Asignar cotización por producto (para OC con varios proveedores) — solo quien puede seleccionar cotizaciones (compras/admins); no responsable de área ni representante legal; compras sin admin solo con solicitud pendiente
+                    // Asignar cotización por producto (para OC con varios proveedores) — solo quien puede seleccionar cotizaciones (compras/admins); no responsable de área ni representante legal; compras sin admin solo con solicitud pendiente o en proceso
                     $entry->load(['details.product', 'details.selectedMarketRate.supplier']);
                     if ($quotationsCount >= 2 && $entry->status !== 'Completada' && ! $representanteLegalSinAsignarPorProducto && $comprasPuedeEditarSeleccionCotizaciones && $canSelectQuotations) {
                         $html .= '<div class="card mt-3 border-info">';

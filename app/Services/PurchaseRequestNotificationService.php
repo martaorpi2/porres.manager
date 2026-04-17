@@ -203,7 +203,7 @@ class PurchaseRequestNotificationService
 
     public static function isAwaitingSuperiorQuotationApproval(PurchaseRequest $purchaseRequest): bool
     {
-        if ($purchaseRequest->status !== 'Pendiente' || ! $purchaseRequest->requires_admin_approval) {
+        if (! in_array($purchaseRequest->status, ['Pendiente', 'En Proceso'], true) || ! $purchaseRequest->requires_admin_approval) {
             return false;
         }
         if ($purchaseRequest->is_direct_purchase) {
