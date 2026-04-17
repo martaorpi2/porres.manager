@@ -4316,7 +4316,6 @@ class PurchaseRequestCrudController extends CrudController
                     $html .= '<th>Fecha</th>';
                     $html .= '<th>Total</th>';
                     $html .= '<th>Productos</th>';
-                    $html .= '<th>Estado</th>';
                     $html .= '<th>Acciones</th>';
                     $html .= '</tr>';
                     $html .= '</thead>';
@@ -4370,13 +4369,6 @@ class PurchaseRequestCrudController extends CrudController
                             $productsHtml .= '</ul>';
                         }
                         $html .= '<td>'.$productsHtml.'</td>';
-                        $html .= '<td>';
-                        if ($isSelected) {
-                            $html .= '<span class="badge bg-success">Seleccionada</span>';
-                        } else {
-                            $html .= '<span class="badge bg-secondary">Disponible</span>';
-                        }
-                        $html .= '</td>';
                         $html .= '<td>';
 
                         $html .= '<a href="'.route('market-rate.pdf', $marketRate->id).'" class="btn btn-sm btn-outline-primary me-1" target="_blank">';
