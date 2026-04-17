@@ -15,16 +15,4 @@ return [
 
     'notification_email' => env('PURCHASE_REQUEST_NOTIFICATION_EMAIL', 'morpi@ismp.edu.ar'),
 
-    /*
-    |--------------------------------------------------------------------------
-    | Correo al notificar a compras desde el detalle (responsable de área)
-    |--------------------------------------------------------------------------
-    |
-    | Botón manual en la solicitud: por defecto morpi@ismp.edu.ar. Sobrescribir
-    | con PURCHASE_REQUEST_COMPRAS_MANUAL_NOTIFY_EMAIL en .env si cambia.
-    |
-    */
-
-    'compras_manual_notify_email' => env('PURCHASE_REQUEST_COMPRAS_MANUAL_NOTIFY_EMAIL', 'morpi@ismp.edu.ar'),
-
 ];

@@ -4700,7 +4700,7 @@ class PurchaseRequestCrudController extends CrudController
                         $html .= '</form>';
                     }
                     $html .= '</div>';
-                    $html .= '<p class="text-muted small mb-3">Use <strong>Notificar a compras</strong> para avisar por correo que esta solicitud necesita la intervención del sector de compras. Si la solicitud está <strong>Pendiente</strong>, pasará a estado <strong>En proceso</strong>.</p>';
+                    $html .= '<p class="text-muted small mb-3">Use <strong>Notificar a compras</strong> para enviar un correo a los usuarios con rol <strong>responsable de compras</strong>. Si la solicitud está <strong>Pendiente</strong>, pasará a estado <strong>En proceso</strong>.</p>';
                 }
 
                 if ($suggestions->isEmpty()) {

@@ -84,19 +84,10 @@ class PurchaseRequestNotificationService
     }
 
     /**
-     * Aviso manual del responsable de área: pide intervención de compras (destino fijo por configuración).
+     * Aviso manual del responsable de área: pide intervención de compras (mismo destinatario que el resto de avisos a compras: rol responsable de compras).
      */
     public static function notifyComprasManualInterventionFromArea(PurchaseRequest $purchaseRequest, ?Authenticatable $requestedBy = null): void
     {
-        $to = trim((string) config('purchase_requests.compras_manual_notify_email', 'morpi@ismp.edu.ar'));
-        if ($to === '' || ! filter_var($to, FILTER_VALIDATE_EMAIL)) {
-            Log::warning('No se envió aviso manual a compras: correo de destino inválido o vacío.', [
-                'purchase_request_id' => $purchaseRequest->id,
-            ]);
-
-            return;
-        }
-
         $url = self::purchaseRequestUrl($purchaseRequest);
         $intro = 'El responsable de área solicitó que el sector de compras intervenga en esta solicitud para continuar y completar el proceso de compra.';
         if ($requestedBy instanceof User) {
@@ -105,7 +96,8 @@ class PurchaseRequestNotificationService
 
         $subject = 'Solicitud de compra — intervención de compras — '.($purchaseRequest->request_number ?? '#'.$purchaseRequest->id);
         $body = self::htmlBody($intro, $purchaseRequest, $url);
-        self::sendHtml($subject, $body, [$to]);
+        $recipients = self::emailsForBackpackRoles(['role_responsable_compras']);
+        self::sendHtml($subject, $body, $recipients);
     }
 
     /**
