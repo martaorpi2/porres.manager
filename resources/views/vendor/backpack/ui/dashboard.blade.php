@@ -206,13 +206,6 @@
       100% { box-shadow: 0 0 0 0 rgba(220, 53, 69, 0); }
   }
 
-  .dashboard-novedades-solicitudes-alert {
-      border-left: 6px solid #0aa2c0;
-      background: #e7f8fc;
-      color: #055160;
-      box-shadow: 0 4px 10px rgba(13, 202, 240, 0.12);
-  }
-  
   /* Estados de Solicitudes Generales */
   .process-item-status.status-creada { background: #6c757d !important; color: #fff !important; }
   .process-item-status.status-revisada-area {
@@ -1183,28 +1176,7 @@
 <div class="container-fluid">
     @php
         $pendingLegalApprovalsCount = isset($pendingApprovalRequests) ? $pendingApprovalRequests->count() : 0;
-        $requestActivityItems = $requestActivityItems ?? [];
     @endphp
-
-    @if(!empty($requestActivityItems))
-    <div class="alert dashboard-novedades-solicitudes-alert mb-4" role="alert">
-        <div class="d-flex flex-column flex-lg-row justify-content-between align-items-start gap-3">
-            <div class="flex-grow-1">
-                <i class="la la-bullhorn mr-2"></i>
-                <strong>Novedades en solicitudes:</strong> cambios registrados desde su última visita al panel.
-                <ul class="mb-0 mt-2 ps-3 small">
-                    @foreach($requestActivityItems as $item)
-                        <li class="mb-1"><a href="{{ $item['url'] }}">{{ $item['label'] }}</a></li>
-                    @endforeach
-                </ul>
-            </div>
-            <div class="d-flex flex-wrap gap-2 flex-shrink-0">
-                <a href="{{ backpack_url('general-request') }}" class="btn btn-sm btn-outline-secondary">Solicitudes generales</a>
-                <a href="{{ backpack_url('purchase-request') }}" class="btn btn-sm btn-outline-secondary">Solicitudes de compra</a>
-            </div>
-        </div>
-    </div>
-    @endif
 
     @if(($isAdminInstitucion ?? false) || ($isApoderado ?? false) || ($isRepresentanteLegal ?? false))
         @if($pendingLegalApprovalsCount > 0)

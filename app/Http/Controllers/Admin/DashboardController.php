@@ -3,19 +3,16 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
-use App\Models\GeneralRequest;
-use App\Models\PurchaseRequest;
-use App\Models\PurchaseOrder;
-use App\Models\PaymentOrder;
-use App\Models\Reception;
-use App\Models\Devolution;
 use App\Models\Delivery;
-use App\Models\Supplier;
-use App\Models\StockLevel;
-use App\Models\Product;
+use App\Models\Devolution;
+use App\Models\GeneralRequest;
 use App\Models\Location;
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
+use App\Models\PaymentOrder;
+use App\Models\Product;
+use App\Models\PurchaseOrder;
+use App\Models\PurchaseRequest;
+use App\Models\Reception;
+use App\Models\Supplier;
 
 class DashboardController extends Controller
 {
@@ -25,12 +22,12 @@ class DashboardController extends Controller
     public function index()
     {
         $user = backpack_user();
-        
+
         // Validar que el usuario esté autenticado
-        if (!$user) {
+        if (! $user) {
             abort(403, 'Usuario no autenticado');
         }
-        
+
         $isPersonal = $user->hasRole('role_personal');
         $isResponsableArea = $user->hasRole('role_responsable_area');
         $isResponsableCompras = $user->hasRole('role_responsable_compras', 'backpack');
@@ -38,16 +35,11 @@ class DashboardController extends Controller
         $isApoderado = $user->hasRole('role_apoderado', 'backpack');
         $isRepresentanteLegal = $user->hasRole('role_representante_legal', 'backpack');
 
-        $requestActivitySessionKey = 'dashboard_requests_last_seen_'.$user->id;
-        $requestActivitySince = session($requestActivitySessionKey)
-            ? \Illuminate\Support\Carbon::parse(session($requestActivitySessionKey))
-            : now()->subHours(48);
-        
         // Estadísticas generales
         if ($isPersonal) {
             // Para role_personal, solo mostrar sus propias solicitudes y entregas
             $userRequests = GeneralRequest::where('created_by', $user->id);
-            
+
             $stats = [
                 'general_requests' => $userRequests->count(),
                 'general_requests_pending' => GeneralRequest::where('created_by', $user->id)->where('status', 'creada')->count(),
@@ -59,15 +51,15 @@ class DashboardController extends Controller
                 // IMPORTANTE: Solo del usuario logueado (created_by = $user->id)
                 'general_requests_approved' => GeneralRequest::where('created_by', $user->id)
                     ->whereNotIn('status', ['entregada_parcialmente', 'entregada_totalmente'])
-                    ->where(function($query) {
-                        $query->where(function($q) {
+                    ->where(function ($query) {
+                        $query->where(function ($q) {
                             // Estados que no son 'creada' ni 'archivada'
                             $q->where('status', '!=', 'creada')
-                              ->where('status', '!=', 'archivada');
-                        })->orWhere(function($q) {
+                                ->where('status', '!=', 'archivada');
+                        })->orWhere(function ($q) {
                             // Estado 'creada' pero convertida a compra
                             $q->where('status', 'creada')
-                              ->where('is_converted', true);
+                                ->where('is_converted', true);
                         });
                     })
                     ->count(),
@@ -95,23 +87,23 @@ class DashboardController extends Controller
         } elseif ($isResponsableArea) {
             // Para role_responsable_area, mostrar solicitudes de su área y sus recepciones/entregas
             $userAreas = \App\Models\ResponsibilityArea::where('responsible_user_id', $user->id)->pluck('id');
-            $userRequestsQuery = GeneralRequest::where(function($query) use ($user, $userAreas) {
+            $userRequestsQuery = GeneralRequest::where(function ($query) use ($user, $userAreas) {
                 $query->where('created_by', $user->id);
                 if ($userAreas->isNotEmpty()) {
                     $query->orWhereIn('area_id', $userAreas);
                 }
             });
-            
+
             // Filtrar entregas relacionadas con solicitudes generales de su área
-            $deliveriesQuery = Delivery::whereHas('generalRequest', function($query) use ($user, $userAreas) {
-                $query->where(function($q) use ($user, $userAreas) {
+            $deliveriesQuery = Delivery::whereHas('generalRequest', function ($query) use ($user, $userAreas) {
+                $query->where(function ($q) use ($user, $userAreas) {
                     $q->where('created_by', $user->id);
                     if ($userAreas->isNotEmpty()) {
                         $q->orWhereIn('area_id', $userAreas);
                     }
                 });
             });
-            
+
             $stats = [
                 'general_requests' => $userRequestsQuery->count(),
                 'general_requests_pending' => (clone $userRequestsQuery)->where('status', 'creada')->count(),
@@ -121,7 +113,7 @@ class DashboardController extends Controller
                 'purchase_requests_pending' => PurchaseRequest::where('requesting_user_id', $user->id)->where('status', 'Pendiente')->count(),
                 'purchase_requests_normal' => PurchaseRequest::where('requesting_user_id', $user->id)
                     ->whereIn('status', ['Aprobada', 'Completada'])
-                    ->where(function($q) {
+                    ->where(function ($q) {
                         $q->where('purchase_type', 'normal')->orWhereNull('purchase_type');
                     })->count(),
                 'purchase_requests_direct' => PurchaseRequest::where('requesting_user_id', $user->id)
@@ -147,7 +139,7 @@ class DashboardController extends Controller
                 'purchase_requests' => PurchaseRequest::count(),
                 'purchase_requests_pending' => PurchaseRequest::where('status', 'Pendiente')->count(),
                 'purchase_requests_normal' => PurchaseRequest::whereIn('status', ['Aprobada', 'Completada'])
-                    ->where(function($q) {
+                    ->where(function ($q) {
                         $q->where('purchase_type', 'normal')->orWhereNull('purchase_type');
                     })->count(),
                 'purchase_requests_direct' => PurchaseRequest::whereIn('status', ['Aprobada', 'Completada'])
@@ -166,13 +158,13 @@ class DashboardController extends Controller
 
         // Obtener solicitudes generales recientes con sus detalles
         $generalRequestsQuery = GeneralRequest::with(['createdBy', 'area', 'details.product', 'purchaseRequests']);
-        
+
         if ($isPersonal) {
             $generalRequestsQuery->where('created_by', $user->id);
         } elseif ($isResponsableArea) {
             // Responsable de área: ver solicitudes de su área Y las que él solicita
             $userAreas = \App\Models\ResponsibilityArea::where('responsible_user_id', $user->id)->pluck('id');
-            $generalRequestsQuery->where(function($query) use ($user, $userAreas) {
+            $generalRequestsQuery->where(function ($query) use ($user, $userAreas) {
                 $query->where('created_by', $user->id);
                 if ($userAreas->isNotEmpty()) {
                     $query->orWhereIn('area_id', $userAreas);
@@ -182,7 +174,7 @@ class DashboardController extends Controller
             // Responsable de compras: solo sus propias solicitudes generales
             $generalRequestsQuery->where('created_by', $user->id);
         }
-        
+
         $generalRequests = $generalRequestsQuery
             ->orderBy('created_at', 'desc')
             ->orderBy('id', 'desc')
@@ -191,7 +183,7 @@ class DashboardController extends Controller
 
         // Obtener solicitudes de compra recientes
         $purchaseRequestsQuery = PurchaseRequest::with(['requestingUser', 'responsibilityArea', 'convertedFromGeneralRequest', 'details.product', 'selectedMarketRate']);
-        
+
         if ($isResponsableArea) {
             // Para role_responsable_area, solo mostrar sus solicitudes de compra
             $purchaseRequestsQuery->where('requesting_user_id', $user->id);
@@ -199,19 +191,19 @@ class DashboardController extends Controller
             // Para role_personal, no mostrar solicitudes de compra
             $purchaseRequests = collect();
         }
-        
-        if (!$isPersonal) {
+
+        if (! $isPersonal) {
             $purchaseRequests = $purchaseRequestsQuery
                 ->orderBy('created_at', 'desc')
                 ->limit(12)
                 ->get();
         }
-        
+
         // Obtener solicitudes de compra pendientes de aprobación del administrador del instituto, apoderado o representante legal
         $pendingApprovalRequests = collect();
         if ($isAdminInstitucion || $isApoderado || $isRepresentanteLegal) {
             $comprasLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_responsable_compras');
-            
+
             if ($isAdminInstitucion) {
                 $userLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_admin_institucion');
             } elseif ($isApoderado) {
@@ -219,27 +211,27 @@ class DashboardController extends Controller
             } else {
                 $userLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_representante_legal');
             }
-            
+
             $pendingApprovalRequests = PurchaseRequest::with(['requestingUser', 'responsibilityArea', 'details.product', 'directPurchaseSupplier', 'marketRates'])
                 ->where('status', 'Pendiente')
-                ->where(function($query) use ($userLimit, $comprasLimit) {
+                ->where(function ($query) use ($userLimit, $comprasLimit) {
                     // Solicitudes normales que requieren aprobación de administrador
-                    $query->where(function($q) use ($userLimit, $comprasLimit) {
+                    $query->where(function ($q) use ($userLimit, $comprasLimit) {
                         $q->where('requires_admin_approval', true)
-                          ->where('total_amount', '<=', $userLimit)
-                          ->where('total_amount', '>', $comprasLimit);
+                            ->where('total_amount', '<=', $userLimit)
+                            ->where('total_amount', '>', $comprasLimit);
                     })
                     // O compras directas pendientes de autorización
-                    ->orWhere(function($q) use ($userLimit) {
-                        $q->where('is_direct_purchase', true)
-                          ->where('direct_purchase_authorization_requested', true)
-                          ->whereNull('direct_purchase_authorized_by')
-                          ->where(function($subQ) {
-                              $subQ->where('direct_purchase_authorization_rejected', false)
-                                   ->orWhereNull('direct_purchase_authorization_rejected');
-                          })
-                          ->where('total_amount', '<=', $userLimit);
-                    });
+                        ->orWhere(function ($q) use ($userLimit) {
+                            $q->where('is_direct_purchase', true)
+                                ->where('direct_purchase_authorization_requested', true)
+                                ->whereNull('direct_purchase_authorized_by')
+                                ->where(function ($subQ) {
+                                    $subQ->where('direct_purchase_authorization_rejected', false)
+                                        ->orWhereNull('direct_purchase_authorization_rejected');
+                                })
+                                ->where('total_amount', '<=', $userLimit);
+                        });
                 })
                 ->orderBy('created_at', 'asc') // Ordenar por más antiguas primero
                 ->limit(12)
@@ -290,7 +282,7 @@ class DashboardController extends Controller
 
         // Obtener órdenes de compra recientes (solo si no es role_personal ni role_responsable_area)
         $purchaseOrders = collect();
-        if (!$isPersonal && !$isResponsableArea) {
+        if (! $isPersonal && ! $isResponsableArea) {
             $purchaseOrders = PurchaseOrder::with(['supplier', 'user', 'details', 'receptions'])
                 ->orderBy('created_at', 'desc')
                 ->limit(12)
@@ -299,7 +291,7 @@ class DashboardController extends Controller
 
         // Obtener órdenes de pago recientes (solo si no es role_personal ni role_responsable_area)
         $paymentOrders = collect();
-        if (!$isPersonal && !$isResponsableArea) {
+        if (! $isPersonal && ! $isResponsableArea) {
             $paymentOrders = PaymentOrder::with(['purchase_order.supplier', 'user'])
                 ->orderBy('created_at', 'desc')
                 ->limit(12)
@@ -313,8 +305,8 @@ class DashboardController extends Controller
         } elseif ($isPersonal) {
             $receptions = collect();
         }
-        
-        if (!$isPersonal) {
+
+        if (! $isPersonal) {
             $receptions = $receptionsQuery
                 ->orderBy('created_at', 'desc')
                 ->limit(12)
@@ -323,7 +315,7 @@ class DashboardController extends Controller
 
         // Obtener devoluciones recientes (solo si no es role_personal ni role_responsable_area)
         $devolutions = collect();
-        if (!$isPersonal && !$isResponsableArea) {
+        if (! $isPersonal && ! $isResponsableArea) {
             $devolutions = Devolution::with(['reception.purchase_order.supplier', 'user'])
                 ->orderBy('created_at', 'desc')
                 ->limit(12)
@@ -332,15 +324,15 @@ class DashboardController extends Controller
 
         // Obtener entregas recientes
         $deliveriesQuery = Delivery::with(['reception.purchase_order.supplier', 'generalRequest', 'deliveredBy', 'receivedBy', 'details.product']);
-        
+
         if ($isPersonal) {
             // Para role_personal, solo mostrar entregas donde él es el receptor
             $deliveriesQuery->where('received_by', $user->id);
         } elseif ($isResponsableArea) {
             // Para role_responsable_area, solo mostrar entregas relacionadas con solicitudes generales de su área
             $userAreas = \App\Models\ResponsibilityArea::where('responsible_user_id', $user->id)->pluck('id');
-            $deliveriesQuery->whereHas('generalRequest', function($query) use ($user, $userAreas) {
-                $query->where(function($q) use ($user, $userAreas) {
+            $deliveriesQuery->whereHas('generalRequest', function ($query) use ($user, $userAreas) {
+                $query->where(function ($q) use ($user, $userAreas) {
                     $q->where('created_by', $user->id);
                     if ($userAreas->isNotEmpty()) {
                         $q->orWhereIn('area_id', $userAreas);
@@ -348,7 +340,7 @@ class DashboardController extends Controller
                 });
             });
         }
-        
+
         $deliveries = $deliveriesQuery
             ->orderBy('created_at', 'desc')
             ->limit(12)
@@ -369,15 +361,16 @@ class DashboardController extends Controller
 
         // Obtener 8 proveedores con sus calificaciones promedio (solo si no es role_personal)
         $suppliersWithRatings = collect();
-        if (!$isPersonal) {
+        if (! $isPersonal) {
             $suppliersWithRatings = Supplier::with('ratings')
                 ->get()
-                ->filter(function($supplier) {
+                ->filter(function ($supplier) {
                     return $supplier->ratings->count() > 0;
                 })
-                ->map(function($supplier) {
+                ->map(function ($supplier) {
                     $supplier->average_rating = $supplier->average_rating;
                     $supplier->total_ratings = $supplier->total_ratings;
+
                     return $supplier;
                 })
                 ->sortByDesc('average_rating')
@@ -389,32 +382,32 @@ class DashboardController extends Controller
         $stockAlertsHtml = '';
         if ($isResponsableArea) {
             $stockAlerts = $this->getStockMinimumAlerts($user);
-            
+
             // Generar HTML para las alertas
             if ($stockAlerts->isNotEmpty()) {
                 $stockAlertsHtml = '<div style="text-align: left; max-height: 400px; overflow-y: auto;">';
                 $stockAlertsHtml .= '<div class="alert alert-warning" style="margin-bottom: 15px;">';
-                $stockAlertsHtml .= '<i class="la la-info-circle"></i> <strong>Atención:</strong> Tienes <strong>' . $stockAlerts->count() . '</strong> producto(s) con stock por debajo del mínimo requerido.';
+                $stockAlertsHtml .= '<i class="la la-info-circle"></i> <strong>Atención:</strong> Tienes <strong>'.$stockAlerts->count().'</strong> producto(s) con stock por debajo del mínimo requerido.';
                 $stockAlertsHtml .= '</div>';
                 $stockAlertsHtml .= '<table class="table table-sm table-hover" style="font-size: 0.9em;">';
                 $stockAlertsHtml .= '<thead style="background-color: #f8d7da;"><tr>';
                 $stockAlertsHtml .= '<th>Producto</th><th>Stock Actual</th><th>Stock Mín.</th><th>Déficit</th><th>Ubicaciones</th>';
                 $stockAlertsHtml .= '</tr></thead><tbody>';
-                
+
                 foreach ($stockAlerts as $alert) {
                     $stockAlertsHtml .= '<tr>';
-                    $stockAlertsHtml .= '<td><strong>' . e($alert['product']->name) . '</strong>';
+                    $stockAlertsHtml .= '<td><strong>'.e($alert['product']->name).'</strong>';
                     if ($alert['product']->description) {
-                        $stockAlertsHtml .= '<br><small class="text-muted">' . e(\Str::limit($alert['product']->description, 40)) . '</small>';
+                        $stockAlertsHtml .= '<br><small class="text-muted">'.e(\Str::limit($alert['product']->description, 40)).'</small>';
                     }
                     $stockAlertsHtml .= '</td>';
-                    $stockAlertsHtml .= '<td><span class="badge bg-danger">' . number_format($alert['current_stock'], 0) . '</span></td>';
-                    $stockAlertsHtml .= '<td><span class="badge bg-warning text-dark">' . number_format($alert['minimum_stock'], 0) . '</span></td>';
-                    $stockAlertsHtml .= '<td><span class="badge bg-danger">' . number_format($alert['deficit'], 0) . ' ' . e($alert['product']->unit_measurement ?? 'unidades') . '</span></td>';
+                    $stockAlertsHtml .= '<td><span class="badge bg-danger">'.number_format($alert['current_stock'], 0).'</span></td>';
+                    $stockAlertsHtml .= '<td><span class="badge bg-warning text-dark">'.number_format($alert['minimum_stock'], 0).'</span></td>';
+                    $stockAlertsHtml .= '<td><span class="badge bg-danger">'.number_format($alert['deficit'], 0).' '.e($alert['product']->unit_measurement ?? 'unidades').'</span></td>';
                     $stockAlertsHtml .= '<td>';
                     if ($alert['locations']->isNotEmpty()) {
                         foreach ($alert['locations'] as $location) {
-                            $stockAlertsHtml .= '<span class="badge bg-secondary" style="margin: 2px;">' . e($location['name']) . ': ' . number_format($location['quantity'], 0) . '</span>';
+                            $stockAlertsHtml .= '<span class="badge bg-secondary" style="margin: 2px;">'.e($location['name']).': '.number_format($location['quantity'], 0).'</span>';
                         }
                     } else {
                         $stockAlertsHtml .= '<span class="text-muted">Sin stock</span>';
@@ -422,7 +415,7 @@ class DashboardController extends Controller
                     $stockAlertsHtml .= '</td>';
                     $stockAlertsHtml .= '</tr>';
                 }
-                
+
                 $stockAlertsHtml .= '</tbody></table>';
                 $stockAlertsHtml .= '</div>';
             }
@@ -433,9 +426,9 @@ class DashboardController extends Controller
             'average_days' => 0,
             'max_days' => 0,
         ];
-        
+
         // Solo calcular si NO es responsable de compras (o si es personal/responsable área)
-        if (!$isResponsableCompras || $isPersonal || $isResponsableArea) {
+        if (! $isResponsableCompras || $isPersonal || $isResponsableArea) {
             // Incluir solicitudes con estado 'creada' o 'pendiente_analisis' como pendientes
             $generalRequestsPendingQuery = GeneralRequest::whereIn('status', ['creada', 'pendiente_analisis']);
             if ($isPersonal) {
@@ -443,7 +436,7 @@ class DashboardController extends Controller
             } elseif ($isResponsableArea) {
                 // Responsable de área: ver solicitudes de su área Y las que él solicita
                 $userAreas = \App\Models\ResponsibilityArea::where('responsible_user_id', $user->id)->pluck('id');
-                $generalRequestsPendingQuery->where(function($query) use ($user, $userAreas) {
+                $generalRequestsPendingQuery->where(function ($query) use ($user, $userAreas) {
                     $query->where('created_by', $user->id);
                     if ($userAreas->isNotEmpty()) {
                         $query->orWhereIn('area_id', $userAreas);
@@ -453,15 +446,19 @@ class DashboardController extends Controller
                 // Responsable de compras: solo sus propias solicitudes generales
                 $generalRequestsPendingQuery->where('created_by', $user->id);
             }
-            
+
             $generalRequestsPending = $generalRequestsPendingQuery->get();
             $hasPendingRequests = $generalRequestsPending->count() > 0;
             $generalRequestsAgeStats = [
                 'average_days' => $hasPendingRequests
-                    ? round($generalRequestsPending->avg(function($req) { return floor($req->created_at->diffInDays(now())); }))
+                    ? round($generalRequestsPending->avg(function ($req) {
+                        return floor($req->created_at->diffInDays(now()));
+                    }))
                     : 0,
                 'max_days' => $hasPendingRequests
-                    ? (int) floor($generalRequestsPending->max(function($req) { return $req->created_at->diffInDays(now()); }))
+                    ? (int) floor($generalRequestsPending->max(function ($req) {
+                        return $req->created_at->diffInDays(now());
+                    }))
                     : 0,
                 'has_pending' => $hasPendingRequests,
             ];
@@ -480,33 +477,26 @@ class DashboardController extends Controller
             // No filtrar por usuario
         }
         // Para otros roles (admin, apoderado, etc.): ver todas
-        
+
         $purchaseRequestsPending = $purchaseRequestsPendingQuery->get();
         $hasPendingPurchaseRequests = $purchaseRequestsPending->count() > 0;
         $purchaseRequestsAgeStats = [
             'average_days' => $hasPendingPurchaseRequests
-                ? round($purchaseRequestsPending->avg(function($req) { 
+                ? round($purchaseRequestsPending->avg(function ($req) {
                     $date = $req->created_at ?? $req->request_date;
-                    return floor($date->diffInDays(now())); 
+
+                    return floor($date->diffInDays(now()));
                 }))
                 : 0,
             'max_days' => $hasPendingPurchaseRequests
-                ? (int) floor($purchaseRequestsPending->max(function($req) { 
+                ? (int) floor($purchaseRequestsPending->max(function ($req) {
                     $date = $req->created_at ?? $req->request_date;
-                    return $date->diffInDays(now()); 
+
+                    return $date->diffInDays(now());
                 }))
                 : 0,
             'has_pending' => $hasPendingPurchaseRequests,
         ];
-
-        $requestActivityItems = $this->buildRequestActivityItems(
-            $requestActivitySince,
-            $user,
-            $isPersonal,
-            $isResponsableArea,
-            $isResponsableCompras
-        );
-        session([$requestActivitySessionKey => now()->toDateTimeString()]);
 
         return view('vendor.backpack.ui.dashboard', compact(
             'stats',
@@ -533,8 +523,7 @@ class DashboardController extends Controller
             'stockAlertsHtml',
             'user',
             'generalRequestsAgeStats',
-            'purchaseRequestsAgeStats',
-            'requestActivityItems'
+            'purchaseRequestsAgeStats'
         ));
     }
 
@@ -547,15 +536,15 @@ class DashboardController extends Controller
 
         // Obtener solicitudes generales con sus procesos relacionados
         $generalRequests = GeneralRequest::with([
-            'purchaseRequests' => function($query) {
+            'purchaseRequests' => function ($query) {
                 $query->with([
                     'selectedMarketRate.supplier',
-                    'details.product'
+                    'details.product',
                 ]);
             },
             'createdBy',
             'area',
-            'details.product'
+            'details.product',
         ])->orderBy('created_at', 'desc')->limit(20)->get();
 
         foreach ($generalRequests as $generalRequest) {
@@ -583,7 +572,7 @@ class DashboardController extends Controller
 
         return $this->mergeStandalonePurchaseRequestFlows($flows, null);
     }
-    
+
     /**
      * Obtener el flujo completo de procesos para usuarios con rol role_personal
      */
@@ -594,19 +583,19 @@ class DashboardController extends Controller
         // Obtener solo las solicitudes generales del usuario
         $generalRequests = GeneralRequest::where('created_by', $user->id)
             ->with([
-                'purchaseRequests' => function($query) {
+                'purchaseRequests' => function ($query) {
                     $query->with([
                         'selectedMarketRate.supplier',
-                        'details.product'
+                        'details.product',
                     ]);
                 },
                 'createdBy',
                 'area',
                 'details.product',
-                'deliveries' => function($query) use ($user) {
+                'deliveries' => function ($query) use ($user) {
                     $query->where('received_by', $user->id)
                         ->with(['deliveredBy', 'receivedBy', 'details.product']);
-                }
+                },
             ])
             ->orderBy('created_at', 'desc')
             ->orderBy('id', 'desc')
@@ -638,7 +627,7 @@ class DashboardController extends Controller
             $query->where('requesting_user_id', $user->id);
         }, $user->id);
     }
-    
+
     /**
      * Obtener el flujo completo de procesos para usuarios con rol role_responsable_area
      */
@@ -648,26 +637,26 @@ class DashboardController extends Controller
         $userAreas = \App\Models\ResponsibilityArea::where('responsible_user_id', $user->id)->pluck('id');
 
         // Obtener solicitudes generales de su área o que él creó
-        $generalRequests = GeneralRequest::where(function($query) use ($user, $userAreas) {
+        $generalRequests = GeneralRequest::where(function ($query) use ($user, $userAreas) {
             $query->where('created_by', $user->id);
             if ($userAreas->isNotEmpty()) {
                 $query->orWhereIn('area_id', $userAreas);
             }
         })
             ->with([
-                'purchaseRequests' => function($query) use ($user) {
+                'purchaseRequests' => function ($query) use ($user) {
                     $query->where('requesting_user_id', $user->id)
                         ->with([
                             'selectedMarketRate.supplier',
-                            'details.product'
+                            'details.product',
                         ]);
                 },
                 'createdBy',
                 'area',
                 'details.product',
-                'deliveries' => function($query) {
+                'deliveries' => function ($query) {
                     $query->with(['deliveredBy', 'receivedBy', 'details.product']);
-                }
+                },
             ])
             ->orderBy('created_at', 'desc')
             ->limit(20)
@@ -839,7 +828,7 @@ class DashboardController extends Controller
         $userAreas = \App\Models\ResponsibilityArea::where('responsible_user_id', $user->id)
             ->where('is_active', true)
             ->pluck('name');
-        
+
         if ($userAreas->isEmpty()) {
             return collect();
         }
@@ -847,7 +836,7 @@ class DashboardController extends Controller
         // Mapear nombres de áreas a nombres de ubicaciones
         $areaLocationMap = $this->getAreaLocationMap();
         $locationNames = [];
-        
+
         foreach ($userAreas as $areaName) {
             if (isset($areaLocationMap[$areaName])) {
                 $locationNames[] = $areaLocationMap[$areaName];
@@ -859,7 +848,7 @@ class DashboardController extends Controller
 
         // Obtener IDs de ubicaciones
         $locationIds = Location::whereIn('name', $locationNames)->pluck('id');
-        
+
         if ($locationIds->isEmpty()) {
             return collect();
         }
@@ -872,7 +861,7 @@ class DashboardController extends Controller
             'Mantenimiento' => ['Herramientas', 'Repuestos', 'Limpieza'],
             'Insumos Generales' => ['Material de Oficina', 'Limpieza', 'Insumos Generales'],
         ];
-        
+
         // Obtener todas las categorías permitidas para las áreas del usuario
         $allowedCategoryNames = collect();
         foreach ($userAreas as $areaName) {
@@ -880,14 +869,14 @@ class DashboardController extends Controller
                 $allowedCategoryNames = $allowedCategoryNames->merge($areaCategoryMap[$areaName]);
             }
         }
-        
+
         // Obtener los IDs de las categorías permitidas
         $allowedCategoryIds = \App\Models\Category::whereIn('name', $allowedCategoryNames->unique())
             ->pluck('id');
-        
+
         // Construir la consulta de productos
         $productsQuery = Product::where('minimum_stock', '>', 0);
-        
+
         // Filtrar por categorías si hay categorías permitidas
         if ($allowedCategoryIds->isNotEmpty()) {
             $productsQuery->whereIn('category_id', $allowedCategoryIds);
@@ -895,12 +884,12 @@ class DashboardController extends Controller
             // Si no hay categorías relacionadas, no mostrar ningún producto
             return collect();
         }
-        
+
         // Obtener productos con sus niveles de stock filtrados por ubicaciones
-        $products = $productsQuery->with(['stockLevels' => function($query) use ($locationIds) {
-                $query->whereIn('location_id', $locationIds)
-                    ->with('location');
-            }])
+        $products = $productsQuery->with(['stockLevels' => function ($query) use ($locationIds) {
+            $query->whereIn('location_id', $locationIds)
+                ->with('location');
+        }])
             ->get();
 
         $alerts = collect();
@@ -908,14 +897,14 @@ class DashboardController extends Controller
         foreach ($products as $product) {
             // Calcular el stock total en las ubicaciones del responsable
             $totalStock = $product->stockLevels->sum('quantity');
-            
+
             // Verificar si el stock está por debajo del mínimo (usando comparación numérica)
-            if ((float)$totalStock < (float)$product->minimum_stock) {
+            if ((float) $totalStock < (float) $product->minimum_stock) {
                 // Obtener las ubicaciones donde está el stock
-                $locations = $product->stockLevels->map(function($stockLevel) {
+                $locations = $product->stockLevels->map(function ($stockLevel) {
                     return [
                         'name' => $stockLevel->location->name ?? 'N/A',
-                        'quantity' => $stockLevel->quantity
+                        'quantity' => $stockLevel->quantity,
                     ];
                 });
 
@@ -932,59 +921,4 @@ class DashboardController extends Controller
         // Ordenar por déficit (mayor déficit primero)
         return $alerts->sortByDesc('deficit')->values();
     }
-
-    /**
-     * Actividad reciente en solicitudes (generales y de compra) desde la última visita al panel.
-     *
-     * @param  \Illuminate\Support\Carbon  $since
-     * @return array<int, array{label: string, url: string, ts: int}>
-     */
-    private function buildRequestActivityItems($since, $user, bool $isPersonal, bool $isResponsableArea, bool $isResponsableCompras): array
-    {
-        $items = [];
-
-        $grQuery = GeneralRequest::query()->where('updated_at', '>', $since);
-        if ($isPersonal) {
-            $grQuery->where('created_by', $user->id);
-        } elseif ($isResponsableArea) {
-            $userAreas = \App\Models\ResponsibilityArea::where('responsible_user_id', $user->id)->pluck('id');
-            $grQuery->where(function ($q) use ($user, $userAreas) {
-                $q->where('created_by', $user->id);
-                if ($userAreas->isNotEmpty()) {
-                    $q->orWhereIn('area_id', $userAreas);
-                }
-            });
-        } elseif ($isResponsableCompras) {
-            $grQuery->where('created_by', $user->id);
-        }
-
-        foreach ($grQuery->orderByDesc('updated_at')->limit(8)->get() as $row) {
-            $items[] = [
-                'label' => 'Solicitud general '.$row->number.' — actualizada '.$row->updated_at->diffForHumans(),
-                'url' => backpack_url('general-request/'.$row->id.'/show'),
-                'ts' => $row->updated_at->timestamp,
-            ];
-        }
-
-        $prQuery = PurchaseRequest::query()->where('updated_at', '>', $since);
-        if ($isPersonal || $isResponsableArea) {
-            $prQuery->where('requesting_user_id', $user->id);
-        }
-
-        foreach ($prQuery->orderByDesc('updated_at')->limit(8)->get() as $row) {
-            $num = $row->request_number ?? ('SC-'.$row->id);
-            $items[] = [
-                'label' => 'Solicitud de compra '.$num.' — actualizada '.$row->updated_at->diffForHumans(),
-                'url' => backpack_url('purchase-request/'.$row->id.'/show'),
-                'ts' => $row->updated_at->timestamp,
-            ];
-        }
-
-        usort($items, static function (array $a, array $b) {
-            return $b['ts'] <=> $a['ts'];
-        });
-
-        return array_slice($items, 0, 12);
-    }
 }
-

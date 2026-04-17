@@ -2720,6 +2720,74 @@ class PurchaseRequestCrudController extends CrudController
     }
 
     /**
+     * Revoca la aprobación de la solicitud (solo representante legal, sin OC generada).
+     */
+    public function cancelPurchaseRequestApproval($id)
+    {
+        $user = backpack_user();
+        $isRepresentanteLegal = $user && (
+            $user->hasRole('role_representante_legal', 'backpack')
+            || $user->hasRole('role_representante_legal', 'web')
+            || $user->getRoleNames()->contains('role_representante_legal')
+        );
+        if (! $isRepresentanteLegal) {
+            abort(403, 'Solo el representante legal puede cancelar una aprobación.');
+        }
+
+        $purchaseRequest = \App\Models\PurchaseRequest::with(['marketRates', 'purchaseOrders'])->findOrFail($id);
+
+        if ($purchaseRequest->status !== 'Aprobada') {
+            \Alert::error('Solo se puede cancelar la aprobación cuando la solicitud está en estado «Aprobada».')->flash();
+
+            return redirect()->route('purchase-request.show', $id);
+        }
+
+        if ($purchaseRequest->purchaseOrders->isNotEmpty()) {
+            \Alert::error('No se puede cancelar la aprobación: ya existen órdenes de compra asociadas a esta solicitud.')->flash();
+
+            return redirect()->route('purchase-request.show', $id);
+        }
+
+        $request = request();
+        $request->validate([
+            'cancellation_reason' => 'required|string|max:1000',
+        ]);
+
+        $effectiveTotal = $this->recalculateSelectedQuotationsTotalForPurchaseRequest($purchaseRequest);
+        $comprasLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_responsable_compras');
+        $requiresAdminApproval = $effectiveTotal > $comprasLimit;
+
+        $update = [
+            'status' => 'Pendiente',
+            'approved_by' => null,
+            'approved_date' => null,
+            'approval_justification' => null,
+            'total_amount' => $effectiveTotal,
+            'requires_admin_approval' => $requiresAdminApproval,
+        ];
+
+        if ($purchaseRequest->is_direct_purchase) {
+            $update['direct_purchase_authorized_by'] = null;
+            $update['direct_purchase_authorized_at'] = null;
+            $update['direct_purchase_authorization_rejected'] = false;
+            $update['direct_purchase_authorization_rejection_reason'] = null;
+            $update['purchase_type'] = 'normal';
+        }
+
+        $purchaseRequest->update($update);
+
+        \Log::info('Aprobación de solicitud de compra cancelada por representante legal', [
+            'purchase_request_id' => $purchaseRequest->id,
+            'user_id' => $user->id,
+            'reason' => $request->input('cancellation_reason'),
+        ]);
+
+        \Alert::success('La aprobación fue anulada. La solicitud volvió a estado pendiente.')->flash();
+
+        return redirect()->route('purchase-request.show', $id);
+    }
+
+    /**
      * Obtiene total efectivo de una cotización (priorizando total con IVA).
      */
     private function getMarketRateEffectiveTotal(\App\Models\MarketRate $marketRate): float
@@ -3535,9 +3603,7 @@ class PurchaseRequestCrudController extends CrudController
         CRUD::column('general_request_info')->label('Solicitud General de Origen')->type('custom_html')
             ->value(function ($entry) {
                 if (! $entry->convertedFromGeneralRequest) {
-                    return '<div class="alert alert-secondary text-dark">
-                        <i class="la la-info-circle"></i> Esta solicitud de compra no fue convertida desde una solicitud general.
-                    </div>';
+                    return '<p class="mb-0" style="color:#000;">Esta solicitud de compra no fue convertida desde una solicitud general.</p>';
                 }
 
                 $generalRequest = $entry->convertedFromGeneralRequest;
@@ -4572,7 +4638,7 @@ class PurchaseRequestCrudController extends CrudController
                 $purchaseOrders = $entry->purchaseOrders;
 
                 if ($purchaseOrders->isEmpty()) {
-                    return '<div class="alert alert-info">No hay órdenes de compra asociadas a esta solicitud.</div>';
+                    return '<p class="mb-0" style="color:#000;">No hay órdenes de compra asociadas a esta solicitud.</p>';
                 }
 
                 $html = '<div class="table-responsive">';
@@ -4635,7 +4701,7 @@ class PurchaseRequestCrudController extends CrudController
                 $entry->load(['purchaseOrders.paymentOrders']);
                 $purchaseOrders = $entry->purchaseOrders;
                 if ($purchaseOrders->isEmpty()) {
-                    return '<div class="alert alert-secondary mb-0"><i class="la la-info-circle"></i> No hay orden de compra asociada. Cuando exista una OC, la administradora del instituto podrá generar la orden de pago (no depende de la recepción conforme).</div>';
+                    return '<p class="mb-0" style="color:#000;">No hay orden de compra asociada. Cuando exista una OC, la administradora del instituto podrá generar la orden de pago (no depende de la recepción conforme).</p>';
                 }
 
                 $isAdmin = $user instanceof \App\Models\User && $user->hasAdministradoraInstitucionRole();
@@ -4896,6 +4962,27 @@ class PurchaseRequestCrudController extends CrudController
 
                     if ($entry->approval_justification) {
                         $html .= '<p class="mb-0"><strong>Justificación:</strong> '.nl2br(e($entry->approval_justification)).'</p>';
+                    }
+
+                    $viewerIsRepresentanteLegal = $user->hasRole('role_representante_legal', 'backpack')
+                        || $user->hasRole('role_representante_legal', 'web')
+                        || $user->getRoleNames()->contains('role_representante_legal');
+
+                    if ($viewerIsRepresentanteLegal
+                        && $entry->status === 'Aprobada'
+                        && ! $entry->purchaseOrders()->exists()) {
+                        $html .= '<div class="mt-3 pt-3 border-top">';
+                        $html .= '<p class="mb-2 text-dark"><strong><i class="la la-undo"></i> Cancelar aprobación</strong></p>';
+                        $html .= '<p class="small text-muted mb-2">La solicitud volverá a <strong>pendiente</strong>. Solo puede anularse si aún no existe ninguna orden de compra asociada.</p>';
+                        $html .= '<form method="POST" action="'.e(route('purchase-request.cancel-approval', $entry->id)).'" class="border rounded p-3 bg-light" onsubmit="return confirm(\'¿Confirmar la anulación de la aprobación? La solicitud quedará pendiente.\');">';
+                        $html .= csrf_field();
+                        $html .= '<div class="mb-3">';
+                        $html .= '<label for="cancellation_reason_'.$entry->id.'" class="form-label">Motivo de la anulación <span class="text-danger">*</span></label>';
+                        $html .= '<textarea name="cancellation_reason" id="cancellation_reason_'.$entry->id.'" class="form-control" rows="3" required maxlength="1000" placeholder="Indique el motivo"></textarea>';
+                        $html .= '</div>';
+                        $html .= '<button type="submit" class="btn btn-warning"><i class="la la-undo"></i> Confirmar anulación de aprobación</button>';
+                        $html .= '</form>';
+                        $html .= '</div>';
                     }
 
                     $html .= '</div>';
