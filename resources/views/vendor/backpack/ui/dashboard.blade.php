@@ -1734,7 +1734,7 @@
                         @if($purchaseRequest->is_direct_purchase && $purchaseRequest->directPurchaseSupplier)
                             <span><i class="la la-truck"></i> {{ $purchaseRequest->directPurchaseSupplier->company_name }}</span>
                         @endif
-                        <span class="process-item-status status-pendiente">{{ $purchaseRequest->status }}</span>
+                        <span class="process-item-status status-{{ strtolower(str_replace(' ', '-', $purchaseRequest->status)) }}">{{ $purchaseRequest->status }}</span>
                     </div>
                 </div>
             @empty

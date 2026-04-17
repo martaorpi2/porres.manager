@@ -52,7 +52,7 @@ class GeneralRequestCrudController extends CrudController
         CRUD::enableResponsiveTable();
         
         // Cargar relaciones necesarias, incluyendo productos para verificar stock y entregas
-        CRUD::addClause('with', ['createdBy', 'area', 'details.product', 'deliveries']);
+        CRUD::addClause('with', ['createdBy', 'requestingUser', 'area', 'details.product', 'deliveries']);
 
         // Filtrar solicitudes según el rol del usuario
         $user = backpack_user();
@@ -104,15 +104,29 @@ class GeneralRequestCrudController extends CrudController
                         });
                     });
                 } else {
-                    // Para todos los demás usuarios, solo mostrar sus propias solicitudes
-                    CRUD::addClause('where', 'created_by', $user->id);
+                    // Personal u otros: solicitudes que creó o en las que figura como solicitante nominado
+                    CRUD::addClause(function ($query) use ($user) {
+                        $query->where('created_by', $user->id)
+                            ->orWhere('requesting_user_id', $user->id);
+                    });
                 }
             }
         }
 
         CRUD::column('number')->label('Número');
         CRUD::column('title')->label('Título');
-        CRUD::column('createdBy.name')->label('Solicitante');
+        CRUD::column('solicitante_display')->label('Solicitante')->type('custom_html')
+            ->value(function ($entry) {
+                $entry->loadMissing(['createdBy', 'requestingUser']);
+                $name = $entry->requestingUser
+                    ? e($entry->requestingUser->name)
+                    : e($entry->createdBy->name ?? '—');
+                if ($entry->requesting_user_id && $entry->createdBy && (int) $entry->created_by !== (int) $entry->requesting_user_id) {
+                    return $name.' <small class="text-muted">('.e($entry->createdBy->name).')</small>';
+                }
+
+                return $name;
+            });
         CRUD::column('area.name')->label('Área');
         CRUD::column('priority')->label('Prioridad');
         CRUD::column('status')->label('Estado');
@@ -229,6 +243,15 @@ class GeneralRequestCrudController extends CrudController
             ->attribute('name')
             ->validationRules('nullable|exists:responsibility_areas,id');
 
+        if ($user && $user->hasRole('role_responsable_compras', 'backpack')) {
+            CRUD::field('requesting_user_id')->label('Quién solicita')
+                ->type('select_from_array')
+                ->options(\App\Models\User::query()->orderBy('name')->pluck('name', 'id')->toArray())
+                ->allows_null(false)
+                ->hint('Seleccione el usuario del personal que realiza la solicitud.')
+                ->validationRules('required|exists:users,id');
+        }
+
         CRUD::field('created_by')->label('Creado por')
             ->type('hidden')
             ->default(backpack_auth()->id() ?? 1)
@@ -310,20 +333,25 @@ class GeneralRequestCrudController extends CrudController
                 abort(403, 'Solo puedes editar solicitudes con estado "creada".');
             }
         } else {
-            // Todos los demás usuarios solo pueden editar sus propias solicitudes
-            if (!$isOwnRequest) {
-                abort(403, 'Solo puedes editar las solicitudes que creaste.');
+            // Personal u otros: creador o usuario nominado como solicitante (p. ej. carga compras)
+            if (! $entry->isCreatedByOrNominatedRequester($user->id)) {
+                abort(403, 'Solo puedes editar las solicitudes que creaste o te fueron asignadas como solicitante.');
             }
-            
-            // Si es el creador, solo puede editar si el estado es "creada"
+
             if ($entry->status !== 'creada') {
                 abort(403, 'Solo puedes editar solicitudes con estado "creada".');
             }
         }
-        
+
         // Usar los mismos campos que en create (edición completa)
         $this->setupCreateOperation();
-        
+
+        if ($entry && $user && $user->hasRole('role_responsable_compras', 'backpack')) {
+            CRUD::modifyField('requesting_user_id', [
+                'default' => $entry->requesting_user_id ?? $entry->created_by,
+            ]);
+        }
+
         // Cargar productos existentes para edición
         if ($entry) {
             // Cargar la relación con productos
@@ -357,9 +385,8 @@ class GeneralRequestCrudController extends CrudController
         $entry = $this->crud->getCurrentEntry();
         
         if ($entry) {
-            // Solo el creador puede eliminar
-            if ($entry->created_by != $user->id) {
-                abort(403, 'Solo puedes eliminar las solicitudes que creaste.');
+            if (! $entry->isCreatedByOrNominatedRequester($user->id)) {
+                abort(403, 'Solo puedes eliminar las solicitudes que creaste o te fueron asignadas como solicitante.');
             }
             
             // Solo se puede eliminar si el estado es "creada"
@@ -384,9 +411,8 @@ class GeneralRequestCrudController extends CrudController
         $user = backpack_user();
         $entry = $this->crud->getEntry($id);
         
-        // Verificar que solo el creador pueda eliminar
-        if ($entry->created_by != $user->id) {
-            abort(403, 'Solo puedes eliminar las solicitudes que creaste.');
+        if (! $entry->isCreatedByOrNominatedRequester($user->id)) {
+            abort(403, 'Solo puedes eliminar las solicitudes que creaste o te fueron asignadas como solicitante.');
         }
         
         // Solo se puede eliminar si el estado es "creada"
@@ -842,20 +868,30 @@ class GeneralRequestCrudController extends CrudController
                     abort(403, 'Solo puedes editar solicitudes con estado "creada".');
                 }
             } else {
-                // Todos los demás usuarios solo pueden editar sus propias solicitudes
-                if (!$isOwnRequest) {
-                    abort(403, 'Solo puedes editar las solicitudes que creaste.');
+                if (! $entry->isCreatedByOrNominatedRequester($user->id)) {
+                    abort(403, 'Solo puedes editar las solicitudes que creaste o te fueron asignadas como solicitante.');
                 }
-                
-                // Si es el creador, solo puede editar si el estado es "creada"
+
                 if ($entry->status !== 'creada') {
                     abort(403, 'Solo puedes editar solicitudes con estado "creada".');
                 }
             }
         }
 
+        if ($user && $user->hasRole('role_responsable_compras', 'backpack')) {
+            $request->validate([
+                'requesting_user_id' => 'required|exists:users,id',
+            ]);
+        }
+
         // Obtener datos para guardar
         $dataToSave = $this->crud->getStrippedSaveRequest($request);
+
+        if ($user && $user->hasRole('role_responsable_compras', 'backpack')) {
+            $dataToSave['requesting_user_id'] = (int) $request->input('requesting_user_id');
+        } else {
+            unset($dataToSave['requesting_user_id']);
+        }
 
         // Debug: Log todos los datos del request
         \Log::info('Datos del request completo (UPDATE):', $request->all());
@@ -903,8 +939,20 @@ class GeneralRequestCrudController extends CrudController
             $request->merge(['created_by' => $user->id]);
         }
 
+        if ($user && $user->hasRole('role_responsable_compras', 'backpack')) {
+            $request->validate([
+                'requesting_user_id' => 'required|exists:users,id',
+            ]);
+        }
+
         // Obtener datos para guardar
         $dataToSave = $this->crud->getStrippedSaveRequest($request);
+
+        if ($user && $user->hasRole('role_responsable_compras', 'backpack')) {
+            $dataToSave['requesting_user_id'] = (int) $request->input('requesting_user_id');
+        } else {
+            unset($dataToSave['requesting_user_id']);
+        }
 
         // Debug: Log todos los datos del request
         \Log::info('Datos del request completo:', $request->all());
@@ -1065,7 +1113,7 @@ class GeneralRequestCrudController extends CrudController
 
     protected function setupShowOperation()
     {
-        CRUD::addClause('with', ['createdBy', 'area', 'purchaseRequests', 'details.product.stockLevels', 'deliveries.details']);
+        CRUD::addClause('with', ['createdBy', 'requestingUser', 'area', 'purchaseRequests', 'details.product.stockLevels', 'deliveries.details']);
 
         // Reemplazar el botón de editar con uno personalizado que verifica condiciones
         CRUD::removeButton('update');
@@ -1078,7 +1126,18 @@ class GeneralRequestCrudController extends CrudController
         CRUD::addButton('line', 'convert_to_purchase', 'view', 'crud::buttons.convert_to_purchase', 'end');
         
         CRUD::column('number')->label('Número');
-        CRUD::column('createdBy.name')->label('Solicitante');
+        CRUD::column('solicitante_show')->label('Solicitante')->type('custom_html')
+            ->value(function ($entry) {
+                $entry->loadMissing(['createdBy', 'requestingUser']);
+                $name = $entry->requestingUser
+                    ? e($entry->requestingUser->name)
+                    : e($entry->createdBy->name ?? '—');
+                if ($entry->requesting_user_id && $entry->createdBy && (int) $entry->created_by !== (int) $entry->requesting_user_id) {
+                    return $name.' <small class="text-muted">(registrada por '.e($entry->createdBy->name).')</small>';
+                }
+
+                return $name;
+            });
         CRUD::column('area.name')->label('Área');
         CRUD::column('title')->label('Título');
         CRUD::column('Description')->label('Descripción');
@@ -1402,7 +1461,7 @@ class GeneralRequestCrudController extends CrudController
         
         // Solo mostrar solicitudes convertidas
         CRUD::addClause('where', 'is_converted', '=', true);
-        CRUD::addClause('with', ['createdBy', 'area', 'purchaseRequests']);
+        CRUD::addClause('with', ['createdBy', 'requestingUser', 'area', 'purchaseRequests']);
         
         CRUD::column('number')->label('Número');
         CRUD::column('title')->label('Título');

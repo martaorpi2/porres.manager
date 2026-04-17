@@ -1379,8 +1379,16 @@ class PurchaseRequestCrudController extends CrudController
             \Log::info('Agregado converted_from_general_request_id a datos:', ['id' => $convertedFrom]);
         }
 
-        // Asegurar que requesting_user_id sea el usuario logueado (especialmente para role_responsable_area)
-        if ($user) {
+        // Solicitante de la solicitud de compra: si viene de una general, usar el solicitante efectivo de esa solicitud
+        if ($convertedFrom) {
+            $generalRequest = \App\Models\GeneralRequest::query()->find($convertedFrom);
+            if ($generalRequest) {
+                $dataToSave['requesting_user_id'] = $generalRequest->solicitingUserId();
+                \Log::info('Establecido requesting_user_id desde solicitud general:', ['user_id' => $dataToSave['requesting_user_id']]);
+            } elseif ($user) {
+                $dataToSave['requesting_user_id'] = $user->id;
+            }
+        } elseif ($user) {
             $dataToSave['requesting_user_id'] = $user->id;
             \Log::info('Establecido requesting_user_id al usuario logueado:', ['user_id' => $user->id, 'email' => $user->email]);
         }
@@ -2765,9 +2773,8 @@ class PurchaseRequestCrudController extends CrudController
             abort(403, 'No tienes permiso para aprobar esta solicitud de compra.');
         }
 
-        // Validar que la solicitud esté en estado pendiente
-        if ($purchaseRequest->status !== 'Pendiente') {
-            abort(403, 'Solo se pueden aprobar solicitudes con estado "Pendiente".');
+        if (! in_array($purchaseRequest->status, ['Pendiente', 'En Proceso'], true)) {
+            abort(403, 'Solo se pueden aprobar solicitudes con estado "Pendiente" o "En proceso".');
         }
 
         // No permitir aprobar sin cotización seleccionada (salvo compra directa).
@@ -2949,9 +2956,8 @@ class PurchaseRequestCrudController extends CrudController
             abort(403, 'No tienes permiso para rechazar esta solicitud de compra.');
         }
 
-        // Validar que la solicitud esté en estado pendiente
-        if ($purchaseRequest->status !== 'Pendiente') {
-            abort(403, 'Solo se pueden rechazar solicitudes con estado "Pendiente".');
+        if (! in_array($purchaseRequest->status, ['Pendiente', 'En Proceso'], true)) {
+            abort(403, 'Solo se pueden rechazar solicitudes con estado "Pendiente" o "En proceso".');
         }
 
         // Actualizar la solicitud como rechazada

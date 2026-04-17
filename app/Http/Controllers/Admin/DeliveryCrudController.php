@@ -162,7 +162,7 @@ class DeliveryCrudController extends CrudController
         $generalRequestId = request()->get('general_request_id');
         $generalRequest = null;
         if ($generalRequestId) {
-            $generalRequest = \App\Models\GeneralRequest::with('createdBy')->find($generalRequestId);
+            $generalRequest = \App\Models\GeneralRequest::with(['createdBy', 'requestingUser'])->find($generalRequestId);
         }
         
         // Campo informativo
@@ -328,10 +328,10 @@ class DeliveryCrudController extends CrudController
             abort(403, 'No se puede crear una entrega para una solicitud que ya está totalmente entregada.');
         }
         
-        // Pre-llenar received_by con el usuario que creó la solicitud general si viene desde ahí
+        // Pre-llenar received_by con el solicitante efectivo de la solicitud general si viene desde ahí
         $receivedByDefault = null;
-        if ($generalRequest && $generalRequest->createdBy) {
-            $receivedByDefault = $generalRequest->createdBy->id;
+        if ($generalRequest) {
+            $receivedByDefault = $generalRequest->solicitingUserId();
         }
         
         CRUD::addField([

@@ -2,8 +2,8 @@
     $user = backpack_user();
     $canDelete = false;
     
-    // Solo el creador puede eliminar, solo si el estado es "creada" y no está convertida a compra
-    if ($entry->created_by == $user->id && $entry->status === 'creada' && !$entry->is_converted) {
+    // Creador o solicitante nominado; solo estado "creada" y no convertida
+    if ($entry->status === 'creada' && ! $entry->is_converted && $entry->isCreatedByOrNominatedRequester($user->id)) {
         $canDelete = true;
     }
 @endphp

@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\MarketRate;
+use App\Models\PurchaseAuthorizationLimit;
 use App\Models\PurchaseOrder;
 use App\Models\PurchaseRequest;
 use App\Models\User;
@@ -35,6 +36,31 @@ class PurchaseRequestNotificationService
             'role_apoderado',
             'role_representante_legal',
         ];
+    }
+
+    /**
+     * Rol(es) a los que debe dirigirse el correo de aprobación: solo el nivel más bajo cuyo tope
+     * de autorización cubre el monto (misma lógica escalonada que canBeApprovedBy cuando requires_admin_approval).
+     *
+     * @return list<string>
+     */
+    private static function approverRoleNamesForAmount(float $totalAmount): array
+    {
+        $adminLimit = (float) PurchaseAuthorizationLimit::getLimitForRole('role_admin_institucion');
+        if ($adminLimit > 0 && $totalAmount <= $adminLimit) {
+            return ['role_admin_institucion'];
+        }
+        $apoderadoLimit = (float) PurchaseAuthorizationLimit::getLimitForRole('role_apoderado');
+        if ($apoderadoLimit > 0 && $totalAmount <= $apoderadoLimit) {
+            return ['role_apoderado'];
+        }
+        $representanteLimit = (float) PurchaseAuthorizationLimit::getLimitForRole('role_representante_legal');
+        if ($representanteLimit > 0 && $totalAmount <= $representanteLimit) {
+            return ['role_representante_legal'];
+        }
+
+        // Monto fuera de los topes configurados o límites en cero: mantener aviso a todos los niveles
+        return self::superiorApproverRoleNames();
     }
 
     /**
@@ -112,7 +138,9 @@ class PurchaseRequestNotificationService
             $purchaseRequest,
             $url
         );
-        $recipients = self::emailsForBackpackRoles(self::superiorApproverRoleNames());
+        $recipients = self::emailsForBackpackRoles(
+            self::approverRoleNamesForAmount((float) ($purchaseRequest->total_amount ?? 0))
+        );
         self::sendHtml($subject, $body, $recipients);
     }
 
@@ -128,7 +156,9 @@ class PurchaseRequestNotificationService
             $purchaseRequest,
             $url
         );
-        $recipients = self::emailsForBackpackRoles(self::superiorApproverRoleNames());
+        $recipients = self::emailsForBackpackRoles(
+            self::approverRoleNamesForAmount((float) ($purchaseRequest->total_amount ?? 0))
+        );
         self::sendHtml($subject, $body, $recipients);
     }
 

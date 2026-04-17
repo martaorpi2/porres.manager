@@ -37,19 +37,21 @@ class DashboardController extends Controller
 
         // Estadísticas generales
         if ($isPersonal) {
-            // Para role_personal, solo mostrar sus propias solicitudes y entregas
-            $userRequests = GeneralRequest::where('created_by', $user->id);
+            // Para role_personal: solicitudes que creó o en las que figura como solicitante nominado
+            $userRequests = GeneralRequest::where(function ($q) use ($user) {
+                $q->where('created_by', $user->id)->orWhere('requesting_user_id', $user->id);
+            });
 
             $stats = [
                 'general_requests' => $userRequests->count(),
-                'general_requests_pending' => GeneralRequest::where('created_by', $user->id)->where('status', 'creada')->count(),
-                'general_requests_delivered' => GeneralRequest::where('created_by', $user->id)
+                'general_requests_pending' => (clone $userRequests)->where('status', 'creada')->count(),
+                'general_requests_delivered' => (clone $userRequests)
                     ->whereIn('status', ['entregada_parcialmente', 'entregada_totalmente'])
                     ->count(),
                 // Aprobadas: cualquier estado excepto 'creada' (a menos que esté convertida), 'archivada' y 'entregada_parcialmente'/'entregada_totalmente'
                 // Las convertidas a compra con estado entregada NO cuentan como aprobadas
                 // IMPORTANTE: Solo del usuario logueado (created_by = $user->id)
-                'general_requests_approved' => GeneralRequest::where('created_by', $user->id)
+                'general_requests_approved' => (clone $userRequests)
                     ->whereNotIn('status', ['entregada_parcialmente', 'entregada_totalmente'])
                     ->where(function ($query) {
                         $query->where(function ($q) {
@@ -64,11 +66,11 @@ class DashboardController extends Controller
                     })
                     ->count(),
                 // Entregadas: las que tienen status = 'entregada_totalmente' o 'entregada_parcialmente'
-                'general_requests_entregada' => GeneralRequest::where('created_by', $user->id)
+                'general_requests_entregada' => (clone $userRequests)
                     ->whereIn('status', ['entregada_parcialmente', 'entregada_totalmente'])
                     ->count(),
                 // Rechazadas: archivadas (status = 'archivada')
-                'general_requests_rejected' => GeneralRequest::where('created_by', $user->id)
+                'general_requests_rejected' => (clone $userRequests)
                     ->where('status', 'archivada')
                     ->count(),
                 'purchase_requests' => 0,
@@ -157,10 +159,12 @@ class DashboardController extends Controller
         }
 
         // Obtener solicitudes generales recientes con sus detalles
-        $generalRequestsQuery = GeneralRequest::with(['createdBy', 'area', 'details.product', 'purchaseRequests']);
+        $generalRequestsQuery = GeneralRequest::with(['createdBy', 'requestingUser', 'area', 'details.product', 'purchaseRequests']);
 
         if ($isPersonal) {
-            $generalRequestsQuery->where('created_by', $user->id);
+            $generalRequestsQuery->where(function ($q) use ($user) {
+                $q->where('created_by', $user->id)->orWhere('requesting_user_id', $user->id);
+            });
         } elseif ($isResponsableArea) {
             // Responsable de área: ver solicitudes de su área Y las que él solicita
             $userAreas = \App\Models\ResponsibilityArea::where('responsible_user_id', $user->id)->pluck('id');
@@ -213,7 +217,7 @@ class DashboardController extends Controller
             }
 
             $pendingApprovalRequests = PurchaseRequest::with(['requestingUser', 'responsibilityArea', 'details.product', 'directPurchaseSupplier', 'marketRates'])
-                ->where('status', 'Pendiente')
+                ->whereIn('status', ['Pendiente', 'En Proceso'])
                 ->where(function ($query) use ($userLimit, $comprasLimit) {
                     // Solicitudes normales que requieren aprobación de administrador
                     $query->where(function ($q) use ($userLimit, $comprasLimit) {
@@ -432,7 +436,9 @@ class DashboardController extends Controller
             // Incluir solicitudes con estado 'creada' o 'pendiente_analisis' como pendientes
             $generalRequestsPendingQuery = GeneralRequest::whereIn('status', ['creada', 'pendiente_analisis']);
             if ($isPersonal) {
-                $generalRequestsPendingQuery->where('created_by', $user->id);
+                $generalRequestsPendingQuery->where(function ($q) use ($user) {
+                    $q->where('created_by', $user->id)->orWhere('requesting_user_id', $user->id);
+                });
             } elseif ($isResponsableArea) {
                 // Responsable de área: ver solicitudes de su área Y las que él solicita
                 $userAreas = \App\Models\ResponsibilityArea::where('responsible_user_id', $user->id)->pluck('id');
@@ -580,8 +586,10 @@ class DashboardController extends Controller
     {
         $flows = [];
 
-        // Obtener solo las solicitudes generales del usuario
-        $generalRequests = GeneralRequest::where('created_by', $user->id)
+        // Solicitudes generales del usuario (creadas por él o nominado como solicitante)
+        $generalRequests = GeneralRequest::where(function ($q) use ($user) {
+            $q->where('created_by', $user->id)->orWhere('requesting_user_id', $user->id);
+        })
             ->with([
                 'purchaseRequests' => function ($query) {
                     $query->with([
@@ -590,6 +598,7 @@ class DashboardController extends Controller
                     ]);
                 },
                 'createdBy',
+                'requestingUser',
                 'area',
                 'details.product',
                 'deliveries' => function ($query) use ($user) {

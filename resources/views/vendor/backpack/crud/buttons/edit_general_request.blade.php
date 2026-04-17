@@ -30,9 +30,8 @@
             if ($isOwnRequest && $entry->status === 'creada') {
                 $canEdit = true;
             }
-        } elseif ($isOwnRequest) {
-            // Todos los demás usuarios solo pueden editar sus propias solicitudes
-            // y solo si el estado es "creada"
+        } elseif ($entry->isCreatedByOrNominatedRequester($user->id)) {
+            // Creador o solicitante nominado (p. ej. compras registró a nombre del usuario)
             if ($entry->status === 'creada') {
                 $canEdit = true;
             }

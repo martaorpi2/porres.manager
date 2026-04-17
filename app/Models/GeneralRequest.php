@@ -14,6 +14,7 @@ class GeneralRequest extends Model
     protected $fillable = [
         'number',
         'created_by',
+        'requesting_user_id',
         'area_id',
         'title',
         'description',
@@ -36,6 +37,40 @@ class GeneralRequest extends Model
     public function createdBy()
     {
         return $this->belongsTo(User::class, 'created_by');
+    }
+
+    /**
+     * Usuario que solicita la mercadería (cuando compras registra en nombre de otra persona).
+     */
+    public function requestingUser()
+    {
+        return $this->belongsTo(User::class, 'requesting_user_id');
+    }
+
+    /**
+     * ID del usuario considerado solicitante para flujos (entrega, conversión a compra, listados).
+     */
+    public function solicitingUserId(): int
+    {
+        return (int) ($this->requesting_user_id ?? $this->created_by);
+    }
+
+    /**
+     * El usuario es quien cargó la solicitud o el solicitante nominado.
+     */
+    public function isCreatedByOrNominatedRequester(?int $userId): bool
+    {
+        if ($userId === null) {
+            return false;
+        }
+        if ((int) $this->created_by === (int) $userId) {
+            return true;
+        }
+        if ($this->requesting_user_id === null) {
+            return false;
+        }
+
+        return (int) $this->requesting_user_id === (int) $userId;
     }
 
     public function area()
