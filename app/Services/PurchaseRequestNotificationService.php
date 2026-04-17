@@ -114,8 +114,7 @@ class PurchaseRequestNotificationService
 
         return '<p>'.$safeIntro.'</p>'
             .'<p><strong>Solicitud:</strong> '.$num.'</p>'
-            .'<p><a href="'.$safeUrl.'">Abrir solicitud en el sistema</a></p>'
-            .'<p style="font-size:12px;color:#555;">Si el enlace no funciona, copie y pegue esta URL en el navegador:<br>'.$safeUrl.'</p>';
+            .'<p><a href="'.$safeUrl.'">Abrir solicitud en el sistema</a></p>';
     }
 
     private static function sendHtml(string $subject, string $html): void

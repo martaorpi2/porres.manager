@@ -2423,7 +2423,6 @@ class PurchaseRequestCrudController extends CrudController
         }
 
         $purchaseRequest = \App\Models\PurchaseRequest::findOrFail($id);
-        $wasAwaitingSuperiorQuotes = PurchaseRequestNotificationService::isAwaitingSuperiorQuotationApproval($purchaseRequest);
         $marketRate = \App\Models\MarketRate::with('quoteDetails')->findOrFail($marketRateId);
 
         $request = request();
@@ -2483,11 +2482,6 @@ class PurchaseRequestCrudController extends CrudController
             'requires_admin_approval' => $recalculatedTotal > $comprasLimit,
         ]);
 
-        $purchaseRequest->refresh();
-        if (PurchaseRequestNotificationService::isAwaitingSuperiorQuotationApproval($purchaseRequest) && ! $wasAwaitingSuperiorQuotes) {
-            PurchaseRequestNotificationService::notifySuperiorsQuotationApprovalNeeded($purchaseRequest);
-        }
-
         return redirect()->route('purchase-request.show', $id);
     }
 
@@ -2512,7 +2506,6 @@ class PurchaseRequestCrudController extends CrudController
         }
 
         $purchaseRequest = \App\Models\PurchaseRequest::with('marketRates')->findOrFail($id);
-        $wasAwaitingSuperiorQuotes = PurchaseRequestNotificationService::isAwaitingSuperiorQuotationApproval($purchaseRequest);
         $marketRate = \App\Models\MarketRate::where('purchase_request_id', $id)->findOrFail($marketRateId);
 
         $newValue = ! (bool) $marketRate->is_selected;
@@ -2546,12 +2539,40 @@ class PurchaseRequestCrudController extends CrudController
             'requires_admin_approval' => $recalculatedTotal > $comprasLimit,
         ]);
 
-        $purchaseRequest->refresh();
-        if (PurchaseRequestNotificationService::isAwaitingSuperiorQuotationApproval($purchaseRequest) && ! $wasAwaitingSuperiorQuotes) {
-            PurchaseRequestNotificationService::notifySuperiorsQuotationApprovalNeeded($purchaseRequest);
+        \Alert::success($newValue ? 'Cotización seleccionada.' : 'Cotización deseleccionada.')->flash();
+
+        return redirect()->route('purchase-request.show', $id);
+    }
+
+    /**
+     * Envía por correo la solicitud de aprobación al nivel superior (tras definir cotizaciones).
+     */
+    public function requestQuotationSuperiorAuthorization($id)
+    {
+        $user = backpack_user();
+        $adminRoles = ['role_admin_sistema', 'role_admin_institucion', 'role_responsable_compras'];
+        $allowed = false;
+        foreach ($adminRoles as $role) {
+            if ($user && $user->hasRole($role, 'backpack')) {
+                $allowed = true;
+                break;
+            }
+        }
+        if (! $allowed) {
+            abort(403, 'Solo el sector de compras o administración puede solicitar esta autorización.');
         }
 
-        \Alert::success($newValue ? 'Cotización seleccionada.' : 'Cotización deseleccionada.')->flash();
+        $purchaseRequest = \App\Models\PurchaseRequest::findOrFail($id);
+        $purchaseRequest->load('marketRates');
+
+        if (! PurchaseRequestNotificationService::isAwaitingSuperiorQuotationApproval($purchaseRequest)) {
+            \Alert::error('No se puede enviar la solicitud: la solicitud debe estar pendiente, con cotización(es) seleccionada(s) y monto que requiera aprobación de nivel superior.')->flash();
+
+            return redirect()->route('purchase-request.show', $id);
+        }
+
+        PurchaseRequestNotificationService::notifySuperiorsQuotationApprovalNeeded($purchaseRequest);
+        \Alert::success('Se envió el correo solicitando autorización al nivel superior.')->flash();
 
         return redirect()->route('purchase-request.show', $id);
     }
@@ -4090,6 +4111,15 @@ class PurchaseRequestCrudController extends CrudController
                 $quotationsViewer = backpack_user();
                 $representanteLegalSinAsignarPorProducto = $quotationsViewer && $quotationsViewer->hasRole('role_representante_legal', 'backpack');
 
+                $adminRolesForQuotations = ['role_admin_sistema', 'role_admin_institucion', 'role_responsable_compras'];
+                $canSelectQuotations = false;
+                foreach ($adminRolesForQuotations as $role) {
+                    if ($quotationsViewer && $quotationsViewer->hasRole($role, 'backpack')) {
+                        $canSelectQuotations = true;
+                        break;
+                    }
+                }
+
                 $html = '';
 
                 if ($marketRates->isEmpty()) {
@@ -4166,17 +4196,6 @@ class PurchaseRequestCrudController extends CrudController
                         $html .= '</td>';
                         $html .= '<td>';
 
-                        // Solo el responsable de compras puede seleccionar cotizaciones
-                        $user = backpack_user();
-                        $adminRoles = ['role_admin_sistema', 'role_admin_institucion', 'role_responsable_compras'];
-                        $canSelect = false;
-                        foreach ($adminRoles as $role) {
-                            if ($user && $user->hasRole($role, 'backpack')) {
-                                $canSelect = true;
-                                break;
-                            }
-                        }
-
                         $html .= '<a href="'.route('market-rate.pdf', $marketRate->id).'" class="btn btn-sm btn-outline-primary me-1" target="_blank">';
                         $html .= '<i class="la la-file-pdf-o"></i> PDF';
                         $html .= '</a>';
@@ -4203,7 +4222,7 @@ class PurchaseRequestCrudController extends CrudController
                             }
                         }
 
-                        if ($entry->status != 'Completada' && $canSelect) {
+                        if ($entry->status != 'Completada' && $canSelectQuotations) {
                             $html .= '<form method="POST" action="'.e(backpack_url('purchase-request/'.$entry->id.'/toggle-market-rate/'.$marketRate->id)).'" style="display:inline-block;" class="me-1">';
                             $html .= csrf_field();
                             if ($isSelected) {
@@ -4221,6 +4240,17 @@ class PurchaseRequestCrudController extends CrudController
                     $html .= '</tbody>';
                     $html .= '</table>';
                     $html .= '</div>';
+
+                    if ($canSelectQuotations && PurchaseRequestNotificationService::isAwaitingSuperiorQuotationApproval($entry)) {
+                        $html .= '<div class="alert alert-warning mt-3 mb-0">';
+                        $html .= '<p class="mb-2"><strong>Autorización de nivel superior</strong></p>';
+                        $html .= '<p class="mb-2 small">Cuando tenga definida(s) la(s) cotización(es) a utilizar, envíe la notificación por correo al nivel que deba aprobar (según monto y roles).</p>';
+                        $html .= '<form method="POST" action="'.e(route('purchase-request.request-quotation-superior-authorization', $entry->id)).'" class="d-inline">';
+                        $html .= csrf_field();
+                        $html .= '<button type="submit" class="btn btn-primary"><i class="la la-envelope"></i> Solicitar autorización</button>';
+                        $html .= '</form>';
+                        $html .= '</div>';
+                    }
 
                     // Botón para descargar planilla comparativa (solo si hay más de una cotización)
                     $quotationsCount = $marketRates->count();

@@ -54,6 +54,7 @@ Route::group([
     Route::get('purchase-request/{id}/select-market-rate/{marketRateId}', 'PurchaseRequestCrudController@showSelectMarketRateForm')->name('purchase-request.show-select-market-rate');
     Route::post('purchase-request/{id}/select-market-rate/{marketRateId}', 'PurchaseRequestCrudController@storeMarketRateSelection')->name('purchase-request.store-market-rate-selection');
     Route::post('purchase-request/{id}/toggle-market-rate/{marketRateId}', 'PurchaseRequestCrudController@toggleMarketRateSelection')->name('purchase-request.toggle-market-rate');
+    Route::post('purchase-request/{id}/request-quotation-superior-authorization', 'PurchaseRequestCrudController@requestQuotationSuperiorAuthorization')->name('purchase-request.request-quotation-superior-authorization');
     Route::get('purchase-request/{id}/suggest-supplier', 'PurchaseRequestCrudController@showSuggestSupplierForm')->name('purchase-request.suggest-supplier');
     Route::post('purchase-request/{id}/suggest-supplier', 'PurchaseRequestCrudController@storeSupplierSuggestion')->name('purchase-request.store-supplier-suggestion');
     Route::post('purchase-request/{id}/assign-quotations', 'PurchaseRequestCrudController@assignQuotations')->name('purchase-request.assign-quotations');
@@ -71,22 +72,22 @@ Route::group([
     Route::get('general-request-converted', 'GeneralRequestCrudController@showConverted')->name('general-request.converted');
     Route::post('general-request/{id}/approve-by-analyst', 'GeneralRequestCrudController@approveByAnalyst')->name('general-request.approve-by-analyst');
     Route::post('general-request/{id}/reject-by-analyst', 'GeneralRequestCrudController@rejectByAnalyst')->name('general-request.reject-by-analyst');
-    
+
     // Product Assignment Routes
     Route::crud('product-assignment', 'ProductAssignmentController');
     Route::get('product-assignment/{generalRequest}/assign', 'ProductAssignmentController@showAssignment')->name('product-assignment.show-assignment');
     Route::post('product-assignment/{generalRequest}/assign', 'ProductAssignmentController@assign')->name('product-assignment.assign');
     Route::get('product-assignment/get-stock', 'ProductAssignmentController@getStock')->name('product-assignment.get-stock');
-    
+
     // User Management
     Route::crud('user', 'UserCrudController');
-    
+
     // Role Management
     Route::crud('role', 'RoleCrudController');
-    
+
     // Permission Management
     Route::crud('permission', 'PermissionCrudController');
-    
+
     // Dashboard custom route
     Route::get('dashboard', 'DashboardController@index')->name('dashboard');
     Route::crud('delivery', 'DeliveryCrudController');
