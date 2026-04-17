@@ -3,7 +3,9 @@
 namespace App\Services;
 
 use App\Models\MarketRate;
+use App\Models\PurchaseOrder;
 use App\Models\PurchaseRequest;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 
@@ -80,6 +82,58 @@ class PurchaseRequestNotificationService
             $url
         );
         self::sendHtml($subject, $body);
+    }
+
+    /**
+     * Orden(es) de compra generadas: avisar a administración (correo centralizado) para generar orden de pago.
+     *
+     * @param  PurchaseOrder|iterable<int, PurchaseOrder>|Collection<int, PurchaseOrder>  $purchaseOrders
+     */
+    public static function notifyAdministratorPurchaseOrdersCreated(PurchaseRequest $purchaseRequest, PurchaseOrder|iterable|Collection $purchaseOrders): void
+    {
+        if ($purchaseOrders instanceof PurchaseOrder) {
+            $orders = collect([$purchaseOrders]);
+        } elseif ($purchaseOrders instanceof Collection) {
+            $orders = $purchaseOrders->values();
+        } else {
+            $orders = collect($purchaseOrders)->values();
+        }
+        $orders = $orders->filter(fn ($po) => $po instanceof PurchaseOrder);
+        if ($orders->isEmpty()) {
+            return;
+        }
+
+        $purchaseRequest->refresh();
+        $prNum = e($purchaseRequest->request_number ?? (string) $purchaseRequest->id);
+        $prUrl = e(self::purchaseRequestUrl($purchaseRequest));
+
+        $items = '';
+        foreach ($orders as $po) {
+            if (! $po instanceof PurchaseOrder) {
+                continue;
+            }
+            $num = e($po->number ?? '#'.$po->id);
+            $ocUrl = e(route('purchase-order.show', $po->id, absolute: true));
+            $items .= '<li><a href="'.$ocUrl.'">'.$num.'</a></li>';
+        }
+
+        if ($items === '') {
+            return;
+        }
+
+        $first = $orders->first();
+        $firstUrl = $first instanceof PurchaseOrder
+            ? e(route('purchase-order.show', $first->id, absolute: true))
+            : '';
+
+        $html = '<p>'.e('Se generó la orden de compra vinculada a la solicitud. Puede generar la orden de pago desde el detalle de cada orden de compra (no depende de la recepción conforme).').'</p>'
+            .'<p><strong>Solicitud de compra:</strong> '.$prNum.'</p>'
+            .'<p><strong>Orden(es) de compra:</strong></p><ul>'.$items.'</ul>'
+            .($firstUrl !== '' ? '<p><a href="'.$firstUrl.'">Abrir orden de compra</a></p>' : '')
+            .'<p><a href="'.$prUrl.'">Abrir solicitud de compra</a></p>';
+
+        $subject = 'Orden de compra generada — '.$prNum;
+        self::sendHtml($subject, $html);
     }
 
     public static function isAwaitingSuperiorQuotationApproval(PurchaseRequest $purchaseRequest): bool

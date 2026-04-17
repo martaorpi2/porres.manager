@@ -3345,6 +3345,8 @@ class PurchaseRequestCrudController extends CrudController
             : 'Orden de compra generada exitosamente: '.$numbers;
         \Alert::success($msg)->flash();
 
+        PurchaseRequestNotificationService::notifyAdministratorPurchaseOrdersCreated($purchaseRequest, $createdOrders);
+
         return redirect()->route('purchase-order.show', $createdOrders[0]->id);
     }
 
@@ -3399,6 +3401,8 @@ class PurchaseRequestCrudController extends CrudController
             'purchase_type' => $newType,
         ]);
         \Alert::success('Orden de compra generada exitosamente: '.$purchaseOrder->number)->flash();
+
+        PurchaseRequestNotificationService::notifyAdministratorPurchaseOrdersCreated($purchaseRequest, $purchaseOrder);
 
         return redirect()->route('purchase-order.show', $purchaseOrder->id);
     }
@@ -3489,6 +3493,8 @@ class PurchaseRequestCrudController extends CrudController
             'purchase_type' => $purchaseType,
         ]);
         \Alert::success('Orden de compra generada exitosamente: '.$purchaseOrder->number)->flash();
+
+        PurchaseRequestNotificationService::notifyAdministratorPurchaseOrdersCreated($purchaseRequest, $purchaseOrder);
 
         return redirect()->route('purchase-order.show', $purchaseOrder->id);
     }
@@ -4507,7 +4513,7 @@ class PurchaseRequestCrudController extends CrudController
                                     // Hay 3 cotizaciones, todos los productos con 3+ cotizaciones y (una seleccionada o asignación por producto), mostrar formulario
                                     $html .= '<div class="mt-3">';
                                     $html .= '<div class="alert alert-success">';
-                                    $html .= '<i class="la la-check-circle"></i> <strong>Listo para generar orden:</strong> '.($allDetailsAssigned ? 'Tiene asignada una cotización por producto. Se generará una OC con varios proveedores.' : 'Tiene una cotización seleccionada.').' Puede proceder a generar la orden de compra.';
+                                    $html .= '<i class="la la-check-circle"></i> <strong>Listo para generar orden:</strong> '.($allDetailsAssigned ? 'Tiene asignada una cotización por producto.' : 'Tiene una cotización seleccionada.').' Puede proceder a generar la orden de compra.';
                                     $html .= '</div>';
                                     $html .= '<form method="POST" action="'.route('purchase-request.generate-purchase-order', $entry->id).'">';
                                     $html .= csrf_field();
