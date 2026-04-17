@@ -24,6 +24,10 @@ class PaymentOrderInvoiceImputationService
             throw new \InvalidArgumentException('No se puede imputar una orden de pago anulada.');
         }
 
+        if (! $invoice->purchase_order_id) {
+            throw new \InvalidArgumentException('La factura debe tener una orden de compra asociada para imputar pagos.');
+        }
+
         if ((int) $paymentOrder->purchase_order_id !== (int) $invoice->purchase_order_id) {
             throw new \InvalidArgumentException('La factura y la orden de pago deben pertenecer a la misma orden de compra.');
         }

@@ -6,6 +6,7 @@ use App\Http\Requests\SupplierInvoiceImputeRequest;
 use App\Http\Requests\SupplierInvoiceRequest;
 use App\Models\PaymentOrder;
 use App\Models\PurchaseOrder;
+use App\Models\Supplier;
 use App\Models\SupplierInvoice;
 use App\Models\User;
 use App\Services\PaymentOrderInvoiceImputationService;
@@ -46,13 +47,20 @@ class SupplierInvoiceCrudController extends CrudController
         CRUD::enableResponsiveTable();
         CRUD::addClause('with', ['purchaseOrder', 'supplier']);
 
+        if (request()->filled('supplier_id')) {
+            CRUD::addClause('where', 'supplier_id', (int) request()->query('supplier_id'));
+        }
+
         CRUD::addColumn([
             'name' => 'purchase_order_id',
             'label' => 'Orden de compra',
-            'type' => 'select',
-            'entity' => 'purchaseOrder',
-            'attribute' => 'number',
-            'model' => \App\Models\PurchaseOrder::class,
+            'type' => 'closure',
+            'function' => function (SupplierInvoice $entry) {
+                return $entry->purchase_order_id
+                    ? e($entry->purchaseOrder?->number ?? ('OC #'.$entry->purchase_order_id))
+                    : '<span class="text-muted">—</span>';
+            },
+            'escaped' => false,
         ]);
         CRUD::addColumn([
             'name' => 'supplier_id',
@@ -67,6 +75,20 @@ class SupplierInvoiceCrudController extends CrudController
         CRUD::column('total_amount')->label('Total');
         CRUD::column('currency_code')->label('Moneda');
         CRUD::addColumn([
+            'name' => 'attachment',
+            'label' => 'Adjunto',
+            'type' => 'closure',
+            'function' => function (SupplierInvoice $entry) {
+                if (! $entry->attachment) {
+                    return '<span class="text-muted">—</span>';
+                }
+                $url = \Storage::disk('public')->url($entry->attachment);
+
+                return '<a href="'.e($url).'" target="_blank" rel="noopener" class="btn btn-sm btn-outline-primary"><i class="la la-paperclip"></i> Ver</a>';
+            },
+            'escaped' => false,
+        ]);
+        CRUD::addColumn([
             'name' => 'open_balance',
             'label' => 'Saldo factura',
             'type' => 'closure',
@@ -80,34 +102,34 @@ class SupplierInvoiceCrudController extends CrudController
     {
         CRUD::setValidation(SupplierInvoiceRequest::class);
 
-        $purchaseOrderId = request()->get('purchase_order_id');
-        $supplierId = request()->get('supplier_id');
-        if (! $supplierId && $purchaseOrderId) {
-            $po = PurchaseOrder::with('details.supplier')->find((int) $purchaseOrderId);
-            if ($po && $po->suppliers->count() === 1) {
-                $supplierId = $po->suppliers->first()->id;
-            }
+        $supplierIdFromUrl = request()->query('supplier_id') ? (int) request()->query('supplier_id') : null;
+        $purchaseOrderIdFromUrl = request()->query('purchase_order_id') ? (int) request()->query('purchase_order_id') : null;
+
+        $supplierQuery = Supplier::query()->orderBy('company_name');
+        $user = backpack_user();
+        if ($user && $user->hasRole('role_responsable_area', 'backpack')) {
+            $supplierQuery->visibleForBackpackUser($user);
         }
+        $supplierOptions = $supplierQuery->pluck('company_name', 'id')->toArray();
 
         CRUD::addField([
-            'name' => 'purchase_order_id',
-            'label' => 'Orden de compra',
-            'type' => 'select',
-            'entity' => 'purchaseOrder',
-            'attribute' => 'number',
-            'model' => \App\Models\PurchaseOrder::class,
-            'default' => $purchaseOrderId,
-            'attributes' => $purchaseOrderId ? ['readonly' => 'readonly'] : [],
-        ]);
-        CRUD::addField([
             'name' => 'supplier_id',
-            'label' => 'Proveedor (debe coincidir con la OC)',
-            'type' => 'select',
-            'entity' => 'supplier',
-            'attribute' => 'company_name',
-            'model' => \App\Models\Supplier::class,
-            'default' => $supplierId,
-            'attributes' => $supplierId ? ['readonly' => 'readonly'] : [],
+            'label' => 'Proveedor',
+            'type' => 'select_from_array',
+            'options' => $supplierOptions,
+            'allows_null' => false,
+            'default' => $supplierIdFromUrl,
+        ]);
+
+        $poOptions = $this->purchaseOrderOptionsForSupplier($supplierIdFromUrl);
+        CRUD::addField([
+            'name' => 'purchase_order_id',
+            'label' => 'Orden de compra (opcional)',
+            'type' => 'select_from_array',
+            'options' => $poOptions,
+            'allows_null' => true,
+            'default' => $purchaseOrderIdFromUrl,
+            'hint' => 'Puede registrar la factura solo por proveedor y vincular una OC después (edición). Para imputar órdenes de pago debe existir OC asociada.',
         ]);
         CRUD::field('invoice_number')->label('Número de factura');
         CRUD::field('invoice_date')->label('Fecha de factura')->type('date');
@@ -121,6 +143,10 @@ class SupplierInvoiceCrudController extends CrudController
             'hint' => 'Debe coincidir con la moneda indicada en la orden de pago al imputar.',
         ]);
         CRUD::field('observations')->label('Observaciones')->type('textarea');
+        CRUD::field('attachment')->label('Archivo de factura (PDF o imagen)')->type('upload')
+            ->disk('public')
+            ->path('supplier-invoices')
+            ->hint('Opcional.');
     }
 
     protected function setupUpdateOperation(): void
@@ -147,10 +173,27 @@ class SupplierInvoiceCrudController extends CrudController
         CRUD::addColumn([
             'name' => 'purchase_order_id',
             'label' => 'Orden de compra',
-            'type' => 'select',
-            'entity' => 'purchaseOrder',
-            'attribute' => 'number',
-            'model' => \App\Models\PurchaseOrder::class,
+            'type' => 'closure',
+            'function' => function (SupplierInvoice $entry) {
+                return $entry->purchase_order_id
+                    ? e($entry->purchaseOrder?->number ?? ('OC #'.$entry->purchase_order_id))
+                    : '<span class="text-muted">—</span>';
+            },
+            'escaped' => false,
+        ]);
+        CRUD::addColumn([
+            'name' => 'attachment',
+            'label' => 'Adjunto',
+            'type' => 'closure',
+            'function' => function (SupplierInvoice $entry) {
+                if (! $entry->attachment) {
+                    return '—';
+                }
+                $url = \Storage::disk('public')->url($entry->attachment);
+
+                return '<a href="'.e($url).'" target="_blank" rel="noopener">'.e(basename($entry->attachment)).'</a>';
+            },
+            'escaped' => false,
         ]);
         CRUD::addColumn([
             'name' => 'supplier_id',
@@ -193,6 +236,9 @@ class SupplierInvoiceCrudController extends CrudController
                 'label' => '',
                 'type' => 'closure',
                 'function' => function (SupplierInvoice $entry) {
+                    if (! $entry->purchase_order_id) {
+                        return '<div class="alert alert-info mb-0">Asocie una orden de compra a esta factura para poder imputar órdenes de pago.</div>';
+                    }
                     if ($entry->openBalance() < 0.01) {
                         return '<p class="text-muted mb-0">Factura sin saldo pendiente.</p>';
                     }
@@ -228,6 +274,11 @@ class SupplierInvoiceCrudController extends CrudController
         }
 
         $invoice = SupplierInvoice::with(['purchaseOrder', 'supplier'])->findOrFail($id);
+        if (! $invoice->purchase_order_id) {
+            \Alert::warning('Debe asociar una orden de compra a la factura antes de registrar imputaciones.')->flash();
+
+            return redirect()->to(backpack_url('supplier-invoice/'.$invoice->id.'/edit'));
+        }
         if ($invoice->openBalance() < 0.01) {
             \Alert::warning('Esta factura no tiene saldo pendiente.')->flash();
 
@@ -304,5 +355,21 @@ class SupplierInvoiceCrudController extends CrudController
         \Alert::success('Imputación registrada correctamente.')->flash();
 
         return redirect()->to(backpack_url('supplier-invoice/' . $invoice->id . '/show'));
+    }
+
+    /**
+     * @return array<int|string, string>
+     */
+    protected function purchaseOrderOptionsForSupplier(?int $supplierId): array
+    {
+        $q = PurchaseOrder::query()->orderByDesc('id')->limit(400);
+        if ($supplierId) {
+            $q->where(function ($w) use ($supplierId) {
+                $w->where('supplier_id', $supplierId)
+                    ->orWhereHas('details', fn ($d) => $d->where('supplier_id', $supplierId));
+            });
+        }
+
+        return $q->pluck('number', 'id')->toArray();
     }
 }
