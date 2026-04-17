@@ -5,18 +5,61 @@ namespace App\Services;
 use App\Models\MarketRate;
 use App\Models\PurchaseOrder;
 use App\Models\PurchaseRequest;
+use App\Models\User;
+use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 
 class PurchaseRequestNotificationService
 {
+    private const BACKPACK_GUARD = 'backpack';
+
     /**
-     * Por ahora todas las notificaciones de solicitudes de compra van a esta casilla.
+     * Casilla de respaldo si no hay usuarios con el rol correspondiente o el correo no es válido.
      */
     public static function notificationEmail(): string
     {
         return (string) config('purchase_requests.notification_email', 'morpi@ismp.edu.ar');
+    }
+
+    /**
+     * Roles que pueden aprobar solicitudes que requieren nivel superior (alineado al flujo de compras).
+     *
+     * @return list<string>
+     */
+    private static function superiorApproverRoleNames(): array
+    {
+        return [
+            'role_admin_institucion',
+            'role_apoderado',
+            'role_representante_legal',
+        ];
+    }
+
+    /**
+     * Correos de usuarios activos con alguno de los roles indicados (guard backpack).
+     *
+     * @param  list<string>  $roleNames
+     * @return list<string>
+     */
+    private static function emailsForBackpackRoles(array $roleNames): array
+    {
+        if ($roleNames === []) {
+            return [];
+        }
+
+        return User::query()
+            ->whereHas('roles', function ($query) use ($roleNames) {
+                $query->where('guard_name', self::BACKPACK_GUARD)
+                    ->whereIn('name', $roleNames);
+            })
+            ->pluck('email')
+            ->map(fn (?string $email) => $email !== null ? trim($email) : '')
+            ->filter(fn (string $email) => $email !== '' && filter_var($email, FILTER_VALIDATE_EMAIL))
+            ->unique()
+            ->values()
+            ->all();
     }
 
     public static function purchaseRequestUrl(PurchaseRequest $purchaseRequest): string
@@ -36,7 +79,33 @@ class PurchaseRequestNotificationService
             $purchaseRequest,
             $url
         );
-        self::sendHtml($subject, $body);
+        $recipients = self::emailsForBackpackRoles(['role_responsable_compras']);
+        self::sendHtml($subject, $body, $recipients);
+    }
+
+    /**
+     * Aviso manual del responsable de área: pide intervención de compras (destino fijo por configuración).
+     */
+    public static function notifyComprasManualInterventionFromArea(PurchaseRequest $purchaseRequest, ?Authenticatable $requestedBy = null): void
+    {
+        $to = trim((string) config('purchase_requests.compras_manual_notify_email', 'morpi@ismp.edu.ar'));
+        if ($to === '' || ! filter_var($to, FILTER_VALIDATE_EMAIL)) {
+            Log::warning('No se envió aviso manual a compras: correo de destino inválido o vacío.', [
+                'purchase_request_id' => $purchaseRequest->id,
+            ]);
+
+            return;
+        }
+
+        $url = self::purchaseRequestUrl($purchaseRequest);
+        $intro = 'El responsable de área solicitó que el sector de compras intervenga en esta solicitud para continuar y completar el proceso de compra.';
+        if ($requestedBy instanceof User) {
+            $intro .= ' Notificación enviada por: '.$requestedBy->name.'.';
+        }
+
+        $subject = 'Solicitud de compra — intervención de compras — '.($purchaseRequest->request_number ?? '#'.$purchaseRequest->id);
+        $body = self::htmlBody($intro, $purchaseRequest, $url);
+        self::sendHtml($subject, $body, [$to]);
     }
 
     /**
@@ -51,7 +120,8 @@ class PurchaseRequestNotificationService
             $purchaseRequest,
             $url
         );
-        self::sendHtml($subject, $body);
+        $recipients = self::emailsForBackpackRoles(self::superiorApproverRoleNames());
+        self::sendHtml($subject, $body, $recipients);
     }
 
     /**
@@ -66,7 +136,8 @@ class PurchaseRequestNotificationService
             $purchaseRequest,
             $url
         );
-        self::sendHtml($subject, $body);
+        $recipients = self::emailsForBackpackRoles(self::superiorApproverRoleNames());
+        self::sendHtml($subject, $body, $recipients);
     }
 
     /**
@@ -81,11 +152,12 @@ class PurchaseRequestNotificationService
             $purchaseRequest,
             $url
         );
-        self::sendHtml($subject, $body);
+        $recipients = self::emailsForBackpackRoles(['role_responsable_compras']);
+        self::sendHtml($subject, $body, $recipients);
     }
 
     /**
-     * Orden(es) de compra generadas: avisar a administración (correo centralizado) para generar orden de pago.
+     * Orden(es) de compra generadas: avisar a la administradora del instituto para generar orden de pago.
      *
      * @param  PurchaseOrder|iterable<int, PurchaseOrder>|Collection<int, PurchaseOrder>  $purchaseOrders
      */
@@ -133,7 +205,8 @@ class PurchaseRequestNotificationService
             .'<p><a href="'.$prUrl.'">Abrir solicitud de compra</a></p>';
 
         $subject = 'Orden de compra generada — '.$prNum;
-        self::sendHtml($subject, $html);
+        $recipients = self::emailsForBackpackRoles(['role_admin_institucion']);
+        self::sendHtml($subject, $html, $recipients);
     }
 
     public static function isAwaitingSuperiorQuotationApproval(PurchaseRequest $purchaseRequest): bool
@@ -171,10 +244,24 @@ class PurchaseRequestNotificationService
             .'<p><a href="'.$safeUrl.'">Abrir solicitud en el sistema</a></p>';
     }
 
-    private static function sendHtml(string $subject, string $html): void
+    /**
+     * @param  list<string>  $recipients
+     */
+    private static function sendHtml(string $subject, string $html, array $recipients = []): void
     {
-        $to = trim(self::notificationEmail());
-        if ($to === '') {
+        $to = array_values(array_unique(array_filter(array_map('trim', $recipients))));
+        if ($to === []) {
+            $fallback = trim(self::notificationEmail());
+            if ($fallback !== '' && filter_var($fallback, FILTER_VALIDATE_EMAIL)) {
+                $to = [$fallback];
+            }
+        }
+
+        if ($to === []) {
+            Log::warning('No se envió correo de solicitud de compra: sin destinatarios ni correo de respaldo.', [
+                'subject' => $subject,
+            ]);
+
             return;
         }
 

@@ -2622,6 +2622,50 @@ class PurchaseRequestCrudController extends CrudController
     }
 
     /**
+     * Responsable de área: notificar por correo a compras que la solicitud requiere su intervención.
+     */
+    public function notifyComprasIntervention($id)
+    {
+        $user = backpack_user();
+        if (! $user || ! $user->hasRole('role_responsable_area', 'backpack')) {
+            abort(403, 'Solo los responsables de área pueden enviar esta notificación.');
+        }
+
+        $purchaseRequest = \App\Models\PurchaseRequest::query()->findOrFail($id);
+
+        $mayNotify = (int) $purchaseRequest->requesting_user_id === (int) $user->id
+            || \App\Models\ResponsibilityArea::query()
+                ->where('id', $purchaseRequest->responsibility_area_id)
+                ->where('responsible_user_id', $user->id)
+                ->exists();
+
+        if (! $mayNotify) {
+            abort(403, 'No tiene permiso para notificar sobre esta solicitud.');
+        }
+
+        if (in_array($purchaseRequest->status, ['Completada', 'Rechazada'], true)) {
+            \Alert::warning('No se puede enviar la notificación en el estado actual de la solicitud.')->flash();
+
+            return redirect()->route('purchase-request.show', $id);
+        }
+
+        $previousStatus = $purchaseRequest->status;
+        if ($purchaseRequest->status === 'Pendiente') {
+            $purchaseRequest->update(['status' => 'En Proceso']);
+        }
+
+        PurchaseRequestNotificationService::notifyComprasManualInterventionFromArea($purchaseRequest->fresh(), $user);
+
+        if ($previousStatus === 'Pendiente') {
+            \Alert::success('Se envió el correo a compras y la solicitud pasó a estado En proceso.')->flash();
+        } else {
+            \Alert::success('Se envió el correo a compras.')->flash();
+        }
+
+        return redirect()->route('purchase-request.show', $id);
+    }
+
+    /**
      * Show form to suggest a supplier
      */
     public function showSuggestSupplierForm($id)
@@ -4643,11 +4687,20 @@ class PurchaseRequestCrudController extends CrudController
 
                 // Botón para sugerir proveedor (solo responsables de área)
                 if ($isResponsableArea && $entry->status != 'Completada') {
-                    $html .= '<div class="mb-3">';
+                    $html .= '<div class="mb-3 d-flex flex-wrap gap-2 align-items-start">';
                     $html .= '<a href="'.route('purchase-request.suggest-supplier', $entry->id).'" class="btn btn-info">';
                     $html .= '<i class="la la-lightbulb"></i> Sugerir Proveedor';
                     $html .= '</a>';
+                    if ($entry->status !== 'Rechazada') {
+                        $html .= '<form method="POST" action="'.e(route('purchase-request.notify-compras-intervention', $entry->id)).'" class="d-inline">';
+                        $html .= csrf_field();
+                        $html .= '<button type="submit" class="btn btn-primary">';
+                        $html .= '<i class="la la-envelope"></i> Notificar a compras';
+                        $html .= '</button>';
+                        $html .= '</form>';
+                    }
                     $html .= '</div>';
+                    $html .= '<p class="text-muted small mb-3">Use <strong>Notificar a compras</strong> para avisar por correo que esta solicitud necesita la intervención del sector de compras. Si la solicitud está <strong>Pendiente</strong>, pasará a estado <strong>En proceso</strong>.</p>';
                 }
 
                 if ($suggestions->isEmpty()) {
