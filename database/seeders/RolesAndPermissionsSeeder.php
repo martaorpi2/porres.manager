@@ -98,11 +98,12 @@ class RolesAndPermissionsSeeder extends Seeder
             Permission::findByName('solicitud.entregar', 'web'),
         ]);
 
-        // Responsable de compras - compras y visibilidad de solicitudes; entregas vinculadas al flujo
+        // Responsable de compras - compras y visibilidad de solicitudes; entregas vinculadas al flujo; crear solicitudes generales
         $roleResponsableCompras->givePermissionTo([
             Permission::findByName('compra.crear', 'backpack'),
             Permission::findByName('compra.aprobar', 'backpack'),
             Permission::findByName('compra.ejecutar', 'backpack'),
+            Permission::findByName('solicitud.crear', 'backpack'),
             Permission::findByName('solicitud.ver', 'backpack'),
             Permission::findByName('solicitud.entregar', 'backpack'),
         ]);

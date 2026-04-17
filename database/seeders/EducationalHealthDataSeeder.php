@@ -323,7 +323,7 @@ class EducationalHealthDataSeeder extends Seeder
         }
         
         if ($roleResponsableCompras) {
-            $roleResponsableCompras->givePermissionTo(['compra.crear', 'compra.aprobar', 'compra.ejecutar', 'solicitud.ver', 'solicitud.entregar']);
+            $roleResponsableCompras->givePermissionTo(['compra.crear', 'compra.aprobar', 'compra.ejecutar', 'solicitud.crear', 'solicitud.ver', 'solicitud.entregar']);
         }
         
         // reportes.exportar: exportaciones (p. ej. Excel/PDF en listados). givePermissionTo es idempotente.
