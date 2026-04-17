@@ -2,13 +2,16 @@
 
 namespace App\Http\Requests;
 
+use App\Models\User;
 use Illuminate\Foundation\Http\FormRequest;
 
 class SupplierInvoiceImputeRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return backpack_auth()->check();
+        $u = backpack_user();
+
+        return $u instanceof User && $u->hasAdministradoraInstitucionRole();
     }
 
     public function rules(): array

@@ -18,7 +18,6 @@ Route::group([
     'namespace' => 'App\Http\Controllers\Admin',
 ], function () { // custom admin routes
     Route::crud('supplier', 'SupplierCrudController');
-    Route::crud('supplier-invoice', 'SupplierInvoiceCrudController');
     Route::get('supplier/export/excel', 'SupplierCrudController@exportExcel')->name('supplier.export.excel');
     Route::get('supplier/export/pdf', 'SupplierCrudController@exportPdf')->name('supplier.export.pdf');
     Route::crud('supplier-rating', 'SupplierRatingCrudController');

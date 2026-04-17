@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Requests\SupplierInvoiceImputeRequest;
 use App\Http\Requests\SupplierInvoiceRequest;
 use App\Models\PaymentOrder;
+use App\Models\PurchaseOrder;
 use App\Models\SupplierInvoice;
 use App\Models\User;
 use App\Services\PaymentOrderInvoiceImputationService;
@@ -31,13 +32,13 @@ class SupplierInvoiceCrudController extends CrudController
             abort(403, 'No tienes permiso para acceder a facturas de proveedor.');
         }
 
+        if (! $user instanceof User || ! $user->hasAdministradoraInstitucionRole()) {
+            abort(403, 'Solo la administradora del instituto puede gestionar facturas de proveedor.');
+        }
+
         CRUD::setModel(SupplierInvoice::class);
         CRUD::setRoute(config('backpack.base.route_prefix') . '/supplier-invoice');
         CRUD::setEntityNameStrings('factura de proveedor', 'facturas de proveedor');
-
-        if (! $user instanceof User || ! $user->hasAdministradoraInstitucionRole()) {
-            CRUD::denyAccess(['create', 'update', 'delete']);
-        }
     }
 
     protected function setupListOperation(): void
@@ -80,6 +81,14 @@ class SupplierInvoiceCrudController extends CrudController
         CRUD::setValidation(SupplierInvoiceRequest::class);
 
         $purchaseOrderId = request()->get('purchase_order_id');
+        $supplierId = request()->get('supplier_id');
+        if (! $supplierId && $purchaseOrderId) {
+            $po = PurchaseOrder::with('details.supplier')->find((int) $purchaseOrderId);
+            if ($po && $po->suppliers->count() === 1) {
+                $supplierId = $po->suppliers->first()->id;
+            }
+        }
+
         CRUD::addField([
             'name' => 'purchase_order_id',
             'label' => 'Orden de compra',
@@ -97,6 +106,8 @@ class SupplierInvoiceCrudController extends CrudController
             'entity' => 'supplier',
             'attribute' => 'company_name',
             'model' => \App\Models\Supplier::class,
+            'default' => $supplierId,
+            'attributes' => $supplierId ? ['readonly' => 'readonly'] : [],
         ]);
         CRUD::field('invoice_number')->label('Número de factura');
         CRUD::field('invoice_date')->label('Fecha de factura')->type('date');

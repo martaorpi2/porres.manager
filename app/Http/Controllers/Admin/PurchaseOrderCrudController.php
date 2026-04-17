@@ -430,6 +430,33 @@ class PurchaseOrderCrudController extends CrudController
             },
             'escaped' => false
         ]);
+
+        CRUD::addColumn([
+            'name' => 'register_supplier_invoice',
+            'label' => 'Facturas de proveedor',
+            'type' => 'closure',
+            'function' => function ($entry) {
+                $user = backpack_user();
+                if (! $user instanceof User || ! $user->hasAdministradoraInstitucionRole()) {
+                    return '<p class="text-muted small mb-0">El alta de facturas asociadas a la OC y al proveedor la realiza la administradora del instituto desde la vista de esta orden de compra.</p>';
+                }
+                $entry->loadMissing('details.supplier', 'supplier');
+                $suppliers = $entry->suppliers;
+                if ($suppliers->isEmpty()) {
+                    return '<p class="text-muted small mb-0">No hay proveedor en la OC para preasociar la factura.</p>';
+                }
+                $html = '<div class="mt-2"><p class="small text-muted mb-2">Registrar comprobante del proveedor vinculado a esta orden de compra:</p><div class="d-flex flex-wrap gap-2">';
+                foreach ($suppliers as $supplier) {
+                    $url = backpack_url('supplier-invoice/create?purchase_order_id=' . $entry->id . '&supplier_id=' . $supplier->id);
+                    $name = e($supplier->company_name ?? ('Proveedor #' . $supplier->id));
+                    $html .= '<a href="' . e($url) . '" class="btn btn-sm btn-primary"><i class="la la-file-invoice-dollar"></i> Nueva factura — ' . $name . '</a>';
+                }
+                $html .= '</div></div>';
+
+                return $html;
+            },
+            'escaped' => false,
+        ]);
         
         // Mostrar órdenes de pago asociadas
         CRUD::addColumn([

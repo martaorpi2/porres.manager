@@ -141,9 +141,19 @@ class MarketRateCrudController extends CrudController
         
         // Validar que la solicitud de compra no esté aprobada si se proporciona el ID
         if ($purchaseRequestId) {
-            $purchaseRequest = \App\Models\PurchaseRequest::find($purchaseRequestId);
+            $purchaseRequest = \App\Models\PurchaseRequest::with(['marketRates', 'details'])->find($purchaseRequestId);
             if ($purchaseRequest && $purchaseRequest->status === 'Aprobada') {
                 \Alert::error('No se pueden agregar cotizaciones a una solicitud de compra que ya está aprobada.')->flash();
+                return redirect()->back();
+            }
+            if (
+                $purchaseRequest
+                && $user
+                && $user->hasRole('role_responsable_area', 'backpack')
+                && $purchaseRequest->hasQuotationSelectionResolved()
+            ) {
+                \Alert::error('No puede cargar nuevas cotizaciones: el sector de compras ya seleccionó cotización(es) en esta solicitud.')->flash();
+
                 return redirect()->back();
             }
         }
@@ -568,7 +578,7 @@ class MarketRateCrudController extends CrudController
 
         // Validar que la solicitud de compra no esté aprobada
         if (isset($dataToSave['purchase_request_id']) && !empty($dataToSave['purchase_request_id'])) {
-            $purchaseRequest = \App\Models\PurchaseRequest::find($dataToSave['purchase_request_id']);
+            $purchaseRequest = \App\Models\PurchaseRequest::with(['marketRates', 'details'])->find($dataToSave['purchase_request_id']);
             if ($purchaseRequest && $purchaseRequest->status === 'Aprobada') {
                 \Alert::error('No se pueden agregar cotizaciones a una solicitud de compra que ya está aprobada.')->flash();
                 return redirect()->back()->withInput();
@@ -582,6 +592,17 @@ class MarketRateCrudController extends CrudController
                 && (int) $purchaseRequest->requesting_user_id !== (int) $user->id
             ) {
                 abort(403, 'Solo puedes cargar cotizaciones en tus propias solicitudes de compra.');
+            }
+
+            if (
+                $purchaseRequest
+                && $user
+                && $user->hasRole('role_responsable_area', 'backpack')
+                && $purchaseRequest->hasQuotationSelectionResolved()
+            ) {
+                \Alert::error('No puede cargar nuevas cotizaciones: el sector de compras ya seleccionó cotización(es) en esta solicitud.')->flash();
+
+                return redirect()->back()->withInput();
             }
         }
 

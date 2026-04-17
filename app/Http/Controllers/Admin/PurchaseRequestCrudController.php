@@ -372,6 +372,9 @@ class PurchaseRequestCrudController extends CrudController
         // Verificar si el usuario es responsable de área
         $isResponsableArea = $user && $user->hasRole('role_responsable_area', 'backpack');
 
+        $entry->loadMissing(['marketRates', 'details']);
+        $areaProductsLockedByQuotationSelection = $isResponsableArea && $entry->hasQuotationSelectionResolved();
+
         // Si es administrador del sistema o responsable de compras, puede editar cualquier solicitud
         if ($isAdminSistema || $isResponsableCompras) {
             // Pueden editar cualquier solicitud
@@ -437,8 +440,8 @@ class PurchaseRequestCrudController extends CrudController
 
             CRUD::field('justification')->label('Justificación')->type('textarea')->default($entry->justification);
 
-            // Campo para seleccionar productos - solo si no está aprobada
-            if ($entry->status !== 'Aprobada') {
+            // Campo para seleccionar productos - solo si no está aprobada ni bloqueada tras selección de cotización por compras
+            if ($entry->status !== 'Aprobada' && ! $areaProductsLockedByQuotationSelection) {
                 CRUD::addField([
                     'name' => 'selected_products',
                     'type' => 'hidden',
@@ -466,10 +469,14 @@ class PurchaseRequestCrudController extends CrudController
                         ->value($this->getProductsSelectionHtml([], $entry->responsibility_area_id));
                 }
             } else {
-                // Si está aprobada, mostrar productos como solo lectura
+                // Aprobada o cotización ya elegida por compras: productos solo lectura para el área
                 $entry->load('details.product');
                 CRUD::field('products_selection')->label('Productos Solicitados')->type('custom_html')
                     ->value($this->getProductsReadOnlyHtml($entry));
+                if ($areaProductsLockedByQuotationSelection && $entry->status !== 'Aprobada') {
+                    CRUD::field('quotation_lock_notice')->label('')->type('custom_html')
+                        ->value('<div class="alert alert-info mb-0"><i class="la la-info-circle"></i> El sector de compras ya seleccionó cotización(es) en esta solicitud: no puede modificar los productos ni cargar nuevas cotizaciones.</div>');
+                }
             }
         } else {
             // Para administradores, usar todos los campos
@@ -1691,13 +1698,17 @@ class PurchaseRequestCrudController extends CrudController
         // Obtener datos para guardar
         $dataToSave = $this->crud->getStrippedSaveRequest($request);
 
+        $entry->loadMissing(['marketRates', 'details']);
+        $areaCannotChangeProducts = $user->hasRole('role_responsable_area', 'backpack')
+            && $entry->hasQuotationSelectionResolved();
+
         try {
             // update item in the db
             $item = $this->crud->update($this->crud->getCurrentEntryId(), $dataToSave);
             $this->data['entry'] = $this->crud->entry = $item;
 
-            // Procesar productos seleccionados (eliminar existentes y crear nuevos) - solo si no está aprobada
-            if ($entry->status !== 'Aprobada' && $request->has('selected_products')) {
+            // Procesar productos seleccionados (eliminar existentes y crear nuevos) - solo si no está aprobada ni bloqueada por selección de cotización (área)
+            if ($entry->status !== 'Aprobada' && ! $areaCannotChangeProducts && $request->has('selected_products')) {
                 \Log::info('Procesando productos en actualización:', ['selected_products' => $request->input('selected_products')]);
                 $item->details()->delete();
                 $this->processSelectedProducts($item, $request, true);
@@ -1706,6 +1717,8 @@ class PurchaseRequestCrudController extends CrudController
             } elseif ($entry->status === 'Aprobada') {
                 // Si está aprobada, no permitir modificar productos
                 \Alert::warning('No se pueden modificar los productos de una solicitud aprobada.')->flash();
+            } elseif ($areaCannotChangeProducts && $request->has('selected_products')) {
+                \Alert::warning('No se pueden modificar los productos: el sector de compras ya seleccionó cotización(es) en esta solicitud.')->flash();
             }
 
             // Verificar si requiere aprobación de administrador después de actualizar el total
@@ -3917,15 +3930,17 @@ class PurchaseRequestCrudController extends CrudController
 
                     $isOwnRequest = $entry->requesting_user_id == $user->id;
                     $isResponsableArea = $user->hasRole('role_responsable_area', 'backpack');
+                    $entry->loadMissing(['marketRates', 'details']);
+                    $areaProductsLockedByQuotation = $isResponsableArea && $entry->hasQuotationSelectionResolved();
 
                     // Verificar si puede editar (solicitud completada: no editar productos desde aquí)
                     $canEdit = false;
                     if ($entry->status !== 'Completada') {
                         if ($isAdmin) {
                             $canEdit = true;
-                        } elseif ($isOwnRequest && $entry->status === 'Pendiente') {
+                        } elseif ($isOwnRequest && $entry->status === 'Pendiente' && ! $areaProductsLockedByQuotation) {
                             $canEdit = true;
-                        } elseif ($isResponsableArea && $entry->status === 'Pendiente') {
+                        } elseif ($isResponsableArea && $entry->status === 'Pendiente' && ! $areaProductsLockedByQuotation) {
                             $canEdit = true;
                         }
                     }
@@ -4439,8 +4454,11 @@ class PurchaseRequestCrudController extends CrudController
                     }
                 }
 
-                // Solo mostrar el botón si tiene permiso Y la solicitud no está aprobada
-                if ($canCreateQuotation && $entry->status !== 'Aprobada' && $entry->status !== 'Completada') {
+                $entry->loadMissing(['marketRates', 'details']);
+                $areaBlockedFromNewQuotations = $user && $user->hasRole('role_responsable_area', 'backpack') && $entry->hasQuotationSelectionResolved();
+
+                // Solo mostrar el botón si tiene permiso Y la solicitud no está aprobada (el área no puede cargar cotizaciones nuevas si compras ya eligió cotización)
+                if ($canCreateQuotation && $entry->status !== 'Aprobada' && $entry->status !== 'Completada' && ! $areaBlockedFromNewQuotations) {
                     $html .= '<div class="mt-3">';
                     $html .= '<a href="'.backpack_url('market-rate/create?purchase_request_id='.$entry->id).'" class="btn btn-success">';
                     $html .= '<i class="la la-plus"></i> Agregar Nueva Cotización';
