@@ -2754,26 +2754,6 @@ class PurchaseRequestCrudController extends CrudController
             abort(403, 'No tienes permiso para aprobar solicitudes de compra.');
         }
 
-        // Verificar si el usuario puede aprobar esta solicitud
-        if (! $purchaseRequest->canBeApprovedBy($user)) {
-            // Verificar si es administrador del instituto y supera su límite
-            if ($user->hasRole('role_admin_institucion', 'backpack')) {
-                $adminLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_admin_institucion');
-                abort(403, 'No puedes aprobar esta solicitud de compra porque supera tu límite de autorización de $'.number_format($adminLimit, 2).'. El monto de la solicitud es $'.number_format($purchaseRequest->total_amount, 2).'.');
-            }
-            // Verificar si es apoderado y supera su límite
-            if ($user->hasRole('role_apoderado', 'backpack')) {
-                $apoderadoLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_apoderado');
-                abort(403, 'No puedes aprobar esta solicitud de compra porque supera tu límite de autorización de $'.number_format($apoderadoLimit, 2).'. El monto de la solicitud es $'.number_format($purchaseRequest->total_amount, 2).'.');
-            }
-            // Verificar si es representante legal y supera su límite
-            if ($user->hasRole('role_representante_legal', 'backpack')) {
-                $representanteLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_representante_legal');
-                abort(403, 'No puedes aprobar esta solicitud de compra porque supera tu límite de autorización de $'.number_format($representanteLimit, 2).'. El monto de la solicitud es $'.number_format($purchaseRequest->total_amount, 2).'.');
-            }
-            abort(403, 'No tienes permiso para aprobar esta solicitud de compra.');
-        }
-
         if (! in_array($purchaseRequest->status, ['Pendiente', 'En Proceso'], true)) {
             abort(403, 'Solo se pueden aprobar solicitudes con estado "Pendiente" o "En proceso".');
         }
@@ -2797,6 +2777,34 @@ class PurchaseRequestCrudController extends CrudController
             'requires_admin_approval' => $effectiveTotal > $comprasLimit,
         ]);
         $purchaseRequest->refresh();
+
+        // Verificar permisos de aprobación con el monto recalculado final.
+        if (! $purchaseRequest->canBeApprovedBy($user)) {
+            if (
+                $user->hasRole('role_admin_institucion', 'backpack')
+                && PurchaseRequestNotificationService::shouldAdministratorEscalateQuotationApproval($purchaseRequest)
+            ) {
+                \Alert::warning('La administradora debe escalar esta solicitud al nivel superior correspondiente por monto. La solicitud no cambió a estado Aprobada.')->flash();
+
+                return redirect()->route('purchase-request.show', $id);
+            }
+            // Verificar si es administrador del instituto y supera su límite
+            if ($user->hasRole('role_admin_institucion', 'backpack')) {
+                $adminLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_admin_institucion');
+                abort(403, 'No puedes aprobar esta solicitud de compra porque supera tu límite de autorización de $'.number_format($adminLimit, 2).'. El monto de la solicitud es $'.number_format($purchaseRequest->total_amount, 2).'.');
+            }
+            // Verificar si es apoderado y supera su límite
+            if ($user->hasRole('role_apoderado', 'backpack')) {
+                $apoderadoLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_apoderado');
+                abort(403, 'No puedes aprobar esta solicitud de compra porque supera tu límite de autorización de $'.number_format($apoderadoLimit, 2).'. El monto de la solicitud es $'.number_format($purchaseRequest->total_amount, 2).'.');
+            }
+            // Verificar si es representante legal y supera su límite
+            if ($user->hasRole('role_representante_legal', 'backpack')) {
+                $representanteLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_representante_legal');
+                abort(403, 'No puedes aprobar esta solicitud de compra porque supera tu límite de autorización de $'.number_format($representanteLimit, 2).'. El monto de la solicitud es $'.number_format($purchaseRequest->total_amount, 2).'.');
+            }
+            abort(403, 'No tienes permiso para aprobar esta solicitud de compra.');
+        }
 
         $request = request();
         $request->validate([
