@@ -180,12 +180,15 @@ class PurchaseRequestNotificationService
     public static function notifyAdministratorQuotationApprovalNeeded(PurchaseRequest $purchaseRequest): void
     {
         $url = self::purchaseRequestUrl($purchaseRequest);
-        $subject = 'Revisión de administradora requerida '.($purchaseRequest->request_number ?? '#'.$purchaseRequest->id);
-        $body = self::htmlBody(
-            'El sector de compras seleccionó cotización(es). Se requiere su revisión y aprobación inicial.',
-            $purchaseRequest,
-            $url
-        );
+        $nro = $purchaseRequest->request_number ?? ('#'.$purchaseRequest->id);
+        $subject = 'Solicitud de revisión y aprobación – Solicitud Nº '.$nro;
+        $safeRequestNumber = e($purchaseRequest->request_number ?? (string) $purchaseRequest->id);
+        $safeUrl = e($url);
+        $body = '<p>Se informa que el sector de Compras ha realizado la selección de cotización(es) para la siguiente solicitud.</p>'
+            .'<p><strong>Número de solicitud:</strong> '.$safeRequestNumber.'</p>'
+            .'<p>Se solicita su revisión y aprobación inicial a fin de continuar con el circuito de compra.</p>'
+            .'<p><a href="'.$safeUrl.'">Acceder a la solicitud en el sistema</a></p>'
+            .'<p>Este es un mensaje automático generado por el sistema de compras.</p>';
         $recipients = self::emailsForBackpackRoles(self::administratorApproverRoleNames());
         self::sendHtml($subject, $body, $recipients);
     }
@@ -196,12 +199,15 @@ class PurchaseRequestNotificationService
     public static function notifySuperiorQuotationApprovalNeededFromAdministrator(PurchaseRequest $purchaseRequest): void
     {
         $url = self::purchaseRequestUrl($purchaseRequest);
-        $subject = 'Escalamiento de aprobación de solicitud '.($purchaseRequest->request_number ?? '#'.$purchaseRequest->id);
-        $body = self::htmlBody(
-            'La administradora del instituto solicita aprobación del nivel superior según monto.',
-            $purchaseRequest,
-            $url
-        );
+        $nro = $purchaseRequest->request_number ?? ('#'.$purchaseRequest->id);
+        $subject = 'Solicitud de aprobación superior – Solicitud Nº '.$nro;
+        $safeRequestNumber = e($purchaseRequest->request_number ?? (string) $purchaseRequest->id);
+        $safeUrl = e($url);
+        $body = '<p>Se informa que la solicitud de compra detallada a continuación ha sido aprobada por la Administración y, debido al monto involucrado, requiere la aprobación de un nivel superior.</p>'
+            .'<p><strong>Número de solicitud:</strong> '.$safeRequestNumber.'</p>'
+            .'<p>Se solicita revisar y emitir la aprobación correspondiente para continuar con el circuito de compra.</p>'
+            .'<p><a href="'.$safeUrl.'">Acceder a la solicitud en el sistema</a></p>'
+            .'<p>Este es un mensaje automático generado por el sistema de compras.</p>';
         $recipients = self::emailsForBackpackRoles(
             self::superiorApproverRoleNamesForAmountFromAdministrator((float) ($purchaseRequest->total_amount ?? 0))
         );
