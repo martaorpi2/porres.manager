@@ -4714,6 +4714,8 @@ class PurchaseRequestCrudController extends CrudController
 
                 // Botón para sugerir proveedor (solo responsables de área)
                 if ($isResponsableArea && $entry->status != 'Completada') {
+                    $alreadyNotifiedCompras = $entry->status === 'En Proceso';
+                    $notifyComprasLabel = $alreadyNotifiedCompras ? 'Volver a notificar a compras' : 'Notificar a compras';
                     $html .= '<div class="mb-3 d-flex flex-wrap gap-2 align-items-start">';
                     $html .= '<a href="'.route('purchase-request.suggest-supplier', $entry->id).'" class="btn btn-info">';
                     $html .= '<i class="la la-lightbulb"></i> Sugerir Proveedor';
@@ -4722,12 +4724,12 @@ class PurchaseRequestCrudController extends CrudController
                         $html .= '<form method="POST" action="'.e(route('purchase-request.notify-compras-intervention', $entry->id)).'" class="d-inline">';
                         $html .= csrf_field();
                         $html .= '<button type="submit" class="btn btn-primary">';
-                        $html .= '<i class="la la-envelope"></i> Notificar a compras';
+                        $html .= '<i class="la la-envelope"></i> '.e($notifyComprasLabel);
                         $html .= '</button>';
                         $html .= '</form>';
                     }
                     $html .= '</div>';
-                    $html .= '<p class="text-muted small mb-3">Use <strong>Notificar a compras</strong> para enviar un correo a los usuarios con rol <strong>responsable de compras</strong>. Si la solicitud está <strong>Pendiente</strong>, pasará a estado <strong>En proceso</strong>.</p>';
+                    $html .= '<p class="text-muted small mb-3">Use <strong>'.e($notifyComprasLabel).'</strong> para enviar un correo a los usuarios con rol <strong>responsable de compras</strong>. Si la solicitud está <strong>Pendiente</strong>, pasará a estado <strong>En proceso</strong>.</p>';
                 }
 
                 if ($suggestions->isEmpty()) {
