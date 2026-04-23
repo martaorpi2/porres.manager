@@ -1441,10 +1441,6 @@ class PurchaseRequestCrudController extends CrudController
                 $item->update(['requires_admin_approval' => $requiresAdminApproval]);
             }
 
-            if ($user && $user->hasRole('role_responsable_area', 'backpack')) {
-                PurchaseRequestNotificationService::notifyComprasNewRequestFromArea($item);
-            }
-
             // show a success message
             \Alert::success(trans('backpack::crud.insert_success'))->flash();
 
