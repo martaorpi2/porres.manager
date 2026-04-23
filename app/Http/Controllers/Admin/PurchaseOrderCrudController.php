@@ -7,9 +7,11 @@ use Backpack\CRUD\app\Http\Controllers\CrudController;
 use Backpack\CRUD\app\Library\CrudPanel\CrudPanelFacade as CRUD;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Response;
+use App\Models\PaymentOrder;
 use App\Models\PurchaseOrder;
 use App\Models\PurchaseOrderDetail;
 use App\Models\User;
+use App\Services\PaymentOrderInvoiceImputationService;
 use App\Models\PurchaseRequest;
 use App\Models\PurchaseRequestDetail;
 use App\Models\Product;
@@ -445,7 +447,7 @@ class PurchaseOrderCrudController extends CrudController
                 if ($suppliers->isEmpty()) {
                     return '<p class="text-muted small mb-0">No hay proveedor en la OC para preasociar la factura.</p>';
                 }
-                $html = '<div class="mt-2"><p class="small text-muted mb-2">Registrar comprobante del proveedor vinculado a esta orden de compra:</p><div class="d-flex flex-wrap gap-2">';
+                $html = '<div class="mt-2"><div class="d-flex flex-wrap gap-2">';
                 foreach ($suppliers as $supplier) {
                     $url = backpack_url('supplier-invoice/create?purchase_order_id=' . $entry->id . '&supplier_id=' . $supplier->id);
                     $name = e($supplier->company_name ?? ('Proveedor #' . $supplier->id));
@@ -458,79 +460,164 @@ class PurchaseOrderCrudController extends CrudController
             'escaped' => false,
         ]);
         
-        // Mostrar órdenes de pago asociadas
         CRUD::addColumn([
-            'name' => 'payment_orders_table',
-            'label' => 'Órdenes de Pago Asociadas',
-            'type' => 'custom_html',
-            'value' => function($entry) {
-                $entry->load('paymentOrders');
-                $paymentOrders = $entry->paymentOrders;
-                
-                if ($paymentOrders->isEmpty()) {
-                    return '<div class="alert alert-info">No hay órdenes de pago asociadas a esta orden de compra.</div>';
+            'name' => 'payment_financial_flow',
+            'label' => 'Pagos, facturas e imputaciones',
+            'type' => 'closure',
+            'function' => function (PurchaseOrder $entry) {
+                return $this->renderOcPaymentFlowSummary($entry);
+            },
+            'escaped' => false,
+        ]);
+    }
+
+    /**
+     * Resumen en la vista Ver de la OC: totales, facturas con saldo, imputaciones OP→factura y detalle de OP.
+     */
+    protected function renderOcPaymentFlowSummary(PurchaseOrder $entry): string
+    {
+        $user = backpack_user();
+        $isAdmin = $user instanceof User && $user->hasAdministradoraInstitucionRole();
+        $svc = app(PaymentOrderInvoiceImputationService::class);
+
+        $entry->loadMissing([
+            'paymentOrders' => fn ($q) => $q->orderByDesc('id'),
+        ]);
+        foreach ($entry->paymentOrders as $po) {
+            $po->loadMissing('supplierInvoices');
+        }
+
+        $activePos = $entry->paymentOrders->where('status', '!=', 'Anulada');
+        $sumActiveOp = (float) $activePos->sum(fn (PaymentOrder $p) => (float) $p->total_amount);
+        $ocTotal = (float) $entry->total;
+        $gapOp = round($ocTotal - $sumActiveOp, 2);
+
+        $html = '<div id="oc-resumen-pagos-facturas" class="mb-2">';
+
+        if ($isAdmin) {
+            $entry->loadMissing(['supplierInvoices.supplier']);
+            $invoices = $entry->supplierInvoices;
+
+            $html .= '<div class="card border-primary mb-3"><div class="card-header bg-primary text-white"><h6 class="mb-0"><i class="la la-file-invoice-dollar"></i> Facturas de proveedor vinculadas a esta OC</h6></div><div class="card-body p-0">';
+            if ($invoices->isEmpty()) {
+                $html .= '<div class="p-3"><p class="text-muted mb-0">No hay facturas de proveedor registradas con esta orden de compra asociada.</p></div>';
+            } else {
+                $sumInv = 0.0;
+                $sumOpen = 0.0;
+                $html .= '<div class="table-responsive"><table class="table table-sm table-bordered mb-0"><thead class="table-light"><tr>';
+                $html .= '<th>Nº factura</th><th>Fecha</th><th>Proveedor</th><th>Moneda</th><th class="text-end">Total</th><th class="text-end">Saldo pendiente</th><th></th></tr></thead><tbody>';
+                foreach ($invoices->sortByDesc('invoice_date') as $inv) {
+                    $sumInv += (float) $inv->total_amount;
+                    $sumOpen += $inv->openBalance();
+                    $cur = strtoupper(trim((string) ($inv->currency_code ?? '')));
+                    $html .= '<tr><td>' . e($inv->invoice_number) . '</td><td>' . e($inv->invoice_date?->format('d/m/Y') ?? '—') . '</td>';
+                    $html .= '<td>' . e($inv->supplier?->company_name ?? '—') . '</td><td>' . e($cur !== '' ? $cur : 'ARS') . '</td>';
+                    $html .= '<td class="text-end">$' . number_format((float) $inv->total_amount, 2) . '</td>';
+                    $html .= '<td class="text-end"><strong>$' . number_format($inv->openBalance(), 2) . '</strong></td>';
+                    $html .= '<td><a href="' . e(backpack_url('supplier-invoice/' . $inv->id . '/show')) . '" class="btn btn-sm btn-outline-primary">Ver</a></td></tr>';
                 }
-                
-                $html = '<div class="table-responsive">';
-                $html .= '<table class="table table-striped table-bordered">';
-                $html .= '<thead class="thead-dark">';
-                $html .= '<tr>';
-                $html .= '<th>Número</th>';
-                $html .= '<th>Fecha</th>';
-                $html .= '<th>Monto</th>';
-                $html .= '<th>Estado</th>';
-                $html .= '<th>Acciones</th>';
-                $html .= '</tr>';
-                $html .= '</thead>';
-                $html .= '<tbody>';
-                
-                $sumPaymentOrders = 0;
-                foreach ($paymentOrders as $paymentOrder) {
-                    $sumPaymentOrders += $paymentOrder->total_amount ?? 0;
-                    $statusBadge = match ($paymentOrder->status) {
+                $html .= '</tbody><tfoot class="table-light"><tr><th colspan="4" class="text-end">Totales</th>';
+                $html .= '<th class="text-end">$' . number_format($sumInv, 2) . '</th><th class="text-end">$' . number_format($sumOpen, 2) . '</th><th></th></tr></tfoot></table></div>';
+            }
+            $html .= '</div></div>';
+
+            $imputationRows = [];
+            foreach ($entry->paymentOrders as $po) {
+                foreach ($po->supplierInvoices as $inv) {
+                    $imputationRows[] = ['po' => $po, 'inv' => $inv];
+                }
+            }
+            usort($imputationRows, function (array $a, array $b): int {
+                $da = (string) ($a['inv']->pivot->imputed_at ?? '');
+                $db = (string) ($b['inv']->pivot->imputed_at ?? '');
+
+                return strcmp($db, $da);
+            });
+
+            $html .= '<div class="card border-info mb-3"><div class="card-header bg-info text-white"><h6 class="mb-0"><i class="la la-link"></i> Imputaciones (orden de pago → factura)</h6></div><div class="card-body p-0">';
+            if ($imputationRows === []) {
+                $html .= '<div class="p-3"><p class="text-muted mb-0">Todavía no hay montos imputados desde órdenes de pago hacia facturas de esta OC.</p></div>';
+            } else {
+                $html .= '<div class="table-responsive"><table class="table table-sm table-bordered mb-0"><thead class="table-light"><tr>';
+                $html .= '<th>OP</th><th>Estado OP</th><th>Factura</th><th>Fecha fact.</th><th class="text-end">Monto imputado</th><th>Fecha imputación</th><th>Moneda fact.</th></tr></thead><tbody>';
+                foreach ($imputationRows as $row) {
+                    /** @var PaymentOrder $po */
+                    $po = $row['po'];
+                    $inv = $row['inv'];
+                    $st = $po->status ?? '';
+                    $badge = match ($st) {
                         'Pendiente' => 'bg-warning text-dark',
                         'Aprobada' => 'bg-info text-white',
                         'Ejecutada' => 'bg-success',
                         'Anulada' => 'bg-secondary',
                         'Rechazada' => 'bg-danger',
-                        default => 'bg-secondary'
+                        default => 'bg-secondary',
                     };
-
-                    $html .= '<tr>';
-                    $html .= '<td><strong>' . e($paymentOrder->payment_number ?? 'N/A') . '</strong></td>';
-                    $html .= '<td>' . ($paymentOrder->date ? $paymentOrder->date->format('d/m/Y') : 'N/A') . '</td>';
-                    $html .= '<td><strong>$' . number_format($paymentOrder->total_amount ?? 0, 2) . '</strong></td>';
-                    $html .= '<td><span class="badge ' . $statusBadge . '">' . e($paymentOrder->status ?? 'N/A') . '</span></td>';
-                    $html .= '<td>';
-                    $html .= '<a href="' . backpack_url('payment-order/' . $paymentOrder->id . '/show') . '" class="btn btn-sm btn-info">';
-                    $html .= '<i class="la la-eye"></i> Ver';
-                    $html .= '</a>';
-                    $html .= '</td>';
-                    $html .= '</tr>';
+                    $icur = strtoupper(trim((string) ($inv->currency_code ?? '')));
+                    $html .= '<tr><td><a href="' . e(backpack_url('payment-order/' . $po->id . '/show')) . '">' . e($po->payment_number) . '</a></td>';
+                    $html .= '<td><span class="badge ' . $badge . '">' . e($st) . '</span></td>';
+                    $html .= '<td><a href="' . e(backpack_url('supplier-invoice/' . $inv->id . '/show')) . '">' . e($inv->invoice_number) . '</a></td>';
+                    $html .= '<td>' . e($inv->invoice_date?->format('d/m/Y') ?? '—') . '</td>';
+                    $html .= '<td class="text-end">$' . number_format((float) $inv->pivot->amount_applied, 2) . '</td>';
+                    $html .= '<td>' . e($inv->pivot->imputed_at ?? '—') . '</td>';
+                    $html .= '<td>' . e($icur !== '' ? $icur : 'ARS') . '</td></tr>';
                 }
-                
-                $html .= '</tbody>';
-                $html .= '<tfoot class="table-light">';
-                $html .= '<tr>';
-                $html .= '<th colspan="2" class="text-end">Suma imputada en órdenes de pago:</th>';
-                $html .= '<th><strong>$' . number_format($sumPaymentOrders, 2) . '</strong></th>';
-                $html .= '<th colspan="2">';
-                $remaining = (float) $entry->total - $sumPaymentOrders;
-                if ($remaining > 0.009) {
-                    $html .= '<span class="badge bg-warning text-dark" title="La OC aún no alcanza su monto total con las OP generadas.">Saldo sin OP: $' . number_format($remaining, 2) . '</span>';
-                } else {
-                    $html .= '<span class="badge bg-success" title="La suma de las OP cubre el total de la orden de compra; no indica que el pago ya esté ejecutado.">Monto OC cubierto por OPs</span>';
-                }
-                $html .= '</th>';
-                $html .= '</tr>';
-                $html .= '</tfoot>';
-                $html .= '</table>';
-                $html .= '<p class="small text-muted mb-0 mt-2"><i class="la la-info-circle"></i> La columna <strong>Estado</strong> es el trámite de cada orden de pago (pendiente de aprobación, aprobada o ejecutada). La fila de totales compara montos de la OC frente a la suma de las OP; no reemplaza el estado de la fila.</p>';
-                $html .= '</div>';
-
-                return $html;
+                $html .= '</tbody></table></div>';
+                $html .= '<p class="small mb-0 px-3 py-2" style="color: #000;">Las imputaciones sobre OP <strong>Anulada</strong> no cuentan para el saldo de la factura.</p>';
             }
-        ]);
+            $html .= '</div></div>';
+        } else {
+            $html .= '<div class="alert alert-light border mb-3"><p class="mb-0 small text-muted"><i class="la la-info-circle"></i> El detalle de <strong>facturas de proveedor</strong> y la tabla de <strong>imputaciones</strong> (cruce OP–factura) lo ve la administradora del instituto. Aquí puede revisar las órdenes de pago asociadas a esta OC.</p></div>';
+        }
+
+        $paymentOrders = $entry->paymentOrders;
+        $html .= '<div class="card border-dark mb-0"><div class="card-header bg-dark text-white"><h6 class="mb-0"><i class="la la-money-bill-wave"></i> Órdenes de pago asociadas</h6></div><div class="card-body p-0">';
+        if ($paymentOrders->isEmpty()) {
+            $html .= '<div class="p-3"><div class="alert alert-info mb-0">No hay órdenes de pago asociadas a esta orden de compra.</div></div>';
+        } else {
+            $html .= '<div class="table-responsive"><table class="table table-sm table-striped table-bordered mb-0"><thead class="table-light"><tr>';
+            $html .= '<th>Número</th><th>Fecha</th><th>Tipo</th><th class="text-end">Monto</th><th>Moneda</th><th class="text-end">Imputado a facturas</th><th class="text-end">Disponible p/ imputar</th><th>Estado</th><th>Fecha pago</th><th></th></tr></thead><tbody>';
+            foreach ($paymentOrders as $paymentOrder) {
+                $imputed = (float) $paymentOrder->supplierInvoices->sum(fn ($i) => (float) $i->pivot->amount_applied);
+                $avail = $paymentOrder->status === 'Anulada'
+                    ? null
+                    : $svc->remainingImputableCapacityOnPaymentOrder($paymentOrder);
+                $statusBadge = match ($paymentOrder->status) {
+                    'Pendiente' => 'bg-warning text-dark',
+                    'Aprobada' => 'bg-info text-white',
+                    'Ejecutada' => 'bg-success',
+                    'Anulada' => 'bg-secondary',
+                    'Rechazada' => 'bg-danger',
+                    default => 'bg-secondary',
+                };
+                $cur = strtoupper(trim((string) ($paymentOrder->currency_code ?? '')));
+                $kind = ($paymentOrder->billing_kind ?? 'normal') === 'anticipo' ? 'Anticipo' : 'Normal';
+                $html .= '<tr><td><strong>' . e($paymentOrder->payment_number ?? 'N/A') . '</strong></td>';
+                $html .= '<td>' . ($paymentOrder->date ? $paymentOrder->date->format('d/m/Y') : '—') . '</td>';
+                $html .= '<td><span class="badge bg-secondary">' . e($kind) . '</span></td>';
+                $html .= '<td class="text-end"><strong>$' . number_format((float) ($paymentOrder->total_amount ?? 0), 2) . '</strong></td>';
+                $html .= '<td>' . e($cur !== '' ? $cur : 'ARS') . '</td>';
+                $html .= '<td class="text-end">$' . number_format($imputed, 2) . '</td>';
+                $html .= '<td class="text-end">' . ($avail === null ? '—' : '$' . number_format($avail, 2)) . '</td>';
+                $html .= '<td><span class="badge ' . $statusBadge . '">' . e($paymentOrder->status ?? 'N/A') . '</span></td>';
+                $pd = $paymentOrder->payment_date;
+                $html .= '<td>' . ($pd ? $pd->format('d/m/Y') : '—') . '</td>';
+                $html .= '<td><a href="' . e(backpack_url('payment-order/' . $paymentOrder->id . '/show')) . '" class="btn btn-sm btn-info"><i class="la la-eye"></i> Ver</a></td></tr>';
+            }
+            $html .= '</tbody><tfoot class="table-light"><tr>';
+            $html .= '<th colspan="3" class="text-end">Suma OP no anuladas (monto cabecera)</th>';
+            $html .= '<th class="text-end">$' . number_format($sumActiveOp, 2) . '</th>';
+            $html .= '<th colspan="6">';
+            if ($gapOp > 0.009) {
+                $html .= '<span class="badge bg-warning text-dark">Saldo OC vs OP activas: $' . number_format($gapOp, 2) . '</span>';
+            } else {
+                $html .= '<span class="badge bg-success">Total OC cubierto por suma de OP activas</span>';
+            }
+            $html .= '</th></tr></tfoot></table></div>';
+        }
+        $html .= '</div></div></div>';
+
+        return $html;
     }
 
     /**

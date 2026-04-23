@@ -87,6 +87,16 @@ class PaymentOrderCrudController extends CrudController
         CRUD::column('date')->label('Fecha');
         CRUD::column('total_amount')->label('Monto Total');
         CRUD::addColumn([
+            'name' => 'currency_code',
+            'label' => 'Moneda',
+            'type' => 'closure',
+            'function' => function (PaymentOrder $entry) {
+                $c = strtoupper(trim((string) ($entry->currency_code ?? '')));
+
+                return e($c !== '' ? $c : 'ARS');
+            },
+        ]);
+        CRUD::addColumn([
             'name' => 'billing_kind',
             'label' => 'Tipo',
             'type' => 'closure',
@@ -97,7 +107,6 @@ class PaymentOrderCrudController extends CrudController
             },
             'escaped' => false,
         ]);
-        CRUD::column('currency_code')->label('Mon.');
         CRUD::column('status')->label('Estado');
         CRUD::addColumn([
             'name' => 'purchase_order_id',
@@ -219,13 +228,17 @@ class PaymentOrderCrudController extends CrudController
     {
         CRUD::setValidation(PaymentOrderRequest::class);
         
-        // Obtener purchase_order_id de la URL si existe
+        // OC: desde URL, desde el registro en edición, o desde el select (solo persistido en update)
         $purchaseOrderId = request()->get('purchase_order_id');
+        $entry = $this->crud->getCurrentEntry();
+        if ($entry instanceof PaymentOrder && $entry->exists) {
+            $purchaseOrderId = $purchaseOrderId ?: $entry->purchase_order_id;
+        }
         $purchaseOrder = null;
         $defaultTotal = 0;
-        
+
         if ($purchaseOrderId) {
-            $purchaseOrder = \App\Models\PurchaseOrder::with('details')->find($purchaseOrderId);
+            $purchaseOrder = \App\Models\PurchaseOrder::with(['details', 'supplierInvoices.supplier'])->find($purchaseOrderId);
             if ($purchaseOrder) {
                 $defaultTotal = $purchaseOrder->total ?? 0;
             }
@@ -290,6 +303,20 @@ class PaymentOrderCrudController extends CrudController
                     <strong>Total de la Orden:</strong> $' . number_format($purchaseOrder->total ?? 0, 2) . '
                 </div>',
             ]);
+            CRUD::addField([
+                'name' => 'oc_supplier_invoices_summary',
+                'label' => 'Facturas e imputaciones (contexto OC)',
+                'type' => 'custom_html',
+                'value' => $this->htmlPurchaseOrderInvoicesSummary($purchaseOrder),
+            ]);
+        }
+        if ($entry instanceof PaymentOrder && $entry->exists) {
+            CRUD::addField([
+                'name' => 'payment_order_imputaciones_summary',
+                'label' => 'Imputaciones desde esta orden de pago',
+                'type' => 'custom_html',
+                'value' => $this->htmlPaymentOrderImputacionesSummary($entry),
+            ]);
         }
         CRUD::addField([
             'name' => 'authorizing_user_id',
@@ -333,50 +360,11 @@ class PaymentOrderCrudController extends CrudController
         CRUD::addField([
             'name' => 'payment_details',
             'label' => 'Detalle de pagos (opcional: varias cuotas o parcialidades)',
-            'type' => 'repeatable',
-            'subfields' => [
-                [
-                    'name' => 'concept',
-                    'label' => 'Concepto',
-                    'type' => 'select_from_array',
-                    'options' => [
-                        'advance' => 'Anticipo',
-                        'partiality' => 'Parcialidad',
-                        'residue' => 'Saldo',
-                    ],
-                    'allows_null' => false,
-                    'wrapper' => ['class' => 'form-group col-md-3'],
-                ],
-                [
-                    'name' => 'amount',
-                    'label' => 'Monto',
-                    'type' => 'number',
-                    'attributes' => ['step' => '0.01', 'min' => '0'],
-                    'wrapper' => ['class' => 'form-group col-md-2'],
-                ],
-                [
-                    'name' => 'method_payment',
-                    'label' => 'Método (línea)',
-                    'type' => 'text',
-                    'hint' => 'Si queda vacío, se usa la forma de pago de la cabecera.',
-                    'wrapper' => ['class' => 'form-group col-md-3'],
-                ],
-                [
-                    'name' => 'expiration_date',
-                    'label' => 'Vencimiento',
-                    'type' => 'date',
-                    'wrapper' => ['class' => 'form-group col-md-2'],
-                ],
-                [
-                    'name' => 'actual_payment_date',
-                    'label' => 'Pagado el',
-                    'type' => 'date',
-                    'wrapper' => ['class' => 'form-group col-md-2'],
-                ],
-            ],
-            'init_rows' => 0,
-            'min_rows' => 0,
-            'new_item_label' => 'Agregar línea de pago',
+            'type' => 'view',
+            'view' => 'vendor.backpack.crud.fields.payment_order_op_details',
+            'fake' => true,
+            'rows' => [],
+            'hint' => 'Si agrega líneas, la suma de los montos debe coincidir con el <strong>monto total</strong> de la cabecera. Si no agrega líneas, use solo el monto total. Si queda vacío el método por línea, se usa la forma de pago de la cabecera.',
         ]);
 
         /**
@@ -407,7 +395,7 @@ class PaymentOrderCrudController extends CrudController
                     'actual_payment_date' => $d->actual_payment_date ? $d->actual_payment_date->format('Y-m-d') : '',
                 ];
             })->toArray();
-            CRUD::modifyField('payment_details', ['default' => $default]);
+            CRUD::modifyField('payment_details', ['rows' => $default]);
         }
     }
 
@@ -528,35 +516,6 @@ class PaymentOrderCrudController extends CrudController
             },
             'escaped' => false,
         ]);
-        CRUD::column('currency_code')->label('Moneda');
-        CRUD::column('status')->label('Estado');
-        
-        CRUD::addColumn([
-            'name' => 'purchase_order_id',
-            'label' => 'Orden de Compra Relacionada',
-            'type' => 'select',
-            'entity' => 'purchase_order',
-            'attribute' => 'number',
-            'model' => 'App\Models\PurchaseOrder',
-        ]);
-        
-        CRUD::addColumn([
-            'name' => 'authorizing_user_id',
-            'label' => 'Usuario Autorizador',
-            'type' => 'select',
-            'entity' => 'user',
-            'attribute' => 'name',
-            'model' => 'App\Models\User',
-        ]);
-        
-        CRUD::column('payment_method')->label('Forma de Pago');
-        CRUD::column('bank')->label('Banco');
-        CRUD::addColumn([
-            'name' => 'payment_date',
-            'label' => 'Fecha de Pago',
-            'type' => 'date',
-        ]);
-
         CRUD::addColumn([
             'name' => 'imputaciones_facturas',
             'label' => 'Imputaciones a facturas',
@@ -585,6 +544,34 @@ class PaymentOrderCrudController extends CrudController
                 return $html;
             },
             'escaped' => false,
+        ]);
+        CRUD::column('currency_code')->label('Moneda');
+        CRUD::column('status')->label('Estado');
+        
+        CRUD::addColumn([
+            'name' => 'purchase_order_id',
+            'label' => 'Orden de Compra Relacionada',
+            'type' => 'select',
+            'entity' => 'purchase_order',
+            'attribute' => 'number',
+            'model' => 'App\Models\PurchaseOrder',
+        ]);
+        
+        CRUD::addColumn([
+            'name' => 'authorizing_user_id',
+            'label' => 'Usuario Autorizador',
+            'type' => 'select',
+            'entity' => 'user',
+            'attribute' => 'name',
+            'model' => 'App\Models\User',
+        ]);
+        
+        CRUD::column('payment_method')->label('Forma de Pago');
+        CRUD::column('bank')->label('Banco');
+        CRUD::addColumn([
+            'name' => 'payment_date',
+            'label' => 'Fecha de Pago',
+            'type' => 'date',
         ]);
 
         // Información de anulación (si está anulada)
@@ -711,6 +698,59 @@ class PaymentOrderCrudController extends CrudController
     }
 
     /**
+     * Resumen HTML: facturas de proveedor cargadas contra la OC (montos y saldo).
+     */
+    protected function htmlPurchaseOrderInvoicesSummary(\App\Models\PurchaseOrder $purchaseOrder): string
+    {
+        $invoices = $purchaseOrder->relationLoaded('supplierInvoices')
+            ? $purchaseOrder->supplierInvoices
+            : $purchaseOrder->supplierInvoices()->with('supplier')->orderByDesc('invoice_date')->get();
+
+        if ($invoices->isEmpty()) {
+            return '<div class="alert alert-warning mb-0"><p class="mb-1"><strong>Facturas en esta OC:</strong> todavía no hay facturas de proveedor vinculadas a esta orden de compra.</p>'
+                . '<p class="mb-0 small text-muted">Registrelas en <strong>Facturas proveedor</strong> (con esta OC asociada) para poder imputar pagos.</p></div>';
+        }
+
+        $html = '<div class="card border-secondary mb-0"><div class="card-header py-2"><strong><i class="la la-file-invoice-dollar"></i> Facturas vinculadas a esta OC</strong></div>';
+        $html .= '<div class="card-body p-0"><div class="table-responsive"><table class="table table-sm table-bordered mb-0">';
+        $html .= '<thead class="table-light"><tr><th>Nº factura</th><th>Fecha</th><th>Proveedor</th><th class="text-end">Monto</th><th class="text-end">Saldo pend.</th></tr></thead><tbody>';
+        foreach ($invoices as $inv) {
+            $html .= '<tr><td>' . e($inv->invoice_number) . '</td><td>' . e($inv->invoice_date?->format('d/m/Y') ?? '—') . '</td>'
+                . '<td>' . e($inv->supplier?->company_name ?? '—') . '</td>'
+                . '<td class="text-end">$' . number_format((float) $inv->total_amount, 2) . '</td>'
+                . '<td class="text-end">$' . number_format($inv->openBalance(), 2) . '</td></tr>';
+        }
+        $html .= '</tbody></table></div>';
+        $html .= '<div class="p-2 small text-muted mb-0">Para aplicar esta u otras OP a una factura use <strong>Facturas proveedor</strong> → Ver → <em>Imputar orden de pago</em>.</div></div></div>';
+
+        return $html;
+    }
+
+    /**
+     * Resumen HTML: montos de esta OP ya imputados a cada factura (tabla pivote).
+     */
+    protected function htmlPaymentOrderImputacionesSummary(PaymentOrder $paymentOrder): string
+    {
+        $paymentOrder->loadMissing('supplierInvoices');
+        $rows = $paymentOrder->supplierInvoices;
+        if ($rows->isEmpty()) {
+            return '<div class="alert alert-light border mb-0"><strong>Imputaciones desde esta OP:</strong> todavía no hay montos imputados a facturas desde esta orden de pago.</div>';
+        }
+
+        $html = '<div class="card border-info mb-0"><div class="card-header py-2 bg-light"><strong><i class="la la-link"></i> Imputaciones registradas (esta OP → facturas)</strong></div>';
+        $html .= '<div class="card-body p-0"><div class="table-responsive"><table class="table table-sm table-bordered mb-0">';
+        $html .= '<thead class="table-light"><tr><th>Factura</th><th>Fecha fact.</th><th class="text-end">Monto imputado</th><th>Fecha imputación</th></tr></thead><tbody>';
+        foreach ($rows as $inv) {
+            $html .= '<tr><td>' . e($inv->invoice_number) . '</td><td>' . e($inv->invoice_date?->format('d/m/Y') ?? '—') . '</td>'
+                . '<td class="text-end">$' . number_format((float) $inv->pivot->amount_applied, 2) . '</td>'
+                . '<td>' . e($inv->pivot->imputed_at ?? '—') . '</td></tr>';
+        }
+        $html .= '</tbody></table></div></div></div>';
+
+        return $html;
+    }
+
+    /**
      * Muestra el formulario para anular una orden de pago (solo administradora).
      */
     public function showAnularForm($id)
@@ -779,6 +819,7 @@ class PaymentOrderCrudController extends CrudController
             'opDetails',
             'purchase_order.supplier',
             'purchase_order.details.supplier',
+            'supplierInvoices',
         ])->findOrFail($id);
 
         $pdf = Pdf::loadView('payment-order-pdf', compact('paymentOrder'));

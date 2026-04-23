@@ -1871,6 +1871,8 @@
                     <div class="process-item-meta">
                         <span><i class="la la-calendar"></i> {{ $paymentOrder->date ? $paymentOrder->date->format('d/m/Y') : 'N/A' }}</span>
                         <span><i class="la la-money-bill"></i> ${{ number_format($paymentOrder->total_amount ?? 0, 2) }}</span>
+                        @php $opCur = strtoupper(trim((string) ($paymentOrder->currency_code ?? ''))); @endphp
+                        <span><i class="la la-coins"></i> {{ $opCur !== '' ? $opCur : 'ARS' }}</span>
                     </div>
                 </div>
             @empty
@@ -2193,6 +2195,8 @@
                                                 <small class="text-muted">
                                                     Fecha: {{ $paymentOrder->date ? $paymentOrder->date->format('d/m/Y') : 'N/A' }}
                                                     | Monto: ${{ number_format($paymentOrder->total_amount ?? 0, 2) }}
+                                                    @php $flowOpCur = strtoupper(trim((string) ($paymentOrder->currency_code ?? ''))); @endphp
+                                                    | Moneda: {{ $flowOpCur !== '' ? $flowOpCur : 'ARS' }}
                                                     | Estado:
                                                     @if($flowHasGeneral)
                                                         <span class="process-item-status status-{{ $paymentOrder->dashboard_payment_status_css_suffix }}">{{ $paymentOrder->dashboard_payment_status_label }}</span>

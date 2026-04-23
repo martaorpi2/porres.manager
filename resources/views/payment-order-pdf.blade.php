@@ -133,6 +133,42 @@
     </table>
     @endif
 
+    <div class="mb-4"><strong>Imputaciones a facturas de proveedor</strong></div>
+    @php
+        $invForPdf = $paymentOrder->relationLoaded('supplierInvoices') ? $paymentOrder->supplierInvoices : collect();
+    @endphp
+    @if($invForPdf->isEmpty())
+        <p class="muted">Sin imputaciones registradas desde esta orden de pago.</p>
+    @else
+        <table>
+            <thead>
+                <tr>
+                    <th>Factura</th>
+                    <th>Fecha fact.</th>
+                    <th class="right">Monto imputado</th>
+                    <th>Fecha imputación</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach($invForPdf as $invRow)
+                    <tr>
+                        <td>{{ $invRow->invoice_number }}</td>
+                        <td>{{ fmt_date($invRow->invoice_date) }}</td>
+                        <td class="right">{{ money_format_local($invRow->pivot->amount_applied ?? 0) }}</td>
+                        <td>{{ $invRow->pivot->imputed_at ?? '—' }}</td>
+                    </tr>
+                @endforeach
+            </tbody>
+        </table>
+        @if(($paymentOrder->billing_kind ?? '') === 'anticipo')
+            @php
+                $imPdf = (float) $invForPdf->sum(fn ($i) => (float) ($i->pivot->amount_applied ?? 0));
+                $availPdf = max(0, (float) $paymentOrder->total_amount - $imPdf);
+            @endphp
+            <p><strong>Anticipo disponible:</strong> {{ money_format_local($availPdf) }}</p>
+        @endif
+    @endif
+
     <div class="box">
         <div><strong>Estado:</strong> {{ $paymentOrder->status }}</div>
         @if(($paymentOrder->status ?? '') === 'Anulada' && !empty($paymentOrder->annulment_reason))

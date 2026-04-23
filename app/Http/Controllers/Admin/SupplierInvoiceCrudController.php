@@ -72,7 +72,7 @@ class SupplierInvoiceCrudController extends CrudController
         ]);
         CRUD::column('invoice_number')->label('Nº factura');
         CRUD::column('invoice_date')->label('Fecha')->type('date');
-        CRUD::column('total_amount')->label('Total');
+        CRUD::column('total_amount')->label('Monto')->type('number')->decimals(2)->prefix('$');
         CRUD::column('currency_code')->label('Moneda');
         CRUD::addColumn([
             'name' => 'attachment',
@@ -133,7 +133,9 @@ class SupplierInvoiceCrudController extends CrudController
         ]);
         CRUD::field('invoice_number')->label('Número de factura');
         CRUD::field('invoice_date')->label('Fecha de factura')->type('date');
-        CRUD::field('total_amount')->label('Importe total');
+        CRUD::field('total_amount')->label('Monto')
+            ->type('number')
+            ->attributes(['step' => '0.01', 'min' => '0.01']);
         CRUD::addField([
             'name' => 'currency_code',
             'label' => 'Moneda (ISO 4217)',
@@ -160,7 +162,7 @@ class SupplierInvoiceCrudController extends CrudController
 
         CRUD::column('invoice_number')->label('Número de factura');
         CRUD::column('invoice_date')->label('Fecha')->type('date');
-        CRUD::column('total_amount')->label('Total');
+        CRUD::column('total_amount')->label('Monto total')->type('number')->decimals(2)->prefix('$');
         CRUD::column('currency_code')->label('Moneda');
         CRUD::addColumn([
             'name' => 'open_balance',
