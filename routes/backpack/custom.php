@@ -58,6 +58,7 @@ Route::group([
     Route::post('purchase-request/{id}/select-market-rate/{marketRateId}', 'PurchaseRequestCrudController@storeMarketRateSelection')->name('purchase-request.store-market-rate-selection');
     Route::post('purchase-request/{id}/toggle-market-rate/{marketRateId}', 'PurchaseRequestCrudController@toggleMarketRateSelection')->name('purchase-request.toggle-market-rate');
     Route::post('purchase-request/{id}/request-quotation-superior-authorization', 'PurchaseRequestCrudController@requestQuotationSuperiorAuthorization')->name('purchase-request.request-quotation-superior-authorization');
+    Route::post('purchase-request/{id}/request-quotation-higher-level-authorization', 'PurchaseRequestCrudController@requestQuotationHigherLevelAuthorization')->name('purchase-request.request-quotation-higher-level-authorization');
     Route::post('purchase-request/{id}/notify-compras-intervention', 'PurchaseRequestCrudController@notifyComprasIntervention')->name('purchase-request.notify-compras-intervention');
     Route::get('purchase-request/{id}/suggest-supplier', 'PurchaseRequestCrudController@showSuggestSupplierForm')->name('purchase-request.suggest-supplier');
     Route::post('purchase-request/{id}/suggest-supplier', 'PurchaseRequestCrudController@storeSupplierSuggestion')->name('purchase-request.store-supplier-suggestion');

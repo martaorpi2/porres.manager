@@ -39,6 +39,16 @@ class PurchaseRequestNotificationService
     }
 
     /**
+     * Primera aprobación de cotizaciones: siempre administradora del instituto.
+     *
+     * @return list<string>
+     */
+    private static function administratorApproverRoleNames(): array
+    {
+        return ['role_admin_institucion'];
+    }
+
+    /**
      * Rol(es) a los que debe dirigirse el correo de aprobación: solo el nivel más bajo cuyo tope
      * de autorización cubre el monto (misma lógica escalonada que canBeApprovedBy cuando requires_admin_approval).
      *
@@ -61,6 +71,26 @@ class PurchaseRequestNotificationService
 
         // Monto fuera de los topes configurados o límites en cero: mantener aviso a todos los niveles
         return self::superiorApproverRoleNames();
+    }
+
+    /**
+     * Escalamiento desde administradora: devuelve el siguiente nivel por monto, excluyendo admin.
+     *
+     * @return list<string>
+     */
+    private static function superiorApproverRoleNamesForAmountFromAdministrator(float $totalAmount): array
+    {
+        $apoderadoLimit = (float) PurchaseAuthorizationLimit::getLimitForRole('role_apoderado');
+        if ($apoderadoLimit > 0 && $totalAmount <= $apoderadoLimit) {
+            return ['role_apoderado'];
+        }
+        $representanteLimit = (float) PurchaseAuthorizationLimit::getLimitForRole('role_representante_legal');
+        if ($representanteLimit > 0 && $totalAmount <= $representanteLimit) {
+            return ['role_representante_legal'];
+        }
+
+        // Monto fuera de topes: escalar a ambos niveles superiores.
+        return ['role_apoderado', 'role_representante_legal'];
     }
 
     /**
@@ -140,6 +170,40 @@ class PurchaseRequestNotificationService
         );
         $recipients = self::emailsForBackpackRoles(
             self::approverRoleNamesForAmount((float) ($purchaseRequest->total_amount ?? 0))
+        );
+        self::sendHtml($subject, $body, $recipients);
+    }
+
+    /**
+     * Compras solicita revisión inicial de cotizaciones: siempre a administradora.
+     */
+    public static function notifyAdministratorQuotationApprovalNeeded(PurchaseRequest $purchaseRequest): void
+    {
+        $url = self::purchaseRequestUrl($purchaseRequest);
+        $subject = 'Revisión de administradora requerida '.($purchaseRequest->request_number ?? '#'.$purchaseRequest->id);
+        $body = self::htmlBody(
+            'El sector de compras seleccionó cotización(es). Se requiere su revisión y aprobación inicial.',
+            $purchaseRequest,
+            $url
+        );
+        $recipients = self::emailsForBackpackRoles(self::administratorApproverRoleNames());
+        self::sendHtml($subject, $body, $recipients);
+    }
+
+    /**
+     * Administradora solicita aprobación al nivel superior que corresponde por monto.
+     */
+    public static function notifySuperiorQuotationApprovalNeededFromAdministrator(PurchaseRequest $purchaseRequest): void
+    {
+        $url = self::purchaseRequestUrl($purchaseRequest);
+        $subject = 'Escalamiento de aprobación de solicitud '.($purchaseRequest->request_number ?? '#'.$purchaseRequest->id);
+        $body = self::htmlBody(
+            'La administradora del instituto solicita aprobación del nivel superior según monto.',
+            $purchaseRequest,
+            $url
+        );
+        $recipients = self::emailsForBackpackRoles(
+            self::superiorApproverRoleNamesForAmountFromAdministrator((float) ($purchaseRequest->total_amount ?? 0))
         );
         self::sendHtml($subject, $body, $recipients);
     }
@@ -241,6 +305,29 @@ class PurchaseRequestNotificationService
         }
 
         return self::hasSelectedQuotation($purchaseRequest);
+    }
+
+    public static function isAwaitingAdministratorQuotationApproval(PurchaseRequest $purchaseRequest): bool
+    {
+        if (! in_array($purchaseRequest->status, ['Pendiente', 'En Proceso'], true)) {
+            return false;
+        }
+        if ($purchaseRequest->is_direct_purchase) {
+            return false;
+        }
+
+        return self::hasSelectedQuotation($purchaseRequest);
+    }
+
+    public static function shouldAdministratorEscalateQuotationApproval(PurchaseRequest $purchaseRequest): bool
+    {
+        if (! self::isAwaitingAdministratorQuotationApproval($purchaseRequest)) {
+            return false;
+        }
+
+        $adminLimit = (float) PurchaseAuthorizationLimit::getLimitForRole('role_admin_institucion');
+
+        return $adminLimit > 0 && (float) ($purchaseRequest->total_amount ?? 0) > $adminLimit;
     }
 
     public static function hasSelectedQuotation(PurchaseRequest $purchaseRequest): bool

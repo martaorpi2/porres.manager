@@ -2496,41 +2496,17 @@ class PurchaseRequestCrudController extends CrudController
         $comprasLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_responsable_compras');
         $requiresAdminApproval = $newTotalAmount > $comprasLimit;
 
-        // Verificar si el usuario puede aprobar esta solicitud (usando el nuevo monto)
-        // Crear una solicitud temporal con el nuevo monto para verificar
-        $tempRequest = clone $purchaseRequest;
-        $tempRequest->total_amount = $newTotalAmount;
-        $canApprove = $tempRequest->canBeApprovedBy($user);
+        // Seleccionar cotización sin autoaprobar: la revisión inicial debe pasar por administradora.
+        $purchaseRequest->update([
+            'selected_market_rate_id' => $marketRateId,
+            'selection_justification' => $request->input('justification'),
+            'selected_by' => auth()->id(),
+            'selected_at' => now(),
+            'total_amount' => $newTotalAmount,
+            'requires_admin_approval' => $requiresAdminApproval,
+        ]);
 
-        if (! $canApprove) {
-            // Si no puede aprobar, solo seleccionar la cotización pero no aprobar
-            $purchaseRequest->update([
-                'selected_market_rate_id' => $marketRateId,
-                'selection_justification' => $request->input('justification'),
-                'selected_by' => auth()->id(),
-                'selected_at' => now(),
-                'total_amount' => $newTotalAmount,
-                'requires_admin_approval' => $requiresAdminApproval,
-            ]);
-
-            \Alert::warning('Cotización seleccionada. El monto total se ha actualizado a $'.number_format($newTotalAmount, 2).'. La solicitud requiere aprobación del administrador del instituto debido a que supera el límite de autorización.')->flash();
-        } else {
-            // Si puede aprobar, seleccionar la cotización y aprobar
-            $purchaseRequest->update([
-                'selected_market_rate_id' => $marketRateId,
-                'selection_justification' => $request->input('justification'),
-                'selected_by' => auth()->id(),
-                'selected_at' => now(),
-                'total_amount' => $newTotalAmount,
-                'requires_admin_approval' => $requiresAdminApproval,
-                'status' => 'Aprobada',
-                'approved_by' => auth()->id(),
-                'approved_date' => now(),
-                'approval_justification' => $request->input('justification'), // Usar la misma justificación de selección
-            ]);
-
-            \Alert::success('Cotización seleccionada y solicitud aprobada exitosamente.')->flash();
-        }
+        \Alert::success('Cotización seleccionada. Ahora debe solicitarse revisión a la administradora del instituto.')->flash();
 
         // Marcar la cotización como seleccionada para permitir selección múltiple en la vista.
         $marketRate->update(['is_selected' => true]);
@@ -2606,12 +2582,12 @@ class PurchaseRequestCrudController extends CrudController
     }
 
     /**
-     * Envía por correo la solicitud de aprobación al nivel superior (tras definir cotizaciones).
+     * Compras solicita aprobación inicial de cotizaciones a administradora.
      */
     public function requestQuotationSuperiorAuthorization($id)
     {
         $user = backpack_user();
-        $adminRoles = ['role_admin_sistema', 'role_admin_institucion', 'role_responsable_compras'];
+        $adminRoles = ['role_admin_sistema', 'role_responsable_compras'];
         $allowed = false;
         foreach ($adminRoles as $role) {
             if ($user && $user->hasRole($role, 'backpack')) {
@@ -2626,14 +2602,43 @@ class PurchaseRequestCrudController extends CrudController
         $purchaseRequest = \App\Models\PurchaseRequest::findOrFail($id);
         $purchaseRequest->load('marketRates');
 
-        if (! PurchaseRequestNotificationService::isAwaitingSuperiorQuotationApproval($purchaseRequest)) {
-            \Alert::error('No se puede enviar la solicitud: la solicitud debe estar pendiente o en proceso, con cotización(es) seleccionada(s) y monto que requiera aprobación de nivel superior.')->flash();
+        if (! PurchaseRequestNotificationService::isAwaitingAdministratorQuotationApproval($purchaseRequest)) {
+            \Alert::error('No se puede enviar la solicitud: la solicitud debe estar pendiente o en proceso, con cotización(es) seleccionada(s).')->flash();
 
             return redirect()->route('purchase-request.show', $id);
         }
 
-        PurchaseRequestNotificationService::notifySuperiorsQuotationApprovalNeeded($purchaseRequest);
-        \Alert::success('Se envió el correo solicitando autorización al nivel superior.')->flash();
+        PurchaseRequestNotificationService::notifyAdministratorQuotationApprovalNeeded($purchaseRequest);
+        \Alert::success('Se envió el correo solicitando revisión a la administradora del instituto.')->flash();
+
+        return redirect()->route('purchase-request.show', $id);
+    }
+
+    /**
+     * Administradora solicita aprobación al nivel superior según monto.
+     */
+    public function requestQuotationHigherLevelAuthorization($id)
+    {
+        $user = backpack_user();
+        $allowed = $user && (
+            $user->hasRole('role_admin_institucion', 'backpack')
+            || $user->hasRole('role_admin_sistema', 'backpack')
+        );
+        if (! $allowed) {
+            abort(403, 'Solo la administradora del instituto puede solicitar aprobación al nivel superior.');
+        }
+
+        $purchaseRequest = \App\Models\PurchaseRequest::findOrFail($id);
+        $purchaseRequest->load('marketRates');
+
+        if (! PurchaseRequestNotificationService::shouldAdministratorEscalateQuotationApproval($purchaseRequest)) {
+            \Alert::error('No corresponde escalar esta solicitud: el monto no supera el límite de la administradora o faltan cotizaciones seleccionadas.')->flash();
+
+            return redirect()->route('purchase-request.show', $id);
+        }
+
+        PurchaseRequestNotificationService::notifySuperiorQuotationApprovalNeededFromAdministrator($purchaseRequest);
+        \Alert::success('Se envió el correo solicitando aprobación al nivel superior correspondiente.')->flash();
 
         return redirect()->route('purchase-request.show', $id);
     }
@@ -4422,13 +4427,32 @@ class PurchaseRequestCrudController extends CrudController
                     $html .= '</table>';
                     $html .= '</div>';
 
-                    if ($canSelectQuotations && $comprasPuedeEditarSeleccionCotizaciones && PurchaseRequestNotificationService::isAwaitingSuperiorQuotationApproval($entry)) {
+                    $canRequestAdministratorApproval = $quotationsViewer && (
+                        $quotationsViewer->hasRole('role_responsable_compras', 'backpack')
+                        || $quotationsViewer->hasRole('role_admin_sistema', 'backpack')
+                    );
+                    if ($canSelectQuotations && $comprasPuedeEditarSeleccionCotizaciones && $canRequestAdministratorApproval && PurchaseRequestNotificationService::isAwaitingAdministratorQuotationApproval($entry)) {
                         $html .= '<div class="alert alert-warning mt-3 mb-0">';
-                        $html .= '<p class="mb-2"><strong>Autorización de nivel superior</strong></p>';
-                        $html .= '<p class="mb-2 small">Cuando tenga definida(s) la(s) cotización(es) a utilizar, envíe la notificación por correo al nivel que deba aprobar (según monto y roles).</p>';
+                        $html .= '<p class="mb-2"><strong>Revisión de administradora</strong></p>';
+                        $html .= '<p class="mb-2 small">Cuando tenga definida(s) la(s) cotización(es), solicite la revisión de la administradora del instituto.</p>';
                         $html .= '<form method="POST" action="'.e(route('purchase-request.request-quotation-superior-authorization', $entry->id)).'" class="d-inline">';
                         $html .= csrf_field();
-                        $html .= '<button type="submit" class="btn btn-primary"><i class="la la-envelope"></i> Solicitar autorización</button>';
+                        $html .= '<button type="submit" class="btn btn-primary"><i class="la la-envelope"></i> Solicitar revisión de administradora</button>';
+                        $html .= '</form>';
+                        $html .= '</div>';
+                    }
+
+                    $canRequestHigherApproval = $quotationsViewer && (
+                        $quotationsViewer->hasRole('role_admin_institucion', 'backpack')
+                        || $quotationsViewer->hasRole('role_admin_sistema', 'backpack')
+                    );
+                    if ($canRequestHigherApproval && PurchaseRequestNotificationService::shouldAdministratorEscalateQuotationApproval($entry)) {
+                        $html .= '<div class="alert alert-info mt-3 mb-0">';
+                        $html .= '<p class="mb-2"><strong>Escalamiento de aprobación</strong></p>';
+                        $html .= '<p class="mb-2 small">Como administradora, puede solicitar aprobación al nivel superior correspondiente según el monto.</p>';
+                        $html .= '<form method="POST" action="'.e(route('purchase-request.request-quotation-higher-level-authorization', $entry->id)).'" class="d-inline">';
+                        $html .= csrf_field();
+                        $html .= '<button type="submit" class="btn btn-info"><i class="la la-level-up"></i> Solicitar aprobación de nivel superior</button>';
                         $html .= '</form>';
                         $html .= '</div>';
                     }

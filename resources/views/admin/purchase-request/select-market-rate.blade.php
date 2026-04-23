@@ -92,7 +92,7 @@
                     <div class="form-group">
                         <div class="alert alert-info">
                             <i class="la la-info-circle"></i>
-                            <strong>Importante:</strong> Al confirmar esta selección, la solicitud pasará a estado "Aprobada" y se podrá generar la orden de compra.
+                            <strong>Importante:</strong> Al confirmar esta selección, se registrará la cotización y luego deberá solicitarse la revisión de la administradora del instituto.
                         </div>
                     </div>
                     
