@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use Backpack\CRUD\app\Http\Controllers\CrudController;
 use Backpack\CRUD\app\Library\CrudPanel\CrudPanelFacade as CRUD;
+use Illuminate\Support\Facades\Schema;
 
 class GeneralRequestCrudController extends CrudController
 {
@@ -56,6 +57,7 @@ class GeneralRequestCrudController extends CrudController
 
         // Filtrar solicitudes según el rol del usuario
         $user = backpack_user();
+        $hasAnalysisStatus = Schema::hasColumn('general_requests', 'analysis_status');
         $isAdmin = false;
         if ($user) {
             // Roles que pueden ver todas las solicitudes (administradores)
@@ -71,7 +73,9 @@ class GeneralRequestCrudController extends CrudController
                 // Para role_analista_area, mostrar solo solicitudes pendientes de análisis
                 if ($user->hasRole('role_analista_area', 'backpack')) {
                     CRUD::addClause('where', 'status', 'pendiente_analisis');
-                    CRUD::addClause('where', 'analysis_status', 'pendiente');
+                    if ($hasAnalysisStatus) {
+                        CRUD::addClause('where', 'analysis_status', 'pendiente');
+                    }
                     
                     // Filtrar solo por áreas que requieren análisis
                     CRUD::addClause('whereHas', 'area', function($query) {
@@ -82,23 +86,24 @@ class GeneralRequestCrudController extends CrudController
                 elseif ($user->hasRole('role_responsable_area', 'backpack')) {
                     $userAreas = \App\Models\ResponsibilityArea::where('responsible_user_id', $user->id)->pluck('id');
                     
-                    CRUD::addClause(function($query) use ($user, $userAreas) {
-                        $query->where(function($q) use ($user, $userAreas) {
+                    CRUD::addClause(function ($query) use ($user, $userAreas, $hasAnalysisStatus) {
+                        $query->where(function ($q) use ($user, $userAreas, $hasAnalysisStatus) {
                             // Siempre incluir las solicitudes que el usuario creó
                             $q->where('created_by', $user->id);
-                            
+
                             // También incluir solicitudes de sus áreas (si tiene áreas asignadas)
                             if ($userAreas->isNotEmpty()) {
-                                $q->orWhere(function($areaQ) use ($userAreas) {
-                                    $areaQ->whereIn('area_id', $userAreas)
-                                          ->where(function($subQ) {
-                                              // Incluir solicitudes aprobadas por analista, no requeridas, o sin análisis aún
-                                              $subQ->where('analysis_status', 'aprobada')
-                                                   ->orWhere('analysis_status', 'no_requerido')
-                                                   ->orWhereNull('analysis_status')
-                                                   ->orWhere('analysis_status', 'pendiente');
-                                          })
-                                          ->where('status', '!=', 'rechazada_analista');
+                                $q->orWhere(function ($areaQ) use ($userAreas, $hasAnalysisStatus) {
+                                    $areaQ->whereIn('area_id', $userAreas);
+                                    if ($hasAnalysisStatus) {
+                                        $areaQ->where(function ($subQ) {
+                                            $subQ->where('analysis_status', 'aprobada')
+                                                ->orWhere('analysis_status', 'no_requerido')
+                                                ->orWhereNull('analysis_status')
+                                                ->orWhere('analysis_status', 'pendiente');
+                                        });
+                                    }
+                                    $areaQ->where('status', '!=', 'rechazada_analista');
                                 });
                             }
                         });
@@ -967,25 +972,24 @@ class GeneralRequestCrudController extends CrudController
             $isResponsableArea = $user && $user->hasRole('role_responsable_area', 'backpack');
             
             if ($isResponsableArea) {
-                // Responsable de área: mantener estado 'creada'
-                $item->update([
-                    'status' => 'creada',
-                    'analysis_status' => 'no_requerido'
-                ]);
+                $patch = ['status' => 'creada'];
+                if (Schema::hasColumn('general_requests', 'analysis_status')) {
+                    $patch['analysis_status'] = 'no_requerido';
+                }
+                $item->update($patch);
             } else {
-                // Para otros usuarios, determinar si requiere análisis según el área
                 if ($this->requiresAnalystApproval($item->area_id)) {
-                    // Estado inicial: pendiente de análisis
-                    $item->update([
-                        'status' => 'pendiente_analisis',
-                        'analysis_status' => 'pendiente'
-                    ]);
+                    $patch = ['status' => 'pendiente_analisis'];
+                    if (Schema::hasColumn('general_requests', 'analysis_status')) {
+                        $patch['analysis_status'] = 'pendiente';
+                    }
+                    $item->update($patch);
                 } else {
-                    // Para otras áreas, va directo a revisión del responsable
-                    $item->update([
-                        'status' => 'revisada_area',
-                        'analysis_status' => 'no_requerido'
-                    ]);
+                    $patch = ['status' => 'revisada_area'];
+                    if (Schema::hasColumn('general_requests', 'analysis_status')) {
+                        $patch['analysis_status'] = 'no_requerido';
+                    }
+                    $item->update($patch);
                 }
             }
 
@@ -1354,8 +1358,12 @@ class GeneralRequestCrudController extends CrudController
                     $method = $reflection->getMethod('requiresAnalystApproval');
                     $method->setAccessible(true);
                     $requiresAnalysis = $method->invoke($controller, $entry->area_id);
-                    
-                    if (!$requiresAnalysis || $entry->analysis_status !== 'pendiente') {
+
+                    if (! Schema::hasColumn('general_requests', 'analysis_status')) {
+                        return '';
+                    }
+
+                    if (! $requiresAnalysis || $entry->analysis_status !== 'pendiente') {
                         return '';
                     }
                     
@@ -1495,11 +1503,17 @@ class GeneralRequestCrudController extends CrudController
     public function approveByAnalyst($id)
     {
         $user = backpack_user();
-        
-        if (!$user->hasRole('role_analista_area', 'backpack')) {
+
+        if (! Schema::hasColumn('general_requests', 'analysis_status')) {
+            \Alert::error('Falta aplicar la migración de base de datos que agrega el análisis de solicitudes generales (analysis_status).')->flash();
+
+            return redirect()->back();
+        }
+
+        if (! $user->hasRole('role_analista_area', 'backpack')) {
             abort(403, 'Solo los analistas pueden aprobar solicitudes.');
         }
-        
+
         $request = \App\Models\GeneralRequest::findOrFail($id);
         
         if (!$this->requiresAnalystApproval($request->area_id)) {
@@ -1527,11 +1541,17 @@ class GeneralRequestCrudController extends CrudController
     public function rejectByAnalyst($id, \Illuminate\Http\Request $request)
     {
         $user = backpack_user();
-        
-        if (!$user->hasRole('role_analista_area', 'backpack')) {
+
+        if (! Schema::hasColumn('general_requests', 'analysis_status')) {
+            \Alert::error('Falta aplicar la migración de base de datos que agrega el análisis de solicitudes generales (analysis_status).')->flash();
+
+            return redirect()->back();
+        }
+
+        if (! $user->hasRole('role_analista_area', 'backpack')) {
             abort(403, 'Solo los analistas pueden rechazar solicitudes.');
         }
-        
+
         $generalRequest = \App\Models\GeneralRequest::findOrFail($id);
         
         if (!$this->requiresAnalystApproval($generalRequest->area_id)) {

@@ -5,6 +5,7 @@ namespace App\Models;
 use Backpack\CRUD\app\Models\Traits\CrudTrait;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Schema;
 
 class GeneralRequest extends Model
 {
@@ -141,8 +142,12 @@ class GeneralRequest extends Model
      */
     public function scopePendingAnalysis($query)
     {
+        if (! Schema::hasColumn($this->getTable(), 'analysis_status')) {
+            return $query->where('status', 'pendiente_analisis');
+        }
+
         return $query->where('analysis_status', 'pendiente')
-                     ->where('status', 'pendiente_analisis');
+            ->where('status', 'pendiente_analisis');
     }
 
     /**
@@ -150,8 +155,12 @@ class GeneralRequest extends Model
      */
     public function scopeApprovedByAnalyst($query)
     {
+        if (! Schema::hasColumn($this->getTable(), 'analysis_status')) {
+            return $query->whereRaw('1 = 0');
+        }
+
         return $query->where('analysis_status', 'aprobada')
-                     ->whereNotNull('analyzed_by');
+            ->whereNotNull('analyzed_by');
     }
 
     /**
