@@ -2747,7 +2747,7 @@ class PurchaseRequestCrudController extends CrudController
      */
     public function approvePurchaseRequest($id)
     {
-        $purchaseRequest = \App\Models\PurchaseRequest::with('marketRates')->findOrFail($id);
+        $purchaseRequest = \App\Models\PurchaseRequest::with(['marketRates', 'details.product'])->findOrFail($id);
         $user = backpack_user();
 
         if (! $user) {
@@ -2769,17 +2769,118 @@ class PurchaseRequestCrudController extends CrudController
             return redirect()->route('purchase-request.show', $id);
         }
 
-        // Recalcular total efectivo a aprobar (incluye IVA y selección múltiple) antes de validar límites.
-        $effectiveTotal = $this->recalculateSelectedQuotationsTotalForPurchaseRequest($purchaseRequest);
+        $httpRequest = request();
+        $httpRequest->validate([
+            'approval_justification' => 'required|string|max:1000',
+        ]);
+
+        $detailDecisions = [];
+        if ($purchaseRequest->is_direct_purchase) {
+            foreach ($purchaseRequest->details as $detail) {
+                $detailDecisions[$detail->id] = \App\Models\PurchaseRequestDetail::LINE_AUTH_APPROVED;
+            }
+        } else {
+            $lineDecision = $httpRequest->input('line_decision', []);
+            if (! is_array($lineDecision)) {
+                \Alert::error('Debe indicar para cada ítem si autoriza o no la compra.')->flash();
+
+                return redirect()->route('purchase-request.show', $id);
+            }
+            $expectedIds = $purchaseRequest->details->pluck('id')->map(fn ($i) => (int) $i)->sort()->values()->all();
+            $submittedIds = collect(array_keys($lineDecision))->map(fn ($i) => (int) $i)->sort()->values()->all();
+            if ($expectedIds !== $submittedIds) {
+                \Alert::error('Debe indicar para cada ítem si autoriza o no la compra.')->flash();
+
+                return redirect()->route('purchase-request.show', $id);
+            }
+            foreach ($purchaseRequest->details as $detail) {
+                $decision = $lineDecision[$detail->id] ?? null;
+                if (! in_array($decision, [\App\Models\PurchaseRequestDetail::LINE_AUTH_APPROVED, \App\Models\PurchaseRequestDetail::LINE_AUTH_REJECTED], true)) {
+                    \Alert::error('Decisión inválida en uno o más ítems.')->flash();
+
+                    return redirect()->route('purchase-request.show', $id);
+                }
+                $detailDecisions[$detail->id] = $decision;
+                if ($decision === \App\Models\PurchaseRequestDetail::LINE_AUTH_REJECTED) {
+                    $reason = trim((string) ($httpRequest->input('line_rejection_reason')[$detail->id] ?? ''));
+                    if ($reason === '') {
+                        \Alert::error('Debe indicar el motivo del rechazo para cada ítem no autorizado.')->flash();
+
+                        return redirect()->route('purchase-request.show', $id);
+                    }
+                    if (mb_strlen($reason) > 1000) {
+                        \Alert::error('El motivo de rechazo por ítem no puede superar 1000 caracteres.')->flash();
+
+                        return redirect()->route('purchase-request.show', $id);
+                    }
+                }
+            }
+        }
+
+        $approvedSubtotal = 0.0;
+        $rejectedItemsForMail = [];
+        foreach ($purchaseRequest->details as $detail) {
+            $decision = $detailDecisions[$detail->id] ?? \App\Models\PurchaseRequestDetail::LINE_AUTH_REJECTED;
+            if ($decision === \App\Models\PurchaseRequestDetail::LINE_AUTH_APPROVED) {
+                $approvedSubtotal += $detail->quotationSubtotalForPurchase($purchaseRequest);
+            } else {
+                $label = $detail->product ? $detail->product->name : ($detail->product_description ?? 'Producto #'.$detail->product_id);
+                $rejectedItemsForMail[] = [
+                    'label' => $label,
+                    'reason' => trim((string) ($httpRequest->input('line_rejection_reason')[$detail->id] ?? '')),
+                ];
+            }
+        }
+
+        $anyApproved = collect($detailDecisions)->contains(\App\Models\PurchaseRequestDetail::LINE_AUTH_APPROVED);
+        $anyRejected = collect($detailDecisions)->contains(\App\Models\PurchaseRequestDetail::LINE_AUTH_REJECTED);
+
+        if (! $anyApproved) {
+            \Illuminate\Support\Facades\DB::transaction(function () use ($purchaseRequest, $user, $httpRequest, $detailDecisions) {
+                foreach ($purchaseRequest->details as $detail) {
+                    $detail->update([
+                        'line_authorization_status' => \App\Models\PurchaseRequestDetail::LINE_AUTH_REJECTED,
+                        'line_authorization_rejection_reason' => trim((string) ($httpRequest->input('line_rejection_reason')[$detail->id] ?? '')),
+                        'line_authorized_by' => $user->id,
+                        'line_authorized_at' => now(),
+                    ]);
+                }
+                $purchaseRequest->update([
+                    'status' => 'Rechazada',
+                    'approved_by' => $user->id,
+                    'approved_date' => now(),
+                    'approval_justification' => $httpRequest->input('approval_justification'),
+                    'requires_admin_approval' => false,
+                    'total_amount' => 0,
+                ]);
+            });
+
+            $this->dispatchPurchaseLineRejectionNotifications($purchaseRequest->fresh(['details.product', 'responsibilityArea.responsibleUser']), $user, $rejectedItemsForMail);
+
+            \Alert::warning('Ningún ítem fue autorizado para compra. La solicitud quedó rechazada.')->flash();
+
+            return redirect()->route('purchase-request.show', $id);
+        }
+
+        // Monto a validar por topes: solo ítems autorizados (compra directa sigue el total de cotización / flujo existente).
+        $amountForLimits = $purchaseRequest->is_direct_purchase
+            ? $this->recalculateSelectedQuotationsTotalForPurchaseRequest($purchaseRequest)
+            : $approvedSubtotal;
+
         $comprasLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_responsable_compras');
+        $requiresAdminApproval = $amountForLimits > $comprasLimit;
+
         $purchaseRequest->update([
-            'total_amount' => $effectiveTotal,
-            'requires_admin_approval' => $effectiveTotal > $comprasLimit,
+            'total_amount' => $amountForLimits,
+            'requires_admin_approval' => $requiresAdminApproval,
         ]);
         $purchaseRequest->refresh();
 
-        // Verificar permisos de aprobación con el monto recalculado final.
-        if (! $purchaseRequest->canBeApprovedBy($user)) {
+        $entryForApproval = clone $purchaseRequest;
+        $entryForApproval->total_amount = $amountForLimits;
+        $entryForApproval->requires_admin_approval = $requiresAdminApproval;
+
+        if (! $entryForApproval->canBeApprovedBy($user)) {
             if (
                 $user->hasRole('role_admin_institucion', 'backpack')
                 && PurchaseRequestNotificationService::shouldAdministratorEscalateQuotationApproval($purchaseRequest)
@@ -2788,48 +2889,104 @@ class PurchaseRequestCrudController extends CrudController
 
                 return redirect()->route('purchase-request.show', $id);
             }
-            // Verificar si es administrador del instituto y supera su límite
             if ($user->hasRole('role_admin_institucion', 'backpack')) {
                 $adminLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_admin_institucion');
-                abort(403, 'No puedes aprobar esta solicitud de compra porque supera tu límite de autorización de $'.number_format($adminLimit, 2).'. El monto de la solicitud es $'.number_format($purchaseRequest->total_amount, 2).'.');
+                abort(403, 'No puedes aprobar esta solicitud de compra porque supera tu límite de autorización de $'.number_format($adminLimit, 2).'. El monto autorizado de los ítems seleccionados es $'.number_format($amountForLimits, 2).'.');
             }
-            // Verificar si es apoderado y supera su límite
             if ($user->hasRole('role_apoderado', 'backpack')) {
                 $apoderadoLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_apoderado');
-                abort(403, 'No puedes aprobar esta solicitud de compra porque supera tu límite de autorización de $'.number_format($apoderadoLimit, 2).'. El monto de la solicitud es $'.number_format($purchaseRequest->total_amount, 2).'.');
+                abort(403, 'No puedes aprobar esta solicitud de compra porque supera tu límite de autorización de $'.number_format($apoderadoLimit, 2).'. El monto autorizado de los ítems seleccionados es $'.number_format($amountForLimits, 2).'.');
             }
-            // Verificar si es representante legal y supera su límite
             if ($user->hasRole('role_representante_legal', 'backpack')) {
                 $representanteLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_representante_legal');
-                abort(403, 'No puedes aprobar esta solicitud de compra porque supera tu límite de autorización de $'.number_format($representanteLimit, 2).'. El monto de la solicitud es $'.number_format($purchaseRequest->total_amount, 2).'.');
+                abort(403, 'No puedes aprobar esta solicitud de compra porque supera tu límite de autorización de $'.number_format($representanteLimit, 2).'. El monto autorizado de los ítems seleccionados es $'.number_format($amountForLimits, 2).'.');
             }
             abort(403, 'No tienes permiso para aprobar esta solicitud de compra.');
         }
 
-        $request = request();
-        $request->validate([
-            'approval_justification' => 'required|string|max:1000',
-        ]);
+        \Illuminate\Support\Facades\DB::transaction(function () use ($purchaseRequest, $user, $httpRequest, $detailDecisions, $requiresAdminApproval, $amountForLimits) {
+            foreach ($purchaseRequest->details as $detail) {
+                $decision = $detailDecisions[$detail->id];
+                $update = [
+                    'line_authorization_status' => $decision,
+                    'line_authorized_by' => $user->id,
+                    'line_authorized_at' => now(),
+                ];
+                if ($decision === \App\Models\PurchaseRequestDetail::LINE_AUTH_REJECTED) {
+                    $update['line_authorization_rejection_reason'] = trim((string) ($httpRequest->input('line_rejection_reason')[$detail->id] ?? ''));
+                } else {
+                    $update['line_authorization_rejection_reason'] = null;
+                }
+                $detail->update($update);
+            }
 
-        // Actualizar la solicitud como aprobada
-        $purchaseRequest->update([
-            'status' => 'Aprobada',
-            'approved_by' => $user->id,
-            'approved_date' => now(),
-            'approval_justification' => $request->input('approval_justification'),
-            'requires_admin_approval' => false,
-        ]);
+            $purchaseRequest->update([
+                'status' => 'Aprobada',
+                'approved_by' => $user->id,
+                'approved_date' => now(),
+                'approval_justification' => $httpRequest->input('approval_justification'),
+                'requires_admin_approval' => false,
+                'total_amount' => $amountForLimits,
+            ]);
+        });
+
+        $purchaseRequest = $purchaseRequest->fresh(['details.product', 'responsibilityArea.responsibleUser']);
+
+        if ($anyRejected) {
+            $this->dispatchPurchaseLineRejectionNotifications($purchaseRequest, $user, $rejectedItemsForMail);
+        }
 
         $approverIsSuperior = $user->hasRole('role_admin_institucion', 'backpack')
             || $user->hasRole('role_apoderado', 'backpack')
             || $user->hasRole('role_representante_legal', 'backpack');
         if ($approverIsSuperior) {
-            PurchaseRequestNotificationService::notifyComprasRequestApprovedBySuperior($purchaseRequest->fresh());
+            PurchaseRequestNotificationService::notifyComprasRequestApprovedBySuperior($purchaseRequest);
         }
 
-        \Alert::success('Solicitud de compra aprobada exitosamente.')->flash();
+        $msg = $anyRejected
+            ? 'Solicitud procesada: hay ítems autorizados para compra y otros no autorizados (se notificó según corresponda).'
+            : 'Solicitud de compra aprobada exitosamente.';
+        \Alert::success($msg)->flash();
 
         return redirect()->route('purchase-request.show', $id);
+    }
+
+    /**
+     * Fase A: correo por ítems no autorizados (responsable de área o administración).
+     *
+     * @param  list<array{label: string, reason: string}>  $rejectedItems
+     */
+    private function dispatchPurchaseLineRejectionNotifications(\App\Models\PurchaseRequest $purchaseRequest, $user, array $rejectedItems): void
+    {
+        if ($rejectedItems === []) {
+            return;
+        }
+
+        $actorName = (string) ($user->name ?? 'Usuario');
+        $isSuperiorOnly = ($user->hasRole('role_apoderado', 'backpack') || $user->hasRole('role_representante_legal', 'backpack'))
+            && ! $user->hasRole('role_admin_institucion', 'backpack');
+
+        if ($isSuperiorOnly) {
+            PurchaseRequestNotificationService::notifyAdministrationPurchaseLinesRejectedBySuperior($purchaseRequest, $actorName, $rejectedItems);
+        } else {
+            PurchaseRequestNotificationService::notifyAreaResponsiblePurchaseLinesRejected($purchaseRequest, $actorName, $rejectedItems);
+        }
+    }
+
+    /**
+     * Total cotizado a usar al generar OC (solo ítems autorizados si hubo rechazos parciales).
+     */
+    private function recalculatePurchaseOrderGenerationTotal(\App\Models\PurchaseRequest $purchaseRequest): float
+    {
+        $purchaseRequest->loadMissing('details.product', 'details.selectedMarketRate.quoteDetails');
+
+        if (! $purchaseRequest->hasRejectedLineAuthorizations()) {
+            return $this->recalculateSelectedQuotationsTotalForPurchaseRequest($purchaseRequest);
+        }
+
+        return (float) $purchaseRequest->details
+            ->filter(fn ($d) => $d->line_authorization_status === \App\Models\PurchaseRequestDetail::LINE_AUTH_APPROVED)
+            ->sum(fn ($d) => $d->quotationSubtotalForPurchase($purchaseRequest));
     }
 
     /**
@@ -2888,6 +3045,13 @@ class PurchaseRequestCrudController extends CrudController
         }
 
         $purchaseRequest->update($update);
+
+        $purchaseRequest->details()->update([
+            'line_authorization_status' => \App\Models\PurchaseRequestDetail::LINE_AUTH_PENDING,
+            'line_authorization_rejection_reason' => null,
+            'line_authorized_by' => null,
+            'line_authorized_at' => null,
+        ]);
 
         \Log::info('Aprobación de solicitud de compra cancelada por representante legal', [
             'purchase_request_id' => $purchaseRequest->id,
@@ -2974,6 +3138,13 @@ class PurchaseRequestCrudController extends CrudController
             'status' => 'Rechazada',
             'approved_by' => $user->id,
             'approved_date' => now(),
+        ]);
+
+        $purchaseRequest->details()->update([
+            'line_authorization_status' => \App\Models\PurchaseRequestDetail::LINE_AUTH_REJECTED,
+            'line_authorization_rejection_reason' => null,
+            'line_authorized_by' => $user->id,
+            'line_authorized_at' => now(),
         ]);
 
         \Alert::warning('Solicitud de compra rechazada.')->flash();
@@ -3092,6 +3263,13 @@ class PurchaseRequestCrudController extends CrudController
             'purchase_type' => 'directa',
         ]);
 
+        $purchaseRequest->details()->update([
+            'line_authorization_status' => \App\Models\PurchaseRequestDetail::LINE_AUTH_APPROVED,
+            'line_authorization_rejection_reason' => null,
+            'line_authorized_by' => $user->id,
+            'line_authorized_at' => now(),
+        ]);
+
         PurchaseRequestNotificationService::notifyComprasRequestApprovedBySuperior($purchaseRequest->fresh());
 
         \Alert::success('Compra directa aprobada exitosamente. La solicitud de compra ha sido aprobada.')->flash();
@@ -3143,6 +3321,13 @@ class PurchaseRequestCrudController extends CrudController
         $purchaseRequest->update([
             'direct_purchase_authorization_rejected' => true,
             'direct_purchase_authorization_rejection_reason' => $request->input('rejection_reason'),
+        ]);
+
+        $purchaseRequest->details()->update([
+            'line_authorization_status' => \App\Models\PurchaseRequestDetail::LINE_AUTH_REJECTED,
+            'line_authorization_rejection_reason' => null,
+            'line_authorized_by' => $user->id,
+            'line_authorized_at' => now(),
         ]);
 
         \Alert::warning('Autorización de compra directa rechazada.')->flash();
@@ -3271,14 +3456,17 @@ class PurchaseRequestCrudController extends CrudController
             return $this->generatePurchaseOrderWithoutQuote($purchaseRequest, $purchaseRequest->direct_purchase_supplier_id);
         }
 
-        $totalAmount = $this->recalculateSelectedQuotationsTotalForPurchaseRequest($purchaseRequest);
+        $totalAmount = $this->recalculatePurchaseOrderGenerationTotal($purchaseRequest);
         $purchaseRequest->update([
             'total_amount' => $totalAmount,
         ]);
         $threshold = 60000;
         $quotationsCount = $this->countQuotationsForPurchaseRequest($purchaseRequest);
-        $allDetailsHaveAssignment = $purchaseRequest->details->isNotEmpty()
-            && $purchaseRequest->details->every(fn ($d) => ! empty($d->selected_market_rate_id));
+        $detailsForAssignment = in_array($purchaseRequest->status, ['Aprobada'], true)
+            ? $purchaseRequest->details->filter(fn ($d) => $d->line_authorization_status === \App\Models\PurchaseRequestDetail::LINE_AUTH_APPROVED)
+            : $purchaseRequest->details;
+        $allDetailsHaveAssignment = $detailsForAssignment->isNotEmpty()
+            && $detailsForAssignment->every(fn ($d) => ! empty($d->selected_market_rate_id));
 
         // Flujo: asignación por producto (una OC con varios proveedores)
         if ($allDetailsHaveAssignment) {
@@ -3339,6 +3527,9 @@ class PurchaseRequestCrudController extends CrudController
         $linesBySupplier = [];
         $paymentConditionsBySupplierId = [];
         foreach ($purchaseRequest->details as $requestDetail) {
+            if (! $requestDetail->isAuthorizedForPurchaseOrder()) {
+                continue;
+            }
             $marketRate = $requestDetail->selectedMarketRate;
             if (! $marketRate || ! $requestDetail->product) {
                 continue;
@@ -3458,8 +3649,19 @@ class PurchaseRequestCrudController extends CrudController
             'payment_conditions' => $purchaseRequest->selectedMarketRate?->payment_method,
         ]);
 
+        $approvedProductIds = $purchaseRequest->details
+            ->filter(fn ($d) => $d->isAuthorizedForPurchaseOrder())
+            ->pluck('product_id')
+            ->filter()
+            ->unique()
+            ->all();
+
+        $createdLines = 0;
         // Create purchase order details from quote (cada línea con su proveedor)
         foreach ($quoteDetails as $quoteDetail) {
+            if ($approvedProductIds !== [] && ! in_array($quoteDetail->product_id, $approvedProductIds, true)) {
+                continue;
+            }
             // Buscar o crear el Input correspondiente al Product
             $input = $this->findOrCreateInputFromProduct($quoteDetail->product);
 
@@ -3472,7 +3674,15 @@ class PurchaseRequestCrudController extends CrudController
                     'quantity' => $quoteDetail->quantity,
                     'unit_price' => $unitPrice,
                 ]);
+                $createdLines++;
             }
+        }
+
+        if ($createdLines === 0) {
+            $purchaseOrder->delete();
+            \Alert::error('No se pudo generar la orden: no hay ítems autorizados para compra en esta cotización.')->flash();
+
+            return redirect()->back();
         }
 
         // Update purchase request status and type (preservar 'internet' si aplica)
@@ -3508,6 +3718,9 @@ class PurchaseRequestCrudController extends CrudController
         $lines = [];
 
         foreach ($purchaseRequest->details as $requestDetail) {
+            if (! $requestDetail->isAuthorizedForPurchaseOrder()) {
+                continue;
+            }
             if (! $requestDetail->product) {
                 continue;
             }
@@ -3558,7 +3771,7 @@ class PurchaseRequestCrudController extends CrudController
 
         // Determinar el tipo de compra (preservar 'internet' si ya estaba marcada)
         $purchaseType = ($purchaseRequest->purchase_type === 'internet') ? 'internet' : 'normal';
-        $totalAmount = $this->recalculateSelectedQuotationsTotalForPurchaseRequest($purchaseRequest);
+        $totalAmount = $this->recalculatePurchaseOrderGenerationTotal($purchaseRequest);
         $threshold = 60000;
         if ($purchaseType !== 'internet') {
             if ($purchaseRequest->is_direct_purchase && $purchaseRequest->direct_purchase_authorized_by) {
@@ -3896,8 +4109,9 @@ class PurchaseRequestCrudController extends CrudController
                 $html .= '<th style="width: 12%;" class="text-center">Cantidad Solicitada</th>';
                 $html .= '<th style="width: 12%;" class="text-center">Cantidad Recibida</th>';
                 $html .= '<th style="width: 12%;" class="text-center">Estado Recepción</th>';
-                $html .= '<th style="width: 24%;">Descripción / Especificaciones</th>';
-                $html .= '<th style="width: 12%;" class="text-center">Estado</th>';
+                $html .= '<th style="width: 20%;">Descripción / Especificaciones</th>';
+                $html .= '<th style="width: 10%;" class="text-center">Estado</th>';
+                $html .= '<th style="width: 14%;" class="text-center">Autorización compra</th>';
                 $html .= '</tr>';
                 $html .= '</thead>';
                 $html .= '<tbody>';
@@ -3976,6 +4190,22 @@ class PurchaseRequestCrudController extends CrudController
                         $status = 'Pendiente';
                     }
                     $html .= '<td class="text-center"><span class="badge bg-'.($detail->status == 'Aprobada' ? 'success' : ($detail->status == 'Rechazada' ? 'danger' : 'warning')).'">'.e((string) $status).'</span></td>';
+                    $las = $detail->line_authorization_status ?? \App\Models\PurchaseRequestDetail::LINE_AUTH_PENDING;
+                    $authLabel = match ($las) {
+                        \App\Models\PurchaseRequestDetail::LINE_AUTH_APPROVED => 'Autorizada',
+                        \App\Models\PurchaseRequestDetail::LINE_AUTH_REJECTED => 'No autorizada',
+                        default => 'Pendiente',
+                    };
+                    $authColor = match ($las) {
+                        \App\Models\PurchaseRequestDetail::LINE_AUTH_APPROVED => 'success',
+                        \App\Models\PurchaseRequestDetail::LINE_AUTH_REJECTED => 'danger',
+                        default => 'secondary',
+                    };
+                    $html .= '<td class="text-center"><span class="badge bg-'.$authColor.'">'.e($authLabel).'</span>';
+                    if ($las === \App\Models\PurchaseRequestDetail::LINE_AUTH_REJECTED && $detail->line_authorization_rejection_reason) {
+                        $html .= '<br><small class="text-muted">'.e(\Illuminate\Support\Str::limit((string) $detail->line_authorization_rejection_reason, 120)).'</small>';
+                    }
+                    $html .= '</td>';
                     $html .= '</tr>';
                 }
 
@@ -5121,6 +5351,19 @@ class PurchaseRequestCrudController extends CrudController
                         $html .= '<p class="mb-0"><strong>Justificación:</strong> '.nl2br(e($entry->approval_justification)).'</p>';
                     }
 
+                    $entry->loadMissing(['details.product']);
+                    if ($entry->hasRejectedLineAuthorizations()) {
+                        $html .= '<div class="alert alert-warning mt-3 mb-0"><strong>Ítems no autorizados para compra:</strong><ul class="mb-0 mt-2">';
+                        foreach ($entry->details as $d) {
+                            if ($d->line_authorization_status !== \App\Models\PurchaseRequestDetail::LINE_AUTH_REJECTED) {
+                                continue;
+                            }
+                            $lbl = $d->product ? $d->product->name : ($d->product_description ?? 'Producto #'.$d->product_id);
+                            $html .= '<li><strong>'.e($lbl).':</strong> '.e((string) ($d->line_authorization_rejection_reason ?? '—')).'</li>';
+                        }
+                        $html .= '</ul></div>';
+                    }
+
                     $viewerIsRepresentanteLegal = $user->hasRole('role_representante_legal', 'backpack')
                         || $user->hasRole('role_representante_legal', 'web')
                         || $user->getRoleNames()->contains('role_representante_legal');
@@ -5165,6 +5408,19 @@ class PurchaseRequestCrudController extends CrudController
                             ? $entry->approved_date->format('d/m/Y H:i')
                             : \Carbon\Carbon::parse($entry->approved_date)->format('d/m/Y H:i');
                         $html .= '<p class="mb-0"><strong>Fecha de rechazo:</strong> '.$rejectedDate.'</p>';
+                    }
+
+                    $entry->loadMissing(['details.product']);
+                    if ($entry->details->contains(fn ($d) => $d->line_authorization_status === \App\Models\PurchaseRequestDetail::LINE_AUTH_REJECTED)) {
+                        $html .= '<div class="alert alert-light border mt-3 mb-0"><strong>Motivos por ítem:</strong><ul class="mb-0 mt-2 small">';
+                        foreach ($entry->details as $d) {
+                            if ($d->line_authorization_status !== \App\Models\PurchaseRequestDetail::LINE_AUTH_REJECTED) {
+                                continue;
+                            }
+                            $lbl = $d->product ? $d->product->name : ($d->product_description ?? 'Producto #'.$d->product_id);
+                            $html .= '<li><strong>'.e($lbl).':</strong> '.e((string) ($d->line_authorization_rejection_reason ?? '—')).'</li>';
+                        }
+                        $html .= '</ul></div>';
                     }
 
                     $html .= '</div>';
@@ -5267,14 +5523,32 @@ class PurchaseRequestCrudController extends CrudController
 
                 // Formulario para aprobar
                 if ($entry->is_direct_purchase || $hasSelectedQuotation) {
-                    $html .= '<form method="POST" action="'.route('purchase-request.approve', $entry->id).'" class="d-inline">';
+                    $entry->loadMissing(['details.product']);
+                    $html .= '<form method="POST" action="'.route('purchase-request.approve', $entry->id).'" class="mb-3">';
                     $html .= csrf_field();
+                    if (! $entry->is_direct_purchase && $entry->details->isNotEmpty()) {
+                        $html .= '<p class="text-muted small">Indique para cada producto si <strong>autoriza</strong> o <strong>no autoriza</strong> la compra. Si no autoriza, el motivo es obligatorio. Se notificará al responsable del área o a la administración según corresponda.</p>';
+                        $html .= '<div class="table-responsive mb-3"><table class="table table-sm table-bordered align-middle">';
+                        $html .= '<thead class="table-light"><tr><th>Producto</th><th class="text-center" style="width:220px;">Autorizar compra</th><th style="min-width:200px;">Motivo (si no autoriza)</th></tr></thead><tbody>';
+                        foreach ($entry->details as $d) {
+                            $label = $d->product ? $d->product->name : ($d->product_description ?? 'Ítem #'.$d->id);
+                            $html .= '<tr>';
+                            $html .= '<td>'.e($label).'</td>';
+                            $html .= '<td class="text-center">';
+                            $html .= '<div class="form-check form-check-inline"><input class="form-check-input" type="radio" name="line_decision['.(int) $d->id.']" id="line_ap_'.(int) $d->id.'" value="'.\App\Models\PurchaseRequestDetail::LINE_AUTH_APPROVED.'" checked><label class="form-check-label" for="line_ap_'.(int) $d->id.'">Sí</label></div> ';
+                            $html .= '<div class="form-check form-check-inline"><input class="form-check-input" type="radio" name="line_decision['.(int) $d->id.']" id="line_rj_'.(int) $d->id.'" value="'.\App\Models\PurchaseRequestDetail::LINE_AUTH_REJECTED.'"><label class="form-check-label" for="line_rj_'.(int) $d->id.'">No</label></div>';
+                            $html .= '</td>';
+                            $html .= '<td><textarea name="line_rejection_reason['.(int) $d->id.']" class="form-control form-control-sm" rows="2" maxlength="1000" placeholder="Obligatorio si marca «No»"></textarea></td>';
+                            $html .= '</tr>';
+                        }
+                        $html .= '</tbody></table></div>';
+                    }
                     $html .= '<div class="mb-3">';
-                    $html .= '<label for="approval_justification" class="form-label">Justificación de Aprobación:</label>';
+                    $html .= '<label for="approval_justification" class="form-label">Justificación de la decisión:</label>';
                     $html .= '<textarea name="approval_justification" id="approval_justification" class="form-control" rows="3" required></textarea>';
                     $html .= '</div>';
-                    $html .= '<button type="submit" class="btn btn-success" onclick="return confirm(\'¿Está seguro de aprobar esta solicitud de compra?\')">';
-                    $html .= '<i class="la la-check"></i> Aprobar Solicitud';
+                    $html .= '<button type="submit" class="btn btn-success" onclick="return confirm(\'¿Confirma registrar la decisión de autorización por ítem?\')">';
+                    $html .= '<i class="la la-check"></i> Confirmar decisión';
                     $html .= '</button>';
                     $html .= '</form>';
                 }

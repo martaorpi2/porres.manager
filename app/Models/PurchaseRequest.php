@@ -460,4 +460,20 @@ class PurchaseRequest extends Model
     {
         return static::purchaseRequestsAwaitingQuoteSelectionAfterThreeQuotations()->count();
     }
+
+    /**
+     * Autorización por ítem (Fase A): al menos una línea rechazada para compra.
+     */
+    public function hasRejectedLineAuthorizations(): bool
+    {
+        return $this->details()->where('line_authorization_status', PurchaseRequestDetail::LINE_AUTH_REJECTED)->exists();
+    }
+
+    /**
+     * Autorización por ítem (Fase A): al menos una línea aprobada para compra.
+     */
+    public function hasApprovedLineAuthorizations(): bool
+    {
+        return $this->details()->where('line_authorization_status', PurchaseRequestDetail::LINE_AUTH_APPROVED)->exists();
+    }
 }

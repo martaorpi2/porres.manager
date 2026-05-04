@@ -362,6 +362,78 @@ class PurchaseRequestNotificationService
     /**
      * @param  list<string>  $recipients
      */
+    /**
+     * Ítems no autorizados para compra (Fase A): correo al responsable del área de la solicitud.
+     *
+     * @param  list<array{label: string, reason: string}>  $rejectedItems
+     */
+    public static function notifyAreaResponsiblePurchaseLinesRejected(PurchaseRequest $purchaseRequest, string $actorName, array $rejectedItems): void
+    {
+        if ($rejectedItems === []) {
+            return;
+        }
+
+        $purchaseRequest->loadMissing(['responsibilityArea.responsibleUser']);
+        $url = self::purchaseRequestUrl($purchaseRequest);
+        $nro = e($purchaseRequest->request_number ?? (string) $purchaseRequest->id);
+        $itemsHtml = '<ul>';
+        foreach ($rejectedItems as $row) {
+            $label = e($row['label'] ?? '');
+            $reason = e($row['reason'] ?? '');
+            $itemsHtml .= '<li><strong>'.$label.'</strong> — '.$reason.'</li>';
+        }
+        $itemsHtml .= '</ul>';
+
+        $html = '<p>'.e('Se registró la no autorización de compra de uno o más ítems de la solicitud.').'</p>'
+            .'<p><strong>Solicitud Nº</strong> '.$nro.'</p>'
+            .'<p><strong>Decisión registrada por:</strong> '.e($actorName).'</p>'
+            .'<p><strong>Detalle:</strong></p>'.$itemsHtml
+            .'<p><a href="'.e($url).'">Abrir solicitud en el sistema</a></p>'
+            .'<p class="small text-muted">'.e('Mensaje automático del sistema de compras.').'</p>';
+
+        $subject = 'Ítems no autorizados — Solicitud '.($purchaseRequest->request_number ?? '#'.$purchaseRequest->id);
+
+        $recipients = [];
+        $responsible = $purchaseRequest->responsibilityArea?->responsibleUser;
+        if ($responsible && filter_var(trim((string) $responsible->email), FILTER_VALIDATE_EMAIL)) {
+            $recipients[] = trim((string) $responsible->email);
+        }
+        self::sendHtml($subject, $html, $recipients);
+    }
+
+    /**
+     * Ítems no autorizados por nivel superior (Fase A): aviso a la administración del instituto.
+     *
+     * @param  list<array{label: string, reason: string}>  $rejectedItems
+     */
+    public static function notifyAdministrationPurchaseLinesRejectedBySuperior(PurchaseRequest $purchaseRequest, string $actorName, array $rejectedItems): void
+    {
+        if ($rejectedItems === []) {
+            return;
+        }
+
+        $url = self::purchaseRequestUrl($purchaseRequest);
+        $nro = e($purchaseRequest->request_number ?? (string) $purchaseRequest->id);
+        $itemsHtml = '<ul>';
+        foreach ($rejectedItems as $row) {
+            $label = e($row['label'] ?? '');
+            $reason = e($row['reason'] ?? '');
+            $itemsHtml .= '<li><strong>'.$label.'</strong> — '.$reason.'</li>';
+        }
+        $itemsHtml .= '</ul>';
+
+        $html = '<p>'.e('El nivel superior no autorizó la compra de uno o más ítems. Revise el detalle y las observaciones en el sistema.').'</p>'
+            .'<p><strong>Solicitud Nº</strong> '.$nro.'</p>'
+            .'<p><strong>Decisión registrada por:</strong> '.e($actorName).'</p>'
+            .'<p><strong>Detalle:</strong></p>'.$itemsHtml
+            .'<p><a href="'.e($url).'">Abrir solicitud en el sistema</a></p>'
+            .'<p class="small text-muted">'.e('Mensaje automático del sistema de compras.').'</p>';
+
+        $subject = 'Observación de autorización superior — Solicitud '.($purchaseRequest->request_number ?? '#'.$purchaseRequest->id);
+        $recipients = self::emailsForBackpackRoles(self::administratorApproverRoleNames());
+        self::sendHtml($subject, $html, $recipients);
+    }
+
     private static function sendHtml(string $subject, string $html, array $recipients = []): void
     {
         $to = array_values(array_unique(array_filter(array_map('trim', $recipients))));

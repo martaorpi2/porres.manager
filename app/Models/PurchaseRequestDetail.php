@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\MarketRate;
 use Backpack\CRUD\app\Models\Traits\CrudTrait;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -12,6 +13,12 @@ class PurchaseRequestDetail extends Model
 {
     use CrudTrait;
     use HasFactory;
+
+    public const LINE_AUTH_PENDING = 'pending';
+
+    public const LINE_AUTH_APPROVED = 'approved';
+
+    public const LINE_AUTH_REJECTED = 'rejected';
 
     protected $fillable = [
         'purchase_request_id',
@@ -24,11 +31,16 @@ class PurchaseRequestDetail extends Model
         'estimated_unit_price',
         'estimated_total',
         'status',
+        'line_authorization_status',
+        'line_authorization_rejection_reason',
+        'line_authorized_by',
+        'line_authorized_at',
     ];
 
     protected $casts = [
         'estimated_unit_price' => 'decimal:2',
         'estimated_total' => 'decimal:2',
+        'line_authorized_at' => 'datetime',
     ];
 
     /**
@@ -53,6 +65,64 @@ class PurchaseRequestDetail extends Model
     public function selectedMarketRate()
     {
         return $this->belongsTo(\App\Models\MarketRate::class, 'selected_market_rate_id');
+    }
+
+    /**
+     * Usuario que registró la decisión de autorización por ítem (Fase A).
+     */
+    public function lineAuthorizedByUser()
+    {
+        return $this->belongsTo(User::class, 'line_authorized_by');
+    }
+
+    /**
+     * Línea incluida en la generación de orden de compra (autorización de compra aprobada).
+     */
+    public function isAuthorizedForPurchaseOrder(): bool
+    {
+        if ($this->line_authorization_status === self::LINE_AUTH_APPROVED) {
+            return true;
+        }
+        if ($this->line_authorization_status === self::LINE_AUTH_REJECTED) {
+            return false;
+        }
+
+        $this->loadMissing('purchaseRequest');
+        $pr = $this->purchaseRequest;
+        if ($pr && $pr->is_direct_purchase && $pr->direct_purchase_authorized_by && ! $pr->direct_purchase_authorization_rejected) {
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * Subtotal de cotización asociado a este ítem (línea de cotización del producto), para topes y totales parciales.
+     */
+    public function quotationSubtotalForPurchase(PurchaseRequest $purchaseRequest): float
+    {
+        if (! $this->product_id) {
+            return 0.0;
+        }
+
+        $marketRate = null;
+        if ($this->selected_market_rate_id) {
+            $this->loadMissing('selectedMarketRate.quoteDetails');
+            $marketRate = $this->selectedMarketRate;
+        } elseif (! empty($purchaseRequest->selected_market_rate_id)) {
+            $marketRate = MarketRate::with('quoteDetails')->find($purchaseRequest->selected_market_rate_id);
+        }
+
+        if (! $marketRate) {
+            return 0.0;
+        }
+
+        $qd = $marketRate->quoteDetails->firstWhere('product_id', $this->product_id);
+        if (! $qd) {
+            return 0.0;
+        }
+
+        return (float) $qd->quantity * (float) $qd->unit_price;
     }
 
     /**
