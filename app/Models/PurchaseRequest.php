@@ -45,6 +45,9 @@ class PurchaseRequest extends Model
         'direct_purchase_authorization_rejected',
         'direct_purchase_authorization_rejection_reason',
         'purchase_type',
+        'auto_reminder_context_key',
+        'auto_reminder_context_started_at',
+        'auto_reminder_last_sent_at',
     ];
 
     protected $casts = [
@@ -60,6 +63,8 @@ class PurchaseRequest extends Model
         'direct_purchase_authorized_at' => 'datetime',
         'direct_purchase_authorization_rejected' => 'boolean',
         'admin_quotation_reviewed_at' => 'datetime',
+        'auto_reminder_context_started_at' => 'datetime',
+        'auto_reminder_last_sent_at' => 'datetime',
     ];
 
     protected static function booted(): void
@@ -242,10 +247,10 @@ class PurchaseRequest extends Model
     public static function generateNextNumber(): string
     {
         $year = now()->year;
-        $prefix = 'SC-' . $year . '-';
+        $prefix = 'SC-'.$year.'-';
 
         $last = static::query()
-            ->where('request_number', 'like', $prefix . '%')
+            ->where('request_number', 'like', $prefix.'%')
             ->orderByDesc('request_number')
             ->value('request_number');
 
@@ -257,7 +262,7 @@ class PurchaseRequest extends Model
             $nextSequence = $seq + 1;
         }
 
-        return $prefix . str_pad((string) $nextSequence, 4, '0', STR_PAD_LEFT);
+        return $prefix.str_pad((string) $nextSequence, 4, '0', STR_PAD_LEFT);
     }
 
     /**
@@ -266,6 +271,7 @@ class PurchaseRequest extends Model
     public function requiresAdminApproval()
     {
         $comprasLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_responsable_compras');
+
         return $this->total_amount > $comprasLimit;
     }
 
@@ -274,7 +280,7 @@ class PurchaseRequest extends Model
      */
     public function canBeApprovedBy($user)
     {
-        if (!$user) {
+        if (! $user) {
             return false;
         }
 
@@ -283,40 +289,48 @@ class PurchaseRequest extends Model
         if ($this->requires_admin_approval) {
             if ($user->hasRole('role_admin_institucion', 'backpack')) {
                 $adminLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_admin_institucion');
+
                 return $this->total_amount <= $adminLimit;
             }
             if ($user->hasRole('role_apoderado', 'backpack')) {
                 $apoderadoLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_apoderado');
+
                 return $this->total_amount <= $apoderadoLimit;
             }
             if ($user->hasRole('role_representante_legal', 'backpack')) {
                 $representanteLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_representante_legal');
+
                 return $this->total_amount <= $representanteLimit;
             }
+
             return false;
         }
 
         // Si no requiere aprobación de administrador, el responsable de compras puede aprobar
         if ($user->hasRole('role_responsable_compras', 'backpack')) {
             $comprasLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_responsable_compras');
+
             return $this->total_amount <= $comprasLimit;
         }
 
         // El administrador del instituto puede aprobar solo si no supera su límite
         if ($user->hasRole('role_admin_institucion', 'backpack')) {
             $adminLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_admin_institucion');
+
             return $this->total_amount <= $adminLimit;
         }
 
         // El apoderado puede aprobar solo si no supera su límite
         if ($user->hasRole('role_apoderado', 'backpack')) {
             $apoderadoLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_apoderado');
+
             return $this->total_amount <= $apoderadoLimit;
         }
 
         // El representante legal puede aprobar solo si no supera su límite
         if ($user->hasRole('role_representante_legal', 'backpack')) {
             $representanteLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_representante_legal');
+
             return $this->total_amount <= $representanteLimit;
         }
 
@@ -329,6 +343,7 @@ class PurchaseRequest extends Model
     public function getAgeAttribute()
     {
         $date = $this->created_at ?? $this->request_date;
+
         return $date->diffForHumans();
     }
 
@@ -338,6 +353,7 @@ class PurchaseRequest extends Model
     public function getAgeInDaysAttribute()
     {
         $date = $this->created_at ?? $this->request_date;
+
         return $date->diffInDays(now());
     }
 

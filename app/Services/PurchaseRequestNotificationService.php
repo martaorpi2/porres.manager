@@ -498,7 +498,65 @@ class PurchaseRequestNotificationService
         self::sendHtml($subject, $body, self::emailsForBackpackRoles(['role_responsable_compras']));
     }
 
-    private static function sendHtml(string $subject, string $html, array $recipients = []): void
+    public static function notifyAutomaticReminderCompras(PurchaseRequest $purchaseRequest): bool
+    {
+        $days = max(1, (int) config('purchase_requests.reminder_interval_days', 5));
+        $intro = 'Recordatorio automático (cada '.$days.' días): la solicitud sigue pendiente de gestión por el sector de compras en el circuito de compras.';
+        $url = self::purchaseRequestUrl($purchaseRequest);
+        $subject = '[Recordatorio] Solicitud de compra — '.($purchaseRequest->request_number ?? '#'.$purchaseRequest->id);
+
+        return self::sendHtml($subject, self::htmlBody($intro, $purchaseRequest, $url), self::emailsForBackpackRoles(['role_responsable_compras']));
+    }
+
+    public static function notifyAutomaticReminderAdministratorQuotation(PurchaseRequest $purchaseRequest): bool
+    {
+        $days = max(1, (int) config('purchase_requests.reminder_interval_days', 5));
+        $url = self::purchaseRequestUrl($purchaseRequest);
+        $nro = $purchaseRequest->request_number ?? ('#'.$purchaseRequest->id);
+        $subject = '[Recordatorio] Revisión de cotización — Solicitud Nº '.$nro;
+        $safeRequestNumber = e($purchaseRequest->request_number ?? (string) $purchaseRequest->id);
+        $safeUrl = e($url);
+        $body = '<p>'.e('Recordatorio automático (cada '.$days.' días): el sector de compras solicitó revisión y aprobación inicial de cotización(es) y la solicitud sigue pendiente de su intervención.').'</p>'
+            .'<p><strong>Número de solicitud:</strong> '.$safeRequestNumber.'</p>'
+            .'<p><a href="'.$safeUrl.'">Acceder a la solicitud en el sistema</a></p>'
+            .'<p>'.e('Este es un mensaje automático generado por el sistema de compras.').'</p>';
+
+        return self::sendHtml($subject, $body, self::emailsForBackpackRoles(self::administratorApproverRoleNames()));
+    }
+
+    public static function notifyAutomaticReminderSuperiorQuotation(PurchaseRequest $purchaseRequest): bool
+    {
+        $days = max(1, (int) config('purchase_requests.reminder_interval_days', 5));
+        $url = self::purchaseRequestUrl($purchaseRequest);
+        $intro = 'Recordatorio automático (cada '.$days.' días): la solicitud sigue pendiente de aprobación por el nivel que corresponde según el monto (cotización seleccionada y circuito de autorización).';
+        $subject = '[Recordatorio] Aprobar solicitud de compra '.($purchaseRequest->request_number ?? '#'.$purchaseRequest->id);
+
+        return self::sendHtml(
+            $subject,
+            self::htmlBody($intro, $purchaseRequest, $url),
+            self::emailsForBackpackRoles(
+                self::approverRoleNamesForAmount((float) ($purchaseRequest->total_amount ?? 0))
+            )
+        );
+    }
+
+    public static function notifyAutomaticReminderDirectPurchaseAuthorization(PurchaseRequest $purchaseRequest): bool
+    {
+        $days = max(1, (int) config('purchase_requests.reminder_interval_days', 5));
+        $url = self::purchaseRequestUrl($purchaseRequest);
+        $intro = 'Recordatorio automático (cada '.$days.' días): sigue pendiente la autorización de compra directa registrada en el sistema.';
+        $subject = '[Recordatorio] Autorizar compra directa '.($purchaseRequest->request_number ?? '#'.$purchaseRequest->id);
+
+        return self::sendHtml(
+            $subject,
+            self::htmlBody($intro, $purchaseRequest, $url),
+            self::emailsForBackpackRoles(
+                self::approverRoleNamesForAmount((float) ($purchaseRequest->total_amount ?? 0))
+            )
+        );
+    }
+
+    private static function sendHtml(string $subject, string $html, array $recipients = []): bool
     {
         $to = array_values(array_unique(array_filter(array_map('trim', $recipients))));
         if ($to === []) {
@@ -513,7 +571,7 @@ class PurchaseRequestNotificationService
                 'subject' => $subject,
             ]);
 
-            return;
+            return false;
         }
 
         try {
@@ -526,6 +584,10 @@ class PurchaseRequestNotificationService
                 'subject' => $subject,
                 'error' => $e->getMessage(),
             ]);
+
+            return false;
         }
+
+        return true;
     }
 }
