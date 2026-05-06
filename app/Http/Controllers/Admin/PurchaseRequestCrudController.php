@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Requests\PurchaseRequestRequest;
 use App\Models\MarketRate;
+use App\Models\PurchaseRequestEvent;
 use App\Services\PurchaseRequestNotificationService;
 use Backpack\CRUD\app\Http\Controllers\CrudController;
 use Backpack\CRUD\app\Library\CrudPanel\CrudPanelFacade as CRUD;
@@ -2604,6 +2605,22 @@ class PurchaseRequestCrudController extends CrudController
             return redirect()->route('purchase-request.show', $id);
         }
 
+        if (! $purchaseRequest->hasQuotationsAssignedToAllRequestProducts()) {
+            \Alert::warning('Antes de solicitar la revisión de la administradora, debe asignar una cotización a cada producto (sección «Asignar cotización por producto» cuando hay más de una cotización, o seleccionar una cotización que incluya todos los productos).')->flash();
+
+            return redirect()->route('purchase-request.show', $id);
+        }
+
+        PurchaseRequestEvent::record(
+            $purchaseRequest,
+            PurchaseRequestEvent::EVENT_COMPRAS_ADMINISTRATOR_REVIEW_REQUESTED,
+            $user?->id,
+            [
+                'request_number' => $purchaseRequest->request_number,
+                'status' => $purchaseRequest->status,
+            ]
+        );
+
         PurchaseRequestNotificationService::notifyAdministratorQuotationApprovalNeeded($purchaseRequest);
         \Alert::success('Se envió el correo solicitando revisión a la administradora del instituto.')->flash();
 
@@ -2635,6 +2652,79 @@ class PurchaseRequestCrudController extends CrudController
 
         PurchaseRequestNotificationService::notifySuperiorQuotationApprovalNeededFromAdministrator($purchaseRequest);
         \Alert::success('Se envió el correo solicitando aprobación al nivel superior correspondiente.')->flash();
+
+        return redirect()->route('purchase-request.show', $id);
+    }
+
+    /**
+     * Administración: tras observaciones del nivel superior (ítems no autorizados), reabrir la solicitud
+     * para ajustar cotización/asignación y exigir de nuevo autorización por ítem. No aplica si ya hay OC.
+     */
+    public function requestSuperiorReapprovalAfterRevision($id)
+    {
+        $user = backpack_user();
+        $allowed = $user && (
+            $user->hasRole('role_admin_institucion', 'backpack')
+            || $user->hasRole('role_admin_sistema', 'backpack')
+        );
+        if (! $allowed) {
+            abort(403, 'Solo la administradora del instituto o administración de sistema pueden reabrir la solicitud para un nuevo circuito de autorización.');
+        }
+
+        $purchaseRequest = \App\Models\PurchaseRequest::with(['details', 'marketRates', 'purchaseOrders'])->findOrFail($id);
+
+        if (! $purchaseRequest->canReopenForSuperiorAuthorizationAfterRevision()) {
+            \Alert::error('No corresponde reabrir esta solicitud: debe estar aprobada, con cotización definida, al menos un ítem no autorizado para compra, sin orden de compra generada y no ser compra directa.')->flash();
+
+            return redirect()->route('purchase-request.show', $id);
+        }
+
+        $httpRequest = request();
+        $httpRequest->validate([
+            'reopen_justification' => 'nullable|string|max:1000',
+        ]);
+
+        $effectiveTotal = $this->recalculateSelectedQuotationsTotalForPurchaseRequest($purchaseRequest);
+        $comprasLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_responsable_compras');
+        $requiresAdminApproval = $effectiveTotal > $comprasLimit;
+
+        \Illuminate\Support\Facades\DB::transaction(function () use ($purchaseRequest, $effectiveTotal, $requiresAdminApproval) {
+            $purchaseRequest->details()->update([
+                'line_authorization_status' => \App\Models\PurchaseRequestDetail::LINE_AUTH_PENDING,
+                'line_authorization_rejection_reason' => null,
+                'line_authorized_by' => null,
+                'line_authorized_at' => null,
+            ]);
+            $purchaseRequest->update([
+                'status' => 'En Proceso',
+                'approved_by' => null,
+                'approved_date' => null,
+                'approval_justification' => null,
+                'admin_quotation_reviewed_at' => null,
+                'admin_quotation_reviewed_by' => null,
+                'admin_quotation_review_justification' => null,
+                'total_amount' => $effectiveTotal,
+                'requires_admin_approval' => $requiresAdminApproval,
+            ]);
+        });
+
+        $purchaseRequest = $purchaseRequest->fresh(['marketRates']);
+
+        if (PurchaseRequestNotificationService::shouldAdministratorEscalateQuotationApproval($purchaseRequest)) {
+            PurchaseRequestNotificationService::notifySuperiorReapprovalAfterAdministrativeRevision($purchaseRequest);
+        } elseif ($purchaseRequest->requires_admin_approval) {
+            PurchaseRequestNotificationService::notifyAdministratorPurchaseRequestReopenedAfterSuperiorObservations($purchaseRequest);
+        } else {
+            PurchaseRequestNotificationService::notifyComprasPurchaseRequestReopenedAfterAdministrativeRevision($purchaseRequest);
+        }
+
+        \Log::info('purchase_request.reopen_after_superior_revision', [
+            'purchase_request_id' => $purchaseRequest->id,
+            'user_id' => $user->id,
+            'justification' => $httpRequest->input('reopen_justification'),
+        ]);
+
+        \Alert::success('La solicitud quedó en curso para una nueva autorización por ítem. Se envió el correo correspondiente.')->flash();
 
         return redirect()->route('purchase-request.show', $id);
     }
@@ -2870,22 +2960,62 @@ class PurchaseRequestCrudController extends CrudController
         $comprasLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_responsable_compras');
         $requiresAdminApproval = $amountForLimits > $comprasLimit;
 
-        $purchaseRequest->update([
-            'total_amount' => $amountForLimits,
-            'requires_admin_approval' => $requiresAdminApproval,
-        ]);
-        $purchaseRequest->refresh();
-
         $entryForApproval = clone $purchaseRequest;
         $entryForApproval->total_amount = $amountForLimits;
         $entryForApproval->requires_admin_approval = $requiresAdminApproval;
 
+        $purchaseRequestForEscalateCheck = clone $purchaseRequest;
+        $purchaseRequestForEscalateCheck->total_amount = $amountForLimits;
+
         if (! $entryForApproval->canBeApprovedBy($user)) {
             if (
                 $user->hasRole('role_admin_institucion', 'backpack')
-                && PurchaseRequestNotificationService::shouldAdministratorEscalateQuotationApproval($purchaseRequest)
+                && PurchaseRequestNotificationService::shouldAdministratorEscalateQuotationApproval($purchaseRequestForEscalateCheck)
             ) {
-                \Alert::warning('La administradora debe escalar esta solicitud al nivel superior correspondiente por monto. La solicitud no cambió a estado Aprobada.')->flash();
+                \Illuminate\Support\Facades\DB::transaction(function () use ($purchaseRequest, $user, $httpRequest, $detailDecisions, $requiresAdminApproval, $amountForLimits, $anyRejected) {
+                    foreach ($purchaseRequest->details as $detail) {
+                        $decision = $detailDecisions[$detail->id];
+                        $update = [
+                            'line_authorization_status' => $decision,
+                            'line_authorized_by' => $user->id,
+                            'line_authorized_at' => now(),
+                        ];
+                        if ($decision === \App\Models\PurchaseRequestDetail::LINE_AUTH_REJECTED) {
+                            $update['line_authorization_rejection_reason'] = trim((string) ($httpRequest->input('line_rejection_reason')[$detail->id] ?? ''));
+                        } else {
+                            $update['line_authorization_rejection_reason'] = null;
+                        }
+                        $detail->update($update);
+                    }
+
+                    $purchaseRequest->update([
+                        'total_amount' => $amountForLimits,
+                        'requires_admin_approval' => $requiresAdminApproval,
+                        'admin_quotation_review_justification' => $httpRequest->input('approval_justification'),
+                        'admin_quotation_reviewed_at' => now(),
+                        'admin_quotation_reviewed_by' => $user->id,
+                    ]);
+
+                    PurchaseRequestEvent::record(
+                        $purchaseRequest,
+                        PurchaseRequestEvent::EVENT_ADMINISTRATION_INITIAL_REVIEW_PENDING_SUPERIOR,
+                        $user->id,
+                        [
+                            'total_amount_for_limits' => $amountForLimits,
+                            'requires_admin_approval' => $requiresAdminApproval,
+                            'any_line_rejected' => $anyRejected,
+                            'status' => $purchaseRequest->status,
+                        ]
+                    );
+                });
+
+                $purchaseRequest = $purchaseRequest->fresh(['details.product', 'responsibilityArea.responsibleUser']);
+
+                if ($anyRejected) {
+                    $this->dispatchPurchaseLineRejectionNotifications($purchaseRequest, $user, $rejectedItemsForMail);
+                }
+
+                \Alert::warning('Se guardaron en el sistema la decisión por ítem y la justificación. El monto supera el tope de la administradora del instituto: use «Solicitar aprobación de nivel superior» o espere la decisión de quien corresponda. La solicitud no quedará «Aprobada» hasta esa autorización por monto.')->flash();
 
                 return redirect()->route('purchase-request.show', $id);
             }
@@ -2944,7 +3074,7 @@ class PurchaseRequestCrudController extends CrudController
         }
 
         $msg = $anyRejected
-            ? 'Solicitud procesada: hay ítems autorizados para compra y otros no autorizados (se notificó según corresponda).'
+            ? 'Solicitud procesada: hay ítems autorizados para compra y otros no autorizados (se notificó por correo al responsable del área).'
             : 'Solicitud de compra aprobada exitosamente.';
         \Alert::success($msg)->flash();
 
@@ -2952,7 +3082,7 @@ class PurchaseRequestCrudController extends CrudController
     }
 
     /**
-     * Fase A: correo por ítems no autorizados (responsable de área o administración).
+     * Correo por ítems no autorizados: siempre al responsable del área (no al usuario solicitante nominado).
      *
      * @param  list<array{label: string, reason: string}>  $rejectedItems
      */
@@ -2963,14 +3093,7 @@ class PurchaseRequestCrudController extends CrudController
         }
 
         $actorName = (string) ($user->name ?? 'Usuario');
-        $isSuperiorOnly = ($user->hasRole('role_apoderado', 'backpack') || $user->hasRole('role_representante_legal', 'backpack'))
-            && ! $user->hasRole('role_admin_institucion', 'backpack');
-
-        if ($isSuperiorOnly) {
-            PurchaseRequestNotificationService::notifyAdministrationPurchaseLinesRejectedBySuperior($purchaseRequest, $actorName, $rejectedItems);
-        } else {
-            PurchaseRequestNotificationService::notifyAreaResponsiblePurchaseLinesRejected($purchaseRequest, $actorName, $rejectedItems);
-        }
+        PurchaseRequestNotificationService::notifyAreaResponsiblePurchaseLinesRejected($purchaseRequest, $actorName, $rejectedItems);
     }
 
     /**
@@ -3032,6 +3155,9 @@ class PurchaseRequestCrudController extends CrudController
             'approved_by' => null,
             'approved_date' => null,
             'approval_justification' => null,
+            'admin_quotation_reviewed_at' => null,
+            'admin_quotation_reviewed_by' => null,
+            'admin_quotation_review_justification' => null,
             'total_amount' => $effectiveTotal,
             'requires_admin_approval' => $requiresAdminApproval,
         ];
@@ -3146,6 +3272,11 @@ class PurchaseRequestCrudController extends CrudController
             'line_authorized_by' => $user->id,
             'line_authorized_at' => now(),
         ]);
+
+        PurchaseRequestNotificationService::notifyAreaResponsiblePurchaseRequestFullyRejected(
+            $purchaseRequest->fresh(['responsibilityArea.responsibleUser']),
+            (string) ($user->name ?? 'Usuario')
+        );
 
         \Alert::warning('Solicitud de compra rechazada.')->flash();
 
@@ -3329,6 +3460,12 @@ class PurchaseRequestCrudController extends CrudController
             'line_authorized_by' => $user->id,
             'line_authorized_at' => now(),
         ]);
+
+        PurchaseRequestNotificationService::notifyAreaResponsibleDirectPurchaseAuthorizationRejected(
+            $purchaseRequest->fresh(['responsibilityArea.responsibleUser']),
+            (string) ($user->name ?? 'Usuario'),
+            (string) $request->input('rejection_reason')
+        );
 
         \Alert::warning('Autorización de compra directa rechazada.')->flash();
 
@@ -3901,6 +4038,9 @@ class PurchaseRequestCrudController extends CrudController
             ->value(function ($entry) {
                 if ($entry->status === 'Rechazada') {
                     return '<span class="badge bg-danger">Rechazada</span>';
+                }
+                if ($entry->admin_quotation_reviewed_at && ! in_array($entry->status, ['Aprobada', 'Completada'], true)) {
+                    return '<span class="badge bg-info text-dark">Revisión administración registrada — pendiente nivel superior</span>';
                 }
                 if ($entry->hasAdministrativeApprovalRecorded()) {
                     return '<span class="badge bg-success">Aprobada</span>';
@@ -4665,14 +4805,22 @@ class PurchaseRequestCrudController extends CrudController
                         $quotationsViewer->hasRole('role_responsable_compras', 'backpack')
                         || $quotationsViewer->hasRole('role_admin_sistema', 'backpack')
                     );
-                    if ($canSelectQuotations && $comprasPuedeEditarSeleccionCotizaciones && $canRequestAdministratorApproval && PurchaseRequestNotificationService::isAwaitingAdministratorQuotationApproval($entry)) {
+                    $entry->loadMissing(['details', 'marketRates.quoteDetails']);
+                    $adminReviewBase = $canSelectQuotations && $comprasPuedeEditarSeleccionCotizaciones && $canRequestAdministratorApproval && PurchaseRequestNotificationService::isAwaitingAdministratorQuotationApproval($entry);
+                    $quotationsAssignedToAllProducts = $entry->hasQuotationsAssignedToAllRequestProducts();
+                    if ($adminReviewBase && $quotationsAssignedToAllProducts) {
                         $html .= '<div class="alert alert-warning mt-3 mb-0">';
                         $html .= '<p class="mb-2"><strong>Revisión de administradora</strong></p>';
-                        $html .= '<p class="mb-2 small">Cuando tenga definida(s) la(s) cotización(es), solicite la revisión de la administradora del instituto.</p>';
+                        $html .= '<p class="mb-2 small">Cuando tenga definida(s) la(s) cotización(es) para <strong>cada producto</strong>, solicite la revisión de la administradora del instituto.</p>';
                         $html .= '<form method="POST" action="'.e(route('purchase-request.request-quotation-superior-authorization', $entry->id)).'" class="d-inline">';
                         $html .= csrf_field();
                         $html .= '<button type="submit" class="btn btn-primary"><i class="la la-envelope"></i> Solicitar revisión de administradora</button>';
                         $html .= '</form>';
+                        $html .= '</div>';
+                    } elseif ($adminReviewBase && ! $quotationsAssignedToAllProducts) {
+                        $html .= '<div class="alert alert-info mt-3 mb-0">';
+                        $html .= '<p class="mb-2"><strong>Revisión de administradora</strong></p>';
+                        $html .= '<p class="small mb-0">Para solicitar la revisión debe primero <strong>asignar cotización a cada producto</strong> de la solicitud. Use la sección «Asignar cotización por producto» (cuando hay más de una cotización) o seleccione una cotización que cotice <strong>todos</strong> los productos. El botón de envío a la administradora se habilitará al completar esa asignación.</p>';
                         $html .= '</div>';
                     }
 
@@ -4687,6 +4835,26 @@ class PurchaseRequestCrudController extends CrudController
                         $html .= '<form method="POST" action="'.e(route('purchase-request.request-quotation-higher-level-authorization', $entry->id)).'" class="d-inline">';
                         $html .= csrf_field();
                         $html .= '<button type="submit" class="btn btn-info"><i class="la la-level-up"></i> Solicitar aprobación de nivel superior</button>';
+                        $html .= '</form>';
+                        $html .= '</div>';
+                    }
+
+                    $entry->loadMissing(['purchaseOrders', 'details']);
+                    $userReopen = backpack_user();
+                    $canReopenAfterSuperiorRevision = $userReopen && (
+                        $userReopen->hasRole('role_admin_institucion', 'backpack')
+                        || $userReopen->hasRole('role_admin_sistema', 'backpack')
+                    ) && $entry->canReopenForSuperiorAuthorizationAfterRevision();
+                    if ($canReopenAfterSuperiorRevision) {
+                        $html .= '<div class="alert alert-secondary mt-3 mb-0">';
+                        $html .= '<p class="mb-2"><strong>Revisión tras observaciones del nivel superior</strong></p>';
+                        $html .= '<p class="mb-2 small">Si ajustó cotizaciones o la asignación por producto, puede reabrir la solicitud: las autorizaciones por ítem volverán a <strong>pendiente</strong> y se notificará al nivel correspondiente para una nueva decisión. No use esta acción si ya generó orden de compra.</p>';
+                        $html .= '<form method="POST" action="'.e(route('purchase-request.request-superior-reapproval-after-revision', $entry->id)).'" class="mt-2">';
+                        $html .= csrf_field();
+                        $html .= '<div class="mb-2"><label for="reopen_justification" class="form-label small mb-0">Notas internas (opcional, queda en el registro del sistema):</label>';
+                        $html .= '<textarea name="reopen_justification" id="reopen_justification" class="form-control form-control-sm" rows="2" maxlength="1000"></textarea></div>';
+                        $html .= '<button type="submit" class="btn btn-outline-secondary" onclick="return confirm(\'¿Confirma reabrir la solicitud para nueva autorización por ítem? Se anularán las decisiones por línea actuales.\')">';
+                        $html .= '<i class="la la-refresh"></i> Reabrir para nueva autorización (post-observaciones)</button>';
                         $html .= '</form>';
                         $html .= '</div>';
                     }
@@ -5294,6 +5462,36 @@ class PurchaseRequestCrudController extends CrudController
                     return '';
                 }
 
+                $adminReviewSummaryHtml = '';
+                if ($entry->admin_quotation_reviewed_at && ! in_array($entry->status, ['Aprobada', 'Completada', 'Rechazada'], true)) {
+                    $entry->loadMissing(['adminQuotationReviewedBy', 'details.product']);
+                    $reviewAt = $entry->admin_quotation_reviewed_at instanceof \Carbon\Carbon
+                        ? $entry->admin_quotation_reviewed_at->format('d/m/Y H:i')
+                        : \Carbon\Carbon::parse($entry->admin_quotation_reviewed_at)->format('d/m/Y H:i');
+                    $adminReviewSummaryHtml = '<div class="card border-info mt-3 mb-3">';
+                    $adminReviewSummaryHtml .= '<div class="card-header bg-info text-dark"><h6 class="mb-0"><i class="la la-clipboard-check"></i> Revisión de la administración del instituto (registrada en el sistema)</h6></div>';
+                    $adminReviewSummaryHtml .= '<div class="card-body">';
+                    if ($entry->adminQuotationReviewedBy) {
+                        $adminReviewSummaryHtml .= '<p class="mb-2"><strong>Registrada por:</strong> '.e($entry->adminQuotationReviewedBy->name).'</p>';
+                    }
+                    $adminReviewSummaryHtml .= '<p class="mb-2"><strong>Fecha:</strong> '.e($reviewAt).'</p>';
+                    if ($entry->admin_quotation_review_justification) {
+                        $adminReviewSummaryHtml .= '<p class="mb-2"><strong>Justificación:</strong> '.nl2br(e($entry->admin_quotation_review_justification)).'</p>';
+                    }
+                    $adminReviewSummaryHtml .= '<p class="mb-2 small text-muted">La solicitud <strong>no</strong> figura como «Aprobada» hasta la autorización por monto del nivel correspondiente. Monto considerado para topes: <strong>$'.number_format((float) ($entry->total_amount ?? 0), 2).'</strong>.</p>';
+                    if ($entry->details->isNotEmpty()) {
+                        $adminReviewSummaryHtml .= '<p class="mb-1"><strong>Decisión por ítem:</strong></p><ul class="small mb-0">';
+                        foreach ($entry->details as $d) {
+                            $lbl = $d->product ? $d->product->name : ($d->product_description ?? 'Ítem #'.$d->id);
+                            $st = $d->line_authorization_status ?? \App\Models\PurchaseRequestDetail::LINE_AUTH_PENDING;
+                            $lblSt = $st === \App\Models\PurchaseRequestDetail::LINE_AUTH_APPROVED ? 'Autorizado' : ($st === \App\Models\PurchaseRequestDetail::LINE_AUTH_REJECTED ? 'No autorizado' : '—');
+                            $adminReviewSummaryHtml .= '<li>'.e($lbl).': <strong>'.$lblSt.'</strong></li>';
+                        }
+                        $adminReviewSummaryHtml .= '</ul>';
+                    }
+                    $adminReviewSummaryHtml .= '</div></div>';
+                }
+
                 // Aprobada, o completada pero conservando datos de aprobación (antes «Completada» devolvía vacío → «-» en la vista)
                 $mostrarResumenAprobacion = $entry->status === 'Aprobada'
                     || ($entry->status === 'Completada' && ($entry->approved_by || $entry->approved_date));
@@ -5455,7 +5653,7 @@ class PurchaseRequestCrudController extends CrudController
                         $apoderadoLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_apoderado');
                         $representanteLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_representante_legal');
 
-                        return '<div class="alert alert-warning mt-3">
+                        return $adminReviewSummaryHtml.'<div class="alert alert-warning mt-3">
                             <i class="la la-exclamation-triangle"></i> 
                             <strong>Límite excedido:</strong> Esta solicitud ($'.number_format($effectiveTotal, 2).') supera tu límite de autorización de $'.number_format($comprasLimit, 2).'. No puedes aprobar esta solicitud. Requiere aprobación del administrador del instituto (límite: $'.number_format($adminLimit, 2).'), apoderado (límite: $'.number_format($apoderadoLimit, 2).') o representante legal (límite: $'.number_format($representanteLimit, 2).').
                         </div>';
@@ -5465,7 +5663,7 @@ class PurchaseRequestCrudController extends CrudController
                     if ($user->hasRole('role_admin_institucion', 'backpack')) {
                         $adminLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_admin_institucion');
 
-                        return '<div class="alert alert-danger mt-3">
+                        return $adminReviewSummaryHtml.'<div class="alert alert-danger mt-3">
                             <i class="la la-exclamation-triangle"></i> 
                             <strong>Límite excedido:</strong> Esta solicitud ($'.number_format($effectiveTotal, 2).') supera tu límite de autorización de $'.number_format($adminLimit, 2).'. No puedes aprobar esta solicitud.
                         </div>';
@@ -5475,7 +5673,7 @@ class PurchaseRequestCrudController extends CrudController
                     if ($user->hasRole('role_apoderado', 'backpack')) {
                         $apoderadoLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_apoderado');
 
-                        return '<div class="alert alert-danger mt-3">
+                        return $adminReviewSummaryHtml.'<div class="alert alert-danger mt-3">
                             <i class="la la-exclamation-triangle"></i> 
                             <strong>Límite excedido:</strong> Esta solicitud ($'.number_format($effectiveTotal, 2).') supera tu límite de autorización de $'.number_format($apoderadoLimit, 2).'. No puedes aprobar esta solicitud.
                         </div>';
@@ -5485,7 +5683,7 @@ class PurchaseRequestCrudController extends CrudController
                     if ($user->hasRole('role_representante_legal', 'backpack')) {
                         $representanteLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_representante_legal');
 
-                        return '<div class="alert alert-danger mt-3">
+                        return $adminReviewSummaryHtml.'<div class="alert alert-danger mt-3">
                             <i class="la la-exclamation-triangle"></i> 
                             <strong>Límite excedido:</strong> Esta solicitud ($'.number_format($effectiveTotal, 2).') supera tu límite de autorización de $'.number_format($representanteLimit, 2).'. No puedes aprobar esta solicitud.
                         </div>';
@@ -5497,17 +5695,17 @@ class PurchaseRequestCrudController extends CrudController
                         $apoderadoLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_apoderado');
                         $representanteLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_representante_legal');
 
-                        return '<div class="alert alert-warning mt-3">
+                        return $adminReviewSummaryHtml.'<div class="alert alert-warning mt-3">
                             <i class="la la-exclamation-triangle"></i> 
                             <strong>Requiere aprobación:</strong> Esta solicitud ($'.number_format($effectiveTotal, 2).') supera el límite de autorización del responsable de compras ($'.number_format($comprasLimit, 2).'). Requiere aprobación del administrador del instituto (límite: $'.number_format($adminLimit, 2).'), apoderado (límite: $'.number_format($apoderadoLimit, 2).') o representante legal (límite: $'.number_format($representanteLimit, 2).').
                         </div>';
                     }
 
-                    return '';
+                    return $adminReviewSummaryHtml;
                 }
 
                 // Mostrar formulario de aprobación/rechazo
-                $html = '<div class="card border-primary mt-3">';
+                $html = $adminReviewSummaryHtml.'<div class="card border-primary mt-3">';
                 $html .= '<div class="card-header bg-primary text-white">';
                 $html .= '<h6 class="mb-0"><i class="la la-check-circle"></i> Acciones de Aprobación</h6>';
                 $html .= '</div>';
@@ -5527,18 +5725,25 @@ class PurchaseRequestCrudController extends CrudController
                     $html .= '<form method="POST" action="'.route('purchase-request.approve', $entry->id).'" class="mb-3">';
                     $html .= csrf_field();
                     if (! $entry->is_direct_purchase && $entry->details->isNotEmpty()) {
-                        $html .= '<p class="text-muted small">Indique para cada producto si <strong>autoriza</strong> o <strong>no autoriza</strong> la compra. Si no autoriza, el motivo es obligatorio. Se notificará al responsable del área o a la administración según corresponda.</p>';
+                        $html .= '<p class="text-muted small">Indique para cada producto si <strong>autoriza</strong> o <strong>no autoriza</strong> la compra. Si no autoriza, el motivo es obligatorio. Se notificará por correo al <strong>responsable del área</strong>.</p>';
+                        if ($entry->admin_quotation_reviewed_at && $entry->admin_quotation_review_justification) {
+                            $html .= '<div class="alert alert-light border mb-3 small"><strong>Justificación ya registrada por la administración del instituto</strong> (referencia):<div class="mt-1 text-break" style="white-space: pre-wrap;">'.e($entry->admin_quotation_review_justification).'</div></div>';
+                        }
                         $html .= '<div class="table-responsive mb-3"><table class="table table-sm table-bordered align-middle">';
                         $html .= '<thead class="table-light"><tr><th>Producto</th><th class="text-center" style="width:220px;">Autorizar compra</th><th style="min-width:200px;">Motivo (si no autoriza)</th></tr></thead><tbody>';
                         foreach ($entry->details as $d) {
                             $label = $d->product ? $d->product->name : ($d->product_description ?? 'Ítem #'.$d->id);
+                            $las = $d->line_authorization_status ?? \App\Models\PurchaseRequestDetail::LINE_AUTH_PENDING;
+                            $approvedChecked = $las === \App\Models\PurchaseRequestDetail::LINE_AUTH_REJECTED ? '' : ' checked';
+                            $rejectedChecked = $las === \App\Models\PurchaseRequestDetail::LINE_AUTH_REJECTED ? ' checked' : '';
+                            $rejReason = e((string) ($d->line_authorization_rejection_reason ?? ''));
                             $html .= '<tr>';
                             $html .= '<td>'.e($label).'</td>';
                             $html .= '<td class="text-center">';
-                            $html .= '<div class="form-check form-check-inline"><input class="form-check-input" type="radio" name="line_decision['.(int) $d->id.']" id="line_ap_'.(int) $d->id.'" value="'.\App\Models\PurchaseRequestDetail::LINE_AUTH_APPROVED.'" checked><label class="form-check-label" for="line_ap_'.(int) $d->id.'">Sí</label></div> ';
-                            $html .= '<div class="form-check form-check-inline"><input class="form-check-input" type="radio" name="line_decision['.(int) $d->id.']" id="line_rj_'.(int) $d->id.'" value="'.\App\Models\PurchaseRequestDetail::LINE_AUTH_REJECTED.'"><label class="form-check-label" for="line_rj_'.(int) $d->id.'">No</label></div>';
+                            $html .= '<div class="form-check form-check-inline"><input class="form-check-input" type="radio" name="line_decision['.(int) $d->id.']" id="line_ap_'.(int) $d->id.'" value="'.\App\Models\PurchaseRequestDetail::LINE_AUTH_APPROVED.'"'.$approvedChecked.'><label class="form-check-label" for="line_ap_'.(int) $d->id.'">Sí</label></div> ';
+                            $html .= '<div class="form-check form-check-inline"><input class="form-check-input" type="radio" name="line_decision['.(int) $d->id.']" id="line_rj_'.(int) $d->id.'" value="'.\App\Models\PurchaseRequestDetail::LINE_AUTH_REJECTED.'"'.$rejectedChecked.'><label class="form-check-label" for="line_rj_'.(int) $d->id.'">No</label></div>';
                             $html .= '</td>';
-                            $html .= '<td><textarea name="line_rejection_reason['.(int) $d->id.']" class="form-control form-control-sm" rows="2" maxlength="1000" placeholder="Obligatorio si marca «No»"></textarea></td>';
+                            $html .= '<td><textarea name="line_rejection_reason['.(int) $d->id.']" class="form-control form-control-sm" rows="2" maxlength="1000" placeholder="Obligatorio si marca «No»">'.$rejReason.'</textarea></td>';
                             $html .= '</tr>';
                         }
                         $html .= '</tbody></table></div>';

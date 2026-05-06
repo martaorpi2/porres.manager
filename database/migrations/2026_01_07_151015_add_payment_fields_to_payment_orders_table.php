@@ -11,10 +11,20 @@ return new class extends Migration
      */
     public function up(): void
     {
+        if (! Schema::hasTable('payment_orders')) {
+            return;
+        }
+
         Schema::table('payment_orders', function (Blueprint $table) {
-            $table->string('payment_method')->nullable()->after('observations')->comment('Forma de pago');
-            $table->string('bank')->nullable()->after('payment_method')->comment('Banco');
-            $table->date('payment_date')->nullable()->after('bank')->comment('Fecha de pago');
+            if (! Schema::hasColumn('payment_orders', 'payment_method')) {
+                $table->string('payment_method')->nullable()->after('observations')->comment('Forma de pago');
+            }
+            if (! Schema::hasColumn('payment_orders', 'bank')) {
+                $table->string('bank')->nullable()->after('payment_method')->comment('Banco');
+            }
+            if (! Schema::hasColumn('payment_orders', 'payment_date')) {
+                $table->date('payment_date')->nullable()->after('bank')->comment('Fecha de pago');
+            }
         });
     }
 
@@ -23,8 +33,17 @@ return new class extends Migration
      */
     public function down(): void
     {
+        if (! Schema::hasTable('payment_orders')) {
+            return;
+        }
+
         Schema::table('payment_orders', function (Blueprint $table) {
-            $table->dropColumn(['payment_method', 'bank', 'payment_date']);
+            $cols = collect(['payment_method', 'bank', 'payment_date'])
+                ->filter(fn ($c) => Schema::hasColumn('payment_orders', $c))
+                ->all();
+            if ($cols !== []) {
+                $table->dropColumn($cols);
+            }
         });
     }
 };

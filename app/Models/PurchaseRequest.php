@@ -31,6 +31,9 @@ class PurchaseRequest extends Model
         'selected_at',
         'requires_admin_approval',
         'approval_justification',
+        'admin_quotation_reviewed_at',
+        'admin_quotation_reviewed_by',
+        'admin_quotation_review_justification',
         'is_direct_purchase',
         'direct_purchase_justification',
         'direct_purchase_supplier_id',
@@ -56,6 +59,7 @@ class PurchaseRequest extends Model
         'direct_purchase_authorization_requested_at' => 'datetime',
         'direct_purchase_authorized_at' => 'datetime',
         'direct_purchase_authorization_rejected' => 'boolean',
+        'admin_quotation_reviewed_at' => 'datetime',
     ];
 
     protected static function booted(): void
@@ -106,6 +110,11 @@ class PurchaseRequest extends Model
         return $this->belongsTo(User::class, 'approved_by');
     }
 
+    public function adminQuotationReviewedBy()
+    {
+        return $this->belongsTo(User::class, 'admin_quotation_reviewed_by');
+    }
+
     /**
      * Indica si ya existe aprobación registrada (aprobado por / fecha, estado global o compra directa autorizada),
      * independientemente de inconsistencias puntuales entre status y esos campos.
@@ -137,6 +146,14 @@ class PurchaseRequest extends Model
     public function details()
     {
         return $this->hasMany(PurchaseRequestDetail::class);
+    }
+
+    /**
+     * Trazabilidad de hitos (solicitud de revisión a administración, revisión inicial con escalamiento, etc.).
+     */
+    public function purchaseRequestEvents()
+    {
+        return $this->hasMany(PurchaseRequestEvent::class)->orderByDesc('created_at');
     }
 
     /**
@@ -418,6 +435,65 @@ class PurchaseRequest extends Model
     }
 
     /**
+     * Cada ítem de la solicitud tiene cotización aplicable (línea en la cotización elegida).
+     * Con dos o más cotizaciones cargadas exige asignación por producto en cada detalle.
+     */
+    public function hasQuotationsAssignedToAllRequestProducts(): bool
+    {
+        $this->loadMissing(['details', 'marketRates.quoteDetails']);
+
+        if ($this->details->isEmpty() || $this->marketRates->isEmpty()) {
+            return false;
+        }
+
+        $rateCoversProduct = static function ($marketRate, int $productId): bool {
+            if (! $marketRate || $productId <= 0) {
+                return false;
+            }
+            $marketRate->loadMissing('quoteDetails');
+
+            return $marketRate->quoteDetails->contains('product_id', $productId);
+        };
+
+        if ($this->marketRates->count() >= 2) {
+            return $this->details->every(function ($detail) use ($rateCoversProduct) {
+                $productId = (int) ($detail->product_id ?? 0);
+                $rateId = (int) ($detail->selected_market_rate_id ?? 0);
+                if ($productId <= 0 || $rateId <= 0) {
+                    return false;
+                }
+                $mr = $this->marketRates->firstWhere('id', $rateId);
+
+                return $mr && $rateCoversProduct($mr, $productId);
+            });
+        }
+
+        if (! empty($this->selected_market_rate_id)) {
+            $mr = $this->marketRates->firstWhere('id', (int) $this->selected_market_rate_id);
+            if (! $mr) {
+                return false;
+            }
+
+            return $this->details->every(function ($detail) use ($mr, $rateCoversProduct) {
+                $productId = (int) ($detail->product_id ?? 0);
+
+                return $productId > 0 && $rateCoversProduct($mr, $productId);
+            });
+        }
+
+        return $this->details->every(function ($detail) use ($rateCoversProduct) {
+            $productId = (int) ($detail->product_id ?? 0);
+            $rateId = (int) ($detail->selected_market_rate_id ?? 0);
+            if ($productId <= 0 || $rateId <= 0) {
+                return false;
+            }
+            $mr = $this->marketRates->firstWhere('id', $rateId);
+
+            return $mr && $rateCoversProduct($mr, $productId);
+        });
+    }
+
+    /**
      * Solicitudes sin OC, con al menos una cotización cargada, sin selección aplicada
      * (alineado con la lógica de show / generar OC: selected_market_rate_id, is_selected o ítems asignados).
      *
@@ -475,5 +551,25 @@ class PurchaseRequest extends Model
     public function hasApprovedLineAuthorizations(): bool
     {
         return $this->details()->where('line_authorization_status', PurchaseRequestDetail::LINE_AUTH_APPROVED)->exists();
+    }
+
+    /**
+     * Tras observaciones del nivel superior: la administración puede reabrir la solicitud
+     * para ajustar cotización/asignación y disparar un nuevo circuito de autorización por ítem.
+     * Requiere solicitud aprobada, cotización resuelta, sin OC y al menos un ítem no autorizado.
+     */
+    public function canReopenForSuperiorAuthorizationAfterRevision(): bool
+    {
+        if ($this->status !== 'Aprobada' || $this->is_direct_purchase) {
+            return false;
+        }
+        if ($this->purchaseOrders()->exists()) {
+            return false;
+        }
+        if (! $this->hasQuotationSelectionResolved()) {
+            return false;
+        }
+
+        return $this->hasRejectedLineAuthorizations();
     }
 }

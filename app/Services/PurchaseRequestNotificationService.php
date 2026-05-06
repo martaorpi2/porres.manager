@@ -360,10 +360,27 @@ class PurchaseRequestNotificationService
     }
 
     /**
-     * @param  list<string>  $recipients
+     * Destinatarios de correo: solo el responsable del área de la solicitud (no el usuario solicitante nominado).
+     *
+     * @return list<string>
      */
+    private static function emailsForPurchaseRequestAreaResponsible(PurchaseRequest $purchaseRequest): array
+    {
+        $purchaseRequest->loadMissing(['responsibilityArea.responsibleUser']);
+        $responsible = $purchaseRequest->responsibilityArea?->responsibleUser;
+        if (! $responsible) {
+            return [];
+        }
+        $email = trim((string) $responsible->email);
+        if ($email === '' || ! filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            return [];
+        }
+
+        return [$email];
+    }
+
     /**
-     * Ítems no autorizados para compra (Fase A): correo al responsable del área de la solicitud.
+     * Ítems no autorizados para compra: correo únicamente al responsable del área (incluye rechazos de administración o nivel superior).
      *
      * @param  list<array{label: string, reason: string}>  $rejectedItems
      */
@@ -373,7 +390,6 @@ class PurchaseRequestNotificationService
             return;
         }
 
-        $purchaseRequest->loadMissing(['responsibilityArea.responsibleUser']);
         $url = self::purchaseRequestUrl($purchaseRequest);
         $nro = e($purchaseRequest->request_number ?? (string) $purchaseRequest->id);
         $itemsHtml = '<ul>';
@@ -393,45 +409,93 @@ class PurchaseRequestNotificationService
 
         $subject = 'Ítems no autorizados — Solicitud '.($purchaseRequest->request_number ?? '#'.$purchaseRequest->id);
 
-        $recipients = [];
-        $responsible = $purchaseRequest->responsibilityArea?->responsibleUser;
-        if ($responsible && filter_var(trim((string) $responsible->email), FILTER_VALIDATE_EMAIL)) {
-            $recipients[] = trim((string) $responsible->email);
-        }
-        self::sendHtml($subject, $html, $recipients);
+        self::sendHtml($subject, $html, self::emailsForPurchaseRequestAreaResponsible($purchaseRequest));
     }
 
     /**
-     * Ítems no autorizados por nivel superior (Fase A): aviso a la administración del instituto.
-     *
-     * @param  list<array{label: string, reason: string}>  $rejectedItems
+     * Rechazo total de la solicitud de compra: aviso al responsable del área.
      */
-    public static function notifyAdministrationPurchaseLinesRejectedBySuperior(PurchaseRequest $purchaseRequest, string $actorName, array $rejectedItems): void
+    public static function notifyAreaResponsiblePurchaseRequestFullyRejected(PurchaseRequest $purchaseRequest, string $actorName): void
     {
-        if ($rejectedItems === []) {
-            return;
-        }
-
         $url = self::purchaseRequestUrl($purchaseRequest);
         $nro = e($purchaseRequest->request_number ?? (string) $purchaseRequest->id);
-        $itemsHtml = '<ul>';
-        foreach ($rejectedItems as $row) {
-            $label = e($row['label'] ?? '');
-            $reason = e($row['reason'] ?? '');
-            $itemsHtml .= '<li><strong>'.$label.'</strong> — '.$reason.'</li>';
-        }
-        $itemsHtml .= '</ul>';
-
-        $html = '<p>'.e('El nivel superior no autorizó la compra de uno o más ítems. Revise el detalle y las observaciones en el sistema.').'</p>'
+        $html = '<p>'.e('La solicitud de compra fue rechazada en su totalidad.').'</p>'
             .'<p><strong>Solicitud Nº</strong> '.$nro.'</p>'
             .'<p><strong>Decisión registrada por:</strong> '.e($actorName).'</p>'
-            .'<p><strong>Detalle:</strong></p>'.$itemsHtml
             .'<p><a href="'.e($url).'">Abrir solicitud en el sistema</a></p>'
             .'<p class="small text-muted">'.e('Mensaje automático del sistema de compras.').'</p>';
+        $subject = 'Solicitud de compra rechazada — '.($purchaseRequest->request_number ?? '#'.$purchaseRequest->id);
+        self::sendHtml($subject, $html, self::emailsForPurchaseRequestAreaResponsible($purchaseRequest));
+    }
 
-        $subject = 'Observación de autorización superior — Solicitud '.($purchaseRequest->request_number ?? '#'.$purchaseRequest->id);
-        $recipients = self::emailsForBackpackRoles(self::administratorApproverRoleNames());
-        self::sendHtml($subject, $html, $recipients);
+    /**
+     * Rechazo de la autorización de compra directa: aviso al responsable del área.
+     */
+    public static function notifyAreaResponsibleDirectPurchaseAuthorizationRejected(PurchaseRequest $purchaseRequest, string $actorName, string $rejectionReason): void
+    {
+        $url = self::purchaseRequestUrl($purchaseRequest);
+        $nro = e($purchaseRequest->request_number ?? (string) $purchaseRequest->id);
+        $safeReason = nl2br(e($rejectionReason));
+        $html = '<p>'.e('No se autorizó la compra directa solicitada para esta solicitud.').'</p>'
+            .'<p><strong>Solicitud Nº</strong> '.$nro.'</p>'
+            .'<p><strong>Decisión registrada por:</strong> '.e($actorName).'</p>'
+            .'<p><strong>Motivo:</strong></p><p>'.$safeReason.'</p>'
+            .'<p><a href="'.e($url).'">Abrir solicitud en el sistema</a></p>'
+            .'<p class="small text-muted">'.e('Mensaje automático del sistema de compras.').'</p>';
+        $subject = 'Compra directa no autorizada — Solicitud '.($purchaseRequest->request_number ?? '#'.$purchaseRequest->id);
+        self::sendHtml($subject, $html, self::emailsForPurchaseRequestAreaResponsible($purchaseRequest));
+    }
+
+    /**
+     * Tras revisión administrativa: se requiere de nuevo autorización del nivel superior (monto sobre tope de administradora).
+     */
+    public static function notifySuperiorReapprovalAfterAdministrativeRevision(PurchaseRequest $purchaseRequest): void
+    {
+        $url = self::purchaseRequestUrl($purchaseRequest);
+        $nro = $purchaseRequest->request_number ?? ('#'.$purchaseRequest->id);
+        $safeRequestNumber = e($purchaseRequest->request_number ?? (string) $purchaseRequest->id);
+        $safeUrl = e($url);
+        $subject = 'Nueva autorización requerida (revisión) – Solicitud Nº '.$nro;
+        $body = '<p>'.e('La administración del instituto reenvía esta solicitud para una nueva autorización por ítem, tras revisar observaciones del nivel superior o ajustes en cotización. Debe ingresar al sistema y registrar la decisión.').'</p>'
+            .'<p><strong>Número de solicitud:</strong> '.$safeRequestNumber.'</p>'
+            .'<p><a href="'.$safeUrl.'">Acceder a la solicitud en el sistema</a></p>'
+            .'<p>'.e('Este es un mensaje automático generado por el sistema de compras.').'</p>';
+        $recipients = self::emailsForBackpackRoles(
+            self::superiorApproverRoleNamesForAmountFromAdministrator((float) ($purchaseRequest->total_amount ?? 0))
+        );
+        self::sendHtml($subject, $body, $recipients);
+    }
+
+    /**
+     * Reapertura para nueva decisión: monto dentro del tope de administradora (notificación a administradoras del instituto).
+     */
+    public static function notifyAdministratorPurchaseRequestReopenedAfterSuperiorObservations(PurchaseRequest $purchaseRequest): void
+    {
+        $url = self::purchaseRequestUrl($purchaseRequest);
+        $nro = $purchaseRequest->request_number ?? ('#'.$purchaseRequest->id);
+        $subject = 'Solicitud reabierta para nueva decisión – Solicitud Nº '.$nro;
+        $body = self::htmlBody(
+            'La solicitud fue reabierta para una nueva autorización por ítem (revisión tras observaciones del nivel superior o ajustes). El monto actual está dentro del ámbito de decisión de la administración del instituto.',
+            $purchaseRequest,
+            $url
+        );
+        self::sendHtml($subject, $body, self::emailsForBackpackRoles(self::administratorApproverRoleNames()));
+    }
+
+    /**
+     * Reapertura con monto que no exige aprobación de administración ni superior: aviso a compras.
+     */
+    public static function notifyComprasPurchaseRequestReopenedAfterAdministrativeRevision(PurchaseRequest $purchaseRequest): void
+    {
+        $url = self::purchaseRequestUrl($purchaseRequest);
+        $nro = $purchaseRequest->request_number ?? ('#'.$purchaseRequest->id);
+        $subject = 'Solicitud reabierta para nueva decisión – Solicitud Nº '.$nro;
+        $body = self::htmlBody(
+            'La administración del instituto reabrió esta solicitud para una nueva autorización por ítem. El monto actual puede ser gestionado por el sector de compras según los roles del sistema.',
+            $purchaseRequest,
+            $url
+        );
+        self::sendHtml($subject, $body, self::emailsForBackpackRoles(['role_responsable_compras']));
     }
 
     private static function sendHtml(string $subject, string $html, array $recipients = []): void
