@@ -233,7 +233,7 @@ class PurchaseRequestNotificationService
     }
 
     /**
-     * Nivel superior aprobó: avisar a compras.
+     * Nivel superior aprobó: avisar a compras y a la administradora del instituto.
      */
     public static function notifyComprasRequestApprovedBySuperior(PurchaseRequest $purchaseRequest): void
     {
@@ -244,7 +244,10 @@ class PurchaseRequestNotificationService
             $purchaseRequest,
             $url
         );
-        $recipients = self::emailsForBackpackRoles(['role_responsable_compras']);
+        $recipients = self::emailsForBackpackRoles([
+            'role_responsable_compras',
+            'role_admin_institucion',
+        ]);
         self::sendHtml($subject, $body, $recipients);
     }
 

@@ -1,7 +1,7 @@
 @php
     // Verificar que el usuario no sea role_responsable_area
     $user = backpack_user();
-    $canAccess = !($user && $user->hasRole('role_responsable_area', 'backpack'));
+    $canAccess = !($user && $user->hasResponsableAreaOrInstituteAuthorityRole());
     
     // Verificar si existe una orden de compra generada
     $purchaseOrder = $entry->purchaseOrders->first();

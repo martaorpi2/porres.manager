@@ -64,7 +64,7 @@ class DeliveryCrudController extends CrudController
             CRUD::removeButton('create');
             CRUD::removeButton('update');
             CRUD::removeButton('delete');
-        } elseif ($user && $user->hasRole('role_responsable_area')) {
+        } elseif ($user && $user->hasResponsableAreaOrInstituteAuthorityRole()) {
             // role_responsable_area puede ver todas las entregas y crearlas
             // No se aplica filtro adicional
         }
@@ -208,7 +208,7 @@ class DeliveryCrudController extends CrudController
             $query->where('status', '!=', 'entregada_totalmente');
             
             // Si es role_responsable_area, solo mostrar solicitudes de su área
-            if ($user && $user->hasRole('role_responsable_area', 'backpack')) {
+            if ($user && $user->hasResponsableAreaOrInstituteAuthorityRole()) {
                 $userAreas = \App\Models\ResponsibilityArea::where('responsible_user_id', $user->id)->pluck('id');
                 if ($userAreas->isNotEmpty()) {
                     $query->whereIn('area_id', $userAreas);
@@ -262,7 +262,7 @@ class DeliveryCrudController extends CrudController
         // Campo opcional para recepción
         // Si es role_responsable_area, solo mostrar sus propias recepciones
         $receptionOptions = function ($query) use ($user) {
-            if ($user && $user->hasRole('role_responsable_area', 'backpack')) {
+            if ($user && $user->hasResponsableAreaOrInstituteAuthorityRole()) {
                 // Solo mostrar recepciones donde el usuario es el area_manager_id
                 return $query->where('area_manager_id', $user->id)->get();
             }
@@ -738,7 +738,7 @@ class DeliveryCrudController extends CrudController
         $this->crud->registerFieldEvents();
         
         // Validar que si es role_responsable_area, solo pueda crear entregas para solicitudes de su área
-        if ($user && $user->hasRole('role_responsable_area', 'backpack')) {
+        if ($user && $user->hasResponsableAreaOrInstituteAuthorityRole()) {
             $generalRequestId = $request->input('general_request_id');
             if ($generalRequestId) {
                 $generalRequest = \App\Models\GeneralRequest::find($generalRequestId);
@@ -1315,7 +1315,7 @@ class DeliveryCrudController extends CrudController
         $this->crud->registerFieldEvents();
         
         // Validar que si es role_responsable_area, solo pueda editar entregas para solicitudes de su área
-        if ($user && $user->hasRole('role_responsable_area', 'backpack')) {
+        if ($user && $user->hasResponsableAreaOrInstituteAuthorityRole()) {
             $entry = $this->crud->getCurrentEntry();
             if ($entry && $entry->general_request_id) {
                 $generalRequest = \App\Models\GeneralRequest::find($entry->general_request_id);

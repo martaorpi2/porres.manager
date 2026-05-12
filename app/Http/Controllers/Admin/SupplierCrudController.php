@@ -46,7 +46,7 @@ class SupplierCrudController extends CrudController
         
         // Filtrar proveedores por área si el usuario es responsable de área
         $user = backpack_user();
-        if ($user && $user->hasRole('role_responsable_area', 'backpack')) {
+        if ($user && $user->hasResponsableAreaOrInstituteAuthorityRole()) {
             // Obtener las áreas de responsabilidad del usuario con sus nombres
             $userAreas = \App\Models\ResponsibilityArea::where('responsible_user_id', $user->id)->get();
             
@@ -207,7 +207,7 @@ class SupplierCrudController extends CrudController
         $user = backpack_user();
         $rubroOptions = null;
         
-        if ($user && $user->hasRole('role_responsable_area', 'backpack')) {
+        if ($user && $user->hasResponsableAreaOrInstituteAuthorityRole()) {
             // Obtener las áreas de responsabilidad del usuario con sus nombres
             $userAreas = \App\Models\ResponsibilityArea::where('responsible_user_id', $user->id)->get();
             
@@ -296,7 +296,7 @@ class SupplierCrudController extends CrudController
         
         // Filtrar proveedores por área si el usuario es responsable de área
         $user = backpack_user();
-        if ($user && $user->hasRole('role_responsable_area', 'backpack')) {
+        if ($user && $user->hasResponsableAreaOrInstituteAuthorityRole()) {
             // Obtener las áreas de responsabilidad del usuario con sus nombres
             $userAreas = \App\Models\ResponsibilityArea::where('responsible_user_id', $user->id)->get();
             
@@ -403,7 +403,7 @@ class SupplierCrudController extends CrudController
         
         // Filtrar proveedores por área si el usuario es responsable de área
         $user = backpack_user();
-        if ($user && $user->hasRole('role_responsable_area', 'backpack')) {
+        if ($user && $user->hasResponsableAreaOrInstituteAuthorityRole()) {
             // Obtener las áreas de responsabilidad del usuario con sus nombres
             $userAreas = \App\Models\ResponsibilityArea::where('responsible_user_id', $user->id)->get();
             

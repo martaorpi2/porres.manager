@@ -88,6 +88,24 @@ class User extends Authenticatable
     }
 
     /**
+     * Responsable de depósito/área o autoridad del instituto (mismos permisos Spatie y mismas reglas de flujo).
+     */
+    public function hasResponsableAreaOrInstituteAuthorityRole(): bool
+    {
+        if ($this->hasRole(['role_responsable_area', 'role_autoridad_instituto'], 'backpack')) {
+            return true;
+        }
+
+        if ($this->hasRole(['role_responsable_area', 'role_autoridad_instituto'], 'web')) {
+            return true;
+        }
+
+        $names = $this->getRoleNames();
+
+        return $names->contains('role_responsable_area') || $names->contains('role_autoridad_instituto');
+    }
+
+    /**
      * Administradora del instituto (órdenes de pago, anulaciones, etc.).
      */
     public function hasAdministradoraInstitucionRole(): bool

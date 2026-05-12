@@ -106,7 +106,7 @@ class Supplier extends Model
      */
     public function scopeVisibleForBackpackUser($query, $user)
     {
-        if (! $user || ! $user->hasRole('role_responsable_area', 'backpack')) {
+        if (! $user || ! $user->hasResponsableAreaOrInstituteAuthorityRole()) {
             return $query;
         }
 

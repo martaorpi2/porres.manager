@@ -10,7 +10,7 @@
     $isPersonal = $user && $user->hasRole('role_personal', 'backpack');
     
     // Verificar si el usuario es role_responsable_area (puede convertir solo solicitudes de su área)
-    $isResponsableArea = $user && $user->hasRole('role_responsable_area', 'backpack');
+    $isResponsableArea = $user && $user->hasResponsableAreaOrInstituteAuthorityRole();
     $canAccessThisRequest = false;
     
     if ($isResponsableArea) {

@@ -139,6 +139,11 @@ class EducationalHealthDataSeeder extends Seeder
                 'email' => 'deposito@porres.manager',
                 'user_name' => 'Responsable Depósito',
             ],
+            'role_autoridad_instituto' => [
+                'name' => 'Autoridad del Instituto',
+                'email' => 'autoridad@porres.manager',
+                'user_name' => 'Autoridad Instituto',
+            ],
             'role_responsable_compras' => [
                 'name' => 'Responsable de Compras',
                 'email' => 'compras@porres.manager',
@@ -271,6 +276,7 @@ class EducationalHealthDataSeeder extends Seeder
         $rolesToCreate = [
             'role_personal',
             'role_responsable_area',
+            'role_autoridad_instituto',
             'role_responsable_compras',
             'role_admin_institucion',
             'role_apoderado',
@@ -320,6 +326,11 @@ class EducationalHealthDataSeeder extends Seeder
         // Incluye solicitud.crear (crear solicitudes generales y flujo a compra). givePermissionTo es idempotente.
         if ($roleResponsableArea) {
             $roleResponsableArea->givePermissionTo(['solicitud.crear', 'solicitud.ver', 'solicitud.aprobar', 'solicitud.entregar']);
+        }
+
+        $roleAutoridadInstituto = Role::where('name', 'role_autoridad_instituto')->first();
+        if ($roleAutoridadInstituto) {
+            $roleAutoridadInstituto->givePermissionTo(['solicitud.crear', 'solicitud.ver', 'solicitud.aprobar', 'solicitud.entregar']);
         }
         
         if ($roleResponsableCompras) {

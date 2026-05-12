@@ -63,7 +63,7 @@ class ReceptionCrudController extends CrudController
         }
         
         // Si el usuario tiene rol role_responsable_area, solo mostrar recepciones donde él es el responsable
-        if ($user && $user->hasRole('role_responsable_area')) {
+        if ($user && $user->hasResponsableAreaOrInstituteAuthorityRole()) {
             CRUD::addClause('where', 'area_manager_id', $user->id);
         }
         

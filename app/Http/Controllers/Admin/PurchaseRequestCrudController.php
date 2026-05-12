@@ -141,7 +141,7 @@ class PurchaseRequestCrudController extends CrudController
         }
 
         // Botón para ver orden de compra (solo si existe y para usuarios que no sean role_responsable_area)
-        if (! $user || ! $user->hasRole('role_responsable_area', 'backpack')) {
+        if (! $user || ! $user->hasResponsableAreaOrInstituteAuthorityRole()) {
             CRUD::addButton('line', 'view_purchase_order', 'view', 'crud::buttons.view_purchase_order', 'end');
         }
 
@@ -371,7 +371,7 @@ class PurchaseRequestCrudController extends CrudController
         $isOwnRequest = $entry->requesting_user_id == $user->id;
 
         // Verificar si el usuario es responsable de área
-        $isResponsableArea = $user && $user->hasRole('role_responsable_area', 'backpack');
+        $isResponsableArea = $user && $user->hasResponsableAreaOrInstituteAuthorityRole();
 
         $entry->loadMissing(['marketRates', 'details']);
         $areaProductsLockedByQuotationSelection = $isResponsableArea && $entry->hasQuotationSelectionResolved();
@@ -1354,7 +1354,7 @@ class PurchaseRequestCrudController extends CrudController
             }
 
             // Validar que el responsable de área solo pueda convertir solicitudes de su área
-            if ($user->hasRole('role_responsable_area', 'backpack')) {
+            if ($user->hasResponsableAreaOrInstituteAuthorityRole()) {
                 $generalRequest = \App\Models\GeneralRequest::find($convertedFrom);
                 if ($generalRequest) {
                     $userAreas = \App\Models\ResponsibilityArea::where('responsible_user_id', $user->id)->pluck('id');
@@ -1704,7 +1704,7 @@ class PurchaseRequestCrudController extends CrudController
         $dataToSave = $this->crud->getStrippedSaveRequest($request);
 
         $entry->loadMissing(['marketRates', 'details']);
-        $areaCannotChangeProducts = $user->hasRole('role_responsable_area', 'backpack')
+        $areaCannotChangeProducts = $user->hasResponsableAreaOrInstituteAuthorityRole()
             && $entry->hasQuotationSelectionResolved();
 
         try {
@@ -2735,7 +2735,7 @@ class PurchaseRequestCrudController extends CrudController
     public function notifyComprasIntervention($id)
     {
         $user = backpack_user();
-        if (! $user || ! $user->hasRole('role_responsable_area', 'backpack')) {
+        if (! $user || ! $user->hasResponsableAreaOrInstituteAuthorityRole()) {
             abort(403, 'Solo los responsables de área pueden enviar esta notificación.');
         }
 
@@ -2785,7 +2785,7 @@ class PurchaseRequestCrudController extends CrudController
 
         // Verificar que el usuario sea responsable de área
         $user = backpack_user();
-        if (! $user || ! $user->hasRole('role_responsable_area', 'backpack')) {
+        if (! $user || ! $user->hasResponsableAreaOrInstituteAuthorityRole()) {
             abort(403, 'Solo los responsables de área pueden sugerir proveedores.');
         }
 
@@ -2801,7 +2801,7 @@ class PurchaseRequestCrudController extends CrudController
     {
         // Verificar que el usuario sea responsable de área
         $user = backpack_user();
-        if (! $user || ! $user->hasRole('role_responsable_area', 'backpack')) {
+        if (! $user || ! $user->hasResponsableAreaOrInstituteAuthorityRole()) {
             abort(403, 'Solo los responsables de área pueden sugerir proveedores.');
         }
 
@@ -3478,7 +3478,7 @@ class PurchaseRequestCrudController extends CrudController
     public function assignQuotations($id)
     {
         $user = backpack_user();
-        if ($user && $user->hasRole('role_responsable_area', 'backpack')) {
+        if ($user && $user->hasResponsableAreaOrInstituteAuthorityRole()) {
             abort(403, 'Los responsables de área no pueden asignar cotizaciones.');
         }
         if ($user && $user->hasRole('role_representante_legal', 'backpack')) {
@@ -3546,7 +3546,7 @@ class PurchaseRequestCrudController extends CrudController
     {
         // Verificar que el usuario no sea role_responsable_area ni representante legal
         $user = backpack_user();
-        if ($user && $user->hasRole('role_responsable_area', 'backpack')) {
+        if ($user && $user->hasResponsableAreaOrInstituteAuthorityRole()) {
             abort(403, 'Los responsables de área no pueden generar órdenes de compra.');
         }
         if ($user && $user->hasRole('role_representante_legal', 'backpack')) {
@@ -4367,7 +4367,7 @@ class PurchaseRequestCrudController extends CrudController
                     }
 
                     $isOwnRequest = $entry->requesting_user_id == $user->id;
-                    $isResponsableArea = $user->hasRole('role_responsable_area', 'backpack');
+                    $isResponsableArea = $user->hasResponsableAreaOrInstituteAuthorityRole();
                     $entry->loadMissing(['marketRates', 'details']);
                     $areaProductsLockedByQuotation = $isResponsableArea && $entry->hasQuotationSelectionResolved();
 
@@ -4864,7 +4864,7 @@ class PurchaseRequestCrudController extends CrudController
                     if ($quotationsCount > 1) {
                         $user = backpack_user();
                         // Solo mostrar si el usuario no es role_responsable_area
-                        if (! $user || ! $user->hasRole('role_responsable_area', 'backpack')) {
+                        if (! $user || ! $user->hasResponsableAreaOrInstituteAuthorityRole()) {
                             $html .= '<div class="mt-3">';
                             $html .= '<a href="'.route('purchase-request.comparative-excel', $entry->id).'" class="btn btn-success">';
                             $html .= '<i class="la la-file-excel"></i> Descargar Planilla Comparativa';
@@ -4910,7 +4910,7 @@ class PurchaseRequestCrudController extends CrudController
                 // Lógica para mostrar botón de generar orden según el monto
                 // El rol role_responsable_area no puede generar órdenes de compra
                 $user = backpack_user();
-                $canGenerateOrder = ! ($user && $user->hasRole('role_responsable_area', 'backpack'))
+                $canGenerateOrder = ! ($user && $user->hasResponsableAreaOrInstituteAuthorityRole())
                     && ! ($user && $user->hasRole('role_representante_legal', 'backpack'));
 
                 $entry->load('marketRates.quoteDetails');
@@ -4922,7 +4922,7 @@ class PurchaseRequestCrudController extends CrudController
 
                 // Botón para agregar nueva cotización (compras, admin y responsable de área; solo si no está aprobada/completada)
                 $user = backpack_user();
-                $adminRoles = ['role_admin_sistema', 'role_admin_institucion', 'role_responsable_compras', 'role_responsable_area'];
+                $adminRoles = ['role_admin_sistema', 'role_admin_institucion', 'role_responsable_compras', 'role_responsable_area', 'role_autoridad_instituto'];
                 $canCreateQuotation = false;
                 foreach ($adminRoles as $role) {
                     if ($user && $user->hasRole($role, 'backpack')) {
@@ -4932,7 +4932,7 @@ class PurchaseRequestCrudController extends CrudController
                 }
 
                 $entry->loadMissing(['marketRates', 'details']);
-                $areaBlockedFromNewQuotations = $user && $user->hasRole('role_responsable_area', 'backpack') && $entry->hasQuotationSelectionResolved();
+                $areaBlockedFromNewQuotations = $user && $user->hasResponsableAreaOrInstituteAuthorityRole() && $entry->hasQuotationSelectionResolved();
 
                 // Solo mostrar el botón si tiene permiso Y la solicitud no está aprobada (el área no puede cargar cotizaciones nuevas si compras ya eligió cotización)
                 if ($canCreateQuotation && $entry->status !== 'Aprobada' && $entry->status !== 'Completada' && ! $areaBlockedFromNewQuotations) {
@@ -5116,7 +5116,7 @@ class PurchaseRequestCrudController extends CrudController
                 $html = '';
 
                 $user = backpack_user();
-                $isResponsableArea = $user && $user->hasRole('role_responsable_area', 'backpack');
+                $isResponsableArea = $user && $user->hasResponsableAreaOrInstituteAuthorityRole();
 
                 // Botón para sugerir proveedor (solo responsables de área)
                 if ($isResponsableArea && $entry->status != 'Completada') {
@@ -5243,7 +5243,7 @@ class PurchaseRequestCrudController extends CrudController
         CRUD::column('create_payment_orders_from_pr')->label('Órdenes de Pago')->type('custom_html')
             ->value(function ($entry) {
                 $user = backpack_user();
-                if ($user && $user->hasRole('role_responsable_area', 'backpack')) {
+                if ($user && $user->hasResponsableAreaOrInstituteAuthorityRole()) {
                     return '';
                 }
                 if (! $user instanceof \App\Models\User) {
@@ -5346,7 +5346,7 @@ class PurchaseRequestCrudController extends CrudController
         CRUD::column('delivery_reception_actions')->label('Acciones de Entrega y Recepción')->type('custom_html')
             ->value(function ($entry) {
                 $user = backpack_user();
-                $isResponsableArea = $user && $user->hasRole('role_responsable_area', 'backpack');
+                $isResponsableArea = $user && $user->hasResponsableAreaOrInstituteAuthorityRole();
 
                 $entry->load(['purchaseOrders.receptions', 'purchaseOrders.paymentOrders']);
 
@@ -5447,7 +5447,7 @@ class PurchaseRequestCrudController extends CrudController
         // Agregar botones de acción en la vista previa
         // Botón para generar planilla comparativa (solo para usuarios que no sean role_responsable_area)
         $user = backpack_user();
-        if (! $user || ! $user->hasRole('role_responsable_area', 'backpack')) {
+        if (! $user || ! $user->hasResponsableAreaOrInstituteAuthorityRole()) {
             CRUD::addButton('top', 'comparative_excel', 'view', 'crud::buttons.comparative_excel', 'end');
 
             // Botón para generar/ver orden de compra (solo para usuarios que no sean role_responsable_area)

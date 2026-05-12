@@ -6,8 +6,8 @@
     {{-- Menú para usuarios con rol role_personal --}}    
     <x-backpack::menu-item title="Solicitudes Generales" icon="la la-file-alt" :link="backpack_url('general-request')" />
     <x-backpack::menu-item title="Entregas" icon="la la-people-carry" :link="backpack_url('delivery')" />
-@elseif(backpack_user() && backpack_user()->hasRole('role_responsable_area'))
-    {{-- Menú para usuarios con rol role_responsable_area --}}
+@elseif(backpack_user() && backpack_user()->hasResponsableAreaOrInstituteAuthorityRole())
+    {{-- Menú para responsable de área / autoridad del instituto --}}
     <x-backpack::menu-dropdown title="Solicitudes" icon="la la-file-alt" trigger="click">
         <x-backpack::menu-dropdown-item title="Solicitudes Generales" :link="backpack_url('general-request')" />
         <x-backpack::menu-dropdown-item title="Solicitudes de Compra" :link="backpack_url('purchase-request')" />

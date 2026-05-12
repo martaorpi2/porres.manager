@@ -83,7 +83,7 @@ class GeneralRequestCrudController extends CrudController
                     });
                 }
                 // Para role_responsable_area, mostrar solicitudes de su área Y las que él crea
-                elseif ($user->hasRole('role_responsable_area', 'backpack')) {
+                elseif ($user->hasResponsableAreaOrInstituteAuthorityRole()) {
                     $userAreas = \App\Models\ResponsibilityArea::where('responsible_user_id', $user->id)->pluck('id');
                     
                     CRUD::addClause(function ($query) use ($user, $userAreas, $hasAnalysisStatus) {
@@ -969,7 +969,7 @@ class GeneralRequestCrudController extends CrudController
             $this->data['entry'] = $this->crud->entry = $item;
 
             // Si el usuario es responsable de área, mantener el estado como 'creada'
-            $isResponsableArea = $user && $user->hasRole('role_responsable_area', 'backpack');
+            $isResponsableArea = $user && $user->hasResponsableAreaOrInstituteAuthorityRole();
             
             if ($isResponsableArea) {
                 $patch = ['status' => 'creada'];
@@ -1415,7 +1415,7 @@ class GeneralRequestCrudController extends CrudController
         }
 
         // Agregar botón para registrar entrega solo para role_responsable_area y solo si la solicitud es de su área
-        if ($user && $user->hasRole('role_responsable_area', 'backpack')) {
+        if ($user && $user->hasResponsableAreaOrInstituteAuthorityRole()) {
             CRUD::column('register_delivery_button')->label('Acciones')->type('custom_html')
                 ->value(function($entry) use ($user) {
                     // Verificar si la solicitud pertenece a un área donde el usuario es responsable

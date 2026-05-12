@@ -31,6 +31,11 @@ class UsersForAllRolesSeeder extends Seeder
                 'email' => 'deposito@porres.manager',
                 'user_name' => 'Responsable Depósito',
             ],
+            'role_autoridad_instituto' => [
+                'name' => 'Autoridad del Instituto',
+                'email' => 'autoridad@porres.manager',
+                'user_name' => 'Autoridad Instituto',
+            ],
             'role_responsable_compras' => [
                 'name' => 'Responsable de Compras',
                 'email' => 'compras@porres.manager',

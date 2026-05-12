@@ -40,7 +40,7 @@ class PurchaseOrderCrudController extends CrudController
     {
         // Bloquear acceso para role_responsable_area
         $user = backpack_user();
-        if ($user && $user->hasRole('role_responsable_area')) {
+        if ($user && $user->hasResponsableAreaOrInstituteAuthorityRole()) {
             abort(403, 'No tienes permiso para acceder a órdenes de compra.');
         }
         
@@ -412,7 +412,7 @@ class PurchaseOrderCrudController extends CrudController
             'type' => 'closure',
             'function' => function($entry) {
                 $user = backpack_user();
-                if ($user && $user->hasRole('role_responsable_area', 'backpack')) {
+                if ($user && $user->hasResponsableAreaOrInstituteAuthorityRole()) {
                     return '';
                 }
                 $entry->load(['purchaseRequest', 'paymentOrders']);

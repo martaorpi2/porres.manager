@@ -29,7 +29,7 @@ class DashboardController extends Controller
         }
 
         $isPersonal = $user->hasRole('role_personal');
-        $isResponsableArea = $user->hasRole('role_responsable_area');
+        $isResponsableArea = $user->hasResponsableAreaOrInstituteAuthorityRole();
         $isResponsableCompras = $user->hasRole('role_responsable_compras', 'backpack');
         $isAdminInstitucion = $user->hasRole('role_admin_institucion', 'backpack');
         $isApoderado = $user->hasRole('role_apoderado', 'backpack');

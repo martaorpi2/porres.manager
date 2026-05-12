@@ -57,6 +57,7 @@ class RolesAndPermissionsSeeder extends Seeder
         $rolePersonal = Role::firstOrCreate(['name' => 'role_personal', 'guard_name' => 'backpack']);
         $rolePersonalWeb = Role::firstOrCreate(['name' => 'role_personal', 'guard_name' => 'web']);
         $roleResponsableArea = Role::firstOrCreate(['name' => 'role_responsable_area', 'guard_name' => 'backpack']);
+        $roleAutoridadInstituto = Role::firstOrCreate(['name' => 'role_autoridad_instituto', 'guard_name' => 'backpack']);
         $roleResponsableCompras = Role::firstOrCreate(['name' => 'role_responsable_compras', 'guard_name' => 'backpack']);
         $roleAdminInstitucion = Role::firstOrCreate(['name' => 'role_admin_institucion', 'guard_name' => 'backpack']);
         $roleApoderado = Role::firstOrCreate(['name' => 'role_apoderado', 'guard_name' => 'backpack']);
@@ -92,6 +93,21 @@ class RolesAndPermissionsSeeder extends Seeder
         // También asignar al rol web para compatibilidad
         $roleResponsableAreaWeb = Role::firstOrCreate(['name' => 'role_responsable_area', 'guard_name' => 'web']);
         $roleResponsableAreaWeb->givePermissionTo([
+            Permission::findByName('solicitud.crear', 'web'),
+            Permission::findByName('solicitud.ver', 'web'),
+            Permission::findByName('solicitud.aprobar', 'web'),
+            Permission::findByName('solicitud.entregar', 'web'),
+        ]);
+
+        // Autoridad del instituto: mismos permisos que responsable de área (incl. cotizaciones vinculadas a solicitudes).
+        $roleAutoridadInstituto->givePermissionTo([
+            Permission::findByName('solicitud.crear', 'backpack'),
+            Permission::findByName('solicitud.ver', 'backpack'),
+            Permission::findByName('solicitud.aprobar', 'backpack'),
+            Permission::findByName('solicitud.entregar', 'backpack'),
+        ]);
+        $roleAutoridadInstitutoWeb = Role::firstOrCreate(['name' => 'role_autoridad_instituto', 'guard_name' => 'web']);
+        $roleAutoridadInstitutoWeb->givePermissionTo([
             Permission::findByName('solicitud.crear', 'web'),
             Permission::findByName('solicitud.ver', 'web'),
             Permission::findByName('solicitud.aprobar', 'web'),

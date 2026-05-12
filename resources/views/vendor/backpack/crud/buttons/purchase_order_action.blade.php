@@ -1,7 +1,7 @@
 @php
     // Responsable de área: sin acciones de OC. Representante legal: puede ver OC existente, no generar.
     $user = backpack_user();
-    $canAccess = !($user && $user->hasRole('role_responsable_area', 'backpack'));
+    $canAccess = !($user && $user->hasResponsableAreaOrInstituteAuthorityRole());
     $representanteLegalNoGeneraOc = $user && $user->hasRole('role_representante_legal', 'backpack');
     
     // Obtener la entrada actual (funciona tanto en list como en show)

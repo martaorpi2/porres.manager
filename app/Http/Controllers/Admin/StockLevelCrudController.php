@@ -65,10 +65,10 @@ class StockLevelCrudController extends CrudController
         \Log::info('StockLevelCrudController - setupListOperation', [
             'user_id' => $user ? $user->id : null,
             'user_email' => $user ? $user->email : null,
-            'has_role' => $user ? $user->hasRole('role_responsable_area', 'backpack') : false,
+            'has_role' => $user ? $user->hasResponsableAreaOrInstituteAuthorityRole() : false,
         ]);
         
-        if ($user && $user->hasRole('role_responsable_area', 'backpack')) {
+        if ($user && $user->hasResponsableAreaOrInstituteAuthorityRole()) {
             // Obtener las áreas de responsabilidad del usuario
             $userAreas = \App\Models\ResponsibilityArea::where('responsible_user_id', $user->id)->pluck('name');
             
@@ -187,7 +187,7 @@ class StockLevelCrudController extends CrudController
         $user = backpack_user();
         $productOptions = null;
         
-        if ($user && $user->hasRole('role_responsable_area', 'backpack')) {
+        if ($user && $user->hasResponsableAreaOrInstituteAuthorityRole()) {
             // Obtener las áreas de responsabilidad del usuario con sus nombres
             $userAreas = \App\Models\ResponsibilityArea::where('responsible_user_id', $user->id)->get();
             
@@ -242,7 +242,7 @@ class StockLevelCrudController extends CrudController
         
         // Si el usuario tiene rol role_responsable_area, solo mostrar ubicaciones de sus áreas
         $locationOptions = function ($query) use ($user) {
-            if ($user && $user->hasRole('role_responsable_area', 'backpack')) {
+            if ($user && $user->hasResponsableAreaOrInstituteAuthorityRole()) {
                 // Obtener las áreas de responsabilidad del usuario
                 $userAreas = \App\Models\ResponsibilityArea::where('responsible_user_id', $user->id)->pluck('name');
                 
@@ -348,7 +348,7 @@ class StockLevelCrudController extends CrudController
     {
         // Si el usuario tiene rol role_responsable_area, verificar que solo pueda crear stock en sus áreas
         $user = backpack_user();
-        if ($user && $user->hasRole('role_responsable_area', 'backpack')) {
+        if ($user && $user->hasResponsableAreaOrInstituteAuthorityRole()) {
             $locationId = request()->input('location_id');
             if ($locationId) {
                 $location = \App\Models\Location::find($locationId);
@@ -398,7 +398,7 @@ class StockLevelCrudController extends CrudController
         
         // Si el usuario tiene rol role_responsable_area, verificar que solo pueda actualizar stock de sus áreas
         $user = backpack_user();
-        if ($user && $user->hasRole('role_responsable_area', 'backpack')) {
+        if ($user && $user->hasResponsableAreaOrInstituteAuthorityRole()) {
             $entry = $this->crud->getCurrentEntry();
             if ($entry) {
                 $location = $entry->location;

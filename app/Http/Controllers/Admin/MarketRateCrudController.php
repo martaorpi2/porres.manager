@@ -38,7 +38,7 @@ class MarketRateCrudController extends CrudController
         
         // Permitir creación de cotizaciones a compras, admin y responsables de área.
         $user = backpack_user();
-        if ($user && !$user->hasRole('role_responsable_compras', 'backpack') && !$user->hasRole('role_admin_sistema', 'backpack') && !$user->hasRole('role_admin_institucion', 'backpack') && !$user->hasRole('role_responsable_area', 'backpack')) {
+        if ($user && ! $user->hasRole('role_responsable_compras', 'backpack') && ! $user->hasRole('role_admin_sistema', 'backpack') && ! $user->hasRole('role_admin_institucion', 'backpack') && ! $user->hasResponsableAreaOrInstituteAuthorityRole()) {
             CRUD::denyAccess('create');
         }
     }
@@ -65,7 +65,7 @@ class MarketRateCrudController extends CrudController
         }
 
         // Responsable de área: solo ver cotizaciones de sus propias solicitudes de compra.
-        if ($user && $user->hasRole('role_responsable_area', 'backpack')) {
+        if ($user && $user->hasResponsableAreaOrInstituteAuthorityRole()) {
             CRUD::addClause('whereHas', 'purchaseRequest', function ($query) use ($user) {
                 $query->where('requesting_user_id', $user->id);
             });
@@ -149,7 +149,7 @@ class MarketRateCrudController extends CrudController
             if (
                 $purchaseRequest
                 && $user
-                && $user->hasRole('role_responsable_area', 'backpack')
+                && $user->hasResponsableAreaOrInstituteAuthorityRole()
                 && $purchaseRequest->hasQuotationSelectionResolved()
             ) {
                 \Alert::error('No puede cargar nuevas cotizaciones: el sector de compras ya seleccionó cotización(es) en esta solicitud.')->flash();
@@ -201,7 +201,7 @@ class MarketRateCrudController extends CrudController
                     ->where('status', '!=', 'Completada');
 
                 // Responsable de área: solo sus propias solicitudes.
-                if ($user && $user->hasRole('role_responsable_area', 'backpack')) {
+                if ($user && $user->hasResponsableAreaOrInstituteAuthorityRole()) {
                     $query->where('requesting_user_id', $user->id);
                 }
 
@@ -537,7 +537,7 @@ class MarketRateCrudController extends CrudController
     {
         // Verificar que el rol tenga permitido crear cotizaciones.
         $user = backpack_user();
-        $adminRoles = ['role_admin_sistema', 'role_admin_institucion', 'role_responsable_compras', 'role_responsable_area'];
+        $adminRoles = ['role_admin_sistema', 'role_admin_institucion', 'role_responsable_compras', 'role_responsable_area', 'role_autoridad_instituto'];
         $isAdmin = false;
         foreach ($adminRoles as $role) {
             if ($user && $user->hasRole($role, 'backpack')) {
@@ -588,7 +588,7 @@ class MarketRateCrudController extends CrudController
             if (
                 $purchaseRequest
                 && $user
-                && $user->hasRole('role_responsable_area', 'backpack')
+                && $user->hasResponsableAreaOrInstituteAuthorityRole()
                 && (int) $purchaseRequest->requesting_user_id !== (int) $user->id
             ) {
                 abort(403, 'Solo puedes cargar cotizaciones en tus propias solicitudes de compra.');
@@ -597,7 +597,7 @@ class MarketRateCrudController extends CrudController
             if (
                 $purchaseRequest
                 && $user
-                && $user->hasRole('role_responsable_area', 'backpack')
+                && $user->hasResponsableAreaOrInstituteAuthorityRole()
                 && $purchaseRequest->hasQuotationSelectionResolved()
             ) {
                 \Alert::error('No puede cargar nuevas cotizaciones: el sector de compras ya seleccionó cotización(es) en esta solicitud.')->flash();
@@ -697,7 +697,7 @@ class MarketRateCrudController extends CrudController
         }
 
         // Responsable de área: solo puede editar cotizaciones ligadas a sus propias solicitudes.
-        if ($user && $user->hasRole('role_responsable_area', 'backpack')) {
+        if ($user && $user->hasResponsableAreaOrInstituteAuthorityRole()) {
             $targetPurchaseRequestId = $dataToSave['purchase_request_id'] ?? ($currentEntry->purchase_request_id ?? null);
             if ($targetPurchaseRequestId) {
                 $targetPurchaseRequest = \App\Models\PurchaseRequest::find($targetPurchaseRequestId);

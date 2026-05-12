@@ -13,7 +13,7 @@
     // Excepción: administradores pueden editar cualquier solicitud
     // Excepción: role_responsable_compras solo puede editar sus propias solicitudes
     $isOwnRequest = $entry->created_by == $user->id;
-    $isResponsableArea = $user && $user->hasRole('role_responsable_area', 'backpack');
+    $isResponsableArea = $user && $user->hasResponsableAreaOrInstituteAuthorityRole();
     $isResponsableCompras = $user && $user->hasRole('role_responsable_compras', 'backpack');
     
     if (!$entry->is_converted) {

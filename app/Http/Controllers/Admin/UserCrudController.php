@@ -96,7 +96,7 @@ class UserCrudController extends CrudController
         CRUD::field('password')->label('Contraseña')->type('password');
         CRUD::field('password_confirmation')->label('Confirmar Contraseña')->type('password');
         
-        // Campo para roles (solo guard backpack: evita duplicados role_analista_area / role_responsable_area con guard web)
+        // Campo para roles (solo guard backpack: evita duplicados con guard web)
         $backpackGuard = config('backpack.base.guard', 'backpack');
         CRUD::field([
             'name' => 'roles',

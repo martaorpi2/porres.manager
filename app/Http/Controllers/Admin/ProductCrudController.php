@@ -340,7 +340,7 @@ class ProductCrudController extends CrudController
      */
     private function shouldApplyResponsableAreaProductListFilter($user): bool
     {
-        if (!$user || !$user->hasRole('role_responsable_area', 'backpack')) {
+        if (!$user || !$user->hasResponsableAreaOrInstituteAuthorityRole()) {
             return false;
         }
         if ($user->hasRole('role_admin_sistema', 'backpack')

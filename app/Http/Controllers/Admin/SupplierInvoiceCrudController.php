@@ -29,7 +29,7 @@ class SupplierInvoiceCrudController extends CrudController
     public function setup(): void
     {
         $user = backpack_user();
-        if ($user && $user->hasRole('role_responsable_area')) {
+        if ($user && $user->hasResponsableAreaOrInstituteAuthorityRole()) {
             abort(403, 'No tienes permiso para acceder a facturas de proveedor.');
         }
 
@@ -107,7 +107,7 @@ class SupplierInvoiceCrudController extends CrudController
 
         $supplierQuery = Supplier::query()->orderBy('company_name');
         $user = backpack_user();
-        if ($user && $user->hasRole('role_responsable_area', 'backpack')) {
+        if ($user && $user->hasResponsableAreaOrInstituteAuthorityRole()) {
             $supplierQuery->visibleForBackpackUser($user);
         }
         $supplierOptions = $supplierQuery->pluck('company_name', 'id')->toArray();
