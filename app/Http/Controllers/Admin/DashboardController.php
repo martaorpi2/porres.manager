@@ -13,6 +13,7 @@ use App\Models\PurchaseOrder;
 use App\Models\PurchaseRequest;
 use App\Models\Reception;
 use App\Models\Supplier;
+use Illuminate\Support\Facades\Schema;
 
 class DashboardController extends Controller
 {
@@ -30,7 +31,7 @@ class DashboardController extends Controller
 
         $isPersonal = $user->hasRole('role_personal');
         $isResponsableArea = $user->hasResponsableAreaOrInstituteAuthorityRole();
-        $isResponsableCompras = $user->hasRole('role_responsable_compras', 'backpack');
+        $isResponsableCompras = $user->effectivelyHasResponsableComprasRole();
         $isAdminInstitucion = $user->hasRole('role_admin_institucion', 'backpack');
         $isApoderado = $user->hasRole('role_apoderado', 'backpack');
         $isRepresentanteLegal = $user->hasRole('role_representante_legal', 'backpack');
@@ -189,8 +190,12 @@ class DashboardController extends Controller
         $purchaseRequestsQuery = PurchaseRequest::with(['requestingUser', 'responsibilityArea', 'convertedFromGeneralRequest', 'details.product', 'selectedMarketRate']);
 
         if ($isResponsableArea) {
-            // Para role_responsable_area, solo mostrar sus solicitudes de compra
-            $purchaseRequestsQuery->where('requesting_user_id', $user->id);
+            $purchaseRequestsQuery->where(function ($q) use ($user) {
+                $q->where('requesting_user_id', $user->id);
+                if (Schema::hasColumn('purchase_requests', 'created_by')) {
+                    $q->orWhere('created_by', $user->id);
+                }
+            });
         } elseif ($isPersonal) {
             // Para role_personal, no mostrar solicitudes de compra
             $purchaseRequests = collect();
@@ -633,7 +638,12 @@ class DashboardController extends Controller
         }
 
         return $this->mergeStandalonePurchaseRequestFlows($flows, function ($query) use ($user) {
-            $query->where('requesting_user_id', $user->id);
+            $query->where(function ($q) use ($user) {
+                $q->where('requesting_user_id', $user->id);
+                if (Schema::hasColumn('purchase_requests', 'created_by')) {
+                    $q->orWhere('created_by', $user->id);
+                }
+            });
         }, $user->id);
     }
 
@@ -654,7 +664,12 @@ class DashboardController extends Controller
         })
             ->with([
                 'purchaseRequests' => function ($query) use ($user) {
-                    $query->where('requesting_user_id', $user->id)
+                    $query->where(function ($q) use ($user) {
+                        $q->where('requesting_user_id', $user->id);
+                        if (Schema::hasColumn('purchase_requests', 'created_by')) {
+                            $q->orWhere('created_by', $user->id);
+                        }
+                    })
                         ->with([
                             'selectedMarketRate.supplier',
                             'details.product',
@@ -681,8 +696,7 @@ class DashboardController extends Controller
             // Obtener solicitudes de compra relacionadas (solo las del usuario)
             // NO incluir órdenes de compra ni órdenes de pago para role_responsable_area
             foreach ($generalRequest->purchaseRequests as $purchaseRequest) {
-                // Solo incluir si el purchaseRequest fue creado por este usuario
-                if ($purchaseRequest->requesting_user_id == $user->id) {
+                if ($purchaseRequest->isActingAsCreatingUser((int) $user->id)) {
                     $flow['purchase_requests'][] = $purchaseRequest;
                     // No incluir órdenes de compra ni órdenes de pago para este rol
                 }
@@ -694,6 +708,9 @@ class DashboardController extends Controller
         return $this->mergeStandalonePurchaseRequestFlows($flows, function ($query) use ($user, $userAreas) {
             $query->where(function ($q) use ($user, $userAreas) {
                 $q->where('requesting_user_id', $user->id);
+                if (Schema::hasColumn('purchase_requests', 'created_by')) {
+                    $q->orWhere('created_by', $user->id);
+                }
                 if ($userAreas->isNotEmpty()) {
                     $q->orWhereIn('responsibility_area_id', $userAreas);
                 }

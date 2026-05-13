@@ -20,6 +20,7 @@ class PurchaseRequest extends Model
         'observations',
         'responsibility_area_id',
         'requesting_user_id',
+        'created_by',
         'approved_by',
         'approved_date',
         'total_amount',
@@ -105,6 +106,26 @@ class PurchaseRequest extends Model
     public function requestingUser()
     {
         return $this->belongsTo(User::class, 'requesting_user_id');
+    }
+
+    /**
+     * Usuario que registró la solicitud en el sistema (puede diferir del solicitante nominal).
+     */
+    public function createdBy()
+    {
+        return $this->belongsTo(User::class, 'created_by');
+    }
+
+    /**
+     * Puede gestionar la solicitud como quien la cargó: created_by o, en datos previos a esa columna, el solicitante nominal.
+     */
+    public function isActingAsCreatingUser(int $userId): bool
+    {
+        if ($this->created_by !== null) {
+            return (int) $this->created_by === $userId;
+        }
+
+        return (int) $this->requesting_user_id === $userId;
     }
 
     /**

@@ -330,10 +330,17 @@ class GeneralRequestCrudController extends CrudController
             }
         } elseif ($isResponsableCompras) {
             // Si es responsable de compras, solo puede editar sus propias solicitudes
-            if (!$isOwnRequest) {
+            if (! $isOwnRequest) {
                 abort(403, 'Solo puedes editar las solicitudes generales que creaste.');
             }
             // Si es el creador, solo puede editar si el estado es "creada"
+            if ($entry->status !== 'creada') {
+                abort(403, 'Solo puedes editar solicitudes con estado "creada".');
+            }
+        } elseif ($user->hasResponsableAreaOrInstituteAuthorityRole()) {
+            if ((int) $entry->created_by !== (int) $user->id) {
+                abort(403, 'Solo puedes editar las solicitudes generales que creaste.');
+            }
             if ($entry->status !== 'creada') {
                 abort(403, 'Solo puedes editar solicitudes con estado "creada".');
             }
@@ -865,10 +872,17 @@ class GeneralRequestCrudController extends CrudController
                 }
             } elseif ($isResponsableCompras) {
                 // Si es responsable de compras, solo puede editar sus propias solicitudes
-                if (!$isOwnRequest) {
+                if (! $isOwnRequest) {
                     abort(403, 'Solo puedes editar las solicitudes generales que creaste.');
                 }
                 // Si es el creador, solo puede editar si el estado es "creada"
+                if ($entry->status !== 'creada') {
+                    abort(403, 'Solo puedes editar solicitudes con estado "creada".');
+                }
+            } elseif ($user->hasResponsableAreaOrInstituteAuthorityRole()) {
+                if ((int) $entry->created_by !== (int) $user->id) {
+                    abort(403, 'Solo puedes editar las solicitudes generales que creaste.');
+                }
                 if ($entry->status !== 'creada') {
                     abort(403, 'Solo puedes editar solicitudes con estado "creada".');
                 }

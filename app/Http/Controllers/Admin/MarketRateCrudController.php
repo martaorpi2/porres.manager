@@ -8,6 +8,7 @@ use Backpack\CRUD\app\Library\CrudPanel\CrudPanelFacade as CRUD;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\ValidationException;
@@ -64,10 +65,15 @@ class MarketRateCrudController extends CrudController
             CRUD::removeButton('delete');
         }
 
-        // Responsable de área: solo ver cotizaciones de sus propias solicitudes de compra.
+        // Área / autoridad: cotizaciones de solicitudes que registraron o donde son solicitantes nominales (legado).
         if ($user && $user->hasResponsableAreaOrInstituteAuthorityRole()) {
             CRUD::addClause('whereHas', 'purchaseRequest', function ($query) use ($user) {
-                $query->where('requesting_user_id', $user->id);
+                $query->where(function ($q) use ($user) {
+                    $q->where('requesting_user_id', $user->id);
+                    if (Schema::hasColumn('purchase_requests', 'created_by')) {
+                        $q->orWhere('created_by', $user->id);
+                    }
+                });
             });
         }
         
@@ -202,7 +208,12 @@ class MarketRateCrudController extends CrudController
 
                 // Responsable de área: solo sus propias solicitudes.
                 if ($user && $user->hasResponsableAreaOrInstituteAuthorityRole()) {
-                    $query->where('requesting_user_id', $user->id);
+                    $query->where(function ($q) use ($user) {
+                        $q->where('requesting_user_id', $user->id);
+                        if (Schema::hasColumn('purchase_requests', 'created_by')) {
+                            $q->orWhere('created_by', $user->id);
+                        }
+                    });
                 }
 
                 return $query->get();
@@ -584,14 +595,14 @@ class MarketRateCrudController extends CrudController
                 return redirect()->back()->withInput();
             }
 
-            // Responsable de área: solo puede cotizar sus propias solicitudes.
+            // Área / autoridad: solo solicitudes que registraron en el sistema (o legado: solicitante nominal).
             if (
                 $purchaseRequest
                 && $user
                 && $user->hasResponsableAreaOrInstituteAuthorityRole()
-                && (int) $purchaseRequest->requesting_user_id !== (int) $user->id
+                && ! $purchaseRequest->isActingAsCreatingUser((int) $user->id)
             ) {
-                abort(403, 'Solo puedes cargar cotizaciones en tus propias solicitudes de compra.');
+                abort(403, 'Solo puedes cargar cotizaciones en solicitudes de compra que registraste.');
             }
 
             if (
@@ -696,13 +707,13 @@ class MarketRateCrudController extends CrudController
             }
         }
 
-        // Responsable de área: solo puede editar cotizaciones ligadas a sus propias solicitudes.
+        // Área / autoridad: solo editar cotizaciones ligadas a solicitudes que registraron (o legado).
         if ($user && $user->hasResponsableAreaOrInstituteAuthorityRole()) {
             $targetPurchaseRequestId = $dataToSave['purchase_request_id'] ?? ($currentEntry->purchase_request_id ?? null);
             if ($targetPurchaseRequestId) {
                 $targetPurchaseRequest = \App\Models\PurchaseRequest::find($targetPurchaseRequestId);
-                if ($targetPurchaseRequest && (int) $targetPurchaseRequest->requesting_user_id !== (int) $user->id) {
-                    abort(403, 'Solo puedes editar cotizaciones de tus propias solicitudes de compra.');
+                if ($targetPurchaseRequest && ! $targetPurchaseRequest->isActingAsCreatingUser((int) $user->id)) {
+                    abort(403, 'Solo puedes editar cotizaciones de solicitudes de compra que registraste.');
                 }
             }
         }

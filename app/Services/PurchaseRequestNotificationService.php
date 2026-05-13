@@ -17,7 +17,40 @@ class PurchaseRequestNotificationService
     private const BACKPACK_GUARD = 'backpack';
 
     /**
-     * Casilla de respaldo si no hay usuarios con el rol correspondiente o el correo no es válido.
+     * Roles destinatarios de correos al «sector de compras»: compras si hay usuarios con ese rol; si no, administradora del instituto.
+     *
+     * @return list<string>
+     */
+    private static function roleNamesForComprasMailbox(): array
+    {
+        if (User::backpackHasAnyUserWithRole('role_responsable_compras')) {
+            return ['role_responsable_compras'];
+        }
+
+        return ['role_admin_institucion'];
+    }
+
+    /**
+     * Compras + administradora cuando hay compras; solo administradora si no hay nadie con rol compras (evita duplicar correos).
+     *
+     * @return list<string>
+     */
+    private static function roleNamesForComprasAndAdministratorMail(): array
+    {
+        if (User::backpackHasAnyUserWithRole('role_responsable_compras')) {
+            return ['role_responsable_compras', 'role_admin_institucion'];
+        }
+
+        return ['role_admin_institucion'];
+    }
+
+    private static function emailsForComprasRoles(): array
+    {
+        return self::emailsForBackpackRoles(self::roleNamesForComprasMailbox());
+    }
+
+    /**
+     * Casilla de respaldo si no hay destinatarios válidos.
      */
     public static function notificationEmail(): string
     {
@@ -135,7 +168,7 @@ class PurchaseRequestNotificationService
             $purchaseRequest,
             $url
         );
-        $recipients = self::emailsForBackpackRoles(['role_responsable_compras']);
+        $recipients = self::emailsForComprasRoles();
         self::sendHtml($subject, $body, $recipients);
     }
 
@@ -152,7 +185,7 @@ class PurchaseRequestNotificationService
 
         $subject = 'Solicitud de compra — intervención de compras — '.($purchaseRequest->request_number ?? '#'.$purchaseRequest->id);
         $body = self::htmlBody($intro, $purchaseRequest, $url);
-        $recipients = self::emailsForBackpackRoles(['role_responsable_compras']);
+        $recipients = self::emailsForComprasRoles();
         self::sendHtml($subject, $body, $recipients);
     }
 
@@ -244,10 +277,7 @@ class PurchaseRequestNotificationService
             $purchaseRequest,
             $url
         );
-        $recipients = self::emailsForBackpackRoles([
-            'role_responsable_compras',
-            'role_admin_institucion',
-        ]);
+        $recipients = self::emailsForBackpackRoles(self::roleNamesForComprasAndAdministratorMail());
         self::sendHtml($subject, $body, $recipients);
     }
 
@@ -498,7 +528,7 @@ class PurchaseRequestNotificationService
             $purchaseRequest,
             $url
         );
-        self::sendHtml($subject, $body, self::emailsForBackpackRoles(['role_responsable_compras']));
+        self::sendHtml($subject, $body, self::emailsForComprasRoles());
     }
 
     public static function notifyAutomaticReminderCompras(PurchaseRequest $purchaseRequest): bool
@@ -508,7 +538,7 @@ class PurchaseRequestNotificationService
         $url = self::purchaseRequestUrl($purchaseRequest);
         $subject = '[Recordatorio] Solicitud de compra — '.($purchaseRequest->request_number ?? '#'.$purchaseRequest->id);
 
-        return self::sendHtml($subject, self::htmlBody($intro, $purchaseRequest, $url), self::emailsForBackpackRoles(['role_responsable_compras']));
+        return self::sendHtml($subject, self::htmlBody($intro, $purchaseRequest, $url), self::emailsForComprasRoles());
     }
 
     public static function notifyAutomaticReminderAdministratorQuotation(PurchaseRequest $purchaseRequest): bool

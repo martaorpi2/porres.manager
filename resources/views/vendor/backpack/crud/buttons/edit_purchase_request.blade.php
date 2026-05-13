@@ -2,25 +2,25 @@
     $user = backpack_user();
     $canEdit = false;
 
-    // role_admin_sistema y role_responsable_compras pueden editar cualquier solicitud
+    // role_admin_sistema y sector de compras (o administradora si no hay rol compras) pueden editar cualquier solicitud
     $isAdminSistema = $user && $user->hasRole('role_admin_sistema', 'backpack');
-    $isResponsableCompras = $user && $user->hasRole('role_responsable_compras', 'backpack');
+    $isResponsableComprasEffective = $user && $user->effectivelyHasResponsableComprasRole();
     
     // role_admin_institucion solo puede editar sus propias solicitudes
     $isAdminInstitucion = $user && $user->hasRole('role_admin_institucion', 'backpack');
 
-    $isOwnRequest = $entry->requesting_user_id == $user->id;
+    $isActingCreator = $user && $entry->isActingAsCreatingUser((int) $user->id);
 
-    if ($isAdminSistema || $isResponsableCompras) {
-        // Administradores del sistema y responsables de compras pueden editar cualquier solicitud
+    if ($isAdminSistema || $isResponsableComprasEffective) {
+        // Administradores del sistema y sector de compras (o administradora centralizando compras) pueden editar cualquier solicitud
         $canEdit = true;
     } elseif ($isAdminInstitucion) {
-        // El administrador del instituto solo puede editar sus propias solicitudes
-        if ($isOwnRequest) {
+        // El administrador del instituto solo puede editar solicitudes que él registró
+        if ($isActingCreator) {
             $canEdit = true;
         }
-    } elseif ($isOwnRequest && $entry->status === 'Pendiente') {
-        // Otros usuarios solo pueden editar sus propias solicitudes si están pendientes
+    } elseif ($isActingCreator && $entry->status === 'Pendiente') {
+        // Otros usuarios: solicitudes que registraron en el sistema, mientras estén pendientes
         $canEdit = true;
     }
 @endphp

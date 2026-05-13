@@ -72,6 +72,34 @@ class User extends Authenticatable
     }
 
     /**
+     * ¿Existe al menos un usuario con el rol en Backpack? (p. ej. decidir fallback de notificaciones a administradora.)
+     */
+    public static function backpackHasAnyUserWithRole(string $roleName, string $guard = 'backpack'): bool
+    {
+        return static::query()
+            ->whereHas('roles', function ($q) use ($roleName, $guard) {
+                $q->where('guard_name', $guard)->where('name', $roleName);
+            })
+            ->exists();
+    }
+
+    /**
+     * Responsable de compras, o administradora del instituto si en el sistema no hay ningún usuario con rol de compras.
+     */
+    public function effectivelyHasResponsableComprasRole(): bool
+    {
+        if ($this->hasRole('role_responsable_compras', 'backpack') || $this->hasRole('role_responsable_compras', 'web')) {
+            return true;
+        }
+
+        if (! static::backpackHasAnyUserWithRole('role_responsable_compras')) {
+            return $this->hasRole('role_admin_institucion', 'backpack') || $this->hasRole('role_admin_institucion', 'web');
+        }
+
+        return false;
+    }
+
+    /**
      * Rol responsable de compras (Backpack / web / nombre), p. ej. órdenes de pago y flujo de compras.
      */
     public function hasResponsableComprasRole(): bool

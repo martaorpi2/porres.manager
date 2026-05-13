@@ -8,6 +8,7 @@ use App\Models\PurchaseRequestEvent;
 use App\Services\PurchaseRequestNotificationService;
 use Backpack\CRUD\app\Http\Controllers\CrudController;
 use Backpack\CRUD\app\Library\CrudPanel\CrudPanelFacade as CRUD;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 
 /**
@@ -72,8 +73,15 @@ class PurchaseRequestCrudController extends CrudController
             }
 
             if (! $isAdmin) {
-                // Todos los usuarios (incluyendo responsables de área) solo ven sus propias solicitudes
-                CRUD::addClause('where', 'requesting_user_id', $user->id);
+                // Solicitudes donde el usuario es solicitante nominal o quien registró la solicitud (created_by).
+                CRUD::addClause(function ($query) use ($user) {
+                    $query->where(function ($q) use ($user) {
+                        $q->where('requesting_user_id', $user->id);
+                        if (Schema::hasColumn('purchase_requests', 'created_by')) {
+                            $q->orWhere('created_by', $user->id);
+                        }
+                    });
+                });
             }
         }
 
@@ -163,7 +171,7 @@ class PurchaseRequestCrudController extends CrudController
         }
 
         // Solicitudes aprobadas por nivel superior (desde aviso del dashboard de compras)
-        if ($hasAprobadasPorSuperior && ! $isPersistentRestore && $user && $user->hasRole('role_responsable_compras', 'backpack')) {
+        if ($hasAprobadasPorSuperior && ! $isPersistentRestore && $user && $user->effectivelyHasResponsableComprasRole()) {
             $supervisorRoleNames = [
                 'role_admin_sistema',
                 'role_admin_institucion',
@@ -181,7 +189,7 @@ class PurchaseRequestCrudController extends CrudController
         }
 
         // Desde aviso del dashboard de compras: ≥3 cotizaciones y falta elegir cotización para continuar
-        if ($hasPendienteSeleccionCotizacion && ! $isPersistentRestore && $user && $user->hasRole('role_responsable_compras', 'backpack')) {
+        if ($hasPendienteSeleccionCotizacion && ! $isPersistentRestore && $user && $user->effectivelyHasResponsableComprasRole()) {
             $ids = \App\Models\PurchaseRequest::purchaseRequestsAwaitingQuoteSelectionAfterThreeQuotations()->pluck('id');
             CRUD::addClause(function ($query) use ($ids) {
                 if ($ids->isEmpty()) {
@@ -366,11 +374,11 @@ class PurchaseRequestCrudController extends CrudController
         // Verificar roles de administrador
         $isAdminSistema = $user->hasRole('role_admin_sistema', 'backpack');
         $isAdminInstitucion = $user->hasRole('role_admin_institucion', 'backpack');
-        $isResponsableCompras = $user->hasRole('role_responsable_compras', 'backpack');
+        $isResponsableCompras = $user->effectivelyHasResponsableComprasRole();
 
-        $isOwnRequest = $entry->requesting_user_id == $user->id;
+        $isActingCreator = $entry->isActingAsCreatingUser((int) $user->id);
 
-        // Verificar si el usuario es responsable de área
+        // Verificar si el usuario es responsable de área o autoridad del instituto
         $isResponsableArea = $user && $user->hasResponsableAreaOrInstituteAuthorityRole();
 
         $entry->loadMissing(['marketRates', 'details']);
@@ -380,13 +388,13 @@ class PurchaseRequestCrudController extends CrudController
         if ($isAdminSistema || $isResponsableCompras) {
             // Pueden editar cualquier solicitud
         } elseif ($isAdminInstitucion) {
-            // El administrador del instituto solo puede editar sus propias solicitudes
-            if (! $isOwnRequest) {
+            // El administrador del instituto solo puede editar solicitudes que él registró en el sistema
+            if (! $isActingCreator) {
                 abort(403, 'Solo puedes editar las solicitudes de compra que creaste.');
             }
         } else {
-            // Todos los demás usuarios solo pueden editar sus propias solicitudes
-            if (! $isOwnRequest) {
+            // Los demás usuarios: solo solicitudes que registraron (created_by / legado requesting_user_id)
+            if (! $isActingCreator) {
                 abort(403, 'Solo puedes editar las solicitudes de compra que creaste.');
             }
 
@@ -396,8 +404,8 @@ class PurchaseRequestCrudController extends CrudController
             }
         }
 
-        // Si es responsable de área, solo puede modificar prioridad, justificación y productos
-        if ($isResponsableArea) {
+        // Responsable de área / autoridad que no registró esta solicitud (y no es admin global): vista parcial heredada
+        if ($isResponsableArea && ! $isActingCreator && ! $isAdminSistema && ! $isResponsableCompras) {
             // Campos de solo lectura (información) - se muestran como inputs bloqueados con readonly
             CRUD::field('request_number')->label('Número de Solicitud')
                 ->type('text')
@@ -1405,6 +1413,10 @@ class PurchaseRequestCrudController extends CrudController
             $dataToSave['total_amount'] = 0;
         }
 
+        if ($user) {
+            $dataToSave['created_by'] = $user->id;
+        }
+
         // Debug: Log los datos que se van a guardar
         \Log::info('Datos a guardar en PurchaseRequest:', $dataToSave);
 
@@ -1677,19 +1689,18 @@ class PurchaseRequestCrudController extends CrudController
         // Validar que el usuario solo pueda editar sus propias solicitudes (para role_admin_institucion)
         $isAdminSistema = $user->hasRole('role_admin_sistema', 'backpack');
         $isAdminInstitucion = $user->hasRole('role_admin_institucion', 'backpack');
-        $isResponsableCompras = $user->hasRole('role_responsable_compras', 'backpack');
-        $isOwnRequest = $entry->requesting_user_id == $user->id;
+        $isResponsableCompras = $user->effectivelyHasResponsableComprasRole();
+        $isActingCreator = $entry->isActingAsCreatingUser((int) $user->id);
 
         // Si no es administrador del sistema ni responsable de compras, verificar restricciones
         if (! $isAdminSistema && ! $isResponsableCompras) {
             if ($isAdminInstitucion) {
-                // El administrador del instituto solo puede editar sus propias solicitudes
-                if (! $isOwnRequest) {
+                // El administrador del instituto solo puede editar solicitudes que él registró
+                if (! $isActingCreator) {
                     abort(403, 'Solo puedes editar las solicitudes de compra que creaste.');
                 }
             } else {
-                // Todos los demás usuarios solo pueden editar sus propias solicitudes
-                if (! $isOwnRequest) {
+                if (! $isActingCreator) {
                     abort(403, 'Solo puedes editar las solicitudes de compra que creaste.');
                 }
 
@@ -1702,6 +1713,7 @@ class PurchaseRequestCrudController extends CrudController
 
         // Obtener datos para guardar
         $dataToSave = $this->crud->getStrippedSaveRequest($request);
+        unset($dataToSave['created_by']);
 
         $entry->loadMissing(['marketRates', 'details']);
         $areaCannotChangeProducts = $user->hasResponsableAreaOrInstituteAuthorityRole()
@@ -3295,8 +3307,8 @@ class PurchaseRequestCrudController extends CrudController
             abort(403, 'No tienes permiso para marcar compras directas.');
         }
 
-        // Solo responsables de compras pueden marcar como compra directa
-        if (! $user->hasRole('role_responsable_compras', 'backpack')) {
+        // Sector de compras (o administradora si no hay usuario con rol compras)
+        if (! $user->effectivelyHasResponsableComprasRole()) {
             abort(403, 'Solo el sector de compras puede marcar compras directas.');
         }
 
@@ -4366,7 +4378,7 @@ class PurchaseRequestCrudController extends CrudController
                         }
                     }
 
-                    $isOwnRequest = $entry->requesting_user_id == $user->id;
+                    $isActingCreator = $entry->isActingAsCreatingUser((int) $user->id);
                     $isResponsableArea = $user->hasResponsableAreaOrInstituteAuthorityRole();
                     $entry->loadMissing(['marketRates', 'details']);
                     $areaProductsLockedByQuotation = $isResponsableArea && $entry->hasQuotationSelectionResolved();
@@ -4376,9 +4388,7 @@ class PurchaseRequestCrudController extends CrudController
                     if ($entry->status !== 'Completada') {
                         if ($isAdmin) {
                             $canEdit = true;
-                        } elseif ($isOwnRequest && $entry->status === 'Pendiente' && ! $areaProductsLockedByQuotation) {
-                            $canEdit = true;
-                        } elseif ($isResponsableArea && $entry->status === 'Pendiente' && ! $areaProductsLockedByQuotation) {
+                        } elseif ($isActingCreator && $entry->status === 'Pendiente' && ! $areaProductsLockedByQuotation) {
                             $canEdit = true;
                         }
                     }
@@ -4568,7 +4578,7 @@ class PurchaseRequestCrudController extends CrudController
                     $html .= '</div>';
                 }
                 // Si no es compra directa y el sector de compras puede marcarla como tal
-                elseif ($entry->status === 'Pendiente' && $user->hasRole('role_responsable_compras', 'backpack')) {
+                elseif ($entry->status === 'Pendiente' && $user->effectivelyHasResponsableComprasRole()) {
                     $html .= '<div class="card border-secondary mt-3">';
                     $html .= '<div class="card-header bg-secondary text-white">';
                     $html .= '<h6 class="mb-0"><i class="la la-hand-pointer"></i> Sugerencia de Compra Directa</h6>';
@@ -4673,14 +4683,11 @@ class PurchaseRequestCrudController extends CrudController
                 $quotationsViewer = backpack_user();
                 $representanteLegalSinAsignarPorProducto = $quotationsViewer && $quotationsViewer->hasRole('role_representante_legal', 'backpack');
 
-                $adminRolesForQuotations = ['role_admin_sistema', 'role_admin_institucion', 'role_responsable_compras'];
-                $canSelectQuotations = false;
-                foreach ($adminRolesForQuotations as $role) {
-                    if ($quotationsViewer && $quotationsViewer->hasRole($role, 'backpack')) {
-                        $canSelectQuotations = true;
-                        break;
-                    }
-                }
+                $canSelectQuotations = $quotationsViewer && (
+                    $quotationsViewer->hasRole('role_admin_sistema', 'backpack')
+                    || $quotationsViewer->hasRole('role_admin_institucion', 'backpack')
+                    || $quotationsViewer->effectivelyHasResponsableComprasRole()
+                );
 
                 $comprasSinAdmin = $quotationsViewer
                     && $quotationsViewer->hasRole('role_responsable_compras', 'backpack')
@@ -4802,7 +4809,7 @@ class PurchaseRequestCrudController extends CrudController
                     $html .= '</div>';
 
                     $canRequestAdministratorApproval = $quotationsViewer && (
-                        $quotationsViewer->hasRole('role_responsable_compras', 'backpack')
+                        $quotationsViewer->effectivelyHasResponsableComprasRole()
                         || $quotationsViewer->hasRole('role_admin_sistema', 'backpack')
                     );
                     $entry->loadMissing(['details', 'marketRates.quoteDetails']);
