@@ -148,4 +148,34 @@ class User extends Authenticatable
 
         return $this->getRoleNames()->contains('role_admin_institucion');
     }
+
+    /**
+     * Etiquetas legibles de roles Backpack para pie de correos del circuito de compras.
+     */
+    public function formatBackpackRolesForMail(string $guard = 'backpack'): string
+    {
+        $this->loadMissing('roles');
+        $names = $this->roles
+            ->where('guard_name', $guard)
+            ->pluck('name')
+            ->filter(fn ($n) => is_string($n) && str_starts_with($n, 'role_'))
+            ->values();
+        if ($names->isEmpty()) {
+            return 'Sin rol asignado en el sistema';
+        }
+
+        $map = [
+            'role_admin_sistema' => 'Administración del sistema',
+            'role_admin_institucion' => 'Administración del instituto',
+            'role_responsable_compras' => 'Responsable de compras',
+            'role_responsable_area' => 'Responsable de depósito/área',
+            'role_autoridad_instituto' => 'Autoridad del instituto',
+            'role_apoderado' => 'Apoderado',
+            'role_representante_legal' => 'Representante legal',
+            'role_contabilidad' => 'Contabilidad',
+            'role_personal' => 'Personal',
+        ];
+
+        return $names->map(fn (string $n) => $map[$n] ?? $n)->implode(', ');
+    }
 }

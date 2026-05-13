@@ -157,6 +157,31 @@ class PurchaseRequestNotificationService
     }
 
     /**
+     * Pie estándar: quién registró la solicitud y su rol; opcionalmente quién envió esta notificación y su rol.
+     */
+    private static function mailFooterBlock(PurchaseRequest $purchaseRequest, ?User $notificationSentBy = null): string
+    {
+        $purchaseRequest->loadMissing(['createdBy', 'requestingUser']);
+        $requester = $purchaseRequest->createdBy ?? $purchaseRequest->requestingUser;
+        $requesterName = e($requester?->name ?? '—');
+        $requesterRoles = e($requester instanceof User ? $requester->formatBackpackRolesForMail() : '—');
+        $out = '<hr style="border:none;border-top:1px solid #ddd;margin:16px 0;" />'
+            .'<p><strong>Solicitud registrada en el sistema por:</strong> '.$requesterName.'</p>'
+            .'<p><strong>Rol(es) de quien registró la solicitud:</strong> '.$requesterRoles.'</p>';
+        if ($notificationSentBy instanceof User) {
+            $out .= '<p><strong>Usuario que envió esta notificación:</strong> '.e($notificationSentBy->name).'</p>'
+                .'<p><strong>Rol(es) de quien envió esta notificación:</strong> '.e($notificationSentBy->formatBackpackRolesForMail()).'</p>';
+        }
+
+        return $out.'<p class="small text-muted">'.e('Mensaje automático del sistema de compras.').'</p>';
+    }
+
+    private static function appendMailFooter(string $html, PurchaseRequest $purchaseRequest, ?User $notificationSentBy = null): string
+    {
+        return $html.self::mailFooterBlock($purchaseRequest, $notificationSentBy);
+    }
+
+    /**
      * Solicitud creada por responsable de área.
      */
     public static function notifyComprasNewRequestFromArea(PurchaseRequest $purchaseRequest): void
@@ -173,18 +198,16 @@ class PurchaseRequestNotificationService
     }
 
     /**
-     * Aviso manual del responsable de área: pide intervención de compras (mismo destinatario que el resto de avisos a compras: rol responsable de compras).
+     * Aviso manual: solicitud de revisión al sector de compras (si no hay usuarios con ese rol, a la administración del instituto).
      */
     public static function notifyComprasManualInterventionFromArea(PurchaseRequest $purchaseRequest, ?Authenticatable $requestedBy = null): void
     {
         $url = self::purchaseRequestUrl($purchaseRequest);
-        $intro = 'El responsable de área solicitó que el sector de compras intervenga en esta solicitud para continuar y completar el proceso de compra.';
-        if ($requestedBy instanceof User) {
-            $intro .= ' Notificación enviada por: '.$requestedBy->name.'.';
-        }
-
-        $subject = 'Solicitud de compra — intervención de compras — '.($purchaseRequest->request_number ?? '#'.$purchaseRequest->id);
-        $body = self::htmlBody($intro, $purchaseRequest, $url);
+        $intro = 'Se solicitó la revisión o intervención del sector de compras para continuar el circuito (cotizaciones y aprobaciones). '
+            .'Si en el sistema no hay usuarios con rol responsable de compras, este correo se envía a la administración del instituto.';
+        $subject = 'Solicitud de compra — revisión del circuito de compras — '.($purchaseRequest->request_number ?? '#'.$purchaseRequest->id);
+        $sentBy = $requestedBy instanceof User ? $requestedBy : null;
+        $body = self::htmlBody($intro, $purchaseRequest, $url, $sentBy);
         $recipients = self::emailsForComprasRoles();
         self::sendHtml($subject, $body, $recipients);
     }
@@ -217,11 +240,10 @@ class PurchaseRequestNotificationService
         $subject = 'Solicitud de revisión y aprobación – Solicitud Nº '.$nro;
         $safeRequestNumber = e($purchaseRequest->request_number ?? (string) $purchaseRequest->id);
         $safeUrl = e($url);
-        $body = '<p>Se informa que el sector de Compras ha realizado la selección de cotización(es) para la siguiente solicitud.</p>'
+        $body = '<p>Se informa que quedó registrada la selección de cotización(es) y se solicita su revisión y aprobación inicial para continuar con el circuito de compra.</p>'
             .'<p><strong>Número de solicitud:</strong> '.$safeRequestNumber.'</p>'
-            .'<p>Se solicita su revisión y aprobación inicial a fin de continuar con el circuito de compra.</p>'
-            .'<p><a href="'.$safeUrl.'">Acceder a la solicitud en el sistema</a></p>'
-            .'<p>Este es un mensaje automático generado por el sistema de compras.</p>';
+            .'<p><a href="'.$safeUrl.'">Acceder a la solicitud en el sistema</a></p>';
+        $body = self::appendMailFooter($body, $purchaseRequest);
         $recipients = self::emailsForBackpackRoles(self::administratorApproverRoleNames());
         self::sendHtml($subject, $body, $recipients);
     }
@@ -239,8 +261,8 @@ class PurchaseRequestNotificationService
         $body = '<p>Se informa que la solicitud de compra detallada a continuación ha sido aprobada por la Administración y, debido al monto involucrado, requiere la aprobación de un nivel superior.</p>'
             .'<p><strong>Número de solicitud:</strong> '.$safeRequestNumber.'</p>'
             .'<p>Se solicita revisar y emitir la aprobación correspondiente para continuar con el circuito de compra.</p>'
-            .'<p><a href="'.$safeUrl.'">Acceder a la solicitud en el sistema</a></p>'
-            .'<p>Este es un mensaje automático generado por el sistema de compras.</p>';
+            .'<p><a href="'.$safeUrl.'">Acceder a la solicitud en el sistema</a></p>';
+        $body = self::appendMailFooter($body, $purchaseRequest);
         $recipients = self::emailsForBackpackRoles(
             self::superiorApproverRoleNamesForAmountFromAdministrator((float) ($purchaseRequest->total_amount ?? 0))
         );
@@ -328,6 +350,7 @@ class PurchaseRequestNotificationService
             .'<p><strong>Orden(es) de compra:</strong></p><ul>'.$items.'</ul>'
             .($firstUrl !== '' ? '<p><a href="'.$firstUrl.'">Abrir orden de compra</a></p>' : '')
             .'<p><a href="'.$prUrl.'">Abrir solicitud de compra</a></p>';
+        $html = self::appendMailFooter($html, $purchaseRequest);
 
         $subject = 'Orden de compra generada — '.$prNum;
         $recipients = self::emailsForBackpackRoles(['role_admin_institucion']);
@@ -381,7 +404,7 @@ class PurchaseRequestNotificationService
             ->exists();
     }
 
-    private static function htmlBody(string $intro, PurchaseRequest $purchaseRequest, string $url): string
+    private static function htmlBody(string $intro, PurchaseRequest $purchaseRequest, string $url, ?User $notificationSentBy = null): string
     {
         $num = e($purchaseRequest->request_number ?? (string) $purchaseRequest->id);
         $safeIntro = e($intro);
@@ -389,7 +412,8 @@ class PurchaseRequestNotificationService
 
         return '<p>'.$safeIntro.'</p>'
             .'<p><strong>Solicitud:</strong> '.$num.'</p>'
-            .'<p><a href="'.$safeUrl.'">Abrir solicitud en el sistema</a></p>';
+            .'<p><a href="'.$safeUrl.'">Abrir solicitud en el sistema</a></p>'
+            .self::mailFooterBlock($purchaseRequest, $notificationSentBy);
     }
 
     /**
@@ -417,7 +441,7 @@ class PurchaseRequestNotificationService
      *
      * @param  list<array{label: string, reason: string}>  $rejectedItems
      */
-    public static function notifyAreaResponsiblePurchaseLinesRejected(PurchaseRequest $purchaseRequest, string $actorName, array $rejectedItems): void
+    public static function notifyAreaResponsiblePurchaseLinesRejected(PurchaseRequest $purchaseRequest, string $actorName, array $rejectedItems, ?User $decidedBy = null): void
     {
         if ($rejectedItems === []) {
             return;
@@ -433,12 +457,17 @@ class PurchaseRequestNotificationService
         }
         $itemsHtml .= '</ul>';
 
+        $actorRoles = ($decidedBy instanceof User) ? e($decidedBy->formatBackpackRolesForMail()) : null;
+        $decisionBlock = '<p><strong>Decisión registrada por:</strong> '.e($actorName).'</p>'
+            .($actorRoles !== null ? '<p><strong>Rol(es) de quien registró la decisión:</strong> '.$actorRoles.'</p>' : '');
+
         $html = '<p>'.e('Se registró la no autorización de compra de uno o más ítems de la solicitud.').'</p>'
             .'<p><strong>Solicitud Nº</strong> '.$nro.'</p>'
-            .'<p><strong>Decisión registrada por:</strong> '.e($actorName).'</p>'
+            .$decisionBlock
             .'<p><strong>Detalle:</strong></p>'.$itemsHtml
-            .'<p><a href="'.e($url).'">Abrir solicitud en el sistema</a></p>'
-            .'<p class="small text-muted">'.e('Mensaje automático del sistema de compras.').'</p>';
+            .'<p><a href="'.e($url).'">Abrir solicitud en el sistema</a></p>';
+
+        $html = self::appendMailFooter($html, $purchaseRequest);
 
         $subject = 'Ítems no autorizados — Solicitud '.($purchaseRequest->request_number ?? '#'.$purchaseRequest->id);
 
@@ -448,15 +477,18 @@ class PurchaseRequestNotificationService
     /**
      * Rechazo total de la solicitud de compra: aviso al responsable del área.
      */
-    public static function notifyAreaResponsiblePurchaseRequestFullyRejected(PurchaseRequest $purchaseRequest, string $actorName): void
+    public static function notifyAreaResponsiblePurchaseRequestFullyRejected(PurchaseRequest $purchaseRequest, string $actorName, ?User $decidedBy = null): void
     {
         $url = self::purchaseRequestUrl($purchaseRequest);
         $nro = e($purchaseRequest->request_number ?? (string) $purchaseRequest->id);
+        $actorRoles = ($decidedBy instanceof User) ? e($decidedBy->formatBackpackRolesForMail()) : null;
+        $decisionBlock = '<p><strong>Decisión registrada por:</strong> '.e($actorName).'</p>'
+            .($actorRoles !== null ? '<p><strong>Rol(es) de quien registró la decisión:</strong> '.$actorRoles.'</p>' : '');
         $html = '<p>'.e('La solicitud de compra fue rechazada en su totalidad.').'</p>'
             .'<p><strong>Solicitud Nº</strong> '.$nro.'</p>'
-            .'<p><strong>Decisión registrada por:</strong> '.e($actorName).'</p>'
-            .'<p><a href="'.e($url).'">Abrir solicitud en el sistema</a></p>'
-            .'<p class="small text-muted">'.e('Mensaje automático del sistema de compras.').'</p>';
+            .$decisionBlock
+            .'<p><a href="'.e($url).'">Abrir solicitud en el sistema</a></p>';
+        $html = self::appendMailFooter($html, $purchaseRequest);
         $subject = 'Solicitud de compra rechazada — '.($purchaseRequest->request_number ?? '#'.$purchaseRequest->id);
         self::sendHtml($subject, $html, self::emailsForPurchaseRequestAreaResponsible($purchaseRequest));
     }
@@ -464,17 +496,20 @@ class PurchaseRequestNotificationService
     /**
      * Rechazo de la autorización de compra directa: aviso al responsable del área.
      */
-    public static function notifyAreaResponsibleDirectPurchaseAuthorizationRejected(PurchaseRequest $purchaseRequest, string $actorName, string $rejectionReason): void
+    public static function notifyAreaResponsibleDirectPurchaseAuthorizationRejected(PurchaseRequest $purchaseRequest, string $actorName, string $rejectionReason, ?User $decidedBy = null): void
     {
         $url = self::purchaseRequestUrl($purchaseRequest);
         $nro = e($purchaseRequest->request_number ?? (string) $purchaseRequest->id);
         $safeReason = nl2br(e($rejectionReason));
+        $actorRoles = ($decidedBy instanceof User) ? e($decidedBy->formatBackpackRolesForMail()) : null;
+        $decisionBlock = '<p><strong>Decisión registrada por:</strong> '.e($actorName).'</p>'
+            .($actorRoles !== null ? '<p><strong>Rol(es) de quien registró la decisión:</strong> '.$actorRoles.'</p>' : '');
         $html = '<p>'.e('No se autorizó la compra directa solicitada para esta solicitud.').'</p>'
             .'<p><strong>Solicitud Nº</strong> '.$nro.'</p>'
-            .'<p><strong>Decisión registrada por:</strong> '.e($actorName).'</p>'
+            .$decisionBlock
             .'<p><strong>Motivo:</strong></p><p>'.$safeReason.'</p>'
-            .'<p><a href="'.e($url).'">Abrir solicitud en el sistema</a></p>'
-            .'<p class="small text-muted">'.e('Mensaje automático del sistema de compras.').'</p>';
+            .'<p><a href="'.e($url).'">Abrir solicitud en el sistema</a></p>';
+        $html = self::appendMailFooter($html, $purchaseRequest);
         $subject = 'Compra directa no autorizada — Solicitud '.($purchaseRequest->request_number ?? '#'.$purchaseRequest->id);
         self::sendHtml($subject, $html, self::emailsForPurchaseRequestAreaResponsible($purchaseRequest));
     }
@@ -491,8 +526,8 @@ class PurchaseRequestNotificationService
         $subject = 'Nueva autorización requerida (revisión) – Solicitud Nº '.$nro;
         $body = '<p>'.e('La administración del instituto reenvía esta solicitud para una nueva autorización por ítem, tras revisar observaciones del nivel superior o ajustes en cotización. Debe ingresar al sistema y registrar la decisión.').'</p>'
             .'<p><strong>Número de solicitud:</strong> '.$safeRequestNumber.'</p>'
-            .'<p><a href="'.$safeUrl.'">Acceder a la solicitud en el sistema</a></p>'
-            .'<p>'.e('Este es un mensaje automático generado por el sistema de compras.').'</p>';
+            .'<p><a href="'.$safeUrl.'">Acceder a la solicitud en el sistema</a></p>';
+        $body = self::appendMailFooter($body, $purchaseRequest);
         $recipients = self::emailsForBackpackRoles(
             self::superiorApproverRoleNamesForAmountFromAdministrator((float) ($purchaseRequest->total_amount ?? 0))
         );
@@ -551,8 +586,8 @@ class PurchaseRequestNotificationService
         $safeUrl = e($url);
         $body = '<p>'.e('Recordatorio automático (cada '.$days.' días): el sector de compras solicitó revisión y aprobación inicial de cotización(es) y la solicitud sigue pendiente de su intervención.').'</p>'
             .'<p><strong>Número de solicitud:</strong> '.$safeRequestNumber.'</p>'
-            .'<p><a href="'.$safeUrl.'">Acceder a la solicitud en el sistema</a></p>'
-            .'<p>'.e('Este es un mensaje automático generado por el sistema de compras.').'</p>';
+            .'<p><a href="'.$safeUrl.'">Acceder a la solicitud en el sistema</a></p>';
+        $body = self::appendMailFooter($body, $purchaseRequest);
 
         return self::sendHtml($subject, $body, self::emailsForBackpackRoles(self::administratorApproverRoleNames()));
     }

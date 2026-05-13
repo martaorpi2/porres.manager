@@ -2748,12 +2748,13 @@ class PurchaseRequestCrudController extends CrudController
     {
         $user = backpack_user();
         if (! $user || ! $user->hasResponsableAreaOrInstituteAuthorityRole()) {
-            abort(403, 'Solo los responsables de área pueden enviar esta notificación.');
+            abort(403, 'Solo los responsables de área o la autoridad del instituto pueden enviar esta notificación.');
         }
 
         $purchaseRequest = \App\Models\PurchaseRequest::query()->findOrFail($id);
 
-        $mayNotify = (int) $purchaseRequest->requesting_user_id === (int) $user->id
+        $mayNotify = $purchaseRequest->isActingAsCreatingUser((int) $user->id)
+            || (int) $purchaseRequest->requesting_user_id === (int) $user->id
             || \App\Models\ResponsibilityArea::query()
                 ->where('id', $purchaseRequest->responsibility_area_id)
                 ->where('responsible_user_id', $user->id)
@@ -2776,10 +2777,13 @@ class PurchaseRequestCrudController extends CrudController
 
         PurchaseRequestNotificationService::notifyComprasManualInterventionFromArea($purchaseRequest->fresh(), $user);
 
+        $hayCompras = \App\Models\User::backpackHasAnyUserWithRole('role_responsable_compras');
+        $destinoTxt = $hayCompras ? 'responsable(s) de compras' : 'administración del instituto (no hay usuarios con rol responsable de compras)';
+
         if ($previousStatus === 'Pendiente') {
-            \Alert::success('Se envió el correo a compras y la solicitud pasó a estado En proceso.')->flash();
+            \Alert::success('Se envió el correo a '.$destinoTxt.' y la solicitud pasó a estado En proceso.')->flash();
         } else {
-            \Alert::success('Se envió el correo a compras.')->flash();
+            \Alert::success('Se envió el correo a '.$destinoTxt.'.')->flash();
         }
 
         return redirect()->route('purchase-request.show', $id);
@@ -3105,7 +3109,12 @@ class PurchaseRequestCrudController extends CrudController
         }
 
         $actorName = (string) ($user->name ?? 'Usuario');
-        PurchaseRequestNotificationService::notifyAreaResponsiblePurchaseLinesRejected($purchaseRequest, $actorName, $rejectedItems);
+        PurchaseRequestNotificationService::notifyAreaResponsiblePurchaseLinesRejected(
+            $purchaseRequest,
+            $actorName,
+            $rejectedItems,
+            $user instanceof \App\Models\User ? $user : null
+        );
     }
 
     /**
@@ -3287,7 +3296,8 @@ class PurchaseRequestCrudController extends CrudController
 
         PurchaseRequestNotificationService::notifyAreaResponsiblePurchaseRequestFullyRejected(
             $purchaseRequest->fresh(['responsibilityArea.responsibleUser']),
-            (string) ($user->name ?? 'Usuario')
+            (string) ($user->name ?? 'Usuario'),
+            $user instanceof \App\Models\User ? $user : null
         );
 
         \Alert::warning('Solicitud de compra rechazada.')->flash();
@@ -3476,7 +3486,8 @@ class PurchaseRequestCrudController extends CrudController
         PurchaseRequestNotificationService::notifyAreaResponsibleDirectPurchaseAuthorizationRejected(
             $purchaseRequest->fresh(['responsibilityArea.responsibleUser']),
             (string) ($user->name ?? 'Usuario'),
-            (string) $request->input('rejection_reason')
+            (string) $request->input('rejection_reason'),
+            $user instanceof \App\Models\User ? $user : null
         );
 
         \Alert::warning('Autorización de compra directa rechazada.')->flash();
@@ -5128,7 +5139,7 @@ class PurchaseRequestCrudController extends CrudController
                 // Botón para sugerir proveedor (solo responsables de área)
                 if ($isResponsableArea && $entry->status != 'Completada') {
                     $alreadyNotifiedCompras = $entry->status === 'En Proceso';
-                    $notifyComprasLabel = $alreadyNotifiedCompras ? 'Volver a notificar a compras' : 'Notificar a compras';
+                    $notifyComprasLabel = $alreadyNotifiedCompras ? 'Volver a notificar al circuito de compras' : 'Notificar al circuito de compras';
                     $html .= '<div class="mb-3 d-flex flex-wrap gap-2 align-items-start">';
                     $html .= '<a href="'.route('purchase-request.suggest-supplier', $entry->id).'" class="btn btn-info">';
                     $html .= '<i class="la la-lightbulb"></i> Sugerir Proveedor';
@@ -5142,7 +5153,11 @@ class PurchaseRequestCrudController extends CrudController
                         $html .= '</form>';
                     }
                     $html .= '</div>';
-                    $html .= '<p class="text-muted small mb-3">Use <strong>'.e($notifyComprasLabel).'</strong> para enviar un correo a los usuarios con rol <strong>responsable de compras</strong>. Si la solicitud está <strong>Pendiente</strong>, pasará a estado <strong>En proceso</strong>.</p>';
+                    $hayComprasCircuito = \App\Models\User::backpackHasAnyUserWithRole('role_responsable_compras');
+                    $circuitoHelp = $hayComprasCircuito
+                        ? 'Use <strong>'.e($notifyComprasLabel).'</strong> para enviar un correo a los usuarios con rol <strong>responsable de compras</strong> (tras cargar cotizaciones, solicita revisión o aprobación). Si la solicitud está <strong>Pendiente</strong>, pasará a estado <strong>En proceso</strong>.'
+                        : 'Use <strong>'.e($notifyComprasLabel).'</strong> para enviar un correo a la <strong>administración del instituto</strong> (no hay usuarios con rol responsable de compras en el sistema). Si la solicitud está <strong>Pendiente</strong>, pasará a estado <strong>En proceso</strong>.';
+                    $html .= '<p class="text-muted small mb-3">'.$circuitoHelp.'</p>';
                 }
 
                 if ($suggestions->isEmpty()) {
