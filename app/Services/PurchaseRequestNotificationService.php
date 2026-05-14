@@ -173,7 +173,7 @@ class PurchaseRequestNotificationService
                 .'<p><strong>Rol(es) de quien envió esta notificación:</strong> '.e($notificationSentBy->formatBackpackRolesForMail()).'</p>';
         }
 
-        return $out.'<p class="small text-muted">'.e('Mensaje automático del sistema de compras.').'</p>';
+        return $out;
     }
 
     private static function appendMailFooter(string $html, PurchaseRequest $purchaseRequest, ?User $notificationSentBy = null): string

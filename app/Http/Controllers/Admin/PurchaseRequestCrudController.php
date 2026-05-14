@@ -224,6 +224,8 @@ class PurchaseRequestCrudController extends CrudController
      */
     protected function setupCreateOperation()
     {
+        CRUD::setOperationSetting('defaultSaveAction', 'save_and_preview');
+
         // Verificar si viene de una solicitud general
         $convertedFrom = request()->get('converted_from');
         $generalRequest = null;
@@ -294,6 +296,9 @@ class PurchaseRequestCrudController extends CrudController
             CRUD::modifyField('responsibility_area_id', ['default' => $generalRequest->area_id]);
             // El requesting_user_id debe ser el usuario logueado (responsable de área), no el creador de la solicitud general
             CRUD::modifyField('requesting_user_id', ['default' => $user ? $user->id : $generalRequest->created_by]);
+            if ($user) {
+                CRUD::modifyField('requesting_user_display', ['default' => $user->name, 'value' => $user->name]);
+            }
             CRUD::modifyField('priority', ['default' => $generalRequest->priority]);
             CRUD::modifyField('justification', ['default' => $generalRequest->description]);
 
@@ -304,6 +309,7 @@ class PurchaseRequestCrudController extends CrudController
             // El requesting_user_id debe ser el usuario logueado
             if ($user) {
                 CRUD::modifyField('requesting_user_id', ['value' => $user->id]);
+                CRUD::modifyField('requesting_user_display', ['value' => $user->name]);
             }
         }
 
@@ -410,26 +416,29 @@ class PurchaseRequestCrudController extends CrudController
             CRUD::field('request_number')->label('Número de Solicitud')
                 ->type('text')
                 ->default($entry->request_number)
-                ->attributes(['readonly' => 'readonly']);
+                ->attributes(['readonly' => 'readonly'])
+                ->wrapper(['class' => 'form-group col-sm-12 col-md-4 mb-3']);
 
             CRUD::field('request_date')->label('Fecha de Solicitud')
                 ->type('date')
                 ->default($entry->request_date ? $entry->request_date->format('Y-m-d') : '')
-                ->attributes(['readonly' => 'readonly']);
+                ->attributes(['readonly' => 'readonly'])
+                ->wrapper(['class' => 'form-group col-sm-12 col-md-4 mb-3']);
+
+            CRUD::field('requesting_user_display')->label('Usuario Solicitante')
+                ->type('text')
+                ->default($entry->requestingUser ? $entry->requestingUser->name : '')
+                ->attributes(['readonly' => 'readonly'])
+                ->wrapper(['class' => 'form-group col-sm-12 col-md-4 mb-3']);
+            CRUD::field('requesting_user_id')->type('hidden')->value($entry->requesting_user_id);
 
             // Para el área, mostrar el nombre pero mantener el ID
             CRUD::field('responsibility_area_display')->label('Área de Responsabilidad')
                 ->type('text')
                 ->default($entry->responsibilityArea ? $entry->responsibilityArea->name : '')
-                ->attributes(['readonly' => 'readonly']);
+                ->attributes(['readonly' => 'readonly'])
+                ->wrapper(['class' => 'form-group col-sm-12 col-md-4 mb-3']);
             CRUD::field('responsibility_area_id')->type('hidden')->value($entry->responsibility_area_id);
-
-            // Para el usuario, mostrar el nombre pero mantener el ID
-            CRUD::field('requesting_user_display')->label('Usuario Solicitante')
-                ->type('text')
-                ->default($entry->requestingUser ? $entry->requestingUser->name : '')
-                ->attributes(['readonly' => 'readonly']);
-            CRUD::field('requesting_user_id')->type('hidden')->value($entry->requesting_user_id);
 
             // Campos ocultos que deben mantenerse con sus valores actuales
             CRUD::field('status')->type('hidden')->value($entry->status);
@@ -445,9 +454,11 @@ class PurchaseRequestCrudController extends CrudController
                     'Alta' => 'Alta',
                     'Urgente' => 'Urgente',
                 ])
-                ->default($entry->priority ?? 'Media');
+                ->default($entry->priority ?? 'Media')
+                ->wrapper(['class' => 'form-group col-sm-12 col-md-4 mb-3']);
 
-            CRUD::field('justification')->label('Justificación')->type('textarea')->default($entry->justification);
+            CRUD::field('justification')->label('Justificación')->type('textarea')->default($entry->justification)
+                ->wrapper(['class' => 'form-group col-sm-12 col-md-6 mb-3']);
 
             // Campo para seleccionar productos - solo si no está aprobada ni bloqueada tras selección de cotización por compras
             if ($entry->status !== 'Aprobada' && ! $areaProductsLockedByQuotationSelection) {
@@ -490,6 +501,18 @@ class PurchaseRequestCrudController extends CrudController
         } else {
             // Para administradores, usar todos los campos
             $this->setupCreateFields();
+
+            $entry = $this->crud->getCurrentEntry();
+            if ($entry) {
+                CRUD::modifyField('requesting_user_display', [
+                    'value' => optional($entry->requestingUser)->name ?? '',
+                ]);
+                CRUD::modifyField('requesting_user_id', ['value' => $entry->requesting_user_id]);
+                CRUD::modifyField('request_date', [
+                    'value' => $entry->request_date ? $entry->request_date->format('Y-m-d') : '',
+                ]);
+                CRUD::modifyField('request_number', ['value' => $entry->request_number]);
+            }
 
             // Cargar productos existentes para edición - solo si no está aprobada
             if ($entry && $entry->status !== 'Aprobada') {
@@ -569,22 +592,36 @@ class PurchaseRequestCrudController extends CrudController
      */
     private function setupCreateFields()
     {
-        CRUD::field('request_number')->label('Número de Solicitud')->default(\App\Models\PurchaseRequest::generateNextNumber())->attributes(['readonly' => 'readonly']);
+        $col3 = ['class' => 'form-group col-sm-12 col-md-4 mb-3'];
+        $colHalf = ['class' => 'form-group col-sm-12 col-md-6 mb-3'];
+        $colFull = ['class' => 'form-group col-sm-12 mb-3'];
 
-        CRUD::field('request_date')->label('Fecha de Solicitud')->type('date')->default(now()->format('Y-m-d'));
+        $user = backpack_user();
+        $requestingUserId = $user ? (int) $user->id : (int) (auth()->id() ?? 1);
+        $requestingUserName = $user?->name ?? (\App\Models\User::find($requestingUserId)->name ?? '');
+
+        CRUD::field('request_number')->label('Número de Solicitud')->default(\App\Models\PurchaseRequest::generateNextNumber())
+            ->attributes(['readonly' => 'readonly'])
+            ->wrapper($col3);
+
+        CRUD::field('request_date')->label('Fecha de Solicitud')->type('date')->default(now()->format('Y-m-d'))
+            ->attributes(['readonly' => 'readonly'])
+            ->wrapper($col3);
+
+        CRUD::field('requesting_user_display')->label('Usuario Solicitante')
+            ->type('text')
+            ->default($requestingUserName)
+            ->attributes(['readonly' => 'readonly'])
+            ->wrapper($col3);
+
+        CRUD::field('requesting_user_id')->type('hidden')->default($requestingUserId);
 
         CRUD::field('responsibility_area_id')->label('Área de Responsabilidad')
             ->type('select')
             ->model('App\Models\ResponsibilityArea')
             ->attribute('name')
-            ->validationRules('required|exists:responsibility_areas,id');
-
-        CRUD::field('requesting_user_id')->label('Usuario Solicitante')
-            ->type('select')
-            ->model('App\Models\User')
-            ->attribute('name')
-            ->default(auth()->id() ?? 1)
-            ->validationRules('required|exists:users,id');
+            ->validationRules('required|exists:responsibility_areas,id')
+            ->wrapper($col3);
 
         CRUD::field('priority')->label('Prioridad')
             ->type('select_from_array')
@@ -594,13 +631,9 @@ class PurchaseRequestCrudController extends CrudController
                 'Alta' => 'Alta',
                 'Urgente' => 'Urgente',
             ])
-            ->default('Media');
+            ->default('Media')
+            ->wrapper($col3);
 
-        CRUD::field('justification')->label('Justificación')->type('textarea');
-        CRUD::field('observations')->label('Observaciones')->type('textarea');
-
-        // Campos ocultos con valores por defecto
-        CRUD::field('status')->type('hidden')->default('Pendiente');
         CRUD::addField([
             'name' => 'purchase_type',
             'label' => 'Tipo de compra',
@@ -610,8 +643,16 @@ class PurchaseRequestCrudController extends CrudController
                 'internet' => 'Por internet (Mercado Libre, etc.)',
             ],
             'default' => 'normal',
-            'hint' => 'Marque "Por internet" si la compra es por Mercado Libre u otro canal online. La orden de pago la registra la administradora del instituto después de generada la orden de compra.',
+            'wrapper' => $col3,
         ]);
+
+        CRUD::field('justification')->label('Justificación')->type('textarea')
+            ->wrapper($colHalf);
+        CRUD::field('observations')->label('Observaciones')->type('textarea')
+            ->wrapper($colHalf);
+
+        // Campos ocultos con valores por defecto
+        CRUD::field('status')->type('hidden')->default('Pendiente');
         CRUD::field('total_amount')->type('hidden')->default(0);
 
         // Campo oculto para conversión desde solicitud general (se establecerá dinámicamente)
@@ -626,20 +667,21 @@ class PurchaseRequestCrudController extends CrudController
 
         // Campo para seleccionar productos
         CRUD::field('products_selection')->label('Productos Solicitados')->type('custom_html')
+            ->wrapper($colFull)
             ->value('
             <div id="products-container">
                 <div class="row mb-3">
-                    <div class="col-md-6">
+                    <div class="col-md-4">
                         <label for="product-select" class="form-label">Seleccionar Producto</label>
                         <select id="product-select" class="form-control">
                             <option value="">Seleccionar un producto...</option>
                         </select>
                     </div>
-                    <div class="col-md-3">
+                    <div class="col-md-4">
                         <label for="product-quantity" class="form-label">Cantidad</label>
                         <input type="number" id="product-quantity" class="form-control" min="1" value="1">
                     </div>
-                    <div class="col-md-3">
+                    <div class="col-md-4">
                         <label class="form-label">&nbsp;</label>
                         <button type="button" id="add-product-btn" class="btn btn-primary btn-block">
                             <i class="la la-plus"></i> Agregar
@@ -1008,17 +1050,17 @@ class PurchaseRequestCrudController extends CrudController
         return '
         <div id="products-container">
             <div class="row mb-3">
-                <div class="col-md-6">
+                <div class="col-md-4">
                     <label for="product-select" class="form-label">Seleccionar Producto</label>
                     <select id="product-select" class="form-control">
                         <option value="">Seleccionar un producto...</option>
                     </select>
                 </div>
-                <div class="col-md-3">
+                <div class="col-md-4">
                     <label for="product-quantity" class="form-label">Cantidad</label>
                     <input type="number" id="product-quantity" class="form-control" min="1" value="1">
                 </div>
-                <div class="col-md-3">
+                <div class="col-md-4">
                     <label class="form-label">&nbsp;</label>
                     <button type="button" id="add-product-btn" class="btn btn-primary btn-block">
                         <i class="la la-plus"></i> Agregar

@@ -182,6 +182,22 @@ class MarketRateCrudController extends CrudController
             }
         }
         
+        $col3 = ['class' => 'form-group col-sm-12 col-md-4 mb-3'];
+
+        $infoMessage = '<div class="alert alert-info mb-0">'
+            .'<i class="la la-info-circle"></i> '
+            .'<strong>Información:</strong> Por favor, ingrese los precios unitarios para cada producto o el monto total.<br>'
+            .'Puede adjuntar archivos (PDF, imágenes, etc.) y/o pegar enlaces.'
+            .'</div>';
+
+        CRUD::field([
+            'name' => 'purchase_request_info',
+            'label' => 'Información',
+            'type' => 'custom_html',
+            'value' => $infoMessage,
+            'wrapper' => ['class' => 'form-group col-sm-12 mb-3'],
+        ]);
+
         // Campo para seleccionar proveedor
         CRUD::field([
             'name' => 'supplier_id',
@@ -190,6 +206,7 @@ class MarketRateCrudController extends CrudController
             'entity' => 'supplier',
             'attribute' => 'company_name',
             'model' => 'App\Models\Supplier',
+            'wrapper' => $col3,
         ]);
         
         // Campo para seleccionar solicitud de compra (solo solicitudes no aprobadas)
@@ -201,6 +218,7 @@ class MarketRateCrudController extends CrudController
             'attribute' => 'request_number',
             'model' => 'App\Models\PurchaseRequest',
             'default' => $purchaseRequestId,
+            'wrapper' => $col3,
             'options' => function ($query) use ($user) {
                 // Filtrar solo solicitudes que no estén aprobadas o completadas
                 $query->where('status', '!=', 'Aprobada')
@@ -219,27 +237,10 @@ class MarketRateCrudController extends CrudController
                 return $query->get();
             },
         ]);
+
+        CRUD::field('date')->label('Fecha')->type('date')->default(now()->format('Y-m-d'))
+            ->wrapper($col3);
         
-        // Campo informativo para mostrar información sobre las cotizaciones
-        $infoMessage = '<div class="alert alert-info">
-            <i class="la la-info-circle"></i> 
-            <strong>Información:</strong> Las cotizaciones se asocian con solicitudes de compra específicas.';
-        if ($purchaseRequestId && !empty($purchaseRequestProducts)) {
-            $infoMessage .= '<br><strong>Los productos de la solicitud de compra se han cargado automáticamente. Por favor, ingrese los precios unitarios para cada producto.</strong>';
-        } else {
-            $infoMessage .= ' Selecciona la solicitud de compra para la cual deseas crear la cotización.';
-        }
-        $infoMessage .= '<br>Puede <strong>adjuntar archivos</strong> (PDF, imágenes, etc.) y/o <strong>pegar enlaces</strong> (por ejemplo publicaciones de Mercado Libre), uno por línea.';
-        $infoMessage .= '</div>';
-        
-        CRUD::field([
-            'name' => 'purchase_request_info',
-            'label' => 'Información',
-            'type' => 'custom_html',
-            'value' => $infoMessage,
-        ]);
-        
-        CRUD::field('date')->label('Fecha')->type('date')->default(now()->format('Y-m-d'));
         CRUD::field('delivery_date')->label('Fecha de entrega')->type('date')->hint('Fecha estimada de entrega de la cotización');
         CRUD::field('delivery_term')->label('Plazo de entrega')->type('text')->placeholder('Ej: 5 a 7 días a partir del pago');
         CRUD::field('payment_method')->label('Forma de pago')->type('text')->placeholder('Ej: Contado, 30 días fecha factura, 60 días, etc.');

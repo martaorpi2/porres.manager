@@ -1278,6 +1278,17 @@
         </div>
     </div>
     @endif
+
+    @if(isset($isResponsableArea) && $isResponsableArea)
+    <div class="row mb-4">
+        <div class="col-md-12 d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <h2 class="section-title mb-0">Solicitudes de compra</h2>
+            <a href="{{ backpack_url('purchase-request/create') }}" class="btn btn-primary">
+                <i class="la la-plus"></i> Nueva solicitud de compra
+            </a>
+        </div>
+    </div>
+    @endif
     
     <!-- Estadísticas Generales -->
     <div class="row mb-4">
