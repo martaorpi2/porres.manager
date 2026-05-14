@@ -94,13 +94,6 @@ class MarketRateCrudController extends CrudController
                 };
                 return '<span class="badge ' . $badgeClass . '">' . $status . '</span>';
             });
-        CRUD::column('is_selected')->label('Estado de Selección')->type('custom_html')
-            ->value(function($entry) {
-                $status = $entry->is_selected ? 'Seleccionada' : 'No seleccionada';
-                $badgeClass = $entry->is_selected ? 'bg-success' : 'bg-secondary';
-                $icon = $entry->is_selected ? '✓' : '✗';
-                return '<span class="badge ' . $badgeClass . '">' . $icon . ' ' . $status . '</span>';
-            });
         CRUD::column('date')->label('Fecha');
         CRUD::column('delivery_date')->label('Fecha de entrega')->type('date');
         CRUD::column('delivery_term')->label('Plazo de entrega');
@@ -183,6 +176,8 @@ class MarketRateCrudController extends CrudController
         }
         
         $col3 = ['class' => 'form-group col-sm-12 col-md-4 mb-3'];
+        $colHalf = ['class' => 'form-group col-sm-12 col-md-6 mb-3'];
+        $colOptional4 = ['class' => 'form-group col-sm-12 col-md-3 mb-3'];
 
         $infoMessage = '<div class="alert alert-info mb-0">'
             .'<i class="la la-info-circle"></i> '
@@ -240,11 +235,36 @@ class MarketRateCrudController extends CrudController
 
         CRUD::field('date')->label('Fecha')->type('date')->default(now()->format('Y-m-d'))
             ->wrapper($col3);
-        
-        CRUD::field('delivery_date')->label('Fecha de entrega')->type('date')->hint('Fecha estimada de entrega de la cotización');
-        CRUD::field('delivery_term')->label('Plazo de entrega')->type('text')->placeholder('Ej: 5 a 7 días a partir del pago');
-        CRUD::field('payment_method')->label('Forma de pago')->type('text')->placeholder('Ej: Contado, 30 días fecha factura, 60 días, etc.');
-        CRUD::field('validity_term')->label('Validez de la cotización')->type('text')->placeholder('Ej: 30 días desde la fecha de emisión');
+
+        [$optionalDetailsHtml, $optionalDetailsScript] = $this->getMarketRateOptionalDetailsBlock();
+
+        CRUD::field([
+            'name' => 'market_rate_optional_details_head',
+            'type' => 'custom_html',
+            'label' => false,
+            'wrapper' => ['class' => 'form-group col-sm-12 mb-0'],
+            'value' => $optionalDetailsHtml,
+        ]);
+
+        CRUD::field('delivery_date')->label('Entrega estimada')->type('date')
+            ->wrapper($colOptional4);
+        CRUD::field('delivery_term')->label('Plazo')->type('text')
+            ->placeholder('Ej.: 5–7 días hábiles')
+            ->wrapper($colOptional4);
+        CRUD::field('payment_method')->label('Forma de pago')->type('text')
+            ->placeholder('Ej.: contado, 30 días factura')
+            ->wrapper($colOptional4);
+        CRUD::field('validity_term')->label('Validez')->type('text')
+            ->placeholder('Ej.: 30 días desde emisión')
+            ->wrapper($colOptional4);
+
+        CRUD::field([
+            'name' => 'market_rate_optional_details_group_script',
+            'type' => 'custom_html',
+            'label' => false,
+            'wrapper' => false,
+            'value' => $optionalDetailsScript,
+        ]);
 
         CRUD::field([
             'name' => 'document_files',
@@ -253,7 +273,7 @@ class MarketRateCrudController extends CrudController
             'upload' => true,
             'disk' => 'public',
             'path' => 'cotizaciones',
-            'hint' => 'Opcional: se guardan en storage/app/public/cotizaciones (PDF, imágenes, planillas, etc.).',
+            'wrapper' => $colHalf,
         ]);
 
         CRUD::field([
@@ -261,29 +281,24 @@ class MarketRateCrudController extends CrudController
             'label' => 'Enlaces (Mercado Libre u otros)',
             'type' => 'textarea',
             'attributes' => [
-                'rows' => 4,
+                'rows' => 2,
                 'placeholder' => "https://articulo.mercadolibre.com.ar/...\nhttps://...",
             ],
-            'hint' => 'Opcional: un enlace por línea (publicaciones ML, catálogos online, etc.). Solo se guardan líneas que comienzan con http:// o https://',
+            'wrapper' => $colHalf,
         ]);
 
         CRUD::field('total_amount')->label('Monto Total')->type('text')
             ->attributes(['inputmode' => 'decimal', 'placeholder' => '0,00 o 0.00'])
-            ->hint('Puede usar coma o punto como separador decimal. El monto se recalcula desde los ítems.')
-            ->default(0);
+            ->hint('Obligatorio. Puede usar coma o punto como separador decimal.')
+            ->wrapper($col3);
         CRUD::field('vat_amount')->label('IVA')->type('text')
             ->attributes(['inputmode' => 'decimal', 'placeholder' => '0,00 o 0.00'])
-            ->hint('Opcional: importe de IVA de la cotización.');
+            ->hint('Opcional: importe de IVA de la cotización.')
+            ->wrapper($col3);
         CRUD::field('total_amount_with_vat')->label('Monto Total + IVA')->type('text')
             ->attributes(['inputmode' => 'decimal', 'placeholder' => '0,00 o 0.00'])
-            ->hint('Opcional: total final con IVA incluido.');
-        CRUD::field([
-            'name' => 'is_selected',
-            'label' => 'Estado de Selección',
-            'type' => 'boolean',
-            'default' => false,
-            'hint' => 'Indica si esta cotización ha sido seleccionada para la compra',
-        ]);
+            ->hint('Opcional: total final con IVA incluido.')
+            ->wrapper($col3);
 
         // Campo dinámico para agregar items de cotización
         CRUD::field([
@@ -345,6 +360,41 @@ class MarketRateCrudController extends CrudController
     }
 
     /**
+     * HTML del bloque desplegable "Datos adicionales" y script que coloca los cuatro campos dentro del contenedor.
+     *
+     * @return array{0: string, 1: string}
+     */
+    private function getMarketRateOptionalDetailsBlock(): array
+    {
+        $entry = $this->crud->getCurrentEntry();
+        $openOptional = false;
+        if ($entry) {
+            $openOptional = filled($entry->delivery_date)
+                || filled($entry->delivery_term)
+                || filled($entry->payment_method)
+                || filled($entry->validity_term);
+        }
+        $openAttr = $openOptional ? ' open' : '';
+
+        $openHtml = '<details class="mb-3 border rounded p-2 bg-light"'.$openAttr.'>'
+            .'<summary class="fw-semibold small mb-0" style="cursor:pointer;">'
+            .'<strong>Datos adicionales</strong> <span class="text-muted fw-normal">(opcional)</span>'
+            .'</summary>'
+            .'<div class="row pt-2 g-2 mt-0" id="market-rate-optional-fields-slot"></div>'
+            .'</details>';
+
+        $script = '<script>'
+            .'(function(){var slot=document.getElementById("market-rate-optional-fields-slot");if(!slot)return;'
+            .'["delivery_date","delivery_term","payment_method","validity_term"].forEach(function(name){'
+            .'var el=document.querySelector("[bp-field-name=\""+name+"\"]");'
+            .'if(el&&el.parentNode!==slot)slot.appendChild(el);'
+            .'});})();'
+            .'</script>';
+
+        return [$openHtml, $script];
+    }
+
+    /**
      * Define what happens when the Show operation is loaded.
      * 
      * @see https://backpackforlaravel.com/docs/crud-operation-show
@@ -359,6 +409,7 @@ class MarketRateCrudController extends CrudController
 
         CRUD::removeColumn('document_files');
         CRUD::removeColumn('reference_links');
+        CRUD::removeColumn('is_selected');
         CRUD::column('supporting_material')->label('Archivos y enlaces')->type('custom_html')
             ->value(fn (\App\Models\MarketRate $entry) => self::supportingMaterialAdminHtml($entry));
 
@@ -437,18 +488,6 @@ class MarketRateCrudController extends CrudController
                     <strong>Solicitud:</strong> ' . $requestNumber . '<br>
                     <span class="badge ' . $badgeClass . ' fs-6">' . $status . '</span>
                 </div>';
-            }
-        ]);
-
-        // Mostrar el estado de selección
-        CRUD::modifyColumn('is_selected', [
-            'label' => 'Estado de Selección',
-            'type' => 'custom_html',
-            'value' => function($entry) {
-                $status = $entry->is_selected ? 'Seleccionada' : 'No seleccionada';
-                $badgeClass = $entry->is_selected ? 'bg-success' : 'bg-secondary';
-                $icon = $entry->is_selected ? '✓' : '✗';
-                return '<span class="badge ' . $badgeClass . ' fs-6">' . $icon . ' ' . $status . '</span>';
             }
         ]);
 
@@ -646,7 +685,11 @@ class MarketRateCrudController extends CrudController
         // show a success message
         \Alert::success(trans('backpack::crud.insert_success'))->flash();
 
-        // save the redirect choice for next time
+        $purchaseRequestId = (int) ($item->purchase_request_id ?? 0);
+        if ($purchaseRequestId > 0) {
+            return redirect()->route('purchase-request.show', $purchaseRequestId);
+        }
+
         $this->crud->setSaveAction();
 
         return $this->crud->performSaveAction($item->getKey());

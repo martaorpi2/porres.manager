@@ -3,7 +3,6 @@
 namespace App\Http\Requests;
 
 use Illuminate\Foundation\Http\FormRequest;
-use Illuminate\Validation\Validator;
 
 class MarketRateRequest extends FormRequest
 {
@@ -75,56 +74,13 @@ class MarketRateRequest extends FormRequest
             'delivery_term' => 'nullable|string|max:255',
             'payment_method' => 'nullable|string|max:255',
             'validity_term' => 'nullable|string|max:255',
-            'total_amount' => 'nullable|numeric|min:0',
+            'total_amount' => 'required|numeric|gt:0',
             'vat_amount' => 'nullable|numeric|min:0',
             'total_amount_with_vat' => 'nullable|numeric|min:0',
             'reference_links' => 'nullable|string|max:20000',
             'clear_document_files' => 'nullable|array',
             'clear_document_files.*' => 'nullable|string|max:500',
-            'is_selected' => 'boolean',
         ];
-    }
-
-    /**
-     * El monto total de la cotización es obligatorio: campo explícito y/o suma de ítems mayor que cero.
-     */
-    public function withValidator(Validator $validator): void
-    {
-        $validator->after(function ($v) {
-            if ($v->errors()->isNotEmpty()) {
-                return;
-            }
-            $manual = $this->input('total_amount');
-            $manualNum = is_numeric($manual) ? (float) $manual : null;
-            $fromLines = $this->sumSelectedQuoteItemsTotal((string) $this->input('selected_quote_items', ''));
-            $effective = ($manualNum !== null && $manualNum > 0) ? $manualNum : $fromLines;
-            if ($effective <= 0) {
-                $v->errors()->add(
-                    'total_amount',
-                    'El monto total de la cotización es obligatorio: ingréselo en el campo correspondiente o cargue ítems con cantidad e importe que sumen un total mayor a cero.'
-                );
-            }
-        });
-    }
-
-    private function sumSelectedQuoteItemsTotal(?string $selectedItems): float
-    {
-        if ($selectedItems === null || $selectedItems === '') {
-            return 0.0;
-        }
-        $items = json_decode($selectedItems, true);
-        if (! is_array($items)) {
-            return 0.0;
-        }
-        $sum = 0.0;
-        foreach ($items as $itemData) {
-            if (! is_array($itemData)) {
-                continue;
-            }
-            $sum += (float) ($itemData['quantity'] ?? 0) * (float) ($itemData['unit_price'] ?? 0);
-        }
-
-        return $sum;
     }
 
     /**
@@ -146,7 +102,6 @@ class MarketRateRequest extends FormRequest
             'vat_amount' => 'IVA',
             'total_amount_with_vat' => 'monto total con IVA',
             'reference_links' => 'enlaces de referencia',
-            'is_selected' => 'estado de selección',
         ];
     }
 
@@ -168,13 +123,13 @@ class MarketRateRequest extends FormRequest
             'delivery_term.max' => 'El campo plazo de entrega no puede superar los 255 caracteres.',
             'payment_method.max' => 'El campo forma de pago no puede superar los 255 caracteres.',
             'validity_term.max' => 'El campo validez de la cotización no puede superar los 255 caracteres.',
+            'total_amount.required' => 'El monto total es obligatorio.',
             'total_amount.numeric' => 'El campo monto total debe ser un número.',
-            'total_amount.min' => 'El campo monto total debe ser mayor a cero cuando se informa manualmente.',
+            'total_amount.gt' => 'El monto total debe ser mayor a cero.',
             'vat_amount.numeric' => 'El campo IVA debe ser un número.',
             'vat_amount.min' => 'El campo IVA debe ser mayor o igual a 0.',
             'total_amount_with_vat.numeric' => 'El campo monto total con IVA debe ser un número.',
             'total_amount_with_vat.min' => 'El campo monto total con IVA debe ser mayor o igual a 0.',
-            'is_selected.boolean' => 'El campo estado de selección debe ser verdadero o falso.',
         ];
     }
 }

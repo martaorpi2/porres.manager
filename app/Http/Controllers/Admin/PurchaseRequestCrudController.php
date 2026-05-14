@@ -2784,6 +2784,30 @@ class PurchaseRequestCrudController extends CrudController
     }
 
     /**
+     * Compra directa autorizada: el flujo no exige dos cotizaciones para invocar al circuito de compras.
+     */
+    private function isDirectPurchaseAuthorizedForWorkflow(\App\Models\PurchaseRequest $purchaseRequest): bool
+    {
+        return (bool) $purchaseRequest->is_direct_purchase
+            && ! empty($purchaseRequest->direct_purchase_authorized_by)
+            && ! empty($purchaseRequest->direct_purchase_supplier_id)
+            && ! $purchaseRequest->direct_purchase_authorization_rejected;
+    }
+
+    /**
+     * Impide notificar a compras si hay menos de dos cotizaciones (salvo compra directa autorizada).
+     */
+    private function blocksNotifyComprasForInsufficientQuotations(\App\Models\PurchaseRequest $purchaseRequest): bool
+    {
+        if ($this->isDirectPurchaseAuthorizedForWorkflow($purchaseRequest)) {
+            return false;
+        }
+        $purchaseRequest->loadMissing('marketRates');
+
+        return $purchaseRequest->marketRates->count() < 2;
+    }
+
+    /**
      * Responsable de área: notificar por correo a compras que la solicitud requiere su intervención.
      */
     public function notifyComprasIntervention($id)
@@ -2808,6 +2832,17 @@ class PurchaseRequestCrudController extends CrudController
 
         if (in_array($purchaseRequest->status, ['Completada', 'Rechazada'], true)) {
             \Alert::warning('No se puede enviar la notificación en el estado actual de la solicitud.')->flash();
+
+            return redirect()->route('purchase-request.show', $id);
+        }
+
+        if ($this->blocksNotifyComprasForInsufficientQuotations($purchaseRequest)) {
+            $n = $purchaseRequest->marketRates->count();
+            \Alert::warning(
+                'Para notificar al circuito de compras se requieren al menos dos cotizaciones (comparación de ofertas). '
+                .'Actualmente '.($n === 0 ? 'no hay cotizaciones cargadas' : 'solo hay una cotización cargada').'. '
+                .'Cargue al menos una cotización más antes de continuar.'
+            )->flash();
 
             return redirect()->route('purchase-request.show', $id);
         }
@@ -5182,23 +5217,46 @@ class PurchaseRequestCrudController extends CrudController
                 if ($isResponsableArea && $entry->status != 'Completada') {
                     $alreadyNotifiedCompras = $entry->status === 'En Proceso';
                     $notifyComprasLabel = $alreadyNotifiedCompras ? 'Volver a notificar al circuito de compras' : 'Notificar al circuito de compras';
+                    $entry->loadMissing('marketRates');
+                    $blockNotifyComprasQuotes = $this->blocksNotifyComprasForInsufficientQuotations($entry);
+                    $quotationsCountForNotify = $entry->marketRates->count();
+                    if ($blockNotifyComprasQuotes) {
+                        $html .= '<div class="alert alert-warning mb-2">';
+                        $html .= '<i class="la la-exclamation-triangle"></i> <strong>No puede notificar al circuito de compras todavía:</strong> ';
+                        $html .= 'se requieren al menos <strong>dos cotizaciones</strong> (comparación de ofertas). ';
+                        if ($quotationsCountForNotify === 0) {
+                            $html .= 'Actualmente no hay cotizaciones cargadas en esta solicitud.';
+                        } else {
+                            $html .= 'Actualmente solo hay <strong>una</strong> cotización cargada; cargue al menos una más.';
+                        }
+                        $html .= '</div>';
+                    }
                     $html .= '<div class="mb-3 d-flex flex-wrap gap-2 align-items-start">';
                     $html .= '<a href="'.route('purchase-request.suggest-supplier', $entry->id).'" class="btn btn-info">';
                     $html .= '<i class="la la-lightbulb"></i> Sugerir Proveedor';
                     $html .= '</a>';
                     if ($entry->status !== 'Rechazada') {
+                        $notifyDisabledAttr = $blockNotifyComprasQuotes ? ' disabled title="Cargue al menos dos cotizaciones antes de notificar al circuito de compras."' : '';
                         $html .= '<form method="POST" action="'.e(route('purchase-request.notify-compras-intervention', $entry->id)).'" class="d-inline">';
                         $html .= csrf_field();
-                        $html .= '<button type="submit" class="btn btn-primary">';
+                        $html .= '<button type="submit" class="btn btn-primary"'.$notifyDisabledAttr;
+                        if ($blockNotifyComprasQuotes) {
+                            $html .= ' aria-disabled="true"';
+                        }
+                        $html .= '>';
                         $html .= '<i class="la la-envelope"></i> '.e($notifyComprasLabel);
                         $html .= '</button>';
                         $html .= '</form>';
                     }
                     $html .= '</div>';
                     $hayComprasCircuito = \App\Models\User::backpackHasAnyUserWithRole('role_responsable_compras');
-                    $circuitoHelp = $hayComprasCircuito
-                        ? 'Use <strong>'.e($notifyComprasLabel).'</strong> para enviar un correo a los usuarios con rol <strong>responsable de compras</strong> (tras cargar cotizaciones, solicita revisión o aprobación). Si la solicitud está <strong>Pendiente</strong>, pasará a estado <strong>En proceso</strong>.'
-                        : 'Use <strong>'.e($notifyComprasLabel).'</strong> para enviar un correo a la <strong>administración del instituto</strong> (no hay usuarios con rol responsable de compras en el sistema). Si la solicitud está <strong>Pendiente</strong>, pasará a estado <strong>En proceso</strong>.';
+                    if ($blockNotifyComprasQuotes) {
+                        $circuitoHelp = 'Cuando haya al menos <strong>dos cotizaciones</strong> cargadas, podrá usar el botón de notificación para solicitar la intervención del circuito de compras.';
+                    } else {
+                        $circuitoHelp = $hayComprasCircuito
+                            ? 'Use <strong>'.e($notifyComprasLabel).'</strong> para enviar un correo a los usuarios con rol <strong>responsable de compras</strong> (tras cargar cotizaciones, solicita revisión o aprobación). Si la solicitud está <strong>Pendiente</strong>, pasará a estado <strong>En proceso</strong>.'
+                            : 'Use <strong>'.e($notifyComprasLabel).'</strong> para enviar un correo a la <strong>administración del instituto</strong> (no hay usuarios con rol responsable de compras en el sistema). Si la solicitud está <strong>Pendiente</strong>, pasará a estado <strong>En proceso</strong>.';
+                    }
                     $html .= '<p class="text-muted small mb-3">'.$circuitoHelp.'</p>';
                 }
 
