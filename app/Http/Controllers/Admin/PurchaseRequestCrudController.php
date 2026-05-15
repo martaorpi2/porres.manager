@@ -3310,6 +3310,72 @@ class PurchaseRequestCrudController extends CrudController
     }
 
     /**
+     * Cotizaciones que determinan el monto efectivo de la solicitud (is_selected o selected_market_rate_id).
+     */
+    private function marketRatesContributingToPurchaseRequestTotal(\App\Models\PurchaseRequest $purchaseRequest): \Illuminate\Support\Collection
+    {
+        $selectedRates = \App\Models\MarketRate::query()
+            ->where('purchase_request_id', $purchaseRequest->id)
+            ->where('is_selected', true)
+            ->get();
+        if ($selectedRates->isNotEmpty()) {
+            return $selectedRates;
+        }
+        if (! empty($purchaseRequest->selected_market_rate_id)) {
+            $single = \App\Models\MarketRate::query()->find($purchaseRequest->selected_market_rate_id);
+
+            return $single ? collect([$single]) : collect();
+        }
+
+        return collect();
+    }
+
+    /**
+     * Escalamiento ante nivel superior y reapertura tras observaciones (sección aparte en la vista show).
+     */
+    private function renderSuperiorQuotationEscalationHtml(\App\Models\PurchaseRequest $entry): string
+    {
+        $user = backpack_user();
+        if (! $user) {
+            return '';
+        }
+        $html = '';
+        $canRequestHigherApproval = $user->hasRole('role_admin_institucion', 'backpack')
+            || $user->hasRole('role_admin_sistema', 'backpack');
+        if ($canRequestHigherApproval && PurchaseRequestNotificationService::shouldAdministratorEscalateQuotationApproval($entry)) {
+            $html .= '<div class="alert alert-info mb-3">';
+            $html .= '<p class="mb-2"><strong>Escalamiento de aprobación</strong></p>';
+            $html .= '<p class="mb-2 small">Como administradora, puede solicitar aprobación al nivel superior correspondiente según el monto.</p>';
+            $html .= '<form method="POST" action="'.e(route('purchase-request.request-quotation-higher-level-authorization', $entry->id)).'" class="d-inline">';
+            $html .= csrf_field();
+            $html .= '<button type="submit" class="btn btn-info"><i class="la la-level-up"></i> Solicitar aprobación de nivel superior</button>';
+            $html .= '</form>';
+            $html .= '</div>';
+        }
+        $entry->loadMissing(['purchaseOrders', 'details']);
+        $canReopenAfterSuperiorRevision = (
+            $user->hasRole('role_admin_institucion', 'backpack')
+            || $user->hasRole('role_admin_sistema', 'backpack')
+        ) && $entry->canReopenForSuperiorAuthorizationAfterRevision();
+        if ($canReopenAfterSuperiorRevision) {
+            $reopenFieldId = 'reopen_justification_superior_'.$entry->id;
+            $html .= '<div class="alert alert-secondary mb-3">';
+            $html .= '<p class="mb-2"><strong>Revisión tras observaciones del nivel superior</strong></p>';
+            $html .= '<p class="mb-2 small">Si ajustó cotizaciones o la asignación por producto, puede reabrir la solicitud: las autorizaciones por ítem volverán a <strong>pendiente</strong> y se notificará al nivel correspondiente para una nueva decisión. No use esta acción si ya generó orden de compra.</p>';
+            $html .= '<form method="POST" action="'.e(route('purchase-request.request-superior-reapproval-after-revision', $entry->id)).'" class="mt-2">';
+            $html .= csrf_field();
+            $html .= '<div class="mb-2"><label for="'.$reopenFieldId.'" class="form-label small mb-0">Notas internas (opcional, queda en el registro del sistema):</label>';
+            $html .= '<textarea name="reopen_justification" id="'.$reopenFieldId.'" class="form-control form-control-sm" rows="2" maxlength="1000"></textarea></div>';
+            $html .= '<button type="submit" class="btn btn-outline-secondary" onclick="return confirm(\'¿Confirma reabrir la solicitud para nueva autorización por ítem? Se anularán las decisiones por línea actuales.\')">';
+            $html .= '<i class="la la-refresh"></i> Reabrir para nueva autorización (post-observaciones)</button>';
+            $html .= '</form>';
+            $html .= '</div>';
+        }
+
+        return $html;
+    }
+
+    /**
      * Recalcula total de la solicitud según cotizaciones seleccionadas (incluye IVA).
      */
     private function recalculateSelectedQuotationsTotalForPurchaseRequest(\App\Models\PurchaseRequest $purchaseRequest): float
@@ -4131,7 +4197,6 @@ class PurchaseRequestCrudController extends CrudController
         CRUD::column('requestingUser.name')->label('Solicitante');
         CRUD::column('approvedBy.name')->label('Aprobada por');
         CRUD::column('approved_date')->label('Fecha Aprobación');
-        CRUD::column('total_amount')->label('Monto total');
 
         // Columna para mostrar si requiere aprobación de administrador
         CRUD::column('approval_status')->label('Estado de Aprobación')->type('custom_html')
@@ -4171,7 +4236,27 @@ class PurchaseRequestCrudController extends CrudController
                 }
             });
 
-        CRUD::column('total_amount')->label('Monto Total')->type('number')->decimals(2)->prefix('$');
+        CRUD::column('total_amount')->label('Monto total e IVA')->type('custom_html')
+            ->value(function ($entry) {
+                $rates = $this->marketRatesContributingToPurchaseRequestTotal($entry);
+                $totalEfectivo = $this->recalculateSelectedQuotationsTotalForPurchaseRequest($entry);
+                $ivaSum = (float) $rates->sum(fn ($mr) => max(0, (float) ($mr->vat_amount ?? 0)));
+                $stored = (float) ($entry->total_amount ?? 0);
+                $fmt = static fn (float $v): string => '$'.number_format($v, 2, ',', '.');
+
+                $html = '<div class="mb-1"><span class="text-muted small">Monto registrado en solicitud</span><br><strong class="fs-5">'.$fmt($stored).'</strong></div>';
+                if ($rates->isNotEmpty()) {
+                    $html .= '<div class="mt-2 p-2 rounded border bg-light">';
+                    $html .= '<span class="badge bg-warning text-dark me-2 fs-6">IVA</span>';
+                    $html .= '<strong class="fs-6">'.$fmt($ivaSum).'</strong>';
+                    $html .= '<div class="mt-2"><span class="text-muted small">Total con IVA (cotización seleccionada)</span><br><strong class="text-primary fs-5">'.$fmt($totalEfectivo).'</strong></div>';
+                    $html .= '</div>';
+                } else {
+                    $html .= '<div class="mt-2"><span class="badge bg-secondary">IVA</span> <span class="text-muted small">Se mostrará al seleccionar una cotización en «Cotizaciones disponibles».</span></div>';
+                }
+
+                return $html;
+            });
 
         // Eliminar completamente la sección de adjuntos
         CRUD::removeColumn('attachments');
@@ -4495,245 +4580,74 @@ class PurchaseRequestCrudController extends CrudController
                 return $html;
             });
 
-        // Agregar columna para acciones de compra directa (después de Detalles de Productos)
-        CRUD::column('direct_purchase_actions')->label('Sugerencia de Compra Directa')->type('custom_html')
+        // Compra directa: sugerencia del sector de compras (sigue con cotizaciones / detalle operativo)
+        CRUD::column('direct_purchase_compras_suggest')->label('Compra directa (sector de compras)')->type('custom_html')
             ->value(function ($entry) {
                 $user = backpack_user();
-                if (! $user) {
+                if (! $user || $entry->is_direct_purchase || $entry->status !== 'Pendiente' || ! $user->effectivelyHasResponsableComprasRole()) {
                     return '';
                 }
 
-                $html = '';
+                $html = '<div class="card border-secondary mt-3">';
+                $html .= '<div class="card-header bg-secondary text-white">';
+                $html .= '<h6 class="mb-0"><i class="la la-hand-pointer"></i> Sugerencia de Compra Directa</h6>';
+                $html .= '</div>';
+                $html .= '<div class="card-body">';
+                $html .= '<p class="mb-3">Si existe un único proveedor para los productos solicitados (por especialidad), puede marcar esta solicitud como compra directa. Al marcarla, se solicitará automáticamente la autorización a nivel superior.</p>';
+                $html .= '<p class="mb-3 text-muted"><small><i class="la la-info-circle"></i> El responsable de área puede sugerir proveedores desde la sección de sugerencias de proveedores.</small></p>';
 
-                // Si es una compra directa, mostrar información
-                if ($entry->is_direct_purchase) {
-                    $html .= '<div class="card border-info mt-3">';
-                    $html .= '<div class="card-header bg-info text-white">';
-                    $html .= '<h6 class="mb-0"><i class="la la-hand-pointer"></i> Sugerencia de Compra Directa</h6>';
-                    $html .= '</div>';
-                    $html .= '<div class="card-body">';
+                $modalId = 'markDirectPurchaseModal'.$entry->id;
+                $supplierFieldId = 'direct_purchase_supplier_id_'.$entry->id;
+                $justificationFieldId = 'direct_purchase_justification_'.$entry->id;
+                $suppliers = \App\Models\Supplier::orderBy('company_name')->get();
 
-                    // Mostrar proveedor
-                    if ($entry->directPurchaseSupplier) {
-                        $html .= '<p class="mb-2"><strong>Proveedor:</strong> '.e($entry->directPurchaseSupplier->company_name).'</p>';
-                    }
+                $html .= '<button type="button" class="btn btn-info btn-sm" data-toggle="modal" data-target="#'.$modalId.'">';
+                $html .= '<i class="la la-hand-pointer"></i> Sugerir Compra Directa';
+                $html .= '</button>';
 
-                    // Mostrar justificación
-                    if ($entry->direct_purchase_justification) {
-                        $html .= '<p class="mb-2"><strong>Justificación:</strong> '.nl2br(e($entry->direct_purchase_justification)).'</p>';
-                    }
-
-                    // Si se solicitó autorización
-                    if ($entry->direct_purchase_authorization_requested) {
-                        if ($entry->directPurchaseAuthorizationRequestedBy) {
-                            $html .= '<p class="mb-2"><strong>Solicitud de autorización por:</strong> '.e($entry->directPurchaseAuthorizationRequestedBy->name).'</p>';
-                        }
-                        if ($entry->direct_purchase_authorization_requested_at) {
-                            $requestedAt = $entry->direct_purchase_authorization_requested_at instanceof \Carbon\Carbon
-                                ? $entry->direct_purchase_authorization_requested_at->format('d/m/Y H:i')
-                                : \Carbon\Carbon::parse($entry->direct_purchase_authorization_requested_at)->format('d/m/Y H:i');
-                            $html .= '<p class="mb-2"><strong>Fecha de solicitud:</strong> '.$requestedAt.'</p>';
-                        }
-
-                        // Si está autorizada
-                        if ($entry->direct_purchase_authorized_by) {
-                            $html .= '<div class="alert alert-success mt-2">';
-                            $html .= '<i class="la la-check-circle"></i> <strong>Autorizada</strong>';
-                            if ($entry->directPurchaseAuthorizedBy) {
-                                $html .= ' por '.e($entry->directPurchaseAuthorizedBy->name);
-                            }
-                            if ($entry->direct_purchase_authorized_at) {
-                                $authorizedAt = $entry->direct_purchase_authorized_at instanceof \Carbon\Carbon
-                                    ? $entry->direct_purchase_authorized_at->format('d/m/Y H:i')
-                                    : \Carbon\Carbon::parse($entry->direct_purchase_authorized_at)->format('d/m/Y H:i');
-                                $html .= ' el '.$authorizedAt;
-                            }
-                            $html .= '</div>';
-                        }
-                        // Si está rechazada
-                        elseif ($entry->direct_purchase_authorization_rejected) {
-                            $html .= '<div class="alert alert-danger mt-2">';
-                            $html .= '<i class="la la-times-circle"></i> <strong>Autorización Rechazada</strong>';
-                            if ($entry->direct_purchase_authorization_rejection_reason) {
-                                $html .= '<br><strong>Razón:</strong> '.nl2br(e($entry->direct_purchase_authorization_rejection_reason));
-                            }
-                            $html .= '</div>';
-                        }
-                        // Pendiente de autorización
-                        else {
-                            $html .= '<div class="alert alert-warning mt-2">';
-                            $html .= '<i class="la la-clock"></i> <strong>Pendiente de autorización</strong>';
-                            $html .= '</div>';
-
-                            // Verificar si el usuario puede aprobar según su límite
-                            $canApproveByLimit = false;
-                            $userLimit = 0;
-                            $userRoleName = '';
-
-                            if ($user->hasRole('role_admin_institucion', 'backpack')) {
-                                $userLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_admin_institucion');
-                                $userRoleName = 'administrador del instituto';
-                                $canApproveByLimit = $entry->total_amount <= $userLimit;
-                            } elseif ($user->hasRole('role_apoderado', 'backpack')) {
-                                $userLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_apoderado');
-                                $userRoleName = 'apoderado';
-                                $canApproveByLimit = $entry->total_amount <= $userLimit;
-                            } elseif ($user->hasRole('role_representante_legal', 'backpack')) {
-                                $userLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_representante_legal');
-                                $userRoleName = 'representante legal';
-                                $canApproveByLimit = $entry->total_amount <= $userLimit;
-                            }
-
-                            // Si el usuario tiene el rol pero supera su límite, mostrar mensaje
-                            if (($user->hasRole('role_admin_institucion', 'backpack') || $user->hasRole('role_apoderado', 'backpack') || $user->hasRole('role_representante_legal', 'backpack')) && ! $canApproveByLimit) {
-                                $adminLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_admin_institucion');
-                                $apoderadoLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_apoderado');
-                                $representanteLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_representante_legal');
-
-                                $html .= '<div class="alert alert-danger mt-2">';
-                                $html .= '<i class="la la-exclamation-triangle"></i> ';
-                                $html .= '<strong>Límite excedido:</strong> Esta compra directa ($'.number_format($entry->total_amount, 2).') supera tu límite de autorización de $'.number_format($userLimit, 2).'. ';
-                                $html .= 'No puedes aprobar esta compra directa. ';
-
-                                // Mostrar quién puede aprobar
-                                $canApproveList = [];
-                                if ($entry->total_amount <= $adminLimit) {
-                                    $canApproveList[] = 'administrador del instituto (límite: $'.number_format($adminLimit, 2).')';
-                                }
-                                if ($entry->total_amount <= $apoderadoLimit) {
-                                    $canApproveList[] = 'apoderado (límite: $'.number_format($apoderadoLimit, 2).')';
-                                }
-                                if ($entry->total_amount <= $representanteLimit) {
-                                    $canApproveList[] = 'representante legal (límite: $'.number_format($representanteLimit, 2).')';
-                                }
-
-                                if (! empty($canApproveList)) {
-                                    $html .= 'Puede ser aprobada por: '.implode(', ', $canApproveList).'.';
-                                } else {
-                                    $html .= 'Ningún usuario tiene límite suficiente para aprobar esta compra directa.';
-                                }
-
-                                $html .= '</div>';
-                            }
-                            // Si el usuario puede aprobar, mostrar botones
-                            elseif ($canApproveByLimit) {
-                                $html .= '<div class="mt-3">';
-
-                                // Formulario para aprobar
-                                $html .= '<form method="POST" action="'.route('purchase-request.approve-direct-purchase', $entry->id).'" class="d-inline">';
-                                $html .= csrf_field();
-                                $html .= '<button type="submit" class="btn btn-success btn-sm" onclick="return confirm(\'¿Está seguro de aprobar esta compra directa?\')">';
-                                $html .= '<i class="la la-check"></i> Aprobar Compra Directa';
-                                $html .= '</button>';
-                                $html .= '</form>';
-
-                                // Botón para rechazar (con modal)
-                                $html .= '<button type="button" class="btn btn-danger btn-sm ms-2" data-toggle="modal" data-target="#rejectDirectPurchaseModal'.$entry->id.'">';
-                                $html .= '<i class="la la-times"></i> Rechazar Autorización';
-                                $html .= '</button>';
-
-                                $html .= '</div>';
-
-                                // Modal para rechazar
-                                $html .= '<div class="modal fade" id="rejectDirectPurchaseModal'.$entry->id.'" tabindex="-1" role="dialog">';
-                                $html .= '<div class="modal-dialog" role="document">';
-                                $html .= '<div class="modal-content">';
-                                $html .= '<div class="modal-header bg-danger text-white">';
-                                $html .= '<h5 class="modal-title">Rechazar Autorización de Compra Directa</h5>';
-                                $html .= '<button type="button" class="close text-white" data-dismiss="modal">&times;</button>';
-                                $html .= '</div>';
-                                $html .= '<form method="POST" action="'.route('purchase-request.reject-direct-purchase-authorization', $entry->id).'">';
-                                $html .= csrf_field();
-                                $html .= '<div class="modal-body">';
-                                $html .= '<div class="form-group">';
-                                $html .= '<label for="rejection_reason">Razón del rechazo:</label>';
-                                $html .= '<textarea name="rejection_reason" id="rejection_reason" class="form-control" rows="3" required></textarea>';
-                                $html .= '</div>';
-                                $html .= '</div>';
-                                $html .= '<div class="modal-footer">';
-                                $html .= '<button type="button" class="btn btn-secondary" data-dismiss="modal">Cancelar</button>';
-                                $html .= '<button type="submit" class="btn btn-danger">Rechazar</button>';
-                                $html .= '</div>';
-                                $html .= '</form>';
-                                $html .= '</div>';
-                                $html .= '</div>';
-                                $html .= '</div>';
-                            }
-                        }
-                    }
-
-                    $html .= '</div>';
-                    $html .= '</div>';
+                $html .= '<div class="modal fade" id="'.$modalId.'" tabindex="-1" role="dialog" aria-labelledby="'.$modalId.'Label" aria-hidden="true">';
+                $html .= '<div class="modal-dialog modal-lg" role="document">';
+                $html .= '<div class="modal-content">';
+                $html .= '<div class="modal-header bg-info text-white">';
+                $html .= '<h5 class="modal-title" id="'.$modalId.'Label">Sugerir Compra Directa</h5>';
+                $html .= '<button type="button" class="close text-white" data-dismiss="modal" aria-label="Cerrar">';
+                $html .= '<span aria-hidden="true">&times;</span>';
+                $html .= '</button>';
+                $html .= '</div>';
+                $html .= '<form method="POST" action="'.route('purchase-request.mark-direct-purchase', $entry->id).'">';
+                $html .= csrf_field();
+                $html .= '<div class="modal-body">';
+                $html .= '<div class="form-group">';
+                $html .= '<label for="'.$supplierFieldId.'">Proveedor <span class="text-danger">*</span></label>';
+                $html .= '<select name="direct_purchase_supplier_id" id="'.$supplierFieldId.'" class="form-control" required>';
+                $html .= '<option value="">Seleccione un proveedor</option>';
+                foreach ($suppliers as $supplier) {
+                    $html .= '<option value="'.$supplier->id.'">'.e($supplier->company_name).'</option>';
                 }
-                // Si no es compra directa y el sector de compras puede marcarla como tal
-                elseif ($entry->status === 'Pendiente' && $user->effectivelyHasResponsableComprasRole()) {
-                    $html .= '<div class="card border-secondary mt-3">';
-                    $html .= '<div class="card-header bg-secondary text-white">';
-                    $html .= '<h6 class="mb-0"><i class="la la-hand-pointer"></i> Sugerencia de Compra Directa</h6>';
-                    $html .= '</div>';
-                    $html .= '<div class="card-body">';
-                    $html .= '<p class="mb-3">Si existe un único proveedor para los productos solicitados (por especialidad), puede marcar esta solicitud como compra directa. Al marcarla, se solicitará automáticamente la autorización a nivel superior.</p>';
-                    $html .= '<p class="mb-3 text-muted"><small><i class="la la-info-circle"></i> El responsable de área puede sugerir proveedores desde la sección de sugerencias de proveedores.</small></p>';
+                $html .= '</select>';
+                $html .= '</div>';
+                $html .= '<div class="form-group">';
+                $html .= '<label for="'.$justificationFieldId.'">Justificación <span class="text-danger">*</span></label>';
+                $html .= '<textarea name="direct_purchase_justification" id="'.$justificationFieldId.'" class="form-control" rows="4" required placeholder="Explique por qué este proveedor es el único disponible para estos productos (especialidad, exclusividad, etc.)"></textarea>';
+                $html .= '</div>';
+                $html .= '</div>';
+                $html .= '<div class="modal-footer">';
+                $html .= '<button type="button" class="btn btn-secondary" data-dismiss="modal">Cancelar</button>';
+                $html .= '<button type="submit" class="btn btn-info">Sugerir Compra Directa</button>';
+                $html .= '</div>';
+                $html .= '</form>';
+                $html .= '</div>';
+                $html .= '</div>';
+                $html .= '</div>';
 
-                    // Botón para abrir modal
-                    $modalId = 'markDirectPurchaseModal'.$entry->id;
-                    $supplierFieldId = 'direct_purchase_supplier_id_'.$entry->id;
-                    $justificationFieldId = 'direct_purchase_justification_'.$entry->id;
-                    $suppliers = \App\Models\Supplier::orderBy('company_name')->get();
-
-                    $html .= '<button type="button" class="btn btn-info btn-sm" data-toggle="modal" data-target="#'.$modalId.'">';
-                    $html .= '<i class="la la-hand-pointer"></i> Sugerir Compra Directa';
-                    $html .= '</button>';
-
-                    // Modal para marcar como compra directa
-                    $html .= '<div class="modal fade" id="'.$modalId.'" tabindex="-1" role="dialog" aria-labelledby="'.$modalId.'Label" aria-hidden="true">';
-                    $html .= '<div class="modal-dialog modal-lg" role="document">';
-                    $html .= '<div class="modal-content">';
-                    $html .= '<div class="modal-header bg-info text-white">';
-                    $html .= '<h5 class="modal-title" id="'.$modalId.'Label">Sugerir Compra Directa</h5>';
-                    $html .= '<button type="button" class="close text-white" data-dismiss="modal" aria-label="Cerrar">';
-                    $html .= '<span aria-hidden="true">&times;</span>';
-                    $html .= '</button>';
-                    $html .= '</div>';
-                    $html .= '<form method="POST" action="'.route('purchase-request.mark-direct-purchase', $entry->id).'">';
-                    $html .= csrf_field();
-                    $html .= '<div class="modal-body">';
-                    $html .= '<div class="form-group">';
-                    $html .= '<label for="'.$supplierFieldId.'">Proveedor <span class="text-danger">*</span></label>';
-                    $html .= '<select name="direct_purchase_supplier_id" id="'.$supplierFieldId.'" class="form-control" required>';
-                    $html .= '<option value="">Seleccione un proveedor</option>';
-                    foreach ($suppliers as $supplier) {
-                        $html .= '<option value="'.$supplier->id.'">'.e($supplier->company_name).'</option>';
-                    }
-                    $html .= '</select>';
-                    $html .= '</div>';
-                    $html .= '<div class="form-group">';
-                    $html .= '<label for="'.$justificationFieldId.'">Justificación <span class="text-danger">*</span></label>';
-                    $html .= '<textarea name="direct_purchase_justification" id="'.$justificationFieldId.'" class="form-control" rows="4" required placeholder="Explique por qué este proveedor es el único disponible para estos productos (especialidad, exclusividad, etc.)"></textarea>';
-                    $html .= '</div>';
-                    $html .= '</div>';
-                    $html .= '<div class="modal-footer">';
-                    $html .= '<button type="button" class="btn btn-secondary" data-dismiss="modal">Cancelar</button>';
-                    $html .= '<button type="submit" class="btn btn-info">Sugerir Compra Directa</button>';
-                    $html .= '</div>';
-                    $html .= '</form>';
-                    $html .= '</div>';
-                    $html .= '</div>';
-                    $html .= '</div>';
-
-                    // JavaScript para mover el modal al body y asegurar que funcione
-                    $html .= '<script>
+                $html .= '<script>
                     (function() {
                         function initDirectPurchaseModal() {
                             var modal = document.getElementById("'.$modalId.'");
                             if (!modal) return;
-                            
-                            // Mover el modal al body si no está ahí
                             if (modal.parentElement && modal.parentElement.tagName !== "BODY") {
                                 document.body.appendChild(modal);
                             }
-                            
-                            // Asegurar que el botón funcione con jQuery
                             if (typeof jQuery !== "undefined" && jQuery.fn.modal) {
                                 jQuery("button[data-target=\'#'.$modalId.'\']").off("click").on("click", function(e) {
                                     e.preventDefault();
@@ -4741,22 +4655,163 @@ class PurchaseRequestCrudController extends CrudController
                                 });
                             }
                         }
-                        
-                        // Ejecutar cuando el DOM esté listo
                         if (document.readyState === "loading") {
                             document.addEventListener("DOMContentLoaded", initDirectPurchaseModal);
                         } else {
                             initDirectPurchaseModal();
                         }
-                        
-                        // También ejecutar después de un pequeño delay por si acaso
                         setTimeout(initDirectPurchaseModal, 100);
                     })();
                     </script>';
 
-                    $html .= '</div>';
-                    $html .= '</div>';
+                $html .= '</div>';
+                $html .= '</div>';
+
+                return $html;
+            });
+
+        // Compra directa: seguimiento y decisión de nivel superior (debajo de la parte informativa)
+        CRUD::column('direct_purchase_superior_actions')->label('Compra directa — autorización superior')->type('custom_html')
+            ->value(function ($entry) {
+                $user = backpack_user();
+                if (! $user || ! $entry->is_direct_purchase) {
+                    return '';
                 }
+
+                $html = '<div class="card border-info mt-0">';
+                $html .= '<div class="card-header bg-info text-white">';
+                $html .= '<h6 class="mb-0"><i class="la la-hand-pointer"></i> Compra directa</h6>';
+                $html .= '</div>';
+                $html .= '<div class="card-body">';
+
+                if ($entry->directPurchaseSupplier) {
+                    $html .= '<p class="mb-2"><strong>Proveedor:</strong> '.e($entry->directPurchaseSupplier->company_name).'</p>';
+                }
+
+                if ($entry->direct_purchase_justification) {
+                    $html .= '<p class="mb-2"><strong>Justificación:</strong> '.nl2br(e($entry->direct_purchase_justification)).'</p>';
+                }
+
+                if ($entry->direct_purchase_authorization_requested) {
+                    if ($entry->directPurchaseAuthorizationRequestedBy) {
+                        $html .= '<p class="mb-2"><strong>Solicitud de autorización por:</strong> '.e($entry->directPurchaseAuthorizationRequestedBy->name).'</p>';
+                    }
+                    if ($entry->direct_purchase_authorization_requested_at) {
+                        $requestedAt = $entry->direct_purchase_authorization_requested_at instanceof \Carbon\Carbon
+                            ? $entry->direct_purchase_authorization_requested_at->format('d/m/Y H:i')
+                            : \Carbon\Carbon::parse($entry->direct_purchase_authorization_requested_at)->format('d/m/Y H:i');
+                        $html .= '<p class="mb-2"><strong>Fecha de solicitud:</strong> '.$requestedAt.'</p>';
+                    }
+
+                    if ($entry->direct_purchase_authorized_by) {
+                        $html .= '<div class="alert alert-success mt-2">';
+                        $html .= '<i class="la la-check-circle"></i> <strong>Autorizada</strong>';
+                        if ($entry->directPurchaseAuthorizedBy) {
+                            $html .= ' por '.e($entry->directPurchaseAuthorizedBy->name);
+                        }
+                        if ($entry->direct_purchase_authorized_at) {
+                            $authorizedAt = $entry->direct_purchase_authorized_at instanceof \Carbon\Carbon
+                                ? $entry->direct_purchase_authorized_at->format('d/m/Y H:i')
+                                : \Carbon\Carbon::parse($entry->direct_purchase_authorized_at)->format('d/m/Y H:i');
+                            $html .= ' el '.$authorizedAt;
+                        }
+                        $html .= '</div>';
+                    } elseif ($entry->direct_purchase_authorization_rejected) {
+                        $html .= '<div class="alert alert-danger mt-2">';
+                        $html .= '<i class="la la-times-circle"></i> <strong>Autorización Rechazada</strong>';
+                        if ($entry->direct_purchase_authorization_rejection_reason) {
+                            $html .= '<br><strong>Razón:</strong> '.nl2br(e($entry->direct_purchase_authorization_rejection_reason));
+                        }
+                        $html .= '</div>';
+                    } else {
+                        $html .= '<div class="alert alert-warning mt-2">';
+                        $html .= '<i class="la la-clock"></i> <strong>Pendiente de autorización</strong>';
+                        $html .= '</div>';
+
+                        $canApproveByLimit = false;
+                        $userLimit = 0;
+
+                        if ($user->hasRole('role_admin_institucion', 'backpack')) {
+                            $userLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_admin_institucion');
+                            $canApproveByLimit = $entry->total_amount <= $userLimit;
+                        } elseif ($user->hasRole('role_apoderado', 'backpack')) {
+                            $userLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_apoderado');
+                            $canApproveByLimit = $entry->total_amount <= $userLimit;
+                        } elseif ($user->hasRole('role_representante_legal', 'backpack')) {
+                            $userLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_representante_legal');
+                            $canApproveByLimit = $entry->total_amount <= $userLimit;
+                        }
+
+                        if (($user->hasRole('role_admin_institucion', 'backpack') || $user->hasRole('role_apoderado', 'backpack') || $user->hasRole('role_representante_legal', 'backpack')) && ! $canApproveByLimit) {
+                            $adminLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_admin_institucion');
+                            $apoderadoLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_apoderado');
+                            $representanteLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_representante_legal');
+
+                            $html .= '<div class="alert alert-danger mt-2">';
+                            $html .= '<i class="la la-exclamation-triangle"></i> ';
+                            $html .= '<strong>Límite excedido:</strong> Esta compra directa ($'.number_format($entry->total_amount, 2).') supera tu límite de autorización de $'.number_format($userLimit, 2).'. ';
+                            $html .= 'No puedes aprobar esta compra directa. ';
+
+                            $canApproveList = [];
+                            if ($entry->total_amount <= $adminLimit) {
+                                $canApproveList[] = 'administrador del instituto (límite: $'.number_format($adminLimit, 2).')';
+                            }
+                            if ($entry->total_amount <= $apoderadoLimit) {
+                                $canApproveList[] = 'apoderado (límite: $'.number_format($apoderadoLimit, 2).')';
+                            }
+                            if ($entry->total_amount <= $representanteLimit) {
+                                $canApproveList[] = 'representante legal (límite: $'.number_format($representanteLimit, 2).')';
+                            }
+
+                            if (! empty($canApproveList)) {
+                                $html .= 'Puede ser aprobada por: '.implode(', ', $canApproveList).'.';
+                            } else {
+                                $html .= 'Ningún usuario tiene límite suficiente para aprobar esta compra directa.';
+                            }
+
+                            $html .= '</div>';
+                        } elseif ($canApproveByLimit) {
+                            $html .= '<div class="mt-3">';
+                            $html .= '<form method="POST" action="'.route('purchase-request.approve-direct-purchase', $entry->id).'" class="d-inline">';
+                            $html .= csrf_field();
+                            $html .= '<button type="submit" class="btn btn-success btn-sm" onclick="return confirm(\'¿Está seguro de aprobar esta compra directa?\')">';
+                            $html .= '<i class="la la-check"></i> Aprobar Compra Directa';
+                            $html .= '</button>';
+                            $html .= '</form>';
+                            $html .= '<button type="button" class="btn btn-danger btn-sm ms-2" data-toggle="modal" data-target="#rejectDirectPurchaseModal'.$entry->id.'">';
+                            $html .= '<i class="la la-times"></i> Rechazar Autorización';
+                            $html .= '</button>';
+                            $html .= '</div>';
+
+                            $html .= '<div class="modal fade" id="rejectDirectPurchaseModal'.$entry->id.'" tabindex="-1" role="dialog">';
+                            $html .= '<div class="modal-dialog" role="document">';
+                            $html .= '<div class="modal-content">';
+                            $html .= '<div class="modal-header bg-danger text-white">';
+                            $html .= '<h5 class="modal-title">Rechazar Autorización de Compra Directa</h5>';
+                            $html .= '<button type="button" class="close text-white" data-dismiss="modal">&times;</button>';
+                            $html .= '</div>';
+                            $html .= '<form method="POST" action="'.route('purchase-request.reject-direct-purchase-authorization', $entry->id).'">';
+                            $html .= csrf_field();
+                            $html .= '<div class="modal-body">';
+                            $html .= '<div class="form-group">';
+                            $html .= '<label for="rejection_reason_dp_'.$entry->id.'">Razón del rechazo:</label>';
+                            $html .= '<textarea name="rejection_reason" id="rejection_reason_dp_'.$entry->id.'" class="form-control" rows="3" required></textarea>';
+                            $html .= '</div>';
+                            $html .= '</div>';
+                            $html .= '<div class="modal-footer">';
+                            $html .= '<button type="button" class="btn btn-secondary" data-dismiss="modal">Cancelar</button>';
+                            $html .= '<button type="submit" class="btn btn-danger">Rechazar</button>';
+                            $html .= '</div>';
+                            $html .= '</form>';
+                            $html .= '</div>';
+                            $html .= '</div>';
+                            $html .= '</div>';
+                        }
+                    }
+                }
+
+                $html .= '</div>';
+                $html .= '</div>';
 
                 return $html;
             });
@@ -4916,41 +4971,6 @@ class PurchaseRequestCrudController extends CrudController
                         $html .= '<div class="alert alert-info mt-3 mb-0">';
                         $html .= '<p class="mb-2"><strong>Revisión de administradora</strong></p>';
                         $html .= '<p class="small mb-0">Para solicitar la revisión debe primero <strong>asignar cotización a cada producto</strong> de la solicitud. Use la sección «Asignar cotización por producto» (cuando hay más de una cotización) o seleccione una cotización que cotice <strong>todos</strong> los productos. El botón de envío a la administradora se habilitará al completar esa asignación.</p>';
-                        $html .= '</div>';
-                    }
-
-                    $canRequestHigherApproval = $quotationsViewer && (
-                        $quotationsViewer->hasRole('role_admin_institucion', 'backpack')
-                        || $quotationsViewer->hasRole('role_admin_sistema', 'backpack')
-                    );
-                    if ($canRequestHigherApproval && PurchaseRequestNotificationService::shouldAdministratorEscalateQuotationApproval($entry)) {
-                        $html .= '<div class="alert alert-info mt-3 mb-0">';
-                        $html .= '<p class="mb-2"><strong>Escalamiento de aprobación</strong></p>';
-                        $html .= '<p class="mb-2 small">Como administradora, puede solicitar aprobación al nivel superior correspondiente según el monto.</p>';
-                        $html .= '<form method="POST" action="'.e(route('purchase-request.request-quotation-higher-level-authorization', $entry->id)).'" class="d-inline">';
-                        $html .= csrf_field();
-                        $html .= '<button type="submit" class="btn btn-info"><i class="la la-level-up"></i> Solicitar aprobación de nivel superior</button>';
-                        $html .= '</form>';
-                        $html .= '</div>';
-                    }
-
-                    $entry->loadMissing(['purchaseOrders', 'details']);
-                    $userReopen = backpack_user();
-                    $canReopenAfterSuperiorRevision = $userReopen && (
-                        $userReopen->hasRole('role_admin_institucion', 'backpack')
-                        || $userReopen->hasRole('role_admin_sistema', 'backpack')
-                    ) && $entry->canReopenForSuperiorAuthorizationAfterRevision();
-                    if ($canReopenAfterSuperiorRevision) {
-                        $html .= '<div class="alert alert-secondary mt-3 mb-0">';
-                        $html .= '<p class="mb-2"><strong>Revisión tras observaciones del nivel superior</strong></p>';
-                        $html .= '<p class="mb-2 small">Si ajustó cotizaciones o la asignación por producto, puede reabrir la solicitud: las autorizaciones por ítem volverán a <strong>pendiente</strong> y se notificará al nivel correspondiente para una nueva decisión. No use esta acción si ya generó orden de compra.</p>';
-                        $html .= '<form method="POST" action="'.e(route('purchase-request.request-superior-reapproval-after-revision', $entry->id)).'" class="mt-2">';
-                        $html .= csrf_field();
-                        $html .= '<div class="mb-2"><label for="reopen_justification" class="form-label small mb-0">Notas internas (opcional, queda en el registro del sistema):</label>';
-                        $html .= '<textarea name="reopen_justification" id="reopen_justification" class="form-control form-control-sm" rows="2" maxlength="1000"></textarea></div>';
-                        $html .= '<button type="submit" class="btn btn-outline-secondary" onclick="return confirm(\'¿Confirma reabrir la solicitud para nueva autorización por ítem? Se anularán las decisiones por línea actuales.\')">';
-                        $html .= '<i class="la la-refresh"></i> Reabrir para nueva autorización (post-observaciones)</button>';
-                        $html .= '</form>';
                         $html .= '</div>';
                     }
 
@@ -5755,7 +5775,7 @@ class PurchaseRequestCrudController extends CrudController
                 }
 
                 // Si es una compra directa pendiente de autorización, no mostrar nada aquí
-                // (se maneja en la columna direct_purchase_actions)
+                // (se maneja en la columna direct_purchase_superior_actions)
                 if ($entry->is_direct_purchase && $entry->direct_purchase_authorization_requested && ! $entry->direct_purchase_authorized_by && ! $entry->direct_purchase_authorization_rejected) {
                     return '';
                 }
@@ -5894,6 +5914,113 @@ class PurchaseRequestCrudController extends CrudController
                 return $html;
             });
 
+        CRUD::column('purchase_request_show_actions_heading')
+            ->label(' ')
+            ->type('custom_html')
+            ->value(function ($entry) {
+                $num = e((string) ($entry->request_number ?? '#'.$entry->id));
+                $fecha = $entry->request_date
+                    ? ($entry->request_date instanceof \Carbon\Carbon
+                        ? $entry->request_date->format('d/m/Y')
+                        : e((string) $entry->request_date))
+                    : '—';
+                $estado = e((string) ($entry->status ?? ''));
+
+                $rates = $this->marketRatesContributingToPurchaseRequestTotal($entry);
+                $totalEfectivo = $this->recalculateSelectedQuotationsTotalForPurchaseRequest($entry);
+                $ivaSum = (float) $rates->sum(fn ($mr) => max(0, (float) ($mr->vat_amount ?? 0)));
+                $subFromFields = (float) $rates->sum(fn ($mr) => (float) ($mr->total_amount ?? 0));
+                $subMostrar = $rates->isNotEmpty()
+                    ? (max(0, $totalEfectivo - $ivaSum) > 0.005 ? max(0, $totalEfectivo - $ivaSum) : max(0, $subFromFields))
+                    : (float) ($entry->total_amount ?? 0);
+
+                $fmtMoney = static fn (float $v): string => '$'.number_format($v, 2, ',', '.');
+
+                $montosHtml = '';
+                if ($rates->isNotEmpty()) {
+                    $montosHtml = '<div class="mt-2 pt-2 border-top w-100">'
+                        .'<div class="d-flex flex-wrap align-items-center gap-2 gap-md-3">'
+                        .'<span class="text-nowrap"><span class="text-muted small d-block">Subtotal</span><strong class="fs-6">'.$fmtMoney($subMostrar).'</strong></span>'
+                        .'<span class="badge bg-warning text-dark px-3 py-2 fs-6 text-nowrap shadow-sm"><i class="la la-balance-scale"></i> IVA '.$fmtMoney($ivaSum).'</span>'
+                        .'<span class="text-nowrap ms-md-auto"><span class="text-muted small d-block">Total con IVA</span><strong class="fs-5 text-primary">'.$fmtMoney($totalEfectivo).'</strong></span>'
+                        .'</div></div>';
+                } else {
+                    $montosHtml = '<div class="mt-2 pt-2 border-top w-100 d-flex flex-wrap align-items-center gap-2">'
+                        .'<span><span class="text-muted small d-block">Monto total (solicitud)</span><strong class="fs-5 text-primary">'.$fmtMoney((float) ($entry->total_amount ?? 0)).'</strong></span>'
+                        .'<span class="badge bg-secondary fs-6">IVA: al seleccionar cotización</span>'
+                        .'</div>';
+                }
+
+                return '<div class="card border-primary bg-light mb-3">'
+                    .'<div class="card-body py-2 px-3">'
+                    .'<div class="d-flex flex-wrap justify-content-between align-items-center gap-2">'
+                    .'<span><strong class="text-primary">'.$num.'</strong>'
+                    .'<span class="text-muted ms-2"><i class="la la-calendar"></i> '.$fecha.'</span></span>'
+                    .'<span class="badge bg-secondary fs-6">'.$estado.'</span>'
+                    .'</div>'
+                    .$montosHtml
+                    .'</div></div>'
+                    .'<h5 class="mb-3 text-dark"><i class="la la-bolt text-primary"></i> Acciones, cotizaciones y seguimiento</h5>'
+                    .'<p class="text-muted small mb-0">Cotizaciones, productos, sugerencias de proveedores, compra directa (sugerencia de compras), órdenes de compra, pagos y entregas. Más abajo: datos de registro y, al final, <strong>acciones de nivel superior</strong>.</p>';
+            });
+
+        CRUD::column('purchase_request_show_info_section_heading')
+            ->label('')
+            ->type('custom_html')
+            ->escaped(false)
+            ->value(function () {
+                return '<div class="border-top border-2 pt-4 mt-2 mb-0">'
+                    .'<h5 class="mb-3 text-dark"><i class="la la-info-circle text-primary"></i> Información de la solicitud</h5>'
+                    .'<p class="text-muted small mb-0">A continuación: número, fechas, estado, prioridad, motivo, observaciones, área, solicitante, montos con <strong>IVA</strong> y trazabilidad de aprobación.</p>'
+                    .'<hr class="mt-3 mb-0 border-secondary opacity-50">'
+                    .'</div>';
+            });
+
+        CRUD::column('purchase_request_show_superior_section_heading')
+            ->label('')
+            ->type('custom_html')
+            ->escaped(false)
+            ->value(function () {
+                return '<div class="border-top border-2 pt-4 mt-2 mb-0">'
+                    .'<h5 class="mb-3 text-dark"><i class="la la-user-shield text-primary"></i> Acciones de nivel superior</h5>'
+                    .'<p class="text-muted small mb-0">A continuación: decisiones y formularios que corresponden a <strong>administración del instituto</strong>, <strong>apoderado</strong> o <strong>representante legal</strong> (incluye aprobación de la solicitud y autorización de compra directa). También el escalamiento por monto y la reapertura tras observaciones del nivel superior en el circuito de cotizaciones.</p>'
+                    .'<hr class="mt-3 mb-0 border-secondary opacity-50">'
+                    .'</div>';
+            });
+
+        CRUD::column('purchase_request_superior_quotation_actions')
+            ->label('Cotizaciones — escalamiento superior')
+            ->type('custom_html')
+            ->value(fn (\App\Models\PurchaseRequest $entry) => $this->renderSuperiorQuotationEscalationHtml($entry));
+
+        CRUD::orderColumns([
+            'purchase_request_show_actions_heading',
+            'market_rates_table',
+            'details_table',
+            'supplier_suggestions_table',
+            'direct_purchase_compras_suggest',
+            'purchase_orders_table',
+            'create_payment_orders_from_pr',
+            'delivery_reception_actions',
+            'purchase_request_show_info_section_heading',
+            'request_number',
+            'request_date',
+            'status',
+            'priority',
+            'justification',
+            'observations',
+            'responsibilityArea.name',
+            'requestingUser.name',
+            'approvedBy.name',
+            'approved_date',
+            'total_amount',
+            'approval_status',
+            'general_request_info',
+            'purchase_request_show_superior_section_heading',
+            'purchase_request_superior_quotation_actions',
+            'approval_actions',
+            'direct_purchase_superior_actions',
+        ]);
     }
 
     /**

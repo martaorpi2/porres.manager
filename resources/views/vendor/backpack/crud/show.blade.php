@@ -52,9 +52,13 @@
 		@if($crud->tabsEnabled() && count($crud->getUniqueTabNames('columns')))
 			@include('crud::inc.show_tabbed_table')
 		@else
-			<div class="card no-padding no-border mb-0">
-				@include('crud::inc.show_table', ['columns' => $crud->columns()])
-			</div>
+			@if ($entry instanceof \App\Models\PurchaseRequest)
+				@include('admin.purchase-request.inc.show_table_three_blocks', ['columns' => $crud->columns()])
+			@else
+				<div class="card no-padding no-border mb-0">
+					@include('crud::inc.show_table', ['columns' => $crud->columns()])
+				</div>
+			@endif
 		@endif
 	</div>
 	</div>
