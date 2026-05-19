@@ -5,6 +5,7 @@ namespace App\Models;
 use Backpack\CRUD\app\Models\Traits\CrudTrait;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Schema;
 
 class PurchaseRequest extends Model
 {
@@ -35,6 +36,7 @@ class PurchaseRequest extends Model
         'admin_quotation_reviewed_at',
         'admin_quotation_reviewed_by',
         'admin_quotation_review_justification',
+        'superior_quotation_escalation_pending_at',
         'is_direct_purchase',
         'direct_purchase_justification',
         'direct_purchase_supplier_id',
@@ -64,6 +66,7 @@ class PurchaseRequest extends Model
         'direct_purchase_authorized_at' => 'datetime',
         'direct_purchase_authorization_rejected' => 'boolean',
         'admin_quotation_reviewed_at' => 'datetime',
+        'superior_quotation_escalation_pending_at' => 'datetime',
         'auto_reminder_context_started_at' => 'datetime',
         'auto_reminder_last_sent_at' => 'datetime',
     ];
@@ -180,6 +183,229 @@ class PurchaseRequest extends Model
     public function purchaseRequestEvents()
     {
         return $this->hasMany(PurchaseRequestEvent::class)->orderByDesc('created_at');
+    }
+
+    /**
+     * @return list<string>
+     */
+    public static function superiorEscalationEventTypes(): array
+    {
+        return [
+            PurchaseRequestEvent::EVENT_ADMINISTRATOR_SUPERIOR_APPROVAL_REQUESTED,
+            PurchaseRequestEvent::EVENT_ADMINISTRATION_INITIAL_REVIEW_PENDING_SUPERIOR,
+        ];
+    }
+
+    public function latestSuperiorEscalationEvent(): ?PurchaseRequestEvent
+    {
+        return $this->purchaseRequestEvents()
+            ->whereIn('event_type', self::superiorEscalationEventTypes())
+            ->with('user')
+            ->first();
+    }
+
+    public function wasApprovedBySuperiorAuthority(): bool
+    {
+        if ($this->status !== 'Aprobada' || empty($this->approved_by)) {
+            return false;
+        }
+
+        $this->loadMissing('approvedBy');
+        $approver = $this->approvedBy;
+        if (! $approver) {
+            return false;
+        }
+
+        foreach (['role_apoderado', 'role_representante_legal'] as $role) {
+            if ($approver->hasRole($role, 'backpack')) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Ya se escaló al nivel superior y aún no hay aprobación de apoderado/representante legal.
+     */
+    public function isAwaitingSuperiorApprovalAfterAdministratorEscalation(): bool
+    {
+        if ($this->wasApprovedBySuperiorAuthority()) {
+            return false;
+        }
+
+        if (in_array((string) $this->status, ['Aprobada', 'Completada', 'Rechazada'], true)) {
+            return false;
+        }
+
+        if (
+            Schema::hasColumn($this->getTable(), 'superior_quotation_escalation_pending_at')
+            && $this->superior_quotation_escalation_pending_at !== null
+        ) {
+            return true;
+        }
+
+        return $this->purchaseRequestEvents()
+            ->whereIn('event_type', self::superiorEscalationEventTypes())
+            ->exists();
+    }
+
+    /**
+     * Roles cuyo usuario cuenta como «nivel superior» al aprobar (admin, apoderado, representante legal).
+     *
+     * @return list<string>
+     */
+    public static function supervisorApprovalRoleNames(): array
+    {
+        return [
+            'role_admin_sistema',
+            'role_admin_institucion',
+            'role_apoderado',
+            'role_representante_legal',
+        ];
+    }
+
+    /**
+     * Aprobadas por nivel superior y aún sin orden de compra (continuar circuito / generar OC).
+     *
+     * @return \Illuminate\Database\Eloquent\Builder<static>
+     */
+    public static function queryApprovedBySuperiorWithoutPurchaseOrder(?int $excludeApproverUserId = null): \Illuminate\Database\Eloquent\Builder
+    {
+        $query = static::query()
+            ->where('status', 'Aprobada')
+            ->whereNotNull('approved_by')
+            ->whereDoesntHave('purchaseOrders')
+            ->whereHas('approvedBy.roles', function ($q) {
+                $q->where('guard_name', 'backpack')
+                    ->whereIn('name', self::supervisorApprovalRoleNames());
+            });
+
+        if ($excludeApproverUserId !== null) {
+            $query->where('approved_by', '!=', $excludeApproverUserId);
+        }
+
+        return $query;
+    }
+
+    /**
+     * La administración reabrió explícitamente la solicitud tras observaciones del nivel superior.
+     */
+    public function wasReopenedAfterSuperiorRevisionForNewAuthorization(): bool
+    {
+        return $this->purchaseRequestEvents()
+            ->where('event_type', PurchaseRequestEvent::EVENT_REOPENED_AFTER_SUPERIOR_REVISION)
+            ->exists();
+    }
+
+    /**
+     * Permite modificar cotizaciones/asignaciones tras rechazo parcial o reapertura administrativa.
+     */
+    public function allowsModificationDuringSuperiorRevisionWorkflow(): bool
+    {
+        return $this->canReopenForSuperiorAuthorizationAfterRevision()
+            || $this->wasReopenedAfterSuperiorRevisionForNewAuthorization();
+    }
+
+    /**
+     * No se pueden cargar/editar cotizaciones, productos ni asignaciones mientras aguarda nivel superior,
+     * salvo rechazo parcial (revisión) o reapertura administrativa para nuevo circuito.
+     */
+    public function isFrozenPendingSuperiorApproval(): bool
+    {
+        if ($this->allowsModificationDuringSuperiorRevisionWorkflow()) {
+            return false;
+        }
+
+        return $this->isAwaitingSuperiorApprovalAfterAdministratorEscalation();
+    }
+
+    /**
+     * Tras aprobación final no se alteran cotizaciones ni asignación por producto (salvo reapertura administrativa).
+     */
+    public function locksQuotationAndAssignmentChanges(): bool
+    {
+        if ($this->allowsModificationDuringSuperiorRevisionWorkflow()) {
+            return false;
+        }
+
+        return in_array((string) $this->status, ['Aprobada', 'Completada'], true);
+    }
+
+    /**
+     * Congelamiento por escalamiento pendiente o por solicitud ya aprobada.
+     */
+    public function blocksQuotationAndAssignmentMutations(): bool
+    {
+        return $this->isFrozenPendingSuperiorApproval()
+            || $this->locksQuotationAndAssignmentChanges();
+    }
+
+    public function markSuperiorQuotationEscalationPending(): void
+    {
+        if (! Schema::hasColumn($this->getTable(), 'superior_quotation_escalation_pending_at')) {
+            return;
+        }
+
+        if ($this->superior_quotation_escalation_pending_at === null) {
+            $this->forceFill(['superior_quotation_escalation_pending_at' => now()])->save();
+        }
+    }
+
+    public function clearSuperiorQuotationEscalationPending(): void
+    {
+        if (! Schema::hasColumn($this->getTable(), 'superior_quotation_escalation_pending_at')) {
+            return;
+        }
+
+        if ($this->superior_quotation_escalation_pending_at !== null) {
+            $this->forceFill(['superior_quotation_escalation_pending_at' => null])->save();
+        }
+    }
+
+    /**
+     * El monto efectivo supera el tope del representante legal (debe intervenir el apoderado u otro nivel superior).
+     */
+    public function requiresApprovalAboveRepresentanteLegal(): bool
+    {
+        $representanteLimit = (float) PurchaseAuthorizationLimit::getLimitForRole('role_representante_legal');
+        if ($representanteLimit <= 0) {
+            return false;
+        }
+
+        return $this->effectiveTotalForAuthorizationLimits() > $representanteLimit;
+    }
+
+    /**
+     * Roles de nivel superior al que debe escalar la administradora según el monto efectivo.
+     *
+     * @return list<string>
+     */
+    public function superiorApproverRolesFromAdministratorForEffectiveTotal(): array
+    {
+        return \App\Services\PurchaseRequestNotificationService::superiorApproverRoleNamesForAmountFromAdministrator(
+            $this->effectiveTotalForAuthorizationLimits()
+        );
+    }
+
+    /**
+     * Tras escalamiento administrativo, la representante legal es quien debe autorizar (monto dentro de su tope).
+     */
+    public function isRepresentanteLegalTargetForPendingSuperiorApproval(): bool
+    {
+        if ($this->wasApprovedBySuperiorAuthority()) {
+            return false;
+        }
+
+        if (! $this->isAwaitingSuperiorApprovalAfterAdministratorEscalation()) {
+            return false;
+        }
+
+        if ($this->requiresApprovalAboveRepresentanteLegal()) {
+            return false;
+        }
+
+        return in_array('role_representante_legal', $this->superiorApproverRolesFromAdministratorForEffectiveTotal(), true);
     }
 
     /**
@@ -396,13 +622,21 @@ class PurchaseRequest extends Model
     }
 
     /**
-     * Obtiene los productos de esta solicitud que están cotizados en menos de 3 cotizaciones distintas.
-     * Para montos > 60000 cada producto debe aparecer en al menos 3 cotizaciones.
+     * Cotizaciones mínimas para generar OC cuando el monto supera {@see quotationCoverageThresholdAmount()}.
+     */
+    public static function minimumQuotationsRequiredAboveThreshold(): int
+    {
+        return 2;
+    }
+
+    /**
+     * Obtiene los productos cotizados en menos cotizaciones distintas que las exigidas por monto.
      *
      * @return \Illuminate\Support\Collection<int, Product>
      */
     public function getProductsWithFewerThanThreeQuotations()
     {
+        $minQuotes = self::minimumQuotationsRequiredAboveThreshold();
         $marketRateIds = $this->marketRates()->pluck('id');
         if ($marketRateIds->isEmpty()) {
             return $this->details()->with('product')->get()->pluck('product')->filter();
@@ -412,7 +646,7 @@ class PurchaseRequest extends Model
             ->select('product_id')
             ->selectRaw('COUNT(DISTINCT market_rate_id) as quote_count')
             ->groupBy('product_id')
-            ->having('quote_count', '>=', 3)
+            ->having('quote_count', '>=', $minQuotes)
             ->pluck('product_id');
 
         $allProductIdsInRequest = $this->details()->pluck('product_id')->unique()->values();
@@ -426,7 +660,7 @@ class PurchaseRequest extends Model
     }
 
     /**
-     * Montos mayores a este umbral exigen al menos 3 cotizaciones y cobertura por producto antes de generar OC.
+     * Montos mayores a este umbral exigen al menos {@see minimumQuotationsRequiredAboveThreshold()} cotizaciones y cobertura por producto antes de generar OC.
      */
     public static function quotationCoverageThresholdAmount(): float
     {
@@ -434,7 +668,7 @@ class PurchaseRequest extends Model
     }
 
     /**
-     * Cumple la regla de cobertura (cada producto en ≥3 cotizaciones) cuando el monto la exige.
+     * Cumple la regla de cobertura (cada producto en el mínimo de cotizaciones) cuando el monto la exige.
      */
     public function meetsMandatoryQuotationCoveragePerProduct(): bool
     {
@@ -469,6 +703,52 @@ class PurchaseRequest extends Model
         }
 
         return $this->details->every(fn ($d) => ! empty($d->selected_market_rate_id));
+    }
+
+    /**
+     * Monto efectivo según cotización(es) elegidas (incluye IVA cuando corresponde), para topes y escalamiento.
+     */
+    public function effectiveTotalForAuthorizationLimits(): float
+    {
+        $this->loadMissing(['marketRates.quoteDetails', 'details.selectedMarketRate.quoteDetails']);
+
+        $selectedRates = $this->marketRates->where('is_selected', true);
+        if ($selectedRates->isNotEmpty()) {
+            return (float) $selectedRates->sum(fn (MarketRate $mr) => $mr->effectiveTotalWithVat());
+        }
+
+        if (! empty($this->selected_market_rate_id)) {
+            $single = $this->marketRates->firstWhere('id', (int) $this->selected_market_rate_id);
+            if ($single) {
+                return $single->effectiveTotalWithVat();
+            }
+        }
+
+        if ($this->hasQuotationsAssignedToAllRequestProducts()) {
+            $total = 0.0;
+            foreach ($this->details as $detail) {
+                $lineSub = $detail->quotationSubtotalForPurchase($this);
+                if ($lineSub <= 0) {
+                    continue;
+                }
+                $mr = $detail->selectedMarketRate;
+                if (! $mr) {
+                    $total += $lineSub;
+
+                    continue;
+                }
+                $mr->loadMissing('quoteDetails');
+                $mrSub = max((float) ($mr->total_amount ?? 0), $lineSub);
+                $mrEff = $mr->effectiveTotalWithVat();
+                $total += $mrSub > 0 ? ($lineSub / $mrSub) * $mrEff : $lineSub;
+            }
+
+            if ($total > 0) {
+                return $total;
+            }
+        }
+
+        return (float) ($this->total_amount ?? 0);
     }
 
     /**
@@ -562,16 +842,31 @@ class PurchaseRequest extends Model
      */
     public static function purchaseRequestsAwaitingQuoteSelectionAfterThreeQuotations(): \Illuminate\Support\Collection
     {
-        return static::queryAwaitingQuoteSelectionWithMinimumQuotations(1)
-            ->with(['marketRates', 'details'])
-            ->get()
-            ->filter(fn (self $pr) => ! $pr->hasQuotationSelectionResolved())
-            ->values();
+        return static::purchaseRequestsNeedingQuotationAssignment();
     }
 
     public static function purchaseRequestsAwaitingQuoteSelectionAfterThreeQuotationsCount(): int
     {
-        return static::purchaseRequestsAwaitingQuoteSelectionAfterThreeQuotations()->count();
+        return static::purchaseRequestsNeedingQuotationAssignmentCount();
+    }
+
+    /**
+     * Solicitudes con cotización(es) cargadas que aún requieren selección y/o asignación por producto.
+     *
+     * @return \Illuminate\Support\Collection<int, static>
+     */
+    public static function purchaseRequestsNeedingQuotationAssignment(): \Illuminate\Support\Collection
+    {
+        return static::queryAwaitingQuoteSelectionWithMinimumQuotations(1)
+            ->with(['marketRates.quoteDetails', 'details.product'])
+            ->get()
+            ->filter(fn (self $pr) => ! $pr->hasQuotationsAssignedToAllRequestProducts())
+            ->values();
+    }
+
+    public static function purchaseRequestsNeedingQuotationAssignmentCount(): int
+    {
+        return static::purchaseRequestsNeedingQuotationAssignment()->count();
     }
 
     /**

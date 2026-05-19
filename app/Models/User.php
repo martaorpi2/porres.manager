@@ -133,6 +133,19 @@ class User extends Authenticatable
         return $names->contains('role_responsable_area') || $names->contains('role_autoridad_instituto');
     }
 
+    public function hasInstituteAuthorityRole(): bool
+    {
+        if ($this->hasRole('role_autoridad_instituto', 'backpack')) {
+            return true;
+        }
+
+        if ($this->hasRole('role_autoridad_instituto', 'web')) {
+            return true;
+        }
+
+        return $this->getRoleNames()->contains('role_autoridad_instituto');
+    }
+
     /**
      * Administradora del instituto (órdenes de pago, anulaciones, etc.).
      */
@@ -147,6 +160,32 @@ class User extends Authenticatable
         }
 
         return $this->getRoleNames()->contains('role_admin_institucion');
+    }
+
+    /**
+     * Sector de compras, administradora del instituto (o admin. de sistema). No área ni representante legal.
+     */
+    public function canGeneratePurchaseOrders(): bool
+    {
+        if ($this->hasResponsableAreaOrInstituteAuthorityRole()) {
+            return false;
+        }
+
+        if ($this->hasRole('role_representante_legal', 'backpack')
+            || $this->hasRole('role_representante_legal', 'web')
+            || $this->getRoleNames()->contains('role_representante_legal')) {
+            return false;
+        }
+
+        if ($this->hasRole('role_admin_sistema', 'backpack') || $this->hasRole('role_admin_sistema', 'web')) {
+            return true;
+        }
+
+        if ($this->hasAdministradoraInstitucionRole()) {
+            return true;
+        }
+
+        return $this->effectivelyHasResponsableComprasRole();
     }
 
     /**

@@ -1,8 +1,9 @@
 @php
     // Responsable de área: sin acciones de OC. Representante legal: puede ver OC existente, no generar.
     $user = backpack_user();
-    $canAccess = !($user && $user->hasResponsableAreaOrInstituteAuthorityRole());
-    $representanteLegalNoGeneraOc = $user && $user->hasRole('role_representante_legal', 'backpack');
+    $canGenerateOc = $user instanceof \App\Models\User && $user->canGeneratePurchaseOrders();
+    $canViewPurchaseOrderActions = $canGenerateOc
+        || ($user && $user->hasRole('role_representante_legal', 'backpack'));
     
     // Obtener la entrada actual (funciona tanto en list como en show)
     $currentEntry = null;
@@ -24,14 +25,15 @@
     
     // Si no hay entrada, no mostrar botón
     if (!$currentEntry) {
-        $canAccess = false;
+        $canViewPurchaseOrderActions = false;
     } else {
         // Verificar si existe una orden de compra generada
         $purchaseOrder = $currentEntry->purchaseOrders->first();
         
         // Calcular condiciones para mostrar botón de generar
         $totalAmount = $currentEntry->total_amount ?? 0;
-        $threshold = 60000;
+        $threshold = \App\Models\PurchaseRequest::quotationCoverageThresholdAmount();
+        $minQuotations = \App\Models\PurchaseRequest::minimumQuotationsRequiredAboveThreshold();
         $currentEntry->load('marketRates');
         $quotationsCount = $currentEntry->marketRates->count();
         
@@ -45,19 +47,18 @@
         $isApproved = $currentEntry->status === 'Aprobada';
         
         // Para compras directas autorizadas, puede generar si está aprobada
-        // Para compras normales, puede generar si: (monto <= 60000 O tiene 3+ cotizaciones) Y está aprobada Y tiene cotización seleccionada
-        // Para monto > 60000 además cada producto debe estar cotizado en al menos 3 cotizaciones distintas
+        // Para compras normales: monto <= umbral con 1 cotización, o monto mayor con mínimo de cotizaciones y cobertura por producto
         if ($isDirectPurchaseAuthorized) {
             $canGenerate = $isApproved;
         } else {
             $hasSelectedQuote = $currentEntry->selected_market_rate_id != null;
-            $allProductsHaveThreeQuotations = $totalAmount <= $threshold || $currentEntry->getProductsWithFewerThanThreeQuotations()->isEmpty();
-            $canGenerate = $isApproved && (($totalAmount <= $threshold && $hasSelectedQuote) || ($quotationsCount >= 3 && $hasSelectedQuote && $allProductsHaveThreeQuotations));
+            $allProductsHaveEnoughQuotations = $totalAmount <= $threshold || $currentEntry->getProductsWithFewerThanThreeQuotations()->isEmpty();
+            $canGenerate = $isApproved && (($totalAmount <= $threshold && $hasSelectedQuote) || ($quotationsCount >= $minQuotations && $hasSelectedQuote && $allProductsHaveEnoughQuotations));
         }
     }
 @endphp
 
-@if ($canAccess && $currentEntry)
+@if ($canViewPurchaseOrderActions && $currentEntry)
     @if ($purchaseOrder)
         {{-- Si ya existe una orden de compra, mostrar botón para verla --}}
         <a href="{{ backpack_url('purchase-order/' . $purchaseOrder->id . '/show') }}" 
@@ -66,7 +67,7 @@
            title="Ver Orden de Compra Generada">
             <i class="la la-eye"></i> <span>Ver OC</span>
         </a>
-    @elseif ($canGenerate && ! $representanteLegalNoGeneraOc && $currentEntry->status != 'Completada')
+    @elseif ($canGenerate && $canGenerateOc && $currentEntry->status != 'Completada')
         {{-- Si puede generar y no está completada, mostrar botón para generar --}}
         @if ($entryId)
             <form method="POST" action="{{ route('purchase-request.generate-purchase-order', $entryId) }}" style="display: inline;">

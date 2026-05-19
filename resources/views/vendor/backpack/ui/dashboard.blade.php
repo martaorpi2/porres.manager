@@ -1,4 +1,4 @@
-@extends(backpack_view('blank'))
+﻿@extends(backpack_view('blank'))
 
 @push('after_styles')
   @basset('https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.6.0/styles/base16/dracula.min.css')
@@ -7,7 +7,7 @@
   :root {
       --bs-primary: #871f1f !important;
       --bs-primary-rgb: 135, 31, 31 !important;
-      /* Mismo tono para todo estado “positivo” del flujo (chips, OP, recepción, etc.) */
+      /* Mismo tono para todo estado â€œpositivoâ€ del flujo (chips, OP, recepciÃ³n, etc.) */
       --dashboard-positive-bg: #198754;
       --dashboard-positive-text: #fff;
   }
@@ -116,6 +116,40 @@
       margin-bottom: 5px;
   }
 
+  .admin-inbox__icon {
+      width: 2.5rem;
+      height: 2.5rem;
+  }
+
+  .admin-inbox__card,
+  .admin-inbox__card:hover,
+  .admin-inbox__card h3,
+  .admin-inbox__card p {
+      color: #000 !important;
+  }
+
+  .admin-inbox__card--active:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 0.35rem 0.75rem rgba(135, 31, 31, 0.15) !important;
+  }
+
+  .admin-inbox__card--with-list:hover {
+      transform: none;
+  }
+
+  .admin-inbox__entry-link:hover {
+      background-color: rgba(135, 31, 31, 0.06);
+  }
+
+  .admin-inbox__entries .list-group-item:last-child {
+      border-bottom: none !important;
+  }
+
+  #admin-inbox-section,
+  #pending-approval-section {
+      scroll-margin-top: 5.5rem;
+  }
+
   .process-item-meta {
       font-size: 12px;
       color: #6c757d;
@@ -137,7 +171,7 @@
   .process-item-status.status-anulada { background: #6c757d; color: #fff; }
   .process-item-status.status-rechazada,
   .process-item-status.status-rechazada-analista { background: #dc3545; color: #fff; }
-  /* Positivos: un solo color (completada, recibida, aprobada, conforme implícito en badge, OP completada, etc.) */
+  /* Positivos: un solo color (completada, recibida, aprobada, conforme implÃ­cito en badge, OP completada, etc.) */
   .process-item-status.status-completada,
   .process-item-status.status-recibida,
   .process-item-status.status-aprobada,
@@ -1076,7 +1110,7 @@
   
   @if(isset($isResponsableArea) && $isResponsableArea && isset($stockAlerts) && $stockAlerts->isNotEmpty() && !empty($stockAlertsHtml))
   <script>
-    // Función para crear solicitud de compra para un producto específico
+    // FunciÃ³n para crear solicitud de compra para un producto especÃ­fico
     function createPurchaseRequestForProduct(productId, quantity, unit, event) {
       if (event) {
         event.stopPropagation();
@@ -1087,17 +1121,17 @@
         product_id: productId,
         quantity: Math.ceil(quantity), // Redondear hacia arriba
         price: 0,
-        specifications: 'Solicitud generada automáticamente por alerta de stock mínimo. Déficit: ' + quantity + ' ' + unit
+        specifications: 'Solicitud generada automÃ¡ticamente por alerta de stock mÃ­nimo. DÃ©ficit: ' + quantity + ' ' + unit
       }];
       
-      // Codificar como JSON y pasar como parámetro
+      // Codificar como JSON y pasar como parÃ¡metro
       var productsJson = encodeURIComponent(JSON.stringify(products));
       var url = '{{ backpack_url("purchase-request/create") }}?selected_products=' + productsJson;
       
       window.location.href = url;
     }
     
-    // Función para crear solicitud de compra para todos los productos
+    // FunciÃ³n para crear solicitud de compra para todos los productos
     function createPurchaseRequestForAll() {
       var products = [];
       
@@ -1106,7 +1140,7 @@
         product_id: {{ $alert['product']->id }},
         quantity: Math.ceil({{ $alert['deficit'] }}),
         price: 0,
-        specifications: 'Solicitud generada automáticamente por alerta de stock mínimo. Déficit: {{ number_format($alert['deficit'], 2) }} {{ $alert['product']->unit_measurement ?? 'unidades' }}'
+        specifications: 'Solicitud generada automÃ¡ticamente por alerta de stock mÃ­nimo. DÃ©ficit: {{ number_format($alert['deficit'], 2) }} {{ $alert['product']->unit_measurement ?? 'unidades' }}'
       });
       @endforeach
       
@@ -1115,7 +1149,7 @@
         return;
       }
       
-      // Codificar como JSON y pasar como parámetro
+      // Codificar como JSON y pasar como parÃ¡metro
       var productsJson = encodeURIComponent(JSON.stringify(products));
       var url = '{{ backpack_url("purchase-request/create") }}?selected_products=' + productsJson;
       
@@ -1124,22 +1158,22 @@
   </script>
   <script>
     $(document).ready(function() {
-      // Esperar a que SweetAlert esté cargado
+      // Esperar a que SweetAlert estÃ© cargado
       setTimeout(function() {
         var $contentDiv = $('#stockAlertsHtmlContent');
         
         if ($contentDiv.length === 0) {
-          console.error('No se encontró el div con el contenido de alertas');
+          console.error('No se encontrÃ³ el div con el contenido de alertas');
           return;
         }
         
         var alertsHtml = $contentDiv.html();
         
-        // Verificar que el HTML no esté vacío
+        // Verificar que el HTML no estÃ© vacÃ­o
         if (!alertsHtml || alertsHtml.trim() === '') {
-          console.error('El HTML de alertas está vacío');
+          console.error('El HTML de alertas estÃ¡ vacÃ­o');
           console.log('Stock alerts count:', {{ $stockAlerts->count() ?? 0 }});
-          console.log('Div encontrado pero vacío');
+          console.log('Div encontrado pero vacÃ­o');
           return;
         }
         
@@ -1147,7 +1181,7 @@
         console.log('Primeros 200 caracteres:', alertsHtml.substring(0, 200));
         
         swal({
-          title: 'Alertas de Stock Mínimo',
+          title: 'Alertas de Stock MÃ­nimo',
           html: alertsHtml,
           icon: 'warning',
           width: '800px',
@@ -1187,26 +1221,19 @@
         $dashboardPanel = backpack_url('dashboard');
     @endphp
 
-    @if(($isAdminInstitucion ?? false) || ($isApoderado ?? false) || ($isRepresentanteLegal ?? false))
-        @if($pendingLegalApprovalsCount > 0)
-    <div class="alert legal-approval-alert d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-2 mb-4" role="alert">
-        <div>
-            <i class="la la-bell mr-2"></i>
-            <strong>Atención:</strong> hay {{ $pendingLegalApprovalsCount }} solicitud(es) de compra pendiente(s) de aprobación según su perfil.
-        </div>
-        <div class="d-flex flex-wrap gap-2">
-            <a href="{{ $dashboardPanel }}#pending-approval-section" class="btn btn-sm btn-danger">Ir al bloque en el panel</a>
-            <a href="{{ $dashboardPanel }}#purchase-requests-process-section" class="btn btn-sm btn-outline-danger">Ver panel de solicitudes de compra</a>
-        </div>
-    </div>
-        @endif
+    @if(isset($isAdminInstitucion) && $isAdminInstitucion && isset($adminInstitucionInbox))
+        @include('admin.dashboard.inc.admin_institucion_inbox')
     @endif
 
-    @if(isset($isResponsableCompras) && $isResponsableCompras && ($purchaseRequestsAwaitingQuoteSelectionCount ?? 0) > 0)
+    @if((($isApoderado ?? false) || ($isRepresentanteLegal ?? false)) && !($isAdminInstitucion ?? false) && isset($superiorAuthorityInbox))
+        @include('admin.dashboard.inc.superior_authority_inbox')
+    @endif
+
+    @if(isset($isResponsableCompras) && $isResponsableCompras && !($isAdminInstitucion ?? false) && ($purchaseRequestsAwaitingQuoteSelectionCount ?? 0) > 0)
     <div class="alert compras-seleccion-cotizacion-alert d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-2 mb-4" role="alert">
         <div>
             <i class="la la-bell mr-2"></i>
-            <strong>Selección de cotización:</strong> hay {{ $purchaseRequestsAwaitingQuoteSelectionCount }} solicitud(es) de compra con cotizaciones cargadas y aún sin cotización elegida.
+            <strong>SelecciÃ³n de cotizaciÃ³n:</strong> hay {{ $purchaseRequestsAwaitingQuoteSelectionCount }} solicitud(es) de compra con cotizaciones cargadas y aÃºn sin cotizaciÃ³n elegida.
         </div>
         <div class="d-flex flex-wrap gap-2">
             <a href="{{ $dashboardPanel }}#purchase-requests-process-section" class="btn btn-sm btn-danger">Ir al panel de solicitudes de compra</a>
@@ -1214,27 +1241,20 @@
     </div>
     @endif
 
-    @if(isset($isResponsableCompras) && $isResponsableCompras && ($superiorApprovedPurchaseRequestsCount ?? 0) > 0)
+    @if(($superiorApprovedPurchaseRequestsCount ?? 0) > 0 && (
+        (isset($isResponsableCompras) && $isResponsableCompras && !($isAdminInstitucion ?? false))
+        || ((isset($isAdminInstitucion) && $isAdminInstitucion) && !\App\Models\User::backpackHasAnyUserWithRole('role_responsable_compras'))
+    ))
     <div class="alert compras-superior-approval-alert d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-2 mb-4" role="alert">
         <div>
             <i class="la la-bell mr-2"></i>
-            <strong>Compras:</strong> hay {{ $superiorApprovedPurchaseRequestsCount }} solicitud(es) de compra aprobada(s) por un usuario superior (listas para continuar el proceso de cotización / OC).
+            <strong>{{ (isset($isAdminInstitucion) && $isAdminInstitucion) ? 'Administración del instituto' : 'Compras' }}:</strong>
+            hay {{ $superiorApprovedPurchaseRequestsCount }} solicitud(es) aprobada(s) por nivel superior y pendiente(s) de generar orden de compra.
         </div>
         <div class="d-flex flex-wrap gap-2">
-            <a href="{{ $dashboardPanel }}#purchase-requests-process-section" class="btn btn-sm btn-primary">Ir al panel de solicitudes de compra</a>
+            <a href="{{ backpack_url('purchase-request') }}?aprobadas_por_superior=1" class="btn btn-sm btn-success">Ver y generar OC</a>
+            <a href="{{ $dashboardPanel }}#purchase-requests-process-section" class="btn btn-sm btn-outline-primary">Panel de solicitudes</a>
         </div>
-    </div>
-    @endif
-
-    @if(isset($isAdminInstitucion) && $isAdminInstitucion && ($purchaseOrdersPendingPaymentAfterConformeCount ?? 0) > 0)
-    <div class="alert compras-op-pendiente-alert d-flex justify-content-between align-items-center mb-4" role="alert">
-        <div>
-            <i class="la la-bell mr-2"></i>
-            <strong>Orden de pago:</strong> hay {{ $purchaseOrdersPendingPaymentAfterConformeCount }} orden(es) de compra sin orden de pago. Puede generarla desde el detalle de cada orden de compra (no requiere recepción conforme).
-        </div>
-        <a href="{{ $dashboardPanel }}#purchase-orders-process-section" class="btn btn-sm btn-success">
-            Ir al panel de órdenes de compra
-        </a>
     </div>
     @endif
 
@@ -1281,16 +1301,22 @@
 
     @if(isset($isResponsableArea) && $isResponsableArea)
     <div class="row mb-4">
-        <div class="col-md-12 d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <div class="col-md-12 d-flex align-items-center flex-wrap gap-2 {{ (!isset($isAutoridadInstituto) || !$isAutoridadInstituto) ? 'justify-content-between' : '' }}">
+            @if(isset($isAutoridadInstituto) && $isAutoridadInstituto)
+            <a href="{{ backpack_url('purchase-request/create') }}" class="btn btn-primary">
+                <i class="la la-plus"></i> Nueva solicitud de compra
+            </a>
+            @else
             <h2 class="section-title mb-0">Solicitudes de compra</h2>
             <a href="{{ backpack_url('purchase-request/create') }}" class="btn btn-primary">
                 <i class="la la-plus"></i> Nueva solicitud de compra
             </a>
+            @endif
         </div>
     </div>
     @endif
     
-    <!-- Estadísticas Generales -->
+    <!-- EstadÃ­sticas Generales -->
     <div class="row mb-4">
         <div class="col-md-12">
             <h2 class="section-title">Proceso de Solicitudes</h2>
@@ -1298,7 +1324,7 @@
     </div>
 
     @php
-        /* Compras sin solicitudes generales: se oculta la 1ª tarjeta pero las otras quedaban en col-md-3 (9/12 → hueco). */
+        /* Compras sin solicitudes generales: se oculta la 1Âª tarjeta pero las otras quedaban en col-md-3 (9/12 â†’ hueco). */
         $comprasTresTarjetasProceso = isset($isResponsableCompras) && $isResponsableCompras
             && (int) ($stats['general_requests'] ?? 0) === 0
             && (!isset($isPersonal) || !$isPersonal)
@@ -1330,9 +1356,9 @@
                         <br>
                         <small style="color: #6c757d; font-size: 0.85rem;">
                             <i class="la la-hourglass-half"></i> 
-                            Más antigua: {{ (int)$generalRequestsAgeStats['max_days'] }} día(s)
+                            MÃ¡s antigua: {{ (int)$generalRequestsAgeStats['max_days'] }} dÃ­a(s)
                             @if($generalRequestsAgeStats['average_days'] >= 0)
-                                | Promedio: {{ (int)$generalRequestsAgeStats['average_days'] }} día(s)
+                                | Promedio: {{ (int)$generalRequestsAgeStats['average_days'] }} dÃ­a(s)
                             @endif
                         </small>
                     @endif
@@ -1357,9 +1383,9 @@
                         <br>
                         <small style="color: #6c757d;">
                             <i class="la la-hourglass-half"></i> 
-                            Más antigua: {{ (int)$purchaseRequestsAgeStats['max_days'] }} día(s)
+                            MÃ¡s antigua: {{ (int)$purchaseRequestsAgeStats['max_days'] }} dÃ­a(s)
                             @if($purchaseRequestsAgeStats['average_days'] >= 0)
-                                | Promedio: {{ (int)$purchaseRequestsAgeStats['average_days'] }} día(s)
+                                | Promedio: {{ (int)$purchaseRequestsAgeStats['average_days'] }} dÃ­a(s)
                             @endif
                         </small>
                     @endif
@@ -1378,9 +1404,9 @@
                         <br>
                         <small style="color: #6c757d; font-size: 0.85rem;">
                             <i class="la la-hourglass-half"></i> 
-                            Más antigua: {{ (int)$purchaseRequestsAgeStats['max_days'] }} día(s)
+                            MÃ¡s antigua: {{ (int)$purchaseRequestsAgeStats['max_days'] }} dÃ­a(s)
                             @if($purchaseRequestsAgeStats['average_days'] > 0)
-                                | Promedio: {{ (int)$purchaseRequestsAgeStats['average_days'] }} día(s)
+                                | Promedio: {{ (int)$purchaseRequestsAgeStats['average_days'] }} dÃ­a(s)
                             @endif
                         </small>
                     @endif
@@ -1396,7 +1422,7 @@
                     <i class="la la-clipboard-list"></i>
                 </div>
                 <div class="stat-card-number">{{ $stats['purchase_orders'] }}</div>
-                <div class="stat-card-label">Órdenes de Compra</div>
+                <div class="stat-card-label">Ã“rdenes de Compra</div>
                 <div class="stat-card-pending">{{ $stats['purchase_orders_pending'] }} Pendientes</div>
             </a>
         </div>
@@ -1406,7 +1432,7 @@
                     <i class="la la-money-bill-wave"></i>
                 </div>
                 <div class="stat-card-number">{{ $stats['payment_orders'] }}</div>
-                <div class="stat-card-label">Órdenes de Pago</div>
+                <div class="stat-card-label">Ã“rdenes de Pago</div>
                 <div class="stat-card-pending">{{ $stats['payment_orders_pending'] }} Pendientes</div>
             </a>
         </div>
@@ -1493,7 +1519,7 @@
                     <i class="la la-bolt"></i>
                 </div>
                 <div class="stat-card-number" style="color: #ffc107;">{{ $stats['purchase_requests_quick'] ?? 0 }}</div>
-                <div class="stat-card-label">Compras Rápidas</div>
+                <div class="stat-card-label">Compras RÃ¡pidas</div>
                 <div class="stat-card-pending">&nbsp;</div>
             </a>
         </div>
@@ -1517,7 +1543,7 @@
                 <div class="card-body">
                     <div class="d-flex justify-content-between align-items-start mb-2">
                         <h5 class="card-title mb-0">{{ $supplier->company_name }}</h5>
-                        <span class="badge bg-secondary">{{ $supplier->total_ratings }} evaluación(es)</span>
+                        <span class="badge bg-secondary">{{ $supplier->total_ratings }} evaluaciÃ³n(es)</span>
                     </div>
                     <div class="mb-2">
                         @php
@@ -1539,7 +1565,7 @@
                         </div>
                     </div>
                     <div class="text-muted small">
-                        <i class="la la-calendar"></i> Última evaluación: 
+                        <i class="la la-calendar"></i> Ãšltima evaluaciÃ³n: 
                         @if($supplier->ratings->isNotEmpty())
                             {{ $supplier->ratings->sortByDesc('evaluation_date')->first()->evaluation_date->format('d/m/Y') }}
                         @else
@@ -1559,7 +1585,7 @@
     @endif
 
     @if(isset($isResponsableArea) && $isResponsableArea && isset($stockAlerts) && $stockAlerts->isNotEmpty())
-    <!-- Alertas de Stock Mínimo (Responsable de Área) -->
+    <!-- Alertas de Stock MÃ­nimo (Responsable de Ãrea) -->
     <div class="row mb-4">
         <div class="col-md-12 d-flex justify-content-between align-items-center">
             <h3 class="section-title mb-0">Alertas de Stock</h3>
@@ -1572,7 +1598,7 @@
         <div class="process-step-header" style="background-color: #f8d7da;">
             <div class="process-step-title">
                 <i class="la la-exclamation-circle process-step-icon" style="color: #721c24;"></i>
-                <span style="color: #721c24; font-weight: bold;">Productos con Stock por Debajo del Mínimo</span>
+                <span style="color: #721c24; font-weight: bold;">Productos con Stock por Debajo del MÃ­nimo</span>
             </div>
             <span class="process-step-count" style="background-color: #dc3545; color: white;">{{ $stockAlerts->count() }}</span>
         </div>
@@ -1587,12 +1613,12 @@
                             <i class="la la-arrow-down"></i> Stock actual: {{ number_format($alert['current_stock'], 0) }}
                         </span>
                         <span style="color: #856404;">
-                            <i class="la la-exclamation-triangle"></i> Stock mínimo: {{ number_format($alert['minimum_stock'], 0) }}
+                            <i class="la la-exclamation-triangle"></i> Stock mÃ­nimo: {{ number_format($alert['minimum_stock'], 0) }}
                         </span>
                     </div>
                     <div class="process-item-meta">
                         <span style="color: #dc3545; font-weight: bold;">
-                            <i class="la la-minus-circle"></i> Déficit: {{ number_format($alert['deficit'], 0) }} {{ $alert['product']->unit_measurement ?? 'unidades' }}
+                            <i class="la la-minus-circle"></i> DÃ©ficit: {{ number_format($alert['deficit'], 0) }} {{ $alert['product']->unit_measurement ?? 'unidades' }}
                         </span>
                     </div>
                     @if($alert['locations']->isNotEmpty())
@@ -1651,8 +1677,8 @@
                             $pos = ['bg' => '#198754', 'text' => '#fff'];
                             $statusColors = [
                                 'creada' => ['bg' => '#6c757d', 'text' => '#fff', 'label' => 'Creada'],
-                                'pendiente-analisis' => ['bg' => '#fd7e14', 'text' => '#fff', 'label' => 'Pendiente análisis'],
-                                'revisada-area' => $pos + ['label' => 'Revisada por Área'],
+                                'pendiente-analisis' => ['bg' => '#fd7e14', 'text' => '#fff', 'label' => 'Pendiente anÃ¡lisis'],
+                                'revisada-area' => $pos + ['label' => 'Revisada por Ãrea'],
                                 'archivada' => ['bg' => '#495057', 'text' => '#fff', 'label' => 'Archivada'],
                                 'sin-entrega' => ['bg' => '#ffc107', 'text' => '#212529', 'label' => 'Sin entrega'],
                                 'entregada-parcialmente' => $pos + ['label' => 'Entregada parcialmente'],
@@ -1683,8 +1709,8 @@
                                 $ageDays = (int) floor($generalRequest->age_in_days);
                                 $badgeColor = $generalRequest->age_badge_color;
                             @endphp
-                            <span class="badge bg-{{ $badgeColor }}" style="margin-left: 5px;" title="Antigüedad: {{ $generalRequest->age }}">
-                                <i class="la la-hourglass-half"></i> {{ $ageDays }} día(s)
+                            <span class="badge bg-{{ $badgeColor }}" style="margin-left: 5px;" title="AntigÃ¼edad: {{ $generalRequest->age }}">
+                                <i class="la la-hourglass-half"></i> {{ $ageDays }} dÃ­a(s)
                             </span>
                         @endif
                     </div>
@@ -1696,63 +1722,8 @@
     </div>
     @endif
 
-    @if(((isset($isAdminInstitucion) && $isAdminInstitucion) || (isset($isApoderado) && $isApoderado) || (isset($isRepresentanteLegal) && $isRepresentanteLegal)) && isset($pendingApprovalRequests))
-    <!-- Solicitudes Pendientes de Aprobación (Administrador del Instituto, Apoderado o Representante Legal) -->
-    @php
-        $isLegalPendingHighlight = isset($isRepresentanteLegal) && $isRepresentanteLegal && $pendingApprovalRequests->count() > 0;
-        $approvalBorderColor = $isLegalPendingHighlight ? '#dc3545' : '#ffc107';
-        $approvalHeaderBg = $isLegalPendingHighlight ? '#f8d7da' : '#fff3cd';
-        $approvalTextColor = $isLegalPendingHighlight ? '#842029' : '#856404';
-        $approvalCounterBg = $isLegalPendingHighlight ? '#dc3545' : '#ffc107';
-        $approvalCounterText = $isLegalPendingHighlight ? '#fff' : '#856404';
-    @endphp
-    <div id="pending-approval-section" class="process-step {{ $isLegalPendingHighlight ? 'pending-approval-highlight' : '' }}" style="border-left: 4px solid {{ $approvalBorderColor }};">
-        <div class="process-step-header" style="background-color: {{ $approvalHeaderBg }};">
-            <div class="process-step-title">
-                <i class="la la-exclamation-triangle process-step-icon" style="color: {{ $approvalTextColor }};"></i>
-                <span style="color: {{ $approvalTextColor }}; font-weight: bold;">Solicitudes Pendientes de Aprobación</span>
-            </div>
-            <span class="process-step-count" style="background-color: {{ $approvalCounterBg }}; color: {{ $approvalCounterText }};">{{ $pendingApprovalRequests->count() }}</span>
-        </div>
-        <div class="process-step-content">
-            @forelse($pendingApprovalRequests as $purchaseRequest)
-                <div class="process-item-card" onclick="window.location='{{ backpack_url('purchase-request/' . $purchaseRequest->id . '/show') }}'" style="border-left: 3px solid {{ $approvalBorderColor }}; cursor: pointer;">
-                    <div class="process-item-title">
-                        {{ $purchaseRequest->request_number }}
-                        @if($purchaseRequest->is_direct_purchase)
-                            <span class="badge bg-info text-white" style="margin-left: 10px;">Compra Directa</span>
-                        @else
-                            <span class="badge {{ $isLegalPendingHighlight ? 'bg-danger text-white' : 'bg-warning text-dark' }}" style="margin-left: 10px;">Requiere Aprobación</span>
-                        @endif
-                    </div>
-                    <div class="process-item-meta">
-                        <span><i class="la la-user"></i> {{ $purchaseRequest->requestingUser->name ?? 'N/A' }}</span>
-                        <span><i class="la la-building"></i> {{ $purchaseRequest->responsibilityArea->name ?? 'N/A' }}</span>
-                    </div>
-                    <div class="process-item-meta">
-                        <span><i class="la la-calendar"></i> {{ $purchaseRequest->request_date->format('d/m/Y') ?? 'N/A' }}</span>
-                        <span><i class="la la-dollar-sign"></i> ${{ number_format($purchaseRequest->total_amount, 2) }}</span>
-                        @php
-                            $ageDays = (int) floor($purchaseRequest->age_in_days);
-                            $badgeColor = $purchaseRequest->age_badge_color;
-                        @endphp
-                        <span class="badge bg-{{ $badgeColor }}" style="margin-left: 5px;" title="Antigüedad: {{ $purchaseRequest->age }}">
-                            <i class="la la-hourglass-half"></i> {{ $ageDays }} día(s)
-                        </span>
-                    </div>
-                    <div class="process-item-meta">
-                        <span><i class="la la-box"></i> {{ $purchaseRequest->details->count() }} productos</span>
-                        @if($purchaseRequest->is_direct_purchase && $purchaseRequest->directPurchaseSupplier)
-                            <span><i class="la la-truck"></i> {{ $purchaseRequest->directPurchaseSupplier->company_name }}</span>
-                        @endif
-                        <span class="process-item-status status-{{ strtolower(str_replace(' ', '-', $purchaseRequest->status)) }}">{{ $purchaseRequest->status }}</span>
-                    </div>
-                </div>
-            @empty
-                <div class="text-muted">No hay solicitudes pendientes de aprobación</div>
-            @endforelse
-        </div>
-    </div>
+    @if(((isset($isApoderado) && $isApoderado) || (isset($isRepresentanteLegal) && $isRepresentanteLegal)) && !($isAdminInstitucion ?? false) && isset($pendingApprovalRequests))
+        @include('admin.dashboard.inc.pending_approval_section')
     @endif
 
     @if((isset($isResponsableArea) && $isResponsableArea) || (!isset($isPersonal) || !$isPersonal))
@@ -1781,8 +1752,8 @@
                                 $ageDays = (int) floor($purchaseRequest->age_in_days);
                                 $badgeColor = $purchaseRequest->age_badge_color;
                             @endphp
-                            <span class="badge bg-{{ $badgeColor }}" style="margin-left: 5px;" title="Antigüedad: {{ $purchaseRequest->age }}">
-                                <i class="la la-hourglass-half"></i> {{ $ageDays }} día(s)
+                            <span class="badge bg-{{ $badgeColor }}" style="margin-left: 5px;" title="AntigÃ¼edad: {{ $purchaseRequest->age }}">
+                                <i class="la la-hourglass-half"></i> {{ $ageDays }} dÃ­a(s)
                             </span>
                         @endif
                     </div>
@@ -1795,12 +1766,12 @@
     @endif
 
     @if((!isset($isPersonal) || !$isPersonal) && (!isset($isResponsableArea) || !$isResponsableArea))
-    <!-- Paso 3: Órdenes de Compra -->
+    <!-- Paso 3: Ã“rdenes de Compra -->
     <div id="purchase-orders-process-section" class="process-step">
         <div class="process-step-header">
             <div class="process-step-title">
                 <i class="la la-clipboard-list process-step-icon"></i>
-                <span>3. Órdenes de Compra</span>
+                <span>3. Ã“rdenes de Compra</span>
             </div>
             <span class="process-step-count">{{ $stats['purchase_orders'] }}</span>
         </div>
@@ -1818,7 +1789,7 @@
                     </div>
                 </div>
             @empty
-                <div class="text-muted">No hay órdenes de compra recientes</div>
+                <div class="text-muted">No hay Ã³rdenes de compra recientes</div>
             @endforelse
         </div>
     </div>
@@ -1859,12 +1830,12 @@
     @endif
 
     @if((!isset($isPersonal) || !$isPersonal) && (!isset($isResponsableArea) || !$isResponsableArea))
-    <!-- Paso 5: Órdenes de Pago -->
+    <!-- Paso 5: Ã“rdenes de Pago -->
     <div id="payment-orders-process-section" class="process-step">
         <div class="process-step-header">
             <div class="process-step-title">
                 <i class="la la-money-bill-wave process-step-icon"></i>
-                <span>5. Órdenes de Pago</span>
+                <span>5. Ã“rdenes de Pago</span>
             </div>
             <span class="process-step-count">{{ $stats['payment_orders'] }}</span>
         </div>
@@ -1887,7 +1858,7 @@
                     </div>
                 </div>
             @empty
-                <div class="text-muted">No hay órdenes de pago recientes</div>
+                <div class="text-muted">No hay Ã³rdenes de pago recientes</div>
             @endforelse
         </div>
     </div>
@@ -1974,7 +1945,7 @@
     <div class="row mb-4">
         <div class="col-md-12">
             <h3 class="section-title">Trazabilidad Completa de Procesos</h3>
-            <p class="text-muted">Incluye solicitudes generales con compra asociada y solicitudes de compra creadas directamente (sin solicitud general), hasta órdenes de compra, pagos, recepciones y devoluciones si aplica.</p>
+            <p class="text-muted">Incluye solicitudes generales con compra asociada y solicitudes de compra creadas directamente (sin solicitud general), hasta Ã³rdenes de compra, pagos, recepciones y devoluciones si aplica.</p>
         </div>
     </div>
 
@@ -2019,8 +1990,8 @@
                                         $pos = ['bg' => '#198754', 'text' => '#fff'];
                                         $statusColors = [
                                             'creada' => ['bg' => '#6c757d', 'text' => '#fff', 'label' => 'Creada'],
-                                            'pendiente-analisis' => ['bg' => '#fd7e14', 'text' => '#fff', 'label' => 'Pendiente análisis'],
-                                            'revisada-area' => $pos + ['label' => 'Revisada por Área'],
+                                            'pendiente-analisis' => ['bg' => '#fd7e14', 'text' => '#fff', 'label' => 'Pendiente anÃ¡lisis'],
+                                            'revisada-area' => $pos + ['label' => 'Revisada por Ãrea'],
                                             'archivada' => ['bg' => '#495057', 'text' => '#fff', 'label' => 'Archivada'],
                                             'sin-entrega' => ['bg' => '#ffc107', 'text' => '#212529', 'label' => 'Sin entrega'],
                                             'entregada-parcialmente' => $pos + ['label' => 'Entregada parcialmente'],
@@ -2060,7 +2031,7 @@
                                             Estado: {{ $pr->status }} | 
                                             Fecha: {{ $pr->request_date ? $pr->request_date->format('d/m/Y') : 'N/A' }}
                                             @if($pr->selectedMarketRate)
-                                                | Cotización seleccionada: {{ $pr->selectedMarketRate->supplier->name ?? 'N/A' }}
+                                                | CotizaciÃ³n seleccionada: {{ $pr->selectedMarketRate->supplier->name ?? 'N/A' }}
                                             @endif
                                         </small>
                                     </div>
@@ -2069,7 +2040,7 @@
                         @elseif($flowHasGeneral)
                             <div class="flow-timeline-item">
                                 <div class="flow-timeline-content">
-                                    <small class="text-muted">No hay solicitudes de compra generadas aún</small>
+                                    <small class="text-muted">No hay solicitudes de compra generadas aÃºn</small>
                                 </div>
                             </div>
                         @endif
@@ -2096,12 +2067,12 @@
                                     </div>
                                 </div>
 
-                                {{-- Mostrar recepciones relacionadas con esta orden de compra (antes que OP en la línea de tiempo) --}}
+                                {{-- Mostrar recepciones relacionadas con esta orden de compra (antes que OP en la lÃ­nea de tiempo) --}}
                                 @if($po->receptions && $po->receptions->count() > 0)
                                     @foreach($po->receptions as $reception)
                                         <div class="flow-timeline-item">
                                             <div class="flow-timeline-content" style="margin-left: 20px; border-left: 3px solid var(--dashboard-positive-bg);">
-                                                <strong><i class="la la-truck-loading"></i> Recepción:</strong> 
+                                                <strong><i class="la la-truck-loading"></i> RecepciÃ³n:</strong> 
                                                 <a href="{{ backpack_url('reception/' . $reception->id . '/show') }}" class="text-primary">
                                                     {{ $reception->number ?? 'REC-' . $reception->id }}
                                                 </a>
@@ -2122,12 +2093,12 @@
                                             </div>
                                         </div>
 
-                                        {{-- Mostrar devoluciones relacionadas con esta recepción --}}
+                                        {{-- Mostrar devoluciones relacionadas con esta recepciÃ³n --}}
                                         @if($reception->devolutions && $reception->devolutions->count() > 0)
                                             @foreach($reception->devolutions as $devolution)
                                                 <div class="flow-timeline-item">
                                                     <div class="flow-timeline-content" style="margin-left: 40px; border-left: 3px solid #dc3545;">
-                                                        <strong><i class="la la-undo-alt"></i> Devolución:</strong> 
+                                                        <strong><i class="la la-undo-alt"></i> DevoluciÃ³n:</strong> 
                                                         <a href="{{ backpack_url('devolution/' . $devolution->id . '/show') }}" class="text-primary">
                                                             DEV-{{ $devolution->id }}
                                                         </a>
@@ -2146,7 +2117,7 @@
                                             @endforeach
                                         @endif
 
-                                        {{-- Mostrar entregas relacionadas con esta recepción --}}
+                                        {{-- Mostrar entregas relacionadas con esta recepciÃ³n --}}
                                         @if($reception->deliveries && $reception->deliveries->count() > 0)
                                             @foreach($reception->deliveries as $delivery)
                                                 <div class="flow-timeline-item">
@@ -2169,7 +2140,7 @@
                                                         @endif
                                                         <br>
                                                         <small class="text-muted">
-                                                            Solicitud General: {{ $delivery->generalRequest?->number ?? '—' }}
+                                                            Solicitud General: {{ $delivery->generalRequest?->number ?? 'â€”' }}
                                                             @if($delivery->delivery_date)
                                                                 | Fecha: {{ $delivery->delivery_date->format('d/m/Y') }}
                                                             @endif
@@ -2193,7 +2164,7 @@
                                     </div>
                                 @endif
 
-                                {{-- Mostrar órdenes de pago relacionadas con esta orden de compra (después de recepciones en la línea de tiempo) --}}
+                                {{-- Mostrar Ã³rdenes de pago relacionadas con esta orden de compra (despuÃ©s de recepciones en la lÃ­nea de tiempo) --}}
                                 @if($po->paymentOrders && $po->paymentOrders->count() > 0)
                                     @foreach($po->paymentOrders as $paymentOrder)
                                         <div class="flow-timeline-item">
@@ -2227,7 +2198,7 @@
                                 @else
                                     <div class="flow-timeline-item">
                                         <div class="flow-timeline-content" style="margin-left: 20px;">
-                                            <small class="text-muted"><i class="la la-info-circle"></i> No hay órdenes de pago registradas para esta orden de compra</small>
+                                            <small class="text-muted"><i class="la la-info-circle"></i> No hay Ã³rdenes de pago registradas para esta orden de compra</small>
                                         </div>
                                     </div>
                                 @endif
@@ -2235,7 +2206,7 @@
                         @else
                             <div class="flow-timeline-item">
                                 <div class="flow-timeline-content">
-                                    <small class="text-muted">No hay órdenes de compra generadas aún</small>
+                                    <small class="text-muted">No hay Ã³rdenes de compra generadas aÃºn</small>
                                 </div>
                             </div>
                         @endif
@@ -2249,7 +2220,7 @@
         <div class="col-md-12">
             <div class="alert alert-info">
                 <i class="la la-info-circle"></i> 
-                No hay procesos para mostrar todavía. La trazabilidad incluye solicitudes generales con compras asociadas, o solicitudes de compra creadas directamente (sin solicitud general), con su seguimiento hasta órdenes de compra y recepciones.
+                No hay procesos para mostrar todavÃ­a. La trazabilidad incluye solicitudes generales con compras asociadas, o solicitudes de compra creadas directamente (sin solicitud general), con su seguimiento hasta Ã³rdenes de compra y recepciones.
             </div>
         </div>
     </div>

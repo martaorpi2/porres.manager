@@ -13,6 +13,12 @@ class PurchaseRequestEvent extends Model
     /** Administración del instituto registró decisión por ítem; pendiente aprobación por monto (nivel superior). */
     public const EVENT_ADMINISTRATION_INITIAL_REVIEW_PENDING_SUPERIOR = 'administration_initial_review_pending_superior';
 
+    /** Administradora solicitó (o reenvió) correo de aprobación al nivel superior por monto. */
+    public const EVENT_ADMINISTRATOR_SUPERIOR_APPROVAL_REQUESTED = 'administrator_superior_approval_requested';
+
+    /** Administración reabrió la solicitud tras observaciones del nivel superior para ajustar cotización. */
+    public const EVENT_REOPENED_AFTER_SUPERIOR_REVISION = 'reopened_after_superior_revision';
+
     public $timestamps = false;
 
     protected $fillable = [

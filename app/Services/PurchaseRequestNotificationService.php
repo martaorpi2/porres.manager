@@ -111,7 +111,7 @@ class PurchaseRequestNotificationService
      *
      * @return list<string>
      */
-    private static function superiorApproverRoleNamesForAmountFromAdministrator(float $totalAmount): array
+    public static function superiorApproverRoleNamesForAmountFromAdministrator(float $totalAmount): array
     {
         $apoderadoLimit = (float) PurchaseAuthorizationLimit::getLimitForRole('role_apoderado');
         if ($apoderadoLimit > 0 && $totalAmount <= $apoderadoLimit) {
@@ -381,27 +381,23 @@ class PurchaseRequestNotificationService
         return self::hasSelectedQuotation($purchaseRequest);
     }
 
-    public static function shouldAdministratorEscalateQuotationApproval(PurchaseRequest $purchaseRequest): bool
-    {
+    public static function shouldAdministratorEscalateQuotationApproval(
+        PurchaseRequest $purchaseRequest,
+        ?float $effectiveTotal = null
+    ): bool {
         if (! self::isAwaitingAdministratorQuotationApproval($purchaseRequest)) {
             return false;
         }
 
         $adminLimit = (float) PurchaseAuthorizationLimit::getLimitForRole('role_admin_institucion');
+        $amount = $effectiveTotal ?? $purchaseRequest->effectiveTotalForAuthorizationLimits();
 
-        return $adminLimit > 0 && (float) ($purchaseRequest->total_amount ?? 0) > $adminLimit;
+        return $adminLimit > 0 && $amount > $adminLimit;
     }
 
     public static function hasSelectedQuotation(PurchaseRequest $purchaseRequest): bool
     {
-        if (! empty($purchaseRequest->selected_market_rate_id)) {
-            return true;
-        }
-
-        return MarketRate::query()
-            ->where('purchase_request_id', $purchaseRequest->id)
-            ->where('is_selected', true)
-            ->exists();
+        return $purchaseRequest->hasQuotationSelectionResolved();
     }
 
     private static function htmlBody(string $intro, PurchaseRequest $purchaseRequest, string $url, ?User $notificationSentBy = null): string

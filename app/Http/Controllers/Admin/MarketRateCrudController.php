@@ -23,7 +23,9 @@ class MarketRateCrudController extends CrudController
     use \Backpack\CRUD\app\Http\Controllers\Operations\ListOperation;
     use \Backpack\CRUD\app\Http\Controllers\Operations\CreateOperation;
     use \Backpack\CRUD\app\Http\Controllers\Operations\UpdateOperation;
-    use \Backpack\CRUD\app\Http\Controllers\Operations\DeleteOperation;
+    use \Backpack\CRUD\app\Http\Controllers\Operations\DeleteOperation {
+        destroy as traitDestroy;
+    }
     use \Backpack\CRUD\app\Http\Controllers\Operations\ShowOperation;
 
     /**
@@ -140,8 +142,11 @@ class MarketRateCrudController extends CrudController
         
         // Validar que la solicitud de compra no esté aprobada si se proporciona el ID
         if ($purchaseRequestId) {
-            $purchaseRequest = \App\Models\PurchaseRequest::with(['marketRates', 'details'])->find($purchaseRequestId);
-            if ($purchaseRequest && $purchaseRequest->status === 'Aprobada') {
+            $purchaseRequest = \App\Models\PurchaseRequest::with(['marketRates', 'details', 'purchaseRequestEvents', 'purchaseOrders'])->find($purchaseRequestId);
+            if ($redirect = $this->redirectIfPurchaseRequestFrozenForSuperiorApproval($purchaseRequest)) {
+                return $redirect;
+            }
+            if ($purchaseRequest && $purchaseRequest->status === 'Aprobada' && ! $purchaseRequest->canReopenForSuperiorAuthorizationAfterRevision()) {
                 \Alert::error('No se pueden agregar cotizaciones a una solicitud de compra que ya está aprobada.')->flash();
                 return redirect()->back();
             }
@@ -327,9 +332,16 @@ class MarketRateCrudController extends CrudController
      */
     protected function setupUpdateOperation()
     {
+        $entry = $this->crud->getCurrentEntry();
+        if ($entry && $entry->purchase_request_id) {
+            $purchaseRequest = \App\Models\PurchaseRequest::with(['marketRates', 'details', 'purchaseRequestEvents', 'purchaseOrders'])->find($entry->purchase_request_id);
+            if ($redirect = $this->redirectIfPurchaseRequestFrozenForSuperiorApproval($purchaseRequest)) {
+                return $redirect;
+            }
+        }
+
         $this->setupCreateOperation();
         
-        $entry = $this->crud->getCurrentEntry();
         if ($entry) {
             // Incluir la solicitud de compra actual en el select aunque esté Aprobada/Completada (solo si el campo existe para evitar array offset on null)
             $purchaseRequestField = $this->crud->firstFieldWhere('name', 'purchase_request_id');
@@ -629,8 +641,11 @@ class MarketRateCrudController extends CrudController
 
         // Validar que la solicitud de compra no esté aprobada
         if (isset($dataToSave['purchase_request_id']) && !empty($dataToSave['purchase_request_id'])) {
-            $purchaseRequest = \App\Models\PurchaseRequest::with(['marketRates', 'details'])->find($dataToSave['purchase_request_id']);
-            if ($purchaseRequest && $purchaseRequest->status === 'Aprobada') {
+            $purchaseRequest = \App\Models\PurchaseRequest::with(['marketRates', 'details', 'purchaseRequestEvents', 'purchaseOrders'])->find($dataToSave['purchase_request_id']);
+            if ($redirect = $this->redirectIfPurchaseRequestFrozenForSuperiorApproval($purchaseRequest)) {
+                return $redirect;
+            }
+            if ($purchaseRequest && $purchaseRequest->status === 'Aprobada' && ! $purchaseRequest->canReopenForSuperiorAuthorizationAfterRevision()) {
                 \Alert::error('No se pueden agregar cotizaciones a una solicitud de compra que ya está aprobada.')->flash();
                 return redirect()->back()->withInput();
             }
@@ -711,6 +726,14 @@ class MarketRateCrudController extends CrudController
 
         // Obtener la cotización actual
         $currentEntry = $this->crud->getCurrentEntry();
+
+        if ($currentEntry && $currentEntry->purchase_request_id) {
+            $linkedPurchaseRequest = \App\Models\PurchaseRequest::with(['marketRates', 'details', 'purchaseRequestEvents', 'purchaseOrders'])
+                ->find($currentEntry->purchase_request_id);
+            if ($redirect = $this->redirectIfPurchaseRequestFrozenForSuperiorApproval($linkedPurchaseRequest)) {
+                return $redirect;
+            }
+        }
         
         // Advertir pero permitir editar si la solicitud está aprobada (solo bloqueamos asociar a otra solicitud aprobada más abajo)
         // Así se pueden corregir fecha de entrega, forma de pago, etc. sin bloquear todo el guardado.
@@ -744,8 +767,12 @@ class MarketRateCrudController extends CrudController
 
         // Validar también si se está cambiando la solicitud de compra a una aprobada
         if (isset($dataToSave['purchase_request_id']) && !empty($dataToSave['purchase_request_id'])) {
-            $purchaseRequest = \App\Models\PurchaseRequest::find($dataToSave['purchase_request_id']);
-            if ($purchaseRequest && $purchaseRequest->status === 'Aprobada') {
+            $purchaseRequest = \App\Models\PurchaseRequest::with(['marketRates', 'details', 'purchaseRequestEvents', 'purchaseOrders'])
+                ->find($dataToSave['purchase_request_id']);
+            if ($redirect = $this->redirectIfPurchaseRequestFrozenForSuperiorApproval($purchaseRequest)) {
+                return $redirect;
+            }
+            if ($purchaseRequest && $purchaseRequest->status === 'Aprobada' && ! $purchaseRequest->canReopenForSuperiorAuthorizationAfterRevision()) {
                 \Alert::error('No se puede asociar una cotización a una solicitud de compra que ya está aprobada.')->flash();
                 return redirect()->back()->withInput();
             }
@@ -776,6 +803,54 @@ class MarketRateCrudController extends CrudController
         $this->crud->setSaveAction();
 
         return $this->crud->performSaveAction($item->getKey());
+    }
+
+    public function destroy($id)
+    {
+        $this->crud->hasAccessOrFail('delete');
+        $entry = $this->crud->getModel()::findOrFail($id);
+        if ($entry->purchase_request_id) {
+            $purchaseRequest = \App\Models\PurchaseRequest::with(['marketRates', 'details', 'purchaseRequestEvents', 'purchaseOrders'])
+                ->find($entry->purchase_request_id);
+            if ($purchaseRequest && $purchaseRequest->blocksQuotationAndAssignmentMutations()) {
+                abort(403, $purchaseRequest->locksQuotationAndAssignmentChanges()
+                    ? 'No se puede eliminar cotizaciones: la solicitud ya está aprobada.'
+                    : 'No se puede eliminar cotizaciones mientras está pendiente la aprobación de nivel superior.');
+            }
+        }
+
+        return $this->traitDestroy($id);
+    }
+
+    /**
+     * @return \Illuminate\Http\RedirectResponse|null
+     */
+    private function redirectIfPurchaseRequestFrozenForSuperiorApproval(?\App\Models\PurchaseRequest $purchaseRequest)
+    {
+        if (! $purchaseRequest) {
+            return null;
+        }
+
+        $purchaseRequest->loadMissing(['purchaseRequestEvents', 'details', 'purchaseOrders', 'marketRates']);
+        if (! $purchaseRequest->blocksQuotationAndAssignmentMutations()) {
+            return null;
+        }
+
+        if ($purchaseRequest->locksQuotationAndAssignmentChanges()) {
+            $purchaseRequest->loadMissing('approvedBy');
+            \Alert::error(
+                $purchaseRequest->wasApprovedBySuperiorAuthority()
+                    ? 'No se pueden agregar ni modificar cotizaciones: la solicitud ya fue aprobada por el nivel superior.'
+                    : 'No se pueden agregar ni modificar cotizaciones: la solicitud ya está aprobada.'
+            )->flash();
+        } else {
+            \Alert::error(
+                'No se pueden agregar ni modificar cotizaciones mientras está pendiente la aprobación de nivel superior. '
+                .'Tras un rechazo parcial del nivel superior, podrá ajustar la solicitud desde «Acciones de nivel superior».'
+            )->flash();
+        }
+
+        return redirect()->route('purchase-request.show', $purchaseRequest->id);
     }
 
     /**

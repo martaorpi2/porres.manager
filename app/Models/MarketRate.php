@@ -121,6 +121,29 @@ class MarketRate extends Model
         return array_values($out);
     }
 
+    /**
+     * Total de la cotización con IVA (para topes de autorización y montos en pantalla).
+     */
+    public function effectiveTotalWithVat(): float
+    {
+        $this->loadMissing('quoteDetails');
+
+        $totalWithVat = (float) ($this->total_amount_with_vat ?? 0);
+        if ($totalWithVat > 0) {
+            return $totalWithVat;
+        }
+
+        $subtotal = (float) ($this->total_amount ?? 0);
+        $vat = (float) ($this->vat_amount ?? 0);
+        if ($subtotal > 0 || $vat > 0) {
+            return $subtotal + max(0, $vat);
+        }
+
+        return (float) $this->quoteDetails->sum(function ($detail) {
+            return ((float) ($detail->quantity ?? 0)) * ((float) ($detail->unit_price ?? 0));
+        });
+    }
+
     /*
     |--------------------------------------------------------------------------
     | RELATIONS

@@ -10,9 +10,13 @@ use App\Models\Location;
 use App\Models\PaymentOrder;
 use App\Models\Product;
 use App\Models\PurchaseOrder;
+use App\Models\PurchaseAuthorizationLimit;
 use App\Models\PurchaseRequest;
 use App\Models\Reception;
 use App\Models\Supplier;
+use App\Models\User;
+use App\Services\PurchaseRequestNotificationService;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Schema;
 
 class DashboardController extends Controller
@@ -31,6 +35,7 @@ class DashboardController extends Controller
 
         $isPersonal = $user->hasRole('role_personal');
         $isResponsableArea = $user->hasResponsableAreaOrInstituteAuthorityRole();
+        $isAutoridadInstituto = $user->hasInstituteAuthorityRole();
         $isResponsableCompras = $user->effectivelyHasResponsableComprasRole();
         $isAdminInstitucion = $user->hasRole('role_admin_institucion', 'backpack');
         $isApoderado = $user->hasRole('role_apoderado', 'backpack');
@@ -256,29 +261,21 @@ class DashboardController extends Controller
                 ->values();
         }
 
-        // Responsable de compras: solicitudes con ≥3 cotizaciones y sin cotización elegida (listas para seleccionar y seguir)
+        // Cotizaciones cargadas sin asignación completa por producto (compras o administradora sin sector de compras)
         $purchaseRequestsAwaitingQuoteSelectionCount = 0;
-        if ($isResponsableCompras) {
-            $purchaseRequestsAwaitingQuoteSelectionCount = PurchaseRequest::purchaseRequestsAwaitingQuoteSelectionAfterThreeQuotationsCount();
+        if ($isResponsableCompras || $isAdminInstitucion) {
+            $purchaseRequestsAwaitingQuoteSelectionCount = PurchaseRequest::purchaseRequestsNeedingQuotationAssignmentCount();
         }
 
-        // Responsable de compras: solicitudes ya aprobadas por un usuario de nivel superior (no por compras)
+        // Compras o administradora (sin usuario de compras): aprobadas por nivel superior, pendientes de OC
+        $superiorApprovedPurchaseRequests = collect();
         $superiorApprovedPurchaseRequestsCount = 0;
-        if ($isResponsableCompras) {
-            $supervisorRoleNames = [
-                'role_admin_sistema',
-                'role_admin_institucion',
-                'role_apoderado',
-                'role_representante_legal',
-            ];
-            $superiorApprovedQuery = PurchaseRequest::query()
-                ->where('status', 'Aprobada')
-                ->whereNotNull('approved_by')
-                ->where('approved_by', '!=', $user->id)
-                ->whereHas('approvedBy.roles', function ($q) use ($supervisorRoleNames) {
-                    $q->where('guard_name', 'backpack')->whereIn('name', $supervisorRoleNames);
-                });
-            $superiorApprovedPurchaseRequestsCount = (clone $superiorApprovedQuery)->count();
+        $actsAsComprasMailbox = $user->effectivelyHasResponsableComprasRole();
+        if ($actsAsComprasMailbox) {
+            $superiorApprovedPurchaseRequests = $this->purchaseRequestsForInboxList(
+                PurchaseRequest::queryApprovedBySuperiorWithoutPurchaseOrder($user->id)
+            );
+            $superiorApprovedPurchaseRequestsCount = $superiorApprovedPurchaseRequests->count();
         }
 
         // Administradora del instituto: OC sin orden de pago asociada (la OP no depende de la recepción)
@@ -509,6 +506,25 @@ class DashboardController extends Controller
             'has_pending' => $hasPendingPurchaseRequests,
         ];
 
+        $adminInstitucionInbox = $isAdminInstitucion
+            ? $this->buildAdminInstitucionInbox(
+                $user,
+                $pendingApprovalRequests,
+                $purchaseOrdersPendingPaymentAfterConformeCount,
+                $purchaseRequestsAwaitingQuoteSelectionCount,
+                $superiorApprovedPurchaseRequests
+            )
+            : null;
+
+        $superiorAuthorityInbox = null;
+        if (($isRepresentanteLegal || $isApoderado) && ! $isAdminInstitucion) {
+            $superiorAuthorityInbox = $this->buildSuperiorAuthorityInbox(
+                $user,
+                $pendingApprovalRequests,
+                $isRepresentanteLegal
+            );
+        }
+
         return view('vendor.backpack.ui.dashboard', compact(
             'stats',
             'generalRequests',
@@ -522,6 +538,7 @@ class DashboardController extends Controller
             'suppliersWithRatings',
             'isPersonal',
             'isResponsableArea',
+            'isAutoridadInstituto',
             'isResponsableCompras',
             'isAdminInstitucion',
             'isApoderado',
@@ -534,8 +551,260 @@ class DashboardController extends Controller
             'stockAlertsHtml',
             'user',
             'generalRequestsAgeStats',
-            'purchaseRequestsAgeStats'
+            'purchaseRequestsAgeStats',
+            'adminInstitucionInbox',
+            'superiorAuthorityInbox',
         ));
+    }
+
+    /**
+     * Solicitudes de compra con datos para el listado de tarjetas de la bandeja.
+     *
+     * @return \Illuminate\Support\Collection<int, PurchaseRequest>
+     */
+    private function purchaseRequestsForInboxList(\Illuminate\Database\Eloquent\Builder $query): Collection
+    {
+        return $query
+            ->with(['requestingUser', 'responsibilityArea'])
+            ->withCount('details')
+            ->orderByDesc('updated_at')
+            ->get();
+    }
+
+    /**
+     * Accesos directos y contadores para la administradora del instituto.
+     *
+     * @return array{acts_as_compras: bool, total_actionable: int, items: array<int, array<string, mixed>>}
+     */
+    private function buildAdminInstitucionInbox(
+        User $user,
+        Collection $pendingApprovalRequests,
+        int $purchaseOrdersPendingPaymentCount,
+        int $purchaseRequestsAwaitingQuoteSelectionCount,
+        Collection $superiorApprovedPurchaseRequests
+    ): array {
+        $actsAsCompras = ! User::backpackHasAnyUserWithRole('role_responsable_compras');
+        $items = [];
+
+        $approvalCount = $pendingApprovalRequests->count();
+        $items[] = [
+            'key' => 'approvals',
+            'title' => 'Aprobar solicitudes de compra',
+            'description' => 'Montos dentro de su límite de autorización y compras directas pendientes.',
+            'count' => $approvalCount,
+            'url' => backpack_url('purchase-request'),
+            'icon' => 'la la-gavel',
+            'variant' => $approvalCount > 0 ? 'danger' : 'secondary',
+            'purchase_requests' => $pendingApprovalRequests,
+        ];
+
+        $quoteAssignmentRequests = PurchaseRequest::purchaseRequestsNeedingQuotationAssignment();
+        $quoteAssignmentRequests->load(['requestingUser', 'responsibilityArea']);
+        $quoteAssignmentRequests->loadCount('details');
+        $quoteAssignmentCount = $quoteAssignmentRequests->count();
+        $superiorApprovedCount = $superiorApprovedPurchaseRequests->count();
+        if ($actsAsCompras && $superiorApprovedCount > 0) {
+            $items[] = [
+                'key' => 'superior_approved_oc',
+                'title' => 'Generar orden de compra',
+                'description' => 'Solicitudes ya aprobadas por representante legal o apoderado; sin OC generada.',
+                'count' => $superiorApprovedCount,
+                'url' => backpack_url('purchase-request').'?aprobadas_por_superior=1',
+                'icon' => 'la la-shopping-cart',
+                'variant' => 'success',
+                'purchase_requests' => $superiorApprovedPurchaseRequests,
+            ];
+        }
+
+        $items[] = [
+            'key' => 'quote_selection',
+            'title' => 'Cotizaciones y asignación por producto',
+            'description' => $actsAsCompras
+                ? 'Sin usuario de compras operativo: elegir cotización y asignar cada producto.'
+                : 'Cotizaciones cargadas que aún no tienen asignación completa por producto.',
+            'count' => $quoteAssignmentCount,
+            'url' => backpack_url('purchase-request').'?pendiente_seleccion_cotizacion=1',
+            'icon' => 'la la-balance-scale',
+            'variant' => $quoteAssignmentCount > 0 ? 'warning' : 'secondary',
+            'purchase_requests' => $quoteAssignmentRequests,
+        ];
+
+        $enProcesoRequests = $this->purchaseRequestsForInboxList(
+            PurchaseRequest::query()->where('status', 'En Proceso')
+        );
+        $enProcesoCount = $enProcesoRequests->count();
+        $items[] = [
+            'key' => 'en_proceso',
+            'title' => 'Circuito de compras en curso',
+            'description' => $actsAsCompras
+                ? 'Cotizaciones, seguimiento y preparación de órdenes de compra.'
+                : 'Solicitudes notificadas al sector de compras.',
+            'count' => $enProcesoCount,
+            'url' => backpack_url('purchase-request').'?en_proceso=1',
+            'icon' => 'la la-cogs',
+            'variant' => $enProcesoCount > 0 ? 'primary' : 'secondary',
+            'purchase_requests' => $enProcesoRequests,
+        ];
+
+        $pendientesRequests = $this->purchaseRequestsForInboxList(
+            PurchaseRequest::query()->where('status', 'Pendiente')
+        );
+        $pendientesCount = $pendientesRequests->count();
+        $items[] = [
+            'key' => 'pendientes',
+            'title' => 'Solicitudes pendientes',
+            'description' => 'Revisión inicial, cotizaciones o envío a aprobación superior.',
+            'count' => $pendientesCount,
+            'url' => backpack_url('purchase-request').'?pendientes=1',
+            'icon' => 'la la-clock',
+            'variant' => $pendientesCount > 0 ? 'info' : 'secondary',
+            'purchase_requests' => $pendientesRequests,
+        ];
+
+        $items[] = [
+            'key' => 'payment_orders',
+            'title' => 'Generar orden de pago',
+            'description' => 'Órdenes de compra sin orden de pago asociada.',
+            'count' => $purchaseOrdersPendingPaymentCount,
+            'url' => $purchaseOrdersPendingPaymentCount > 0
+                ? backpack_url('dashboard').'#purchase-orders-process-section'
+                : backpack_url('purchase-order'),
+            'icon' => 'la la-money-bill-wave',
+            'variant' => $purchaseOrdersPendingPaymentCount > 0 ? 'success' : 'secondary',
+        ];
+
+        $items = array_values(array_filter(
+            $items,
+            fn (array $item) => (int) ($item['count'] ?? 0) > 0
+        ));
+
+        usort($items, fn (array $a, array $b) => ($b['count'] ?? 0) <=> ($a['count'] ?? 0));
+
+        $totalActionable = collect($items)->sum(fn (array $item) => (int) ($item['count'] ?? 0));
+
+        return [
+            'acts_as_compras' => $actsAsCompras,
+            'total_actionable' => $totalActionable,
+            'items' => $items,
+        ];
+    }
+
+    /**
+     * Bandeja para apoderado / representante legal: aprobaciones y escalamientos desde administración.
+     *
+     * @return array{profile_label: string, total_actionable: int, items: array<int, array<string, mixed>>}
+     */
+    private function buildSuperiorAuthorityInbox(
+        User $user,
+        Collection $pendingApprovalRequests,
+        bool $isRepresentanteLegal
+    ): array {
+        $profileLabel = $isRepresentanteLegal ? 'representante legal' : 'apoderado';
+        $escalationRequests = $this->purchaseRequestsAwaitingSuperiorEscalationForUser($user);
+        $pendingIds = $pendingApprovalRequests->pluck('id');
+        $escalationOnly = $escalationRequests
+            ->filter(fn (PurchaseRequest $pr) => ! $pendingIds->contains($pr->id))
+            ->values();
+
+        $items = [];
+
+        $approvalCount = $pendingApprovalRequests->count();
+        if ($approvalCount > 0) {
+            $items[] = [
+                'key' => 'approvals',
+                'title' => 'Aprobar solicitudes de compra',
+                'description' => 'Montos dentro de su límite de autorización y compras directas pendientes de su decisión.',
+                'count' => $approvalCount,
+                'url' => backpack_url('purchase-request'),
+                'icon' => 'la la-gavel',
+                'variant' => 'danger',
+                'purchase_requests' => $pendingApprovalRequests,
+            ];
+        }
+
+        $escalationCount = $escalationOnly->count();
+        if ($escalationCount > 0) {
+            $items[] = [
+                'key' => 'superior_escalation',
+                'title' => 'Escalamiento desde administración',
+                'description' => 'La administradora solicitó su intervención por monto; revise cotización y autorice por ítem en cada solicitud.',
+                'count' => $escalationCount,
+                'url' => backpack_url('purchase-request'),
+                'icon' => 'la la-level-up',
+                'variant' => 'warning',
+                'purchase_requests' => $escalationOnly,
+            ];
+        }
+
+        $items = array_values(array_filter(
+            $items,
+            fn (array $item) => (int) ($item['count'] ?? 0) > 0
+        ));
+
+        usort($items, fn (array $a, array $b) => ($b['count'] ?? 0) <=> ($a['count'] ?? 0));
+
+        $totalActionable = collect($items)->sum(fn (array $item) => (int) ($item['count'] ?? 0));
+
+        return [
+            'profile_label' => $profileLabel,
+            'total_actionable' => $totalActionable,
+            'items' => $items,
+        ];
+    }
+
+    /**
+     * Solicitudes con escalamiento superior pendiente dirigidas al rol del usuario (apoderado / representante legal).
+     *
+     * @return Collection<int, PurchaseRequest>
+     */
+    private function purchaseRequestsAwaitingSuperiorEscalationForUser(User $user): Collection
+    {
+        $targetRole = null;
+        if ($user->hasRole('role_representante_legal', 'backpack')) {
+            $targetRole = 'role_representante_legal';
+        } elseif ($user->hasRole('role_apoderado', 'backpack')) {
+            $targetRole = 'role_apoderado';
+        }
+
+        if ($targetRole === null) {
+            return collect();
+        }
+
+        $userLimit = (float) PurchaseAuthorizationLimit::getLimitForRole($targetRole);
+        if ($userLimit <= 0) {
+            return collect();
+        }
+
+        if (! Schema::hasColumn((new PurchaseRequest)->getTable(), 'superior_quotation_escalation_pending_at')) {
+            return collect();
+        }
+
+        $candidates = $this->purchaseRequestsForInboxList(
+            PurchaseRequest::query()->whereNotNull('superior_quotation_escalation_pending_at')
+        );
+
+        return $candidates->filter(function (PurchaseRequest $pr) use ($targetRole, $userLimit) {
+            if ($pr->wasApprovedBySuperiorAuthority()) {
+                return false;
+            }
+
+            if ($pr->is_direct_purchase) {
+                if (! $pr->direct_purchase_authorization_requested || $pr->direct_purchase_authorized_by) {
+                    return false;
+                }
+            } elseif (! $pr->hasQuotationSelectionResolved()) {
+                return false;
+            }
+
+            $effectiveTotal = $pr->effectiveTotalForAuthorizationLimits();
+            if ($effectiveTotal > $userLimit) {
+                return false;
+            }
+
+            $targetRoles = PurchaseRequestNotificationService::superiorApproverRoleNamesForAmountFromAdministrator($effectiveTotal);
+
+            return in_array($targetRole, $targetRoles, true);
+        })->values();
     }
 
     /**

@@ -847,6 +847,27 @@ html body header .navbar .nav-item .nav-link .backpack-avatar-menu-container div
 .badge.bg-warning {
     color: #212529 !important;
 }
+
+/* Alerta verde: texto oscuro y botón primario legible (escalamiento nivel superior) */
+.purchase-request-superior-escalation-alert,
+.purchase-request-superior-escalation-alert p,
+.purchase-request-superior-escalation-alert strong,
+.purchase-request-superior-escalation-alert i {
+    color: #212529 !important;
+}
+
+.purchase-request-superior-escalation-alert .purchase-request-superior-escalation-alert__btn {
+    color: #fff !important;
+    background-color: #871f1f !important;
+    border-color: #6b1818 !important;
+}
+
+.purchase-request-superior-escalation-alert .purchase-request-superior-escalation-alert__btn:hover,
+.purchase-request-superior-escalation-alert .purchase-request-superior-escalation-alert__btn:focus {
+    color: #fff !important;
+    background-color: #6b1818 !important;
+    border-color: #5a1414 !important;
+}
 </style>
 
 <script>
