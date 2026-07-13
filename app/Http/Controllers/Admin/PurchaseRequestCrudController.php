@@ -4771,6 +4771,58 @@ class PurchaseRequestCrudController extends CrudController
                     return '<div class="alert alert-info">No hay productos solicitados.</div>';
                 }
 
+                $user = backpack_user();
+                $decisionFocusView = $user && ! $user->hasResponsableAreaOrInstituteAuthorityRole() && (
+                    $user->hasAdministradoraInstitucionRole()
+                    || $user->hasRole('role_admin_sistema', 'backpack')
+                ) && in_array((string) $entry->status, ['Pendiente', 'En Proceso'], true);
+
+                if ($decisionFocusView) {
+                    $html = '<div class="mb-3">';
+                    $html .= '<div class="d-flex align-items-center gap-2 mb-2">';
+                    $html .= '<h6 class="mb-0 text-primary"><i class="la la-shopping-cart"></i> Productos solicitados</h6>';
+                    $html .= '<span class="badge bg-primary">'.$details->count().'</span>';
+                    $html .= '</div>';
+                    $html .= '<div class="row g-2">';
+
+                    foreach ($details as $index => $detail) {
+                        $lineNo = $index + 1;
+                        $requestedQuantity = $detail->requested_quantity ?? 0;
+                        $rawCatalogName = null;
+                        if ($detail->product) {
+                            $n = $detail->product->name;
+                            $rawCatalogName = is_array($n) ? null : $n;
+                        }
+                        $specLine = trim((string) ($detail->product_description ?? $detail->specifications ?? ''));
+                        $isGenericCatalog = is_string($rawCatalogName) && preg_match('/^producto\s+nuevo$/iu', $rawCatalogName);
+                        if ($isGenericCatalog && $specLine !== '') {
+                            $productLabel = $specLine;
+                        } elseif ($isGenericCatalog) {
+                            $productLabel = 'Ítem #'.$lineNo;
+                        } else {
+                            $productLabel = ($rawCatalogName !== null && $rawCatalogName !== '') ? (string) $rawCatalogName : 'Sin catálogo';
+                        }
+
+                        $unit = ($detail->product && $detail->product->unit_measurement && ! is_array($detail->product->unit_measurement))
+                            ? (string) $detail->product->unit_measurement
+                            : 'un.';
+
+                        $html .= '<div class="col-12">';
+                        $html .= '<div class="pr-decision-product-row d-flex flex-wrap align-items-center gap-2">';
+                        $html .= '<span class="badge bg-secondary">#'.$lineNo.'</span>';
+                        $html .= '<strong class="text-nowrap">'.e($productLabel).'</strong>';
+                        $html .= '<span class="badge bg-primary">'.number_format($requestedQuantity).' '.e($unit).'</span>';
+                        if ($specLine !== '' && ! $isGenericCatalog) {
+                            $html .= '<span class="text-muted small flex-grow-1">'.e(\Illuminate\Support\Str::limit($specLine, 120)).'</span>';
+                        }
+                        $html .= '</div></div>';
+                    }
+
+                    $html .= '</div></div>';
+
+                    return $html;
+                }
+
                 $html = '<div class="card border-primary">';
                 $html .= '<div class="card-header bg-primary text-white">';
                 $html .= '<h6 class="mb-0"><i class="la la-shopping-cart"></i> Productos Solicitados <span class="badge bg-light text-primary ms-1">'.$details->count().'</span></h6>';
@@ -4780,13 +4832,17 @@ class PurchaseRequestCrudController extends CrudController
                 $html .= '<table class="table table-sm table-bordered mb-0">';
                 $html .= '<thead class="table-light">';
                 $html .= '<tr>';
-                $html .= '<th style="width: 28%;">Producto</th>';
-                $html .= '<th style="width: 12%;" class="text-center">Cantidad Solicitada</th>';
-                $html .= '<th style="width: 12%;" class="text-center">Cantidad Recibida</th>';
-                $html .= '<th style="width: 12%;" class="text-center">Estado Recepción</th>';
-                $html .= '<th style="width: 20%;">Descripción / Especificaciones</th>';
-                $html .= '<th style="width: 10%;" class="text-center">Estado</th>';
-                $html .= '<th style="width: 14%;" class="text-center">Autorización compra</th>';
+                $html .= '<th style="width: '.($decisionFocusView ? '40' : '28').'%;">Producto</th>';
+                $html .= '<th style="width: 12%;" class="text-center">Cantidad</th>';
+                if (! $decisionFocusView) {
+                    $html .= '<th style="width: 12%;" class="text-center">Cantidad Recibida</th>';
+                    $html .= '<th style="width: 12%;" class="text-center">Estado Recepción</th>';
+                }
+                $html .= '<th style="width: '.($decisionFocusView ? '30' : '20').'%;">Descripción / Especificaciones</th>';
+                if (! $decisionFocusView) {
+                    $html .= '<th style="width: 10%;" class="text-center">Estado</th>';
+                }
+                $html .= '<th style="width: '.($decisionFocusView ? '18' : '14').'%;" class="text-center">Autorización compra</th>';
                 $html .= '</tr>';
                 $html .= '</thead>';
                 $html .= '<tbody>';
@@ -4845,26 +4901,30 @@ class PurchaseRequestCrudController extends CrudController
                         $html .= '<br><small class="text-muted">'.e($detail->product->unit_measurement).'</small>';
                     }
                     $html .= '</td>';
-                    $html .= '<td class="text-center">';
-                    $html .= '<span class="badge bg-'.($deliveredQuantity > 0 ? ($isFullyDelivered ? 'success' : 'warning') : 'secondary').'" title="Cantidad recibida: '.number_format($deliveredQuantity).' de '.number_format($requestedQuantity).'">';
-                    $html .= number_format($deliveredQuantity).' / '.number_format($requestedQuantity);
-                    $html .= '</span>';
-                    $html .= '</td>';
-                    $html .= '<td class="text-center">';
-                    $html .= '<span class="badge bg-'.$deliveryStatusColor.'" title="Estado de recepción: '.e($deliveryStatus).'">';
-                    $html .= '<i class="la la-'.$deliveryStatusIcon.'"></i> '.e($deliveryStatus);
-                    $html .= '</span>';
-                    $html .= '</td>';
+                    if (! $decisionFocusView) {
+                        $html .= '<td class="text-center">';
+                        $html .= '<span class="badge bg-'.($deliveredQuantity > 0 ? ($isFullyDelivered ? 'success' : 'warning') : 'secondary').'" title="Cantidad recibida: '.number_format($deliveredQuantity).' de '.number_format($requestedQuantity).'">';
+                        $html .= number_format($deliveredQuantity).' / '.number_format($requestedQuantity);
+                        $html .= '</span>';
+                        $html .= '</td>';
+                        $html .= '<td class="text-center">';
+                        $html .= '<span class="badge bg-'.$deliveryStatusColor.'" title="Estado de recepción: '.e($deliveryStatus).'">';
+                        $html .= '<i class="la la-'.$deliveryStatusIcon.'"></i> '.e($deliveryStatus);
+                        $html .= '</span>';
+                        $html .= '</td>';
+                    }
                     $descSpecs = $detail->specifications ?? $detail->product_description ?? '';
                     if (is_array($descSpecs)) {
                         $descSpecs = '';
                     }
                     $html .= '<td><small>'.($descSpecs ? e($descSpecs) : '-').'</small></td>';
-                    $status = $detail->status ?? 'Pendiente';
-                    if (is_array($status)) {
-                        $status = 'Pendiente';
+                    if (! $decisionFocusView) {
+                        $status = $detail->status ?? 'Pendiente';
+                        if (is_array($status)) {
+                            $status = 'Pendiente';
+                        }
+                        $html .= '<td class="text-center"><span class="badge bg-'.($detail->status == 'Aprobada' ? 'success' : ($detail->status == 'Rechazada' ? 'danger' : 'warning')).'">'.e((string) $status).'</span></td>';
                     }
-                    $html .= '<td class="text-center"><span class="badge bg-'.($detail->status == 'Aprobada' ? 'success' : ($detail->status == 'Rechazada' ? 'danger' : 'warning')).'">'.e((string) $status).'</span></td>';
                     $las = $detail->line_authorization_status ?? \App\Models\PurchaseRequestDetail::LINE_AUTH_PENDING;
                     $authLabel = match ($las) {
                         \App\Models\PurchaseRequestDetail::LINE_AUTH_APPROVED => 'Autorizada',
@@ -4890,7 +4950,6 @@ class PurchaseRequestCrudController extends CrudController
                 $html .= '</div>';
 
                 // Agregar botón para editar/agregar productos si el usuario tiene permisos
-                $user = backpack_user();
                 if ($user) {
                     $isAdminSistema = $user->hasRole('role_admin_sistema', 'backpack');
                     $isActingCreator = $entry->isActingAsCreatingUser((int) $user->id);
@@ -5854,17 +5913,7 @@ class PurchaseRequestCrudController extends CrudController
                     if ($entry->admin_quotation_review_justification) {
                         $adminReviewSummaryHtml .= '<p class="mb-2"><strong>Justificación:</strong> '.nl2br(e($entry->admin_quotation_review_justification)).'</p>';
                     }
-                    $adminReviewSummaryHtml .= '<p class="mb-2 small text-muted">La solicitud <strong>no</strong> figura como «Aprobada» hasta la autorización por monto del nivel correspondiente. Monto considerado para topes: <strong>$'.number_format((float) ($entry->total_amount ?? 0), 2).'</strong>.</p>';
-                    if ($entry->details->isNotEmpty()) {
-                        $adminReviewSummaryHtml .= '<p class="mb-1"><strong>Decisión por ítem:</strong></p><ul class="small mb-0">';
-                        foreach ($entry->details as $d) {
-                            $lbl = $d->product ? $d->product->name : ($d->product_description ?? 'Ítem #'.$d->id);
-                            $st = $d->line_authorization_status ?? \App\Models\PurchaseRequestDetail::LINE_AUTH_PENDING;
-                            $lblSt = $st === \App\Models\PurchaseRequestDetail::LINE_AUTH_APPROVED ? 'Autorizado' : ($st === \App\Models\PurchaseRequestDetail::LINE_AUTH_REJECTED ? 'No autorizado' : '—');
-                            $adminReviewSummaryHtml .= '<li>'.e($lbl).': <strong>'.$lblSt.'</strong></li>';
-                        }
-                        $adminReviewSummaryHtml .= '</ul>';
-                    }
+                    $adminReviewSummaryHtml .= '<p class="mb-2 small text-muted">La solicitud <strong>no</strong> figura como «Aprobada» hasta la autorización por monto del nivel correspondiente.</p>';
                     $adminReviewSummaryHtml .= '</div></div>';
                 }
 
@@ -6152,7 +6201,7 @@ class PurchaseRequestCrudController extends CrudController
             ->label(' ')
             ->type('custom_html')
             ->value(function ($entry) {
-                $entry->loadMissing(['requestingUser', 'createdBy']);
+                $entry->loadMissing(['requestingUser', 'createdBy', 'responsibilityArea']);
                 $num = e((string) ($entry->request_number ?? '#'.$entry->id));
                 $fecha = $entry->request_date
                     ? ($entry->request_date instanceof \Carbon\Carbon
@@ -6160,11 +6209,23 @@ class PurchaseRequestCrudController extends CrudController
                         : e((string) $entry->request_date))
                     : '—';
                 $estado = e((string) ($entry->status ?? ''));
+                $prioridad = e((string) ($entry->priority ?? '—'));
+                $area = e((string) ($entry->responsibilityArea->name ?? '—'));
                 $solicitante = e(
                     $entry->createdBy?->name
                     ?? $entry->requestingUser?->name
                     ?? '—'
                 );
+                $motivo = trim((string) ($entry->justification ?? ''));
+                $motivoHtml = $motivo !== '' ? nl2br(e($motivo)) : '—';
+                $observaciones = trim((string) ($entry->observations ?? ''));
+                $observacionesHtml = $observaciones !== '' ? nl2br(e($observaciones)) : '';
+
+                $user = backpack_user();
+                $isAdminDecisionLayout = $user && ! $user->hasResponsableAreaOrInstituteAuthorityRole() && (
+                    $user->hasAdministradoraInstitucionRole()
+                    || $user->hasRole('role_admin_sistema', 'backpack')
+                ) && ! ($user->hasRole('role_representante_legal', 'backpack') || $user->hasRole('role_apoderado', 'backpack'));
 
                 $rates = $this->marketRatesContributingToPurchaseRequestTotal($entry);
                 $totalEfectivo = $this->recalculateSelectedQuotationsTotalForPurchaseRequest($entry);
@@ -6175,6 +6236,44 @@ class PurchaseRequestCrudController extends CrudController
                     : (float) ($entry->total_amount ?? 0);
 
                 $fmtMoney = static fn (float $v): string => '$'.number_format($v, 2, ',', '.');
+
+                if ($isAdminDecisionLayout) {
+                    $montosRow = $rates->isNotEmpty()
+                        ? '<div class="col-6 col-md-4"><div class="pr-decision-kpi"><div class="pr-decision-kpi-label">Subtotal</div><strong>'.$fmtMoney($subMostrar).'</strong></div></div>'
+                            .'<div class="col-6 col-md-4"><div class="pr-decision-kpi"><div class="pr-decision-kpi-label">IVA</div><strong>'.$fmtMoney($ivaSum).'</strong></div></div>'
+                            .'<div class="col-12 col-md-4"><div class="pr-decision-kpi"><div class="pr-decision-kpi-label">Total con IVA</div><strong class="text-primary">'.$fmtMoney($totalEfectivo).'</strong></div></div>'
+                        : '<div class="col-12"><div class="pr-decision-kpi"><div class="pr-decision-kpi-label">Monto total</div><strong class="text-primary">'.$fmtMoney((float) ($entry->total_amount ?? 0)).'</strong> <span class="text-muted small">(IVA al seleccionar cotización)</span></div></div>';
+
+                    $comprasLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_responsable_compras');
+                    $effectiveForHint = $rates->isNotEmpty() ? $totalEfectivo : (float) ($entry->total_amount ?? 0);
+                    $requiresAdminApproval = $effectiveForHint > $comprasLimit || (bool) $entry->requires_admin_approval;
+                    $approvalHint = '';
+                    if ($requiresAdminApproval && in_array((string) $entry->status, ['Pendiente', 'En Proceso'], true)) {
+                        $approvalHint = '<div class="col-12"><div class="alert alert-warning py-2 px-3 mb-0 small"><i class="la la-exclamation-triangle"></i> Supera el tope de compras; requiere autorización superior según monto.</div></div>';
+                    }
+
+                    $observacionesRow = $observacionesHtml !== ''
+                        ? '<div class="col-12"><div class="pr-decision-kpi"><div class="pr-decision-kpi-label">Observaciones</div><div class="small text-break" style="white-space: pre-wrap;">'.$observacionesHtml.'</div></div></div>'
+                        : '';
+
+                    $html = '<div class="card border-primary bg-light mb-3 pr-decision-summary">'
+                        .'<div class="card-body py-3 px-3">'
+                        .'<div class="row g-2">'
+                        .'<div class="col-6 col-md-3"><div class="pr-decision-kpi"><div class="pr-decision-kpi-label">Número</div><strong class="text-primary">'.$num.'</strong></div></div>'
+                        .'<div class="col-6 col-md-3"><div class="pr-decision-kpi"><div class="pr-decision-kpi-label">Fecha</div><strong>'.$fecha.'</strong></div></div>'
+                        .'<div class="col-6 col-md-3"><div class="pr-decision-kpi"><div class="pr-decision-kpi-label">Estado</div><span class="badge bg-secondary">'.$estado.'</span></div></div>'
+                        .'<div class="col-6 col-md-3"><div class="pr-decision-kpi"><div class="pr-decision-kpi-label">Prioridad</div><strong>'.$prioridad.'</strong></div></div>'
+                        .'<div class="col-12 col-md-6"><div class="pr-decision-kpi"><div class="pr-decision-kpi-label">Área</div><strong>'.$area.'</strong></div></div>'
+                        .'<div class="col-12 col-md-6"><div class="pr-decision-kpi"><div class="pr-decision-kpi-label">Solicitante</div><strong>'.$solicitante.'</strong></div></div>'
+                        .'<div class="col-12"><div class="pr-decision-kpi"><div class="pr-decision-kpi-label">Motivo</div><div class="small text-break" style="white-space: pre-wrap;">'.$motivoHtml.'</div></div></div>'
+                        .$observacionesRow
+                        .$montosRow
+                        .$approvalHint
+                        .'</div></div></div>'
+                        .'<h5 class="mb-3 text-dark"><i class="la la-gavel text-primary"></i> Para decidir</h5>';
+
+                    return $html;
+                }
 
                 $montosHtml = '';
                 if ($rates->isNotEmpty()) {
@@ -6198,17 +6297,17 @@ class PurchaseRequestCrudController extends CrudController
                     .'<span class="text-muted ms-2"><i class="la la-calendar"></i> '.$fecha.'</span>'
                     .'<span class="text-muted ms-2"><i class="la la-user"></i> <span class="small">Solicitante:</span> '.$solicitante.'</span></span>'
                     .'<span class="badge bg-secondary fs-6">'.$estado.'</span>'
-                    .'</div>'
-                    .$montosHtml
+                    .'</div>';
+
+                $html .= $montosHtml
                     .'</div></div>';
 
-                $user = backpack_user();
                 $isSuperiorAuthorityShowLayout = $user && (
                     $user->hasRole('role_representante_legal', 'backpack')
                     || $user->hasRole('role_apoderado', 'backpack')
                 );
 
-                if (! $isSuperiorAuthorityShowLayout) {
+                if (! $isSuperiorAuthorityShowLayout && ! $isAdminDecisionLayout) {
                     $html .= '<h5 class="mb-3 text-dark"><i class="la la-bolt text-primary"></i> Acciones, cotizaciones y seguimiento</h5>';
                 }
 
