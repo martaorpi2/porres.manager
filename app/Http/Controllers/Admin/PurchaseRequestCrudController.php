@@ -135,17 +135,24 @@ class PurchaseRequestCrudController extends CrudController
         CRUD::removeButton('update');
 
         // Ocultar botones de crear, editar y eliminar para roles sin edición manual de solicitudes.
-        if ($user && (
-            $user->hasRole('role_admin_institucion', 'backpack')
-            || $user->hasRole('role_apoderado', 'backpack')
+        $rolesWithoutManualPurchaseRequestCrud = $user && (
+            $user->hasRole('role_apoderado', 'backpack')
             || $user->hasRole('role_representante_legal', 'backpack')
             || $user->hasRole('role_responsable_compras', 'backpack')
-        )) {
+        );
+
+        if ($rolesWithoutManualPurchaseRequestCrud) {
             CRUD::removeButton('create');
             CRUD::removeButton('delete');
-            // No agregar el botón personalizado de editar para estos roles
         } else {
             CRUD::addButton('line', 'edit_purchase_request', 'view', 'crud::buttons.edit_purchase_request', 'beginning');
+        }
+
+        if ($user && (
+            $rolesWithoutManualPurchaseRequestCrud
+            || $user->hasRole('role_admin_institucion', 'backpack')
+        )) {
+            CRUD::removeButton('delete');
         }
 
         // Botón para ver orden de compra (solo si existe y para usuarios que no sean role_responsable_area)
@@ -228,6 +235,11 @@ class PurchaseRequestCrudController extends CrudController
      */
     protected function setupCreateOperation()
     {
+        $user = backpack_user();
+        if (! $user || ! $user->hasPermissionTo('solicitud.crear', 'backpack')) {
+            abort(403, 'No tienes permiso para crear solicitudes de compra.');
+        }
+
         CRUD::setOperationSetting('defaultSaveAction', 'save_and_preview');
 
         // Verificar si viene de una solicitud general
@@ -600,6 +612,56 @@ class PurchaseRequestCrudController extends CrudController
         }
     }
 
+    private function autofilledFieldWrapper(): array
+    {
+        return ['class' => 'form-group col-sm-12 col-md-4 mb-3 pr-autofield'];
+    }
+
+    private function autofilledFieldAttributes(): array
+    {
+        return [
+            'readonly' => 'readonly',
+            'class' => 'form-control pr-autofield-input',
+            'tabindex' => '-1',
+            'onfocus' => 'this.blur();',
+        ];
+    }
+
+    private function autofilledFieldsStylesHtml(): string
+    {
+        return '<style>
+            .pr-autofield label {
+                color: #6c757d !important;
+                font-size: 0.78rem;
+                font-weight: 600;
+                text-transform: uppercase;
+                letter-spacing: 0.04em;
+                margin-bottom: 0.25rem;
+            }
+            .pr-autofield .help-block,
+            .pr-autofield small.form-text {
+                color: #868e96 !important;
+                font-size: 0.72rem;
+                font-style: italic;
+            }
+            .pr-autofield-input,
+            .pr-autofield .form-control[readonly] {
+                background-color: #e9ecef !important;
+                border: 1px dashed #adb5bd !important;
+                color: #495057 !important;
+                cursor: not-allowed !important;
+                box-shadow: none !important;
+                opacity: 1;
+            }
+            .pr-autofield-input:focus,
+            .pr-autofield .form-control[readonly]:focus {
+                outline: none;
+                box-shadow: none !important;
+                border-color: #adb5bd !important;
+            }
+        </style>';
+    }
+
     /**
      * Setup common fields for create and update operations
      */
@@ -609,23 +671,36 @@ class PurchaseRequestCrudController extends CrudController
         $colHalf = ['class' => 'form-group col-sm-12 col-md-6 mb-3'];
         $colFull = ['class' => 'form-group col-sm-12 mb-3'];
 
+        CRUD::addField([
+            'name' => 'autofilled_fields_styles',
+            'type' => 'custom_html',
+            'value' => $this->autofilledFieldsStylesHtml(),
+            'wrapper' => ['class' => 'form-group col-12 mb-2'],
+        ]);
+
         $user = backpack_user();
         $requestingUserId = $user ? (int) $user->id : (int) (auth()->id() ?? 1);
         $requestingUserName = $user?->name ?? (\App\Models\User::find($requestingUserId)->name ?? '');
 
-        CRUD::field('request_number')->label('Número de Solicitud')->default(\App\Models\PurchaseRequest::generateNextNumber())
-            ->attributes(['readonly' => 'readonly'])
-            ->wrapper($col3);
+        CRUD::field('request_number')->label('Número de Solicitud')
+            ->hint('Asignado automáticamente')
+            ->default(\App\Models\PurchaseRequest::generateNextNumber())
+            ->attributes($this->autofilledFieldAttributes())
+            ->wrapper($this->autofilledFieldWrapper());
 
-        CRUD::field('request_date')->label('Fecha de Solicitud')->type('date')->default(now()->format('Y-m-d'))
-            ->attributes(['readonly' => 'readonly'])
-            ->wrapper($col3);
+        CRUD::field('request_date')->label('Fecha de Solicitud')
+            ->hint('Fecha actual del sistema')
+            ->type('date')
+            ->default(now()->format('Y-m-d'))
+            ->attributes($this->autofilledFieldAttributes())
+            ->wrapper($this->autofilledFieldWrapper());
 
         CRUD::field('requesting_user_display')->label('Usuario Solicitante')
+            ->hint('Usuario que registra la solicitud')
             ->type('text')
             ->default($requestingUserName)
-            ->attributes(['readonly' => 'readonly'])
-            ->wrapper($col3);
+            ->attributes($this->autofilledFieldAttributes())
+            ->wrapper($this->autofilledFieldWrapper());
 
         CRUD::field('requesting_user_id')->type('hidden')->default($requestingUserId);
 
@@ -2644,7 +2719,10 @@ class PurchaseRequestCrudController extends CrudController
             'requires_admin_approval' => $requiresAdminApproval,
         ]);
 
-        \Alert::success('Cotización seleccionada. Ahora debe solicitarse revisión a la administradora del instituto.')->flash();
+        $selectionMessage = $user && $user->hasAdministradoraInstitucionRole()
+            ? 'Cotización seleccionada. Puede registrar su revisión y decisión en la sección «Aprobación».'
+            : 'Cotización seleccionada. Ahora debe solicitarse revisión a la administradora del instituto.';
+        \Alert::success($selectionMessage)->flash();
 
         // Marcar la cotización como seleccionada para permitir selección múltiple en la vista.
         $marketRate->update(['is_selected' => true]);
@@ -5253,10 +5331,12 @@ class PurchaseRequestCrudController extends CrudController
                     $html .= '</table>';
                     $html .= '</div>';
 
-                    $canRequestAdministratorApproval = $quotationsViewer && (
-                        $quotationsViewer->effectivelyHasResponsableComprasRole()
-                        || $quotationsViewer->hasRole('role_admin_sistema', 'backpack')
-                    );
+                    $canRequestAdministratorApproval = $quotationsViewer
+                        && ! $quotationsViewer->hasAdministradoraInstitucionRole()
+                        && (
+                            $quotationsViewer->effectivelyHasResponsableComprasRole()
+                            || $quotationsViewer->hasRole('role_admin_sistema', 'backpack')
+                        );
                     $entry->loadMissing(['details', 'marketRates.quoteDetails']);
                     $adminReviewBase = $canSelectQuotations && $comprasPuedeEditarSeleccionCotizaciones && $canRequestAdministratorApproval && PurchaseRequestNotificationService::isAwaitingAdministratorQuotationApproval($entry);
                     $quotationsAssignedToAllProducts = $entry->hasQuotationsAssignedToAllRequestProducts();

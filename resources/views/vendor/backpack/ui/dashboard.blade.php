@@ -7,7 +7,7 @@
   :root {
       --bs-primary: #871f1f !important;
       --bs-primary-rgb: 135, 31, 31 !important;
-      /* Mismo tono para todo estado â€œpositivoâ€ del flujo (chips, OP, recepciÃ³n, etc.) */
+      /* Mismo tono para todo estado "positivo" del flujo (chips, OP, recepción, etc.) */
       --dashboard-positive-bg: #198754;
       --dashboard-positive-text: #fff;
   }
@@ -171,7 +171,7 @@
   .process-item-status.status-anulada { background: #6c757d; color: #fff; }
   .process-item-status.status-rechazada,
   .process-item-status.status-rechazada-analista { background: #dc3545; color: #fff; }
-  /* Positivos: un solo color (completada, recibida, aprobada, conforme implÃ­cito en badge, OP completada, etc.) */
+  /* Positivos: un solo color (completada, recibida, aprobada, conforme implícito en badge, OP completada, etc.) */
   .process-item-status.status-completada,
   .process-item-status.status-recibida,
   .process-item-status.status-aprobada,
@@ -1110,7 +1110,7 @@
   
   @if(isset($isResponsableArea) && $isResponsableArea && isset($stockAlerts) && $stockAlerts->isNotEmpty() && !empty($stockAlertsHtml))
   <script>
-    // FunciÃ³n para crear solicitud de compra para un producto especÃ­fico
+    // Función para crear solicitud de compra para un producto específico
     function createPurchaseRequestForProduct(productId, quantity, unit, event) {
       if (event) {
         event.stopPropagation();
@@ -1121,17 +1121,17 @@
         product_id: productId,
         quantity: Math.ceil(quantity), // Redondear hacia arriba
         price: 0,
-        specifications: 'Solicitud generada automÃ¡ticamente por alerta de stock mÃ­nimo. DÃ©ficit: ' + quantity + ' ' + unit
+        specifications: 'Solicitud generada automáticamente por alerta de stock mínimo. Déficit: ' + quantity + ' ' + unit
       }];
       
-      // Codificar como JSON y pasar como parÃ¡metro
+      // Codificar como JSON y pasar como parámetro
       var productsJson = encodeURIComponent(JSON.stringify(products));
       var url = '{{ backpack_url("purchase-request/create") }}?selected_products=' + productsJson;
       
       window.location.href = url;
     }
     
-    // FunciÃ³n para crear solicitud de compra para todos los productos
+    // Función para crear solicitud de compra para todos los productos
     function createPurchaseRequestForAll() {
       var products = [];
       
@@ -1140,7 +1140,7 @@
         product_id: {{ $alert['product']->id }},
         quantity: Math.ceil({{ $alert['deficit'] }}),
         price: 0,
-        specifications: 'Solicitud generada automÃ¡ticamente por alerta de stock mÃ­nimo. DÃ©ficit: {{ number_format($alert['deficit'], 2) }} {{ $alert['product']->unit_measurement ?? 'unidades' }}'
+        specifications: 'Solicitud generada automáticamente por alerta de stock mínimo. Déficit: {{ number_format($alert['deficit'], 2) }} {{ $alert['product']->unit_measurement ?? 'unidades' }}'
       });
       @endforeach
       
@@ -1149,7 +1149,7 @@
         return;
       }
       
-      // Codificar como JSON y pasar como parÃ¡metro
+      // Codificar como JSON y pasar como parámetro
       var productsJson = encodeURIComponent(JSON.stringify(products));
       var url = '{{ backpack_url("purchase-request/create") }}?selected_products=' + productsJson;
       
@@ -1158,22 +1158,22 @@
   </script>
   <script>
     $(document).ready(function() {
-      // Esperar a que SweetAlert estÃ© cargado
+      // Esperar a que SweetAlert esté cargado
       setTimeout(function() {
         var $contentDiv = $('#stockAlertsHtmlContent');
         
         if ($contentDiv.length === 0) {
-          console.error('No se encontrÃ³ el div con el contenido de alertas');
+          console.error('No se encontró el div con el contenido de alertas');
           return;
         }
         
         var alertsHtml = $contentDiv.html();
         
-        // Verificar que el HTML no estÃ© vacÃ­o
+        // Verificar que el HTML no esté vacío
         if (!alertsHtml || alertsHtml.trim() === '') {
-          console.error('El HTML de alertas estÃ¡ vacÃ­o');
+          console.error('El HTML de alertas está vacío');
           console.log('Stock alerts count:', {{ $stockAlerts->count() ?? 0 }});
-          console.log('Div encontrado pero vacÃ­o');
+          console.log('Div encontrado pero vacío');
           return;
         }
         
@@ -1181,7 +1181,7 @@
         console.log('Primeros 200 caracteres:', alertsHtml.substring(0, 200));
         
         swal({
-          title: 'Alertas de Stock MÃ­nimo',
+          title: 'Alertas de Stock Mínimo',
           html: alertsHtml,
           icon: 'warning',
           width: '800px',
@@ -1233,7 +1233,7 @@
     <div class="alert compras-seleccion-cotizacion-alert d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-2 mb-4" role="alert">
         <div>
             <i class="la la-bell mr-2"></i>
-            <strong>SelecciÃ³n de cotizaciÃ³n:</strong> hay {{ $purchaseRequestsAwaitingQuoteSelectionCount }} solicitud(es) de compra con cotizaciones cargadas y aÃºn sin cotizaciÃ³n elegida.
+            <strong>Selección de cotización:</strong> hay {{ $purchaseRequestsAwaitingQuoteSelectionCount }} solicitud(es) de compra con cotizaciones cargadas y aún sin cotización elegida.
         </div>
         <div class="d-flex flex-wrap gap-2">
             <a href="{{ $dashboardPanel }}#purchase-requests-process-section" class="btn btn-sm btn-danger">Ir al panel de solicitudes de compra</a>
@@ -1316,7 +1316,7 @@
     </div>
     @endif
     
-    <!-- EstadÃ­sticas Generales -->
+    <!-- Estadísticas Generales -->
     <div class="row mb-4">
         <div class="col-md-12">
             <h2 class="section-title">Proceso de Solicitudes</h2>
@@ -1356,9 +1356,9 @@
                         <br>
                         <small style="color: #6c757d; font-size: 0.85rem;">
                             <i class="la la-hourglass-half"></i> 
-                            MÃ¡s antigua: {{ (int)$generalRequestsAgeStats['max_days'] }} dÃ­a(s)
+                            Más antigua: {{ (int)$generalRequestsAgeStats['max_days'] }} día(s)
                             @if($generalRequestsAgeStats['average_days'] >= 0)
-                                | Promedio: {{ (int)$generalRequestsAgeStats['average_days'] }} dÃ­a(s)
+                                | Promedio: {{ (int)$generalRequestsAgeStats['average_days'] }} día(s)
                             @endif
                         </small>
                     @endif
@@ -1383,9 +1383,9 @@
                         <br>
                         <small style="color: #6c757d;">
                             <i class="la la-hourglass-half"></i> 
-                            MÃ¡s antigua: {{ (int)$purchaseRequestsAgeStats['max_days'] }} dÃ­a(s)
+                            Más antigua: {{ (int)$purchaseRequestsAgeStats['max_days'] }} día(s)
                             @if($purchaseRequestsAgeStats['average_days'] >= 0)
-                                | Promedio: {{ (int)$purchaseRequestsAgeStats['average_days'] }} dÃ­a(s)
+                                | Promedio: {{ (int)$purchaseRequestsAgeStats['average_days'] }} día(s)
                             @endif
                         </small>
                     @endif
@@ -1404,9 +1404,9 @@
                         <br>
                         <small style="color: #6c757d; font-size: 0.85rem;">
                             <i class="la la-hourglass-half"></i> 
-                            MÃ¡s antigua: {{ (int)$purchaseRequestsAgeStats['max_days'] }} dÃ­a(s)
+                            Más antigua: {{ (int)$purchaseRequestsAgeStats['max_days'] }} día(s)
                             @if($purchaseRequestsAgeStats['average_days'] > 0)
-                                | Promedio: {{ (int)$purchaseRequestsAgeStats['average_days'] }} dÃ­a(s)
+                                | Promedio: {{ (int)$purchaseRequestsAgeStats['average_days'] }} día(s)
                             @endif
                         </small>
                     @endif
@@ -1422,7 +1422,7 @@
                     <i class="la la-clipboard-list"></i>
                 </div>
                 <div class="stat-card-number">{{ $stats['purchase_orders'] }}</div>
-                <div class="stat-card-label">Ã“rdenes de Compra</div>
+                <div class="stat-card-label">Órdenes de Compra</div>
                 <div class="stat-card-pending">{{ $stats['purchase_orders_pending'] }} Pendientes</div>
             </a>
         </div>
@@ -1432,7 +1432,7 @@
                     <i class="la la-money-bill-wave"></i>
                 </div>
                 <div class="stat-card-number">{{ $stats['payment_orders'] }}</div>
-                <div class="stat-card-label">Ã“rdenes de Pago</div>
+                <div class="stat-card-label">Órdenes de Pago</div>
                 <div class="stat-card-pending">{{ $stats['payment_orders_pending'] }} Pendientes</div>
             </a>
         </div>
@@ -1519,7 +1519,7 @@
                     <i class="la la-bolt"></i>
                 </div>
                 <div class="stat-card-number" style="color: #ffc107;">{{ $stats['purchase_requests_quick'] ?? 0 }}</div>
-                <div class="stat-card-label">Compras RÃ¡pidas</div>
+                <div class="stat-card-label">Compras Rápidas</div>
                 <div class="stat-card-pending">&nbsp;</div>
             </a>
         </div>
@@ -1543,7 +1543,7 @@
                 <div class="card-body">
                     <div class="d-flex justify-content-between align-items-start mb-2">
                         <h5 class="card-title mb-0">{{ $supplier->company_name }}</h5>
-                        <span class="badge bg-secondary">{{ $supplier->total_ratings }} evaluaciÃ³n(es)</span>
+                        <span class="badge bg-secondary">{{ $supplier->total_ratings }} evaluación(es)</span>
                     </div>
                     <div class="mb-2">
                         @php
@@ -1565,7 +1565,7 @@
                         </div>
                     </div>
                     <div class="text-muted small">
-                        <i class="la la-calendar"></i> Ãšltima evaluaciÃ³n: 
+                        <i class="la la-calendar"></i> Última evaluación: 
                         @if($supplier->ratings->isNotEmpty())
                             {{ $supplier->ratings->sortByDesc('evaluation_date')->first()->evaluation_date->format('d/m/Y') }}
                         @else
@@ -1585,7 +1585,7 @@
     @endif
 
     @if(isset($isResponsableArea) && $isResponsableArea && isset($stockAlerts) && $stockAlerts->isNotEmpty())
-    <!-- Alertas de Stock MÃ­nimo (Responsable de Ãrea) -->
+    <!-- Alertas de Stock Mínimo (Responsable de Área) -->
     <div class="row mb-4">
         <div class="col-md-12 d-flex justify-content-between align-items-center">
             <h3 class="section-title mb-0">Alertas de Stock</h3>
@@ -1598,7 +1598,7 @@
         <div class="process-step-header" style="background-color: #f8d7da;">
             <div class="process-step-title">
                 <i class="la la-exclamation-circle process-step-icon" style="color: #721c24;"></i>
-                <span style="color: #721c24; font-weight: bold;">Productos con Stock por Debajo del MÃ­nimo</span>
+                <span style="color: #721c24; font-weight: bold;">Productos con Stock por Debajo del Mínimo</span>
             </div>
             <span class="process-step-count" style="background-color: #dc3545; color: white;">{{ $stockAlerts->count() }}</span>
         </div>
@@ -1613,12 +1613,12 @@
                             <i class="la la-arrow-down"></i> Stock actual: {{ number_format($alert['current_stock'], 0) }}
                         </span>
                         <span style="color: #856404;">
-                            <i class="la la-exclamation-triangle"></i> Stock mÃ­nimo: {{ number_format($alert['minimum_stock'], 0) }}
+                            <i class="la la-exclamation-triangle"></i> Stock mínimo: {{ number_format($alert['minimum_stock'], 0) }}
                         </span>
                     </div>
                     <div class="process-item-meta">
                         <span style="color: #dc3545; font-weight: bold;">
-                            <i class="la la-minus-circle"></i> DÃ©ficit: {{ number_format($alert['deficit'], 0) }} {{ $alert['product']->unit_measurement ?? 'unidades' }}
+                            <i class="la la-minus-circle"></i> Déficit: {{ number_format($alert['deficit'], 0) }} {{ $alert['product']->unit_measurement ?? 'unidades' }}
                         </span>
                     </div>
                     @if($alert['locations']->isNotEmpty())
@@ -1677,8 +1677,8 @@
                             $pos = ['bg' => '#198754', 'text' => '#fff'];
                             $statusColors = [
                                 'creada' => ['bg' => '#6c757d', 'text' => '#fff', 'label' => 'Creada'],
-                                'pendiente-analisis' => ['bg' => '#fd7e14', 'text' => '#fff', 'label' => 'Pendiente anÃ¡lisis'],
-                                'revisada-area' => $pos + ['label' => 'Revisada por Ãrea'],
+                                'pendiente-analisis' => ['bg' => '#fd7e14', 'text' => '#fff', 'label' => 'Pendiente análisis'],
+                                'revisada-area' => $pos + ['label' => 'Revisada por Área'],
                                 'archivada' => ['bg' => '#495057', 'text' => '#fff', 'label' => 'Archivada'],
                                 'sin-entrega' => ['bg' => '#ffc107', 'text' => '#212529', 'label' => 'Sin entrega'],
                                 'entregada-parcialmente' => $pos + ['label' => 'Entregada parcialmente'],
@@ -1709,8 +1709,8 @@
                                 $ageDays = (int) floor($generalRequest->age_in_days);
                                 $badgeColor = $generalRequest->age_badge_color;
                             @endphp
-                            <span class="badge bg-{{ $badgeColor }}" style="margin-left: 5px;" title="AntigÃ¼edad: {{ $generalRequest->age }}">
-                                <i class="la la-hourglass-half"></i> {{ $ageDays }} dÃ­a(s)
+                            <span class="badge bg-{{ $badgeColor }}" style="margin-left: 5px;" title="Antigüedad: {{ $generalRequest->age }}">
+                                <i class="la la-hourglass-half"></i> {{ $ageDays }} día(s)
                             </span>
                         @endif
                     </div>
@@ -1752,8 +1752,8 @@
                                 $ageDays = (int) floor($purchaseRequest->age_in_days);
                                 $badgeColor = $purchaseRequest->age_badge_color;
                             @endphp
-                            <span class="badge bg-{{ $badgeColor }}" style="margin-left: 5px;" title="AntigÃ¼edad: {{ $purchaseRequest->age }}">
-                                <i class="la la-hourglass-half"></i> {{ $ageDays }} dÃ­a(s)
+                            <span class="badge bg-{{ $badgeColor }}" style="margin-left: 5px;" title="Antigüedad: {{ $purchaseRequest->age }}">
+                                <i class="la la-hourglass-half"></i> {{ $ageDays }} día(s)
                             </span>
                         @endif
                     </div>
@@ -1766,12 +1766,12 @@
     @endif
 
     @if((!isset($isPersonal) || !$isPersonal) && (!isset($isResponsableArea) || !$isResponsableArea))
-    <!-- Paso 3: Ã“rdenes de Compra -->
+    <!-- Paso 3: Órdenes de Compra -->
     <div id="purchase-orders-process-section" class="process-step">
         <div class="process-step-header">
             <div class="process-step-title">
                 <i class="la la-clipboard-list process-step-icon"></i>
-                <span>3. Ã“rdenes de Compra</span>
+                <span>3. Órdenes de Compra</span>
             </div>
             <span class="process-step-count">{{ $stats['purchase_orders'] }}</span>
         </div>
@@ -1789,7 +1789,7 @@
                     </div>
                 </div>
             @empty
-                <div class="text-muted">No hay Ã³rdenes de compra recientes</div>
+                <div class="text-muted">No hay órdenes de compra recientes</div>
             @endforelse
         </div>
     </div>
@@ -1830,12 +1830,12 @@
     @endif
 
     @if((!isset($isPersonal) || !$isPersonal) && (!isset($isResponsableArea) || !$isResponsableArea))
-    <!-- Paso 5: Ã“rdenes de Pago -->
+    <!-- Paso 5: Órdenes de Pago -->
     <div id="payment-orders-process-section" class="process-step">
         <div class="process-step-header">
             <div class="process-step-title">
                 <i class="la la-money-bill-wave process-step-icon"></i>
-                <span>5. Ã“rdenes de Pago</span>
+                <span>5. Órdenes de Pago</span>
             </div>
             <span class="process-step-count">{{ $stats['payment_orders'] }}</span>
         </div>
@@ -1858,7 +1858,7 @@
                     </div>
                 </div>
             @empty
-                <div class="text-muted">No hay Ã³rdenes de pago recientes</div>
+                <div class="text-muted">No hay órdenes de pago recientes</div>
             @endforelse
         </div>
     </div>
@@ -1945,7 +1945,7 @@
     <div class="row mb-4">
         <div class="col-md-12">
             <h3 class="section-title">Trazabilidad Completa de Procesos</h3>
-            <p class="text-muted">Incluye solicitudes generales con compra asociada y solicitudes de compra creadas directamente (sin solicitud general), hasta Ã³rdenes de compra, pagos, recepciones y devoluciones si aplica.</p>
+            <p class="text-muted">Incluye solicitudes generales con compra asociada y solicitudes de compra creadas directamente (sin solicitud general), hasta órdenes de compra, pagos, recepciones y devoluciones si aplica.</p>
         </div>
     </div>
 
@@ -1990,8 +1990,8 @@
                                         $pos = ['bg' => '#198754', 'text' => '#fff'];
                                         $statusColors = [
                                             'creada' => ['bg' => '#6c757d', 'text' => '#fff', 'label' => 'Creada'],
-                                            'pendiente-analisis' => ['bg' => '#fd7e14', 'text' => '#fff', 'label' => 'Pendiente anÃ¡lisis'],
-                                            'revisada-area' => $pos + ['label' => 'Revisada por Ãrea'],
+                                            'pendiente-analisis' => ['bg' => '#fd7e14', 'text' => '#fff', 'label' => 'Pendiente análisis'],
+                                            'revisada-area' => $pos + ['label' => 'Revisada por Área'],
                                             'archivada' => ['bg' => '#495057', 'text' => '#fff', 'label' => 'Archivada'],
                                             'sin-entrega' => ['bg' => '#ffc107', 'text' => '#212529', 'label' => 'Sin entrega'],
                                             'entregada-parcialmente' => $pos + ['label' => 'Entregada parcialmente'],
@@ -2031,7 +2031,7 @@
                                             Estado: {{ $pr->status }} | 
                                             Fecha: {{ $pr->request_date ? $pr->request_date->format('d/m/Y') : 'N/A' }}
                                             @if($pr->selectedMarketRate)
-                                                | CotizaciÃ³n seleccionada: {{ $pr->selectedMarketRate->supplier->name ?? 'N/A' }}
+                                                | Cotización seleccionada: {{ $pr->selectedMarketRate->supplier->name ?? 'N/A' }}
                                             @endif
                                         </small>
                                     </div>
@@ -2040,7 +2040,7 @@
                         @elseif($flowHasGeneral)
                             <div class="flow-timeline-item">
                                 <div class="flow-timeline-content">
-                                    <small class="text-muted">No hay solicitudes de compra generadas aÃºn</small>
+                                    <small class="text-muted">No hay solicitudes de compra generadas aún</small>
                                 </div>
                             </div>
                         @endif
@@ -2067,12 +2067,12 @@
                                     </div>
                                 </div>
 
-                                {{-- Mostrar recepciones relacionadas con esta orden de compra (antes que OP en la lÃ­nea de tiempo) --}}
+                                {{-- Mostrar recepciones relacionadas con esta orden de compra (antes que OP en la línea de tiempo) --}}
                                 @if($po->receptions && $po->receptions->count() > 0)
                                     @foreach($po->receptions as $reception)
                                         <div class="flow-timeline-item">
                                             <div class="flow-timeline-content" style="margin-left: 20px; border-left: 3px solid var(--dashboard-positive-bg);">
-                                                <strong><i class="la la-truck-loading"></i> RecepciÃ³n:</strong> 
+                                                <strong><i class="la la-truck-loading"></i> Recepción:</strong> 
                                                 <a href="{{ backpack_url('reception/' . $reception->id . '/show') }}" class="text-primary">
                                                     {{ $reception->number ?? 'REC-' . $reception->id }}
                                                 </a>
@@ -2093,12 +2093,12 @@
                                             </div>
                                         </div>
 
-                                        {{-- Mostrar devoluciones relacionadas con esta recepciÃ³n --}}
+                                        {{-- Mostrar devoluciones relacionadas con esta recepción --}}
                                         @if($reception->devolutions && $reception->devolutions->count() > 0)
                                             @foreach($reception->devolutions as $devolution)
                                                 <div class="flow-timeline-item">
                                                     <div class="flow-timeline-content" style="margin-left: 40px; border-left: 3px solid #dc3545;">
-                                                        <strong><i class="la la-undo-alt"></i> DevoluciÃ³n:</strong> 
+                                                        <strong><i class="la la-undo-alt"></i> Devolución:</strong> 
                                                         <a href="{{ backpack_url('devolution/' . $devolution->id . '/show') }}" class="text-primary">
                                                             DEV-{{ $devolution->id }}
                                                         </a>
@@ -2117,7 +2117,7 @@
                                             @endforeach
                                         @endif
 
-                                        {{-- Mostrar entregas relacionadas con esta recepciÃ³n --}}
+                                        {{-- Mostrar entregas relacionadas con esta recepción --}}
                                         @if($reception->deliveries && $reception->deliveries->count() > 0)
                                             @foreach($reception->deliveries as $delivery)
                                                 <div class="flow-timeline-item">
@@ -2140,7 +2140,7 @@
                                                         @endif
                                                         <br>
                                                         <small class="text-muted">
-                                                            Solicitud General: {{ $delivery->generalRequest?->number ?? 'â€”' }}
+                                                            Solicitud General: {{ $delivery->generalRequest?->number ?? '—' }}
                                                             @if($delivery->delivery_date)
                                                                 | Fecha: {{ $delivery->delivery_date->format('d/m/Y') }}
                                                             @endif
@@ -2164,7 +2164,7 @@
                                     </div>
                                 @endif
 
-                                {{-- Mostrar Ã³rdenes de pago relacionadas con esta orden de compra (despuÃ©s de recepciones en la lÃ­nea de tiempo) --}}
+                                {{-- Mostrar órdenes de pago relacionadas con esta orden de compra (después de recepciones en la línea de tiempo) --}}
                                 @if($po->paymentOrders && $po->paymentOrders->count() > 0)
                                     @foreach($po->paymentOrders as $paymentOrder)
                                         <div class="flow-timeline-item">
@@ -2198,7 +2198,7 @@
                                 @else
                                     <div class="flow-timeline-item">
                                         <div class="flow-timeline-content" style="margin-left: 20px;">
-                                            <small class="text-muted"><i class="la la-info-circle"></i> No hay Ã³rdenes de pago registradas para esta orden de compra</small>
+                                            <small class="text-muted"><i class="la la-info-circle"></i> No hay órdenes de pago registradas para esta orden de compra</small>
                                         </div>
                                     </div>
                                 @endif
@@ -2206,7 +2206,7 @@
                         @else
                             <div class="flow-timeline-item">
                                 <div class="flow-timeline-content">
-                                    <small class="text-muted">No hay Ã³rdenes de compra generadas aÃºn</small>
+                                    <small class="text-muted">No hay órdenes de compra generadas aún</small>
                                 </div>
                             </div>
                         @endif
@@ -2220,7 +2220,7 @@
         <div class="col-md-12">
             <div class="alert alert-info">
                 <i class="la la-info-circle"></i> 
-                No hay procesos para mostrar todavÃ­a. La trazabilidad incluye solicitudes generales con compras asociadas, o solicitudes de compra creadas directamente (sin solicitud general), con su seguimiento hasta Ã³rdenes de compra y recepciones.
+                No hay procesos para mostrar todavía. La trazabilidad incluye solicitudes generales con compras asociadas, o solicitudes de compra creadas directamente (sin solicitud general), con su seguimiento hasta órdenes de compra y recepciones.
             </div>
         </div>
     </div>

@@ -339,7 +339,7 @@ class EducationalHealthDataSeeder extends Seeder
         
         // reportes.exportar: exportaciones (p. ej. Excel/PDF en listados). givePermissionTo es idempotente.
         if ($roleAdminInstitucion) {
-            $roleAdminInstitucion->givePermissionTo(['compra.aprobar', 'compra.ejecutar', 'solicitud.ver', 'solicitud.aprobar', 'reportes.exportar']);
+            $roleAdminInstitucion->givePermissionTo(['solicitud.crear', 'compra.aprobar', 'compra.ejecutar', 'solicitud.ver', 'solicitud.aprobar', 'reportes.exportar']);
         }
         
         if ($roleApoderado && $roleApoderado->permissions->isEmpty()) {

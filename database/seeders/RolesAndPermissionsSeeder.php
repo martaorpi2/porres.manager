@@ -126,6 +126,7 @@ class RolesAndPermissionsSeeder extends Seeder
 
         // Administrador - permisos de administración institucional y aprobación de compras
         $roleAdminInstitucion->givePermissionTo([
+            Permission::findByName('solicitud.crear', 'backpack'),
             Permission::findByName('compra.aprobar', 'backpack'),
             Permission::findByName('compra.ejecutar', 'backpack'),
             Permission::findByName('solicitud.ver', 'backpack'),
