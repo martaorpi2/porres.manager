@@ -8,12 +8,21 @@ return [
     |--------------------------------------------------------------------------
     |
     | Los avisos se envían a los usuarios del sistema según su rol (guard backpack).
-    | Si no hay ningún usuario con el rol correspondiente o sin email válido, se usa
-    | esta dirección. Configurar con PURCHASE_REQUEST_NOTIFICATION_EMAIL en .env.
+    | En pruebas, force_all_to_notification_email redirige todos esos avisos a
+    | notification_email. Configurar con PURCHASE_REQUEST_NOTIFICATION_EMAIL en .env.
     |
     */
 
     'notification_email' => env('PURCHASE_REQUEST_NOTIFICATION_EMAIL', 'morpi@ismp.edu.ar'),
+
+    /*
+    | Si es true, los avisos del circuito de compras se envían solo a
+    | notification_email (no a los correos de cada usuario/rol).
+    */
+    'force_all_to_notification_email' => filter_var(
+        env('PURCHASE_REQUEST_FORCE_ALL_EMAILS_TO_NOTIFICATION', true),
+        FILTER_VALIDATE_BOOLEAN
+    ),
 
     /*
     |--------------------------------------------------------------------------

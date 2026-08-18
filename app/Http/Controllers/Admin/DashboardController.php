@@ -36,6 +36,7 @@ class DashboardController extends Controller
         $isPersonal = $user->hasRole('role_personal');
         $isResponsableArea = $user->hasResponsableAreaOrInstituteAuthorityRole();
         $isAutoridadInstituto = $user->hasInstituteAuthorityRole();
+        $isAdminSistema = $user->isAdminSistema();
         $isResponsableCompras = $user->effectivelyHasResponsableComprasRole();
         $isAdminInstitucion = $user->hasRole('role_admin_institucion', 'backpack');
         $isApoderado = $user->hasRole('role_apoderado', 'backpack');
@@ -215,15 +216,23 @@ class DashboardController extends Controller
 
         // Obtener solicitudes de compra pendientes de aprobación del administrador del instituto, apoderado o representante legal
         $pendingApprovalRequests = collect();
-        if ($isAdminInstitucion || $isApoderado || $isRepresentanteLegal) {
+        if ($isAdminInstitucion || $isApoderado || $isRepresentanteLegal || $isAdminSistema) {
             $comprasLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_responsable_compras');
 
-            if ($isAdminInstitucion) {
+            if ($isAdminSistema) {
+                $userLimit = max(
+                    (float) \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_admin_institucion'),
+                    (float) \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_apoderado'),
+                    (float) \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_representante_legal')
+                );
+            } elseif ($isAdminInstitucion && ! $isAdminSistema) {
                 $userLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_admin_institucion');
-            } elseif ($isApoderado) {
+            } elseif ($isApoderado && ! $isRepresentanteLegal) {
                 $userLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_apoderado');
-            } else {
+            } elseif ($isRepresentanteLegal) {
                 $userLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_representante_legal');
+            } else {
+                $userLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_admin_institucion');
             }
 
             $pendingApprovalRequests = PurchaseRequest::with(['requestingUser', 'responsibilityArea', 'details.product', 'directPurchaseSupplier', 'marketRates'])
@@ -263,14 +272,14 @@ class DashboardController extends Controller
 
         // Cotizaciones cargadas sin asignación completa por producto (compras o administradora sin sector de compras)
         $purchaseRequestsAwaitingQuoteSelectionCount = 0;
-        if ($isResponsableCompras || $isAdminInstitucion) {
+        if ($isResponsableCompras || $isAdminInstitucion || $isAdminSistema) {
             $purchaseRequestsAwaitingQuoteSelectionCount = PurchaseRequest::purchaseRequestsNeedingQuotationAssignmentCount();
         }
 
         // Compras o administradora (sin usuario de compras): aprobadas por nivel superior, pendientes de OC
         $superiorApprovedPurchaseRequests = collect();
         $superiorApprovedPurchaseRequestsCount = 0;
-        $actsAsComprasMailbox = $user->effectivelyHasResponsableComprasRole();
+        $actsAsComprasMailbox = $user->canActAsResponsableCompras();
         if ($actsAsComprasMailbox) {
             $superiorApprovedPurchaseRequests = $this->purchaseRequestsForInboxList(
                 PurchaseRequest::queryApprovedBySuperiorWithoutPurchaseOrder($user->id)
@@ -280,7 +289,7 @@ class DashboardController extends Controller
 
         // Administradora del instituto: OC sin orden de pago asociada (la OP no depende de la recepción)
         $purchaseOrdersPendingPaymentAfterConformeCount = 0;
-        if ($isAdminInstitucion) {
+        if ($isAdminInstitucion || $isAdminSistema) {
             $purchaseOrdersPendingPaymentAfterConformeCount = PurchaseOrder::query()
                 ->whereDoesntHave('paymentOrders')
                 ->count();
@@ -506,7 +515,7 @@ class DashboardController extends Controller
             'has_pending' => $hasPendingPurchaseRequests,
         ];
 
-        $adminInstitucionInbox = $isAdminInstitucion
+        $adminInstitucionInbox = ($isAdminInstitucion || $isAdminSistema)
             ? $this->buildAdminInstitucionInbox(
                 $user,
                 $pendingApprovalRequests,
@@ -517,11 +526,11 @@ class DashboardController extends Controller
             : null;
 
         $superiorAuthorityInbox = null;
-        if (($isRepresentanteLegal || $isApoderado) && ! $isAdminInstitucion) {
+        if ($isRepresentanteLegal || $isApoderado || $isAdminSistema) {
             $superiorAuthorityInbox = $this->buildSuperiorAuthorityInbox(
                 $user,
                 $pendingApprovalRequests,
-                $isRepresentanteLegal
+                $isRepresentanteLegal || $isAdminSistema
             );
         }
 
@@ -543,6 +552,7 @@ class DashboardController extends Controller
             'isAdminInstitucion',
             'isApoderado',
             'isRepresentanteLegal',
+            'isAdminSistema',
             'superiorApprovedPurchaseRequestsCount',
             'purchaseRequestsAwaitingQuoteSelectionCount',
             'purchaseOrdersPendingPaymentAfterConformeCount',
@@ -583,7 +593,7 @@ class DashboardController extends Controller
         int $purchaseRequestsAwaitingQuoteSelectionCount,
         Collection $superiorApprovedPurchaseRequests
     ): array {
-        $actsAsCompras = ! User::backpackHasAnyUserWithRole('role_responsable_compras');
+        $actsAsCompras = $user->canActAsResponsableCompras();
         $items = [];
 
         $approvalCount = $pendingApprovalRequests->count();
@@ -760,6 +770,37 @@ class DashboardController extends Controller
     private function purchaseRequestsAwaitingSuperiorEscalationForUser(User $user): Collection
     {
         $targetRole = null;
+        if (! Schema::hasColumn((new PurchaseRequest)->getTable(), 'superior_quotation_escalation_pending_at')) {
+            return collect();
+        }
+        if ($user->isAdminSistema()) {
+            $candidates = $this->purchaseRequestsForInboxList(
+                PurchaseRequest::query()->whereNotNull('superior_quotation_escalation_pending_at')
+            );
+            $maxLimit = max(
+                (float) PurchaseAuthorizationLimit::getLimitForRole('role_apoderado'),
+                (float) PurchaseAuthorizationLimit::getLimitForRole('role_representante_legal')
+            );
+
+            return $candidates->filter(function (PurchaseRequest $pr) use ($maxLimit) {
+                if ($pr->wasApprovedBySuperiorAuthority()) {
+                    return false;
+                }
+                if ($pr->is_direct_purchase) {
+                    if (! $pr->direct_purchase_authorization_requested || $pr->direct_purchase_authorized_by) {
+                        return false;
+                    }
+                } elseif (! $pr->hasQuotationSelectionResolved()) {
+                    return false;
+                }
+                $effectiveTotal = $pr->effectiveTotalForAuthorizationLimits();
+                if ($maxLimit > 0 && $effectiveTotal > $maxLimit) {
+                    return false;
+                }
+
+                return PurchaseRequestNotificationService::superiorApproverRoleNamesForAmountFromAdministrator($effectiveTotal) !== [];
+            })->values();
+        }
         if ($user->hasRole('role_representante_legal', 'backpack')) {
             $targetRole = 'role_representante_legal';
         } elseif ($user->hasRole('role_apoderado', 'backpack')) {

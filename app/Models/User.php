@@ -163,10 +163,73 @@ class User extends Authenticatable
     }
 
     /**
+     * Administrador del sistema (soporte / pruebas), con independencia del correo registrado.
+     */
+    public function isAdminSistema(): bool
+    {
+        if ($this->hasRole('role_admin_sistema', 'backpack')) {
+            return true;
+        }
+
+        if ($this->hasRole('role_admin_sistema', 'web')) {
+            return true;
+        }
+
+        return $this->getRoleNames()->contains('role_admin_sistema');
+    }
+
+    /**
+     * Puede operar el circuito de compras en representación de cada interviniente.
+     */
+    public function canActOnBehalfOfPurchaseStakeholders(): bool
+    {
+        return $this->isAdminSistema();
+    }
+
+    public function canActAsResponsableCompras(): bool
+    {
+        return $this->canActOnBehalfOfPurchaseStakeholders()
+            || $this->effectivelyHasResponsableComprasRole();
+    }
+
+    public function canActAsAdministradoraInstitucion(): bool
+    {
+        return $this->canActOnBehalfOfPurchaseStakeholders()
+            || $this->hasAdministradoraInstitucionRole();
+    }
+
+    public function canActAsApoderado(): bool
+    {
+        return $this->canActOnBehalfOfPurchaseStakeholders()
+            || $this->hasRole('role_apoderado', 'backpack')
+            || $this->hasRole('role_apoderado', 'web')
+            || $this->getRoleNames()->contains('role_apoderado');
+    }
+
+    public function canActAsRepresentanteLegal(): bool
+    {
+        return $this->canActOnBehalfOfPurchaseStakeholders()
+            || $this->hasRole('role_representante_legal', 'backpack')
+            || $this->hasRole('role_representante_legal', 'web')
+            || $this->getRoleNames()->contains('role_representante_legal');
+    }
+
+    public function canActAsSuperiorApprover(): bool
+    {
+        return $this->canActAsAdministradoraInstitucion()
+            || $this->canActAsApoderado()
+            || $this->canActAsRepresentanteLegal();
+    }
+
+    /**
      * Sector de compras, administradora del instituto (o admin. de sistema). No área ni representante legal.
      */
     public function canGeneratePurchaseOrders(): bool
     {
+        if ($this->isAdminSistema()) {
+            return true;
+        }
+
         if ($this->hasResponsableAreaOrInstituteAuthorityRole()) {
             return false;
         }
@@ -175,10 +238,6 @@ class User extends Authenticatable
             || $this->hasRole('role_representante_legal', 'web')
             || $this->getRoleNames()->contains('role_representante_legal')) {
             return false;
-        }
-
-        if ($this->hasRole('role_admin_sistema', 'backpack') || $this->hasRole('role_admin_sistema', 'web')) {
-            return true;
         }
 
         if ($this->hasAdministradoraInstitucionRole()) {
