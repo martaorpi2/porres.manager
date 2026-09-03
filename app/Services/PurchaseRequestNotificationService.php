@@ -622,10 +622,18 @@ class PurchaseRequestNotificationService
 
     private static function sendHtml(string $subject, string $html, array $recipients = []): bool
     {
-        $to = array_values(array_unique(array_filter(array_map('trim', $recipients))));
-        if ($to === []) {
-            $fallback = trim(self::notificationEmail());
+        $intended = array_values(array_unique(array_filter(array_map('trim', $recipients))));
+        $fallback = trim(self::notificationEmail());
+        $forceToNotification = (bool) config('purchase_requests.force_all_to_notification_email', true);
+
+        $to = $intended;
+        if ($forceToNotification || $to === []) {
             if ($fallback !== '' && filter_var($fallback, FILTER_VALIDATE_EMAIL)) {
+                if ($forceToNotification && $intended !== [] && $intended !== [$fallback]) {
+                    $html = '<p style="font-size:12px;color:#666;">Destinatario(s) previsto(s) por rol: '
+                        .e(implode(', ', $intended))
+                        .'</p>'.$html;
+                }
                 $to = [$fallback];
             }
         }

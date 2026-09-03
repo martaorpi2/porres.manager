@@ -1221,11 +1221,11 @@
         $dashboardPanel = backpack_url('dashboard');
     @endphp
 
-    @if(isset($isAdminInstitucion) && $isAdminInstitucion && isset($adminInstitucionInbox))
+    @if((isset($isAdminInstitucion) && $isAdminInstitucion || ($isAdminSistema ?? false)) && isset($adminInstitucionInbox))
         @include('admin.dashboard.inc.admin_institucion_inbox')
     @endif
 
-    @if((($isApoderado ?? false) || ($isRepresentanteLegal ?? false)) && !($isAdminInstitucion ?? false) && isset($superiorAuthorityInbox))
+    @if((($isApoderado ?? false) || ($isRepresentanteLegal ?? false) || ($isAdminSistema ?? false)) && isset($superiorAuthorityInbox))
         @include('admin.dashboard.inc.superior_authority_inbox')
     @endif
 
@@ -1244,6 +1244,7 @@
     @if(($superiorApprovedPurchaseRequestsCount ?? 0) > 0 && (
         (isset($isResponsableCompras) && $isResponsableCompras && !($isAdminInstitucion ?? false))
         || ((isset($isAdminInstitucion) && $isAdminInstitucion) && !\App\Models\User::backpackHasAnyUserWithRole('role_responsable_compras'))
+        || ($isAdminSistema ?? false)
     ))
     <div class="alert compras-superior-approval-alert d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-2 mb-4" role="alert">
         <div>

@@ -25,10 +25,10 @@ class StockLevelRequest extends FormRequest
     public function rules()
     {
         return [
-            'product_id' => 'required|exists:products,id',
-            'location_id' => 'required|exists:locations,id',
-            'quantity' => 'required|integer|min:0',
-            'entry_date' => 'required|date',
+            'product_id' => ['required', 'exists:products,id'],
+            'location_id' => ['required', 'exists:locations,id'],
+            'quantity' => ['required', 'integer', 'min:0'],
+            'date' => ['required', 'date'],
         ];
     }
 
@@ -43,7 +43,7 @@ class StockLevelRequest extends FormRequest
             'product_id' => 'producto',
             'location_id' => 'depósito',
             'quantity' => 'cantidad',
-            'entry_date' => 'fecha de ingreso',
+            'date' => 'fecha de ingreso',
         ];
     }
 
@@ -55,8 +55,8 @@ class StockLevelRequest extends FormRequest
     public function messages()
     {
         return [
-            'entry_date.required' => 'La fecha de ingreso es obligatoria.',
-            'entry_date.date' => 'La fecha de ingreso debe ser una fecha válida.',
+            'date.required' => 'La fecha de ingreso es obligatoria.',
+            'date.date' => 'La fecha de ingreso debe ser una fecha válida.',
         ];
     }
 }

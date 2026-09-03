@@ -27,11 +27,11 @@
                     @endif
                 </div>
                 <div class="process-item-meta">
-                    <span><i class="la la-user"></i> {{ $purchaseRequest->requestingUser->name ?? 'N/A' }}</span>
-                    <span><i class="la la-building"></i> {{ $purchaseRequest->responsibilityArea->name ?? 'N/A' }}</span>
+                    <span><i class="la la-user"></i> {{ $purchaseRequest->requestingUser?->name ?? 'N/A' }}</span>
+                    <span><i class="la la-building"></i> {{ $purchaseRequest->responsibilityArea?->name ?? 'N/A' }}</span>
                 </div>
                 <div class="process-item-meta">
-                    <span><i class="la la-calendar"></i> {{ $purchaseRequest->request_date->format('d/m/Y') ?? 'N/A' }}</span>
+                    <span><i class="la la-calendar"></i> {{ optional($purchaseRequest->request_date)->format('d/m/Y') ?? 'N/A' }}</span>
                     <span><i class="la la-dollar-sign"></i> ${{ number_format($purchaseRequest->total_amount, 2) }}</span>
                     @php
                         $ageDays = (int) floor($purchaseRequest->age_in_days);

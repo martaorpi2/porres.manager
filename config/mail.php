@@ -100,4 +100,17 @@ return [
         'name' => env('MAIL_FROM_NAME', 'Example'),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Redirección de todos los correos (pruebas en producción)
+    |--------------------------------------------------------------------------
+    |
+    | Si tiene una dirección válida, todos los correos salientes se envían
+    | únicamente a esa casilla. Dejar MAIL_REDIRECT_TO vacío para usar los
+    | destinatarios reales según rol.
+    |
+    */
+
+    'redirect_all_to' => env('MAIL_REDIRECT_TO', 'morpi@ismp.edu.ar'),
+
 ];

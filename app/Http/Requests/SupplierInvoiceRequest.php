@@ -10,7 +10,7 @@ class SupplierInvoiceRequest extends FormRequest
     {
         $u = backpack_user();
 
-        return $u instanceof User && $u->hasAdministradoraInstitucionRole();
+        return $u instanceof User && $u->canManageSupplierInvoices();
     }
 
     public function rules(): array

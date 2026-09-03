@@ -64,7 +64,6 @@
                 <th>CUIT</th>
                 <th>Dirección</th>
                 <th>Rubro</th>
-                <th>Sectores</th>
             </tr>
         </thead>
         <tbody>
@@ -74,11 +73,10 @@
                     <td>{{ $supplier->cuit }}</td>
                     <td>{{ $supplier->address }}</td>
                     <td>{{ $supplier->heading->name ?? 'N/A' }}</td>
-                    <td>{{ $supplier->sectors->pluck('name')->join(', ') ?: 'N/A' }}</td>
                 </tr>
             @empty
                 <tr>
-                    <td colspan="5" style="text-align: center;">No hay proveedores para mostrar</td>
+                    <td colspan="4" style="text-align: center;">No hay proveedores para mostrar</td>
                 </tr>
             @endforelse
         </tbody>

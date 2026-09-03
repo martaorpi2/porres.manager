@@ -28,7 +28,7 @@ class CategoryCrudController extends CrudController
     {
         // Bloquear acceso completo para role_admin_institucion (pero permitir ver para role_representante_legal)
         $user = backpack_user();
-        if ($user && $user->hasRole('role_admin_institucion', 'backpack')) {
+        if ($user && $user->hasRole('role_admin_institucion', 'backpack') && ! ($user instanceof \App\Models\User && $user->isAdminSistema())) {
             abort(403, 'No tienes permiso para acceder a categorías.');
         }
         

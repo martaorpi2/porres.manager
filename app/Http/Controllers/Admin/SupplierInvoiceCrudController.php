@@ -29,12 +29,8 @@ class SupplierInvoiceCrudController extends CrudController
     public function setup(): void
     {
         $user = backpack_user();
-        if ($user && $user->hasResponsableAreaOrInstituteAuthorityRole()) {
-            abort(403, 'No tienes permiso para acceder a facturas de proveedor.');
-        }
-
-        if (! $user instanceof User || ! $user->hasAdministradoraInstitucionRole()) {
-            abort(403, 'Solo la administradora del instituto puede gestionar facturas de proveedor.');
+        if (! $this->userCanManageSupplierInvoices($user)) {
+            abort(403, 'Solo la administradora del instituto, el sector de compras o el administrador del sistema pueden gestionar facturas de proveedor.');
         }
 
         CRUD::setModel(SupplierInvoice::class);
@@ -232,7 +228,7 @@ class SupplierInvoiceCrudController extends CrudController
         ]);
 
         $user = backpack_user();
-        if ($user instanceof User && $user->hasAdministradoraInstitucionRole()) {
+        if ($this->userCanManageSupplierInvoices($user)) {
             CRUD::addColumn([
                 'name' => 'imputar_action',
                 'label' => '',
@@ -271,8 +267,8 @@ class SupplierInvoiceCrudController extends CrudController
     public function showImputeForm(int $id)
     {
         $user = backpack_user();
-        if (! $user instanceof User || ! $user->hasAdministradoraInstitucionRole()) {
-            abort(403, 'Solo la administradora del instituto puede registrar imputaciones.');
+        if (! $this->userCanManageSupplierInvoices($user)) {
+            abort(403, 'Solo la administradora del instituto, el sector de compras o el administrador del sistema pueden registrar imputaciones.');
         }
 
         $invoice = SupplierInvoice::with(['purchaseOrder', 'supplier'])->findOrFail($id);
@@ -332,8 +328,8 @@ class SupplierInvoiceCrudController extends CrudController
     public function storeImputation(int $id, SupplierInvoiceImputeRequest $request)
     {
         $user = backpack_user();
-        if (! $user instanceof User || ! $user->hasAdministradoraInstitucionRole()) {
-            abort(403, 'Solo la administradora del instituto puede registrar imputaciones.');
+        if (! $this->userCanManageSupplierInvoices($user)) {
+            abort(403, 'Solo la administradora del instituto, el sector de compras o el administrador del sistema pueden registrar imputaciones.');
         }
 
         $invoice = SupplierInvoice::findOrFail($id);
@@ -357,6 +353,11 @@ class SupplierInvoiceCrudController extends CrudController
         \Alert::success('Imputación registrada correctamente.')->flash();
 
         return redirect()->to(backpack_url('supplier-invoice/' . $invoice->id . '/show'));
+    }
+
+    private function userCanManageSupplierInvoices($user): bool
+    {
+        return $user instanceof User && $user->canManageSupplierInvoices();
     }
 
     /**

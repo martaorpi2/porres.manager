@@ -135,7 +135,7 @@ class PurchaseRequestCrudController extends CrudController
         CRUD::removeButton('update');
 
         // Ocultar botones de crear, editar y eliminar para roles sin edición manual de solicitudes.
-        $rolesWithoutManualPurchaseRequestCrud = $user && (
+        $rolesWithoutManualPurchaseRequestCrud = $user && ! $user->isAdminSistema() && (
             $user->hasRole('role_apoderado', 'backpack')
             || $user->hasRole('role_representante_legal', 'backpack')
             || $user->hasRole('role_responsable_compras', 'backpack')
@@ -2588,6 +2588,10 @@ class PurchaseRequestCrudController extends CrudController
             return true;
         }
 
+        if ($user->isAdminSistema()) {
+            return false;
+        }
+
         if ($user->hasRole('role_admin_institucion', 'backpack')) {
             return true;
         }
@@ -3261,6 +3265,9 @@ class PurchaseRequestCrudController extends CrudController
             : $approvedSubtotal;
 
         $comprasLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_responsable_compras');
+        if (! $purchaseRequest->is_direct_purchase && $approvedSubtotal <= 0 && $anyApproved) {
+            $amountForLimits = $this->recalculateSelectedQuotationsTotalForPurchaseRequest($purchaseRequest);
+        }
         $requiresAdminApproval = $amountForLimits > $comprasLimit;
 
         $entryForApproval = clone $purchaseRequest;
@@ -3271,8 +3278,11 @@ class PurchaseRequestCrudController extends CrudController
         $purchaseRequestForEscalateCheck->total_amount = $amountForLimits;
 
         if (! $entryForApproval->canBeApprovedBy($user)) {
+            $userIsAdministradora = $user instanceof \App\Models\User
+                ? $user->canActAsAdministradoraInstitucion()
+                : $user->hasRole('role_admin_institucion', 'backpack');
             if (
-                $user->hasRole('role_admin_institucion', 'backpack')
+                $userIsAdministradora
                 && PurchaseRequestNotificationService::shouldAdministratorEscalateQuotationApproval($purchaseRequestForEscalateCheck)
             ) {
                 \Illuminate\Support\Facades\DB::transaction(function () use ($purchaseRequest, $user, $httpRequest, $detailDecisions, $requiresAdminApproval, $amountForLimits, $anyRejected) {
@@ -3322,22 +3332,23 @@ class PurchaseRequestCrudController extends CrudController
 
                 return redirect()->route('purchase-request.show', $id);
             }
-            if ($user->hasRole('role_admin_institucion', 'backpack')) {
+            if ($user instanceof \App\Models\User ? $user->canActAsAdministradoraInstitucion() : $user->hasRole('role_admin_institucion', 'backpack')) {
                 $adminLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_admin_institucion');
                 abort(403, 'No puedes aprobar esta solicitud de compra porque supera tu límite de autorización de $'.number_format($adminLimit, 2).'. El monto autorizado de los ítems seleccionados es $'.number_format($amountForLimits, 2).'.');
             }
-            if ($user->hasRole('role_apoderado', 'backpack')) {
+            if ($user instanceof \App\Models\User ? $user->canActAsApoderado() : $user->hasRole('role_apoderado', 'backpack')) {
                 $apoderadoLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_apoderado');
                 abort(403, 'No puedes aprobar esta solicitud de compra porque supera tu límite de autorización de $'.number_format($apoderadoLimit, 2).'. El monto autorizado de los ítems seleccionados es $'.number_format($amountForLimits, 2).'.');
             }
-            if ($user->hasRole('role_representante_legal', 'backpack')) {
+            if ($user instanceof \App\Models\User ? $user->canActAsRepresentanteLegal() : $user->hasRole('role_representante_legal', 'backpack')) {
                 $representanteLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_representante_legal');
                 abort(403, 'No puedes aprobar esta solicitud de compra porque supera tu límite de autorización de $'.number_format($representanteLimit, 2).'. El monto autorizado de los ítems seleccionados es $'.number_format($amountForLimits, 2).'.');
             }
             abort(403, 'No tienes permiso para aprobar esta solicitud de compra.');
         }
 
-        \Illuminate\Support\Facades\DB::transaction(function () use ($purchaseRequest, $user, $httpRequest, $detailDecisions, $requiresAdminApproval, $amountForLimits) {
+        try {
+            \Illuminate\Support\Facades\DB::transaction(function () use ($purchaseRequest, $user, $httpRequest, $detailDecisions, $requiresAdminApproval, $amountForLimits) {
             foreach ($purchaseRequest->details as $detail) {
                 $decision = $detailDecisions[$detail->id];
                 $update = [
@@ -3363,6 +3374,16 @@ class PurchaseRequestCrudController extends CrudController
                 'total_amount' => $amountForLimits,
             ]);
         });
+        } catch (\Throwable $e) {
+            \Log::error('Error al aprobar solicitud de compra', [
+                'purchase_request_id' => $purchaseRequest->id,
+                'user_id' => $user->id ?? null,
+                'error' => $e->getMessage(),
+            ]);
+            \Alert::error('No se pudo registrar la aprobación. Si el problema continúa, revise que las migraciones estén aplicadas e intente nuevamente.')->flash();
+
+            return redirect()->route('purchase-request.show', $id);
+        }
 
         $purchaseRequest = $purchaseRequest->fresh(['details.product', 'responsibilityArea.responsibleUser']);
 
@@ -3370,9 +3391,13 @@ class PurchaseRequestCrudController extends CrudController
             $this->dispatchPurchaseLineRejectionNotifications($purchaseRequest, $user, $rejectedItemsForMail);
         }
 
-        $approverIsSuperior = $user->hasRole('role_admin_institucion', 'backpack')
-            || $user->hasRole('role_apoderado', 'backpack')
-            || $user->hasRole('role_representante_legal', 'backpack');
+        $approverIsSuperior = $user instanceof \App\Models\User
+            ? $user->canActAsSuperiorApprover()
+            : (
+                $user->hasRole('role_admin_institucion', 'backpack')
+                || $user->hasRole('role_apoderado', 'backpack')
+                || $user->hasRole('role_representante_legal', 'backpack')
+            );
         if ($approverIsSuperior) {
             PurchaseRequestNotificationService::notifyComprasRequestApprovedBySuperior($purchaseRequest);
         }
@@ -3427,11 +3452,7 @@ class PurchaseRequestCrudController extends CrudController
     public function cancelPurchaseRequestApproval($id)
     {
         $user = backpack_user();
-        $isRepresentanteLegal = $user && (
-            $user->hasRole('role_representante_legal', 'backpack')
-            || $user->hasRole('role_representante_legal', 'web')
-            || $user->getRoleNames()->contains('role_representante_legal')
-        );
+        $isRepresentanteLegal = $user instanceof \App\Models\User && $user->canActAsRepresentanteLegal();
         if (! $isRepresentanteLegal) {
             abort(403, 'Solo el representante legal puede cancelar una aprobación.');
         }
@@ -3638,6 +3659,41 @@ class PurchaseRequestCrudController extends CrudController
     }
 
     /**
+     * Copia de la solicitud con monto/flag de tope alineados a cotización efectiva (UI y rechazo).
+     */
+    private function purchaseRequestForAuthorizationCheck(
+        \App\Models\PurchaseRequest $purchaseRequest,
+        ?float $amount = null
+    ): \App\Models\PurchaseRequest {
+        $amount ??= $purchaseRequest->effectiveTotalForAuthorizationLimits();
+        $comprasLimit = (float) \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_responsable_compras');
+        $clone = clone $purchaseRequest;
+        $clone->total_amount = $amount;
+        $clone->requires_admin_approval = $amount > $comprasLimit;
+
+        return $clone;
+    }
+
+    /**
+     * Tope máximo entre los roles de aprobación superior que el usuario puede ejercer.
+     */
+    private function superiorApproverAuthorizationLimit(\App\Models\User $user): float
+    {
+        $limit = 0.0;
+        if ($user->canActAsAdministradoraInstitucion()) {
+            $limit = max($limit, (float) \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_admin_institucion'));
+        }
+        if ($user->canActAsApoderado()) {
+            $limit = max($limit, (float) \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_apoderado'));
+        }
+        if ($user->canActAsRepresentanteLegal()) {
+            $limit = max($limit, (float) \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_representante_legal'));
+        }
+
+        return $limit;
+    }
+
+    /**
      * Reject a purchase request
      */
     public function rejectPurchaseRequest($id)
@@ -3649,8 +3705,9 @@ class PurchaseRequestCrudController extends CrudController
             abort(403, 'No tienes permiso para rechazar solicitudes de compra.');
         }
 
-        // Verificar si el usuario puede aprobar/rechazar esta solicitud
-        if (! $purchaseRequest->canBeApprovedBy($user)) {
+        // Verificar si el usuario puede aprobar/rechazar esta solicitud (mismo criterio de monto que la UI).
+        $entryForRejection = $this->purchaseRequestForAuthorizationCheck($purchaseRequest);
+        if (! $entryForRejection->canBeApprovedBy($user)) {
             abort(403, 'No tienes permiso para rechazar esta solicitud de compra.');
         }
 
@@ -3659,18 +3716,31 @@ class PurchaseRequestCrudController extends CrudController
         }
 
         // Actualizar la solicitud como rechazada
-        $purchaseRequest->update([
-            'status' => 'Rechazada',
-            'approved_by' => $user->id,
-            'approved_date' => now(),
-        ]);
+        try {
+            \Illuminate\Support\Facades\DB::transaction(function () use ($purchaseRequest, $user) {
+                $purchaseRequest->update([
+                    'status' => 'Rechazada',
+                    'approved_by' => $user->id,
+                    'approved_date' => now(),
+                ]);
 
-        $purchaseRequest->details()->update([
-            'line_authorization_status' => \App\Models\PurchaseRequestDetail::LINE_AUTH_REJECTED,
-            'line_authorization_rejection_reason' => null,
-            'line_authorized_by' => $user->id,
-            'line_authorized_at' => now(),
-        ]);
+                $purchaseRequest->details()->update([
+                    'line_authorization_status' => \App\Models\PurchaseRequestDetail::LINE_AUTH_REJECTED,
+                    'line_authorization_rejection_reason' => null,
+                    'line_authorized_by' => $user->id,
+                    'line_authorized_at' => now(),
+                ]);
+            });
+        } catch (\Throwable $e) {
+            \Log::error('Error al rechazar solicitud de compra', [
+                'purchase_request_id' => $purchaseRequest->id,
+                'user_id' => $user->id ?? null,
+                'error' => $e->getMessage(),
+            ]);
+            \Alert::error('No se pudo registrar el rechazo. Si el problema continúa, revise que las migraciones estén aplicadas e intente nuevamente.')->flash();
+
+            return redirect()->route('purchase-request.show', $id);
+        }
 
         PurchaseRequestNotificationService::notifyAreaResponsiblePurchaseRequestFullyRejected(
             $purchaseRequest->fresh(['responsibilityArea.responsibleUser']),
@@ -3743,10 +3813,14 @@ class PurchaseRequestCrudController extends CrudController
             abort(403, 'No tienes permiso para aprobar compras directas.');
         }
 
-        // Solo administrador, apoderado o representante legal pueden aprobar
-        $canApprove = $user->hasRole('role_admin_institucion', 'backpack')
-                   || $user->hasRole('role_apoderado', 'backpack')
-                   || $user->hasRole('role_representante_legal', 'backpack');
+        // Solo administrador, apoderado, representante legal o admin. de sistema (en su representación)
+        $canApprove = $user instanceof \App\Models\User
+            ? $user->canActAsSuperiorApprover()
+            : (
+                $user->hasRole('role_admin_institucion', 'backpack')
+                || $user->hasRole('role_apoderado', 'backpack')
+                || $user->hasRole('role_representante_legal', 'backpack')
+            );
 
         if (! $canApprove) {
             abort(403, 'Solo el administrador del instituto, apoderado o representante legal pueden aprobar compras directas.');
@@ -3767,19 +3841,10 @@ class PurchaseRequestCrudController extends CrudController
         }
 
         // Validar que el usuario tenga límite suficiente para aprobar
-        $userLimit = 0;
-        $userRoleName = '';
-
-        if ($user->hasRole('role_admin_institucion', 'backpack')) {
-            $userLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_admin_institucion');
-            $userRoleName = 'administrador del instituto';
-        } elseif ($user->hasRole('role_apoderado', 'backpack')) {
-            $userLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_apoderado');
-            $userRoleName = 'apoderado';
-        } elseif ($user->hasRole('role_representante_legal', 'backpack')) {
-            $userLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_representante_legal');
-            $userRoleName = 'representante legal';
-        }
+        $userLimit = $user instanceof \App\Models\User
+            ? $this->superiorApproverAuthorizationLimit($user)
+            : 0;
+        $userRoleName = 'nivel superior';
 
         if ($userLimit > 0 && $purchaseRequest->total_amount > $userLimit) {
             abort(403, 'No puedes aprobar esta compra directa porque supera tu límite de autorización de $'.number_format($userLimit, 2).'. El monto de la compra directa es $'.number_format($purchaseRequest->total_amount, 2).'.');
@@ -3823,10 +3888,14 @@ class PurchaseRequestCrudController extends CrudController
             abort(403, 'No tienes permiso para rechazar compras directas.');
         }
 
-        // Solo administrador, apoderado o representante legal pueden rechazar
-        $canReject = $user->hasRole('role_admin_institucion', 'backpack')
-                  || $user->hasRole('role_apoderado', 'backpack')
-                  || $user->hasRole('role_representante_legal', 'backpack');
+        // Solo administrador, apoderado, representante legal o admin. de sistema (en su representación)
+        $canReject = $user instanceof \App\Models\User
+            ? $user->canActAsSuperiorApprover()
+            : (
+                $user->hasRole('role_admin_institucion', 'backpack')
+                || $user->hasRole('role_apoderado', 'backpack')
+                || $user->hasRole('role_representante_legal', 'backpack')
+            );
 
         if (! $canReject) {
             abort(403, 'Solo el administrador del instituto, apoderado o representante legal pueden rechazar compras directas.');
@@ -3885,7 +3954,7 @@ class PurchaseRequestCrudController extends CrudController
         if ($user && $user->hasResponsableAreaOrInstituteAuthorityRole()) {
             abort(403, 'Los responsables de área no pueden asignar cotizaciones.');
         }
-        if ($user && $user->hasRole('role_representante_legal', 'backpack')) {
+        if ($user && $user->hasRole('role_representante_legal', 'backpack') && ! ($user instanceof \App\Models\User && $user->isAdminSistema())) {
             abort(403, 'El representante legal no puede asignar cotización por producto.');
         }
 
@@ -3980,7 +4049,8 @@ class PurchaseRequestCrudController extends CrudController
         }
 
         $entry->loadMissing(['marketRates.quoteDetails', 'details', 'details.product']);
-        $representanteLegalSinAsignarPorProducto = $user->hasRole('role_representante_legal', 'backpack');
+        $representanteLegalSinAsignarPorProducto = $user->hasRole('role_representante_legal', 'backpack')
+            && ! $user->isAdminSistema();
         $totalAmount = $this->recalculateSelectedQuotationsTotalForPurchaseRequest($entry);
         $threshold = \App\Models\PurchaseRequest::quotationCoverageThresholdAmount();
         $minQuotations = \App\Models\PurchaseRequest::minimumQuotationsRequiredAboveThreshold();
@@ -4528,7 +4598,7 @@ class PurchaseRequestCrudController extends CrudController
 
         // Ocultar botón de eliminar para role_admin_institucion, role_apoderado y role_representante_legal
         $user = backpack_user();
-        if ($user && ($user->hasRole('role_admin_institucion', 'backpack') || $user->hasRole('role_apoderado', 'backpack') || $user->hasRole('role_representante_legal', 'backpack'))) {
+        if ($user && ! ($user instanceof \App\Models\User && $user->isAdminSistema()) && ($user->hasRole('role_admin_institucion', 'backpack') || $user->hasRole('role_apoderado', 'backpack') || $user->hasRole('role_representante_legal', 'backpack'))) {
             CRUD::removeButton('delete');
         }
 
@@ -5147,18 +5217,12 @@ class PurchaseRequestCrudController extends CrudController
                         $canApproveByLimit = false;
                         $userLimit = 0;
 
-                        if ($user->hasRole('role_admin_institucion', 'backpack')) {
-                            $userLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_admin_institucion');
-                            $canApproveByLimit = $entry->total_amount <= $userLimit;
-                        } elseif ($user->hasRole('role_apoderado', 'backpack')) {
-                            $userLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_apoderado');
-                            $canApproveByLimit = $entry->total_amount <= $userLimit;
-                        } elseif ($user->hasRole('role_representante_legal', 'backpack')) {
-                            $userLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_representante_legal');
+                        if ($user instanceof \App\Models\User && $user->canActAsSuperiorApprover()) {
+                            $userLimit = $this->superiorApproverAuthorizationLimit($user);
                             $canApproveByLimit = $entry->total_amount <= $userLimit;
                         }
 
-                        if (($user->hasRole('role_admin_institucion', 'backpack') || $user->hasRole('role_apoderado', 'backpack') || $user->hasRole('role_representante_legal', 'backpack')) && ! $canApproveByLimit) {
+                        if (($user instanceof \App\Models\User && $user->canActAsSuperiorApprover()) && ! $canApproveByLimit) {
                             $adminLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_admin_institucion');
                             $apoderadoLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_apoderado');
                             $representanteLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_representante_legal');
@@ -5240,7 +5304,9 @@ class PurchaseRequestCrudController extends CrudController
                 $marketRates = $entry->marketRates;
 
                 $quotationsViewer = backpack_user();
-                $representanteLegalSinAsignarPorProducto = $quotationsViewer && $quotationsViewer->hasRole('role_representante_legal', 'backpack');
+                $representanteLegalSinAsignarPorProducto = $quotationsViewer
+                    && $quotationsViewer->hasRole('role_representante_legal', 'backpack')
+                    && ! ($quotationsViewer instanceof \App\Models\User && $quotationsViewer->isAdminSistema());
 
                 $canSelectQuotations = $quotationsViewer && (
                     $quotationsViewer->hasRole('role_admin_sistema', 'backpack')
@@ -5987,9 +6053,7 @@ class PurchaseRequestCrudController extends CrudController
                         $html .= '</ul></div>';
                     }
 
-                    $viewerIsRepresentanteLegal = $user->hasRole('role_representante_legal', 'backpack')
-                        || $user->hasRole('role_representante_legal', 'web')
-                        || $user->getRoleNames()->contains('role_representante_legal');
+                    $viewerIsRepresentanteLegal = $user instanceof \App\Models\User && $user->canActAsRepresentanteLegal();
 
                     if ($viewerIsRepresentanteLegal
                         && $entry->status === 'Aprobada'
@@ -6072,8 +6136,17 @@ class PurchaseRequestCrudController extends CrudController
 
                 // Verificar si el usuario puede aprobar esta solicitud
                 if (! $entryForApproval->canBeApprovedBy($user)) {
+                    if ($user instanceof \App\Models\User && $user->isAdminSistema()) {
+                        $representanteLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_representante_legal');
+
+                        return $adminReviewSummaryHtml.'<div class="alert alert-danger mt-3">
+                            <i class="la la-exclamation-triangle"></i>
+                            <strong>Límite excedido:</strong> Esta solicitud ($'.number_format($effectiveTotal, 2).') supera el tope más alto de autorización (representante legal: $'.number_format($representanteLimit, 2).').
+                        </div>';
+                    }
+
                     // Si es responsable de compras y supera su límite
-                    if ($user->hasRole('role_responsable_compras', 'backpack')) {
+                    if ($user instanceof \App\Models\User ? $user->canActAsResponsableCompras() : $user->hasRole('role_responsable_compras', 'backpack')) {
                         $adminLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_admin_institucion');
                         $apoderadoLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_apoderado');
                         $representanteLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_representante_legal');
@@ -6085,7 +6158,7 @@ class PurchaseRequestCrudController extends CrudController
                     }
 
                     // Si es administrador del instituto y supera su límite
-                    if ($user->hasRole('role_admin_institucion', 'backpack')) {
+                    if ($user instanceof \App\Models\User ? $user->canActAsAdministradoraInstitucion() : $user->hasRole('role_admin_institucion', 'backpack')) {
                         $adminLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_admin_institucion');
 
                         return $adminReviewSummaryHtml.'<div class="alert alert-danger mt-3">
@@ -6174,8 +6247,8 @@ class PurchaseRequestCrudController extends CrudController
                         $html .= '</tbody></table></div>';
                     }
                     $html .= '<div class="mb-3">';
-                    $html .= '<label for="approval_justification" class="form-label">Justificación de la decisión:</label>';
-                    $html .= '<textarea name="approval_justification" id="approval_justification" class="form-control" rows="3" required></textarea>';
+                    $html .= '<label for="approval_justification_'.$entry->id.'" class="form-label">Justificación de la decisión:</label>';
+                    $html .= '<textarea name="approval_justification" id="approval_justification_'.$entry->id.'" class="form-control" rows="3" required></textarea>';
                     $html .= '</div>';
                     $html .= '<button type="submit" class="btn btn-success" onclick="return confirm(\'¿Confirma registrar la decisión de autorización por ítem?\')">';
                     $html .= '<i class="la la-check"></i> Confirmar decisión';

@@ -787,28 +787,17 @@ a:hover {
             <div class="card-body py-2">
               <form method="GET" action="{{ url($crud->route) }}">
                 <div class="row">
-                  <div class="col-md-4">
+                  <div class="col-md-6">
                     <label for="nombre" class="form-label">Nombre:</label>
                     <input type="text" name="nombre" id="nombre" class="form-control" placeholder="Buscar por nombre..." value="{{ request('nombre') }}">
                   </div>
-                  <div class="col-md-4">
+                  <div class="col-md-6">
                     <label for="rubro" class="form-label">Rubro:</label>
                     <select name="rubro" id="rubro" class="form-control select2" onchange="this.form.submit()">
                       <option value="">Todos los rubros</option>
                       @foreach(\App\Models\SuppliersHeading::all() as $rubro)
                         <option value="{{ $rubro->id }}" {{ request('rubro') == $rubro->id ? 'selected' : '' }}>
                           {{ $rubro->name }}
-                        </option>
-                      @endforeach
-                    </select>
-                  </div>
-                  <div class="col-md-4">
-                    <label for="sector" class="form-label">Sector:</label>
-                    <select name="sector" id="sector" class="form-control select2" onchange="this.form.submit()">
-                      <option value="">Todos los sectores</option>
-                      @foreach(\App\Models\Sector::all() as $sector)
-                        <option value="{{ $sector->id }}" {{ request('sector') == $sector->id ? 'selected' : '' }}>
-                          {{ $sector->name }}
                         </option>
                       @endforeach
                     </select>

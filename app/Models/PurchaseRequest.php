@@ -531,54 +531,54 @@ class PurchaseRequest extends Model
             return false;
         }
 
-        // Si requiere aprobación de administrador, el admin del instituto, apoderado o representante legal pueden aprobar
-        // pero solo si no supera su límite de monto
-        if ($this->requires_admin_approval) {
-            if ($user->hasRole('role_admin_institucion', 'backpack')) {
-                $adminLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_admin_institucion');
+        $amount = (float) $this->total_amount;
+        $candidateRoles = [];
 
-                return $this->total_amount <= $adminLimit;
+        if ($user instanceof User) {
+            if ($user->canActAsResponsableCompras() && ! $this->requires_admin_approval) {
+                $candidateRoles[] = 'role_responsable_compras';
             }
-            if ($user->hasRole('role_apoderado', 'backpack')) {
-                $apoderadoLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_apoderado');
-
-                return $this->total_amount <= $apoderadoLimit;
+            if ($user->canActAsAdministradoraInstitucion()) {
+                $candidateRoles[] = 'role_admin_institucion';
             }
-            if ($user->hasRole('role_representante_legal', 'backpack')) {
-                $representanteLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_representante_legal');
-
-                return $this->total_amount <= $representanteLimit;
+            if ($user->canActAsApoderado()) {
+                $candidateRoles[] = 'role_apoderado';
             }
-
-            return false;
+            if ($user->canActAsRepresentanteLegal()) {
+                $candidateRoles[] = 'role_representante_legal';
+            }
+        } else {
+            if ($this->requires_admin_approval) {
+                if (method_exists($user, 'hasRole') && $user->hasRole('role_admin_institucion', 'backpack')) {
+                    $candidateRoles[] = 'role_admin_institucion';
+                }
+                if (method_exists($user, 'hasRole') && $user->hasRole('role_apoderado', 'backpack')) {
+                    $candidateRoles[] = 'role_apoderado';
+                }
+                if (method_exists($user, 'hasRole') && $user->hasRole('role_representante_legal', 'backpack')) {
+                    $candidateRoles[] = 'role_representante_legal';
+                }
+            } else {
+                if (method_exists($user, 'hasRole') && $user->hasRole('role_responsable_compras', 'backpack')) {
+                    $candidateRoles[] = 'role_responsable_compras';
+                }
+                if (method_exists($user, 'hasRole') && $user->hasRole('role_admin_institucion', 'backpack')) {
+                    $candidateRoles[] = 'role_admin_institucion';
+                }
+                if (method_exists($user, 'hasRole') && $user->hasRole('role_apoderado', 'backpack')) {
+                    $candidateRoles[] = 'role_apoderado';
+                }
+                if (method_exists($user, 'hasRole') && $user->hasRole('role_representante_legal', 'backpack')) {
+                    $candidateRoles[] = 'role_representante_legal';
+                }
+            }
         }
 
-        // Si no requiere aprobación de administrador, el responsable de compras puede aprobar
-        if ($user->hasRole('role_responsable_compras', 'backpack')) {
-            $comprasLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_responsable_compras');
-
-            return $this->total_amount <= $comprasLimit;
-        }
-
-        // El administrador del instituto puede aprobar solo si no supera su límite
-        if ($user->hasRole('role_admin_institucion', 'backpack')) {
-            $adminLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_admin_institucion');
-
-            return $this->total_amount <= $adminLimit;
-        }
-
-        // El apoderado puede aprobar solo si no supera su límite
-        if ($user->hasRole('role_apoderado', 'backpack')) {
-            $apoderadoLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_apoderado');
-
-            return $this->total_amount <= $apoderadoLimit;
-        }
-
-        // El representante legal puede aprobar solo si no supera su límite
-        if ($user->hasRole('role_representante_legal', 'backpack')) {
-            $representanteLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_representante_legal');
-
-            return $this->total_amount <= $representanteLimit;
+        foreach (array_unique($candidateRoles) as $roleName) {
+            $limit = (float) PurchaseAuthorizationLimit::getLimitForRole($roleName);
+            if ($amount <= $limit) {
+                return true;
+            }
         }
 
         return false;
@@ -590,6 +590,9 @@ class PurchaseRequest extends Model
     public function getAgeAttribute()
     {
         $date = $this->created_at ?? $this->request_date;
+        if (! $date) {
+            return '—';
+        }
 
         return $date->diffForHumans();
     }
@@ -600,6 +603,9 @@ class PurchaseRequest extends Model
     public function getAgeInDaysAttribute()
     {
         $date = $this->created_at ?? $this->request_date;
+        if (! $date) {
+            return 0;
+        }
 
         return $date->diffInDays(now());
     }

@@ -40,7 +40,7 @@ class PurchaseOrderCrudController extends CrudController
     {
         // Bloquear acceso para role_responsable_area
         $user = backpack_user();
-        if ($user && $user->hasResponsableAreaOrInstituteAuthorityRole()) {
+        if ($user && ! ($user instanceof User && $user->isAdminSistema()) && $user->hasResponsableAreaOrInstituteAuthorityRole()) {
             abort(403, 'No tienes permiso para acceder a órdenes de compra.');
         }
         
@@ -419,7 +419,7 @@ class PurchaseOrderCrudController extends CrudController
                 if ($entry->paymentOrders->isNotEmpty()) {
                     return '';
                 }
-                if (! $user instanceof User || ! $user->hasAdministradoraInstitucionRole()) {
+                if (! $user instanceof User || ! $user->canActAsAdministradoraInstitucion()) {
                     return '<div class="mt-3"><span class="text-muted"><i class="la la-info-circle"></i> La orden de pago la genera la administradora del instituto desde aquí cuando corresponda (luego de emitida la orden de compra; no requiere recepción conforme).</span></div>';
                 }
                 $html = '<div class="mt-3">';
@@ -439,8 +439,8 @@ class PurchaseOrderCrudController extends CrudController
             'type' => 'closure',
             'function' => function ($entry) {
                 $user = backpack_user();
-                if (! $user instanceof User || ! $user->hasAdministradoraInstitucionRole()) {
-                    return '<p class="text-muted small mb-0">El alta de facturas asociadas a la OC y al proveedor la realiza la administradora del instituto desde la vista de esta orden de compra.</p>';
+                if (! $user instanceof User || ! $user->canManageSupplierInvoices()) {
+                    return '<p class="text-muted small mb-0">El alta de facturas asociadas a la OC y al proveedor la realiza la administradora del instituto o el sector de compras desde la vista de esta orden de compra.</p>';
                 }
                 $entry->loadMissing('details.supplier', 'supplier');
                 $suppliers = $entry->suppliers;
@@ -477,7 +477,7 @@ class PurchaseOrderCrudController extends CrudController
     protected function renderOcPaymentFlowSummary(PurchaseOrder $entry): string
     {
         $user = backpack_user();
-        $isAdmin = $user instanceof User && $user->hasAdministradoraInstitucionRole();
+        $isAdmin = $user instanceof User && $user->canManageSupplierInvoices();
         $svc = app(PaymentOrderInvoiceImputationService::class);
 
         $entry->loadMissing([
