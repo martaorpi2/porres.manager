@@ -73,7 +73,7 @@
 
     <x-backpack::menu-item title="Ordenes de Compra" icon="la la-shopping-cart" :link="backpack_url('purchase-order')" />
     <x-backpack::menu-item title="Ordenes de Pago" icon="la la-money-bill-wave" :link="backpack_url('payment-order')" />
-    @if(backpack_user() instanceof \App\Models\User && backpack_user()->canActAsAdministradoraInstitucion())
+    @if(backpack_user() instanceof \App\Models\User && backpack_user()->canManageSupplierInvoices())
         <x-backpack::menu-item title="Facturas proveedor" icon="la la-file-invoice-dollar" :link="backpack_url('supplier-invoice')" />
     @endif
 

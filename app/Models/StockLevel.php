@@ -15,11 +15,13 @@ class StockLevel extends Model
         'product_id',
         'location_id',
         'quantity',
+        'date',
         'last_updated_by',
     ];
 
     protected $casts = [
         'quantity' => 'integer',
+        'date' => 'date',
     ];
 
     /**

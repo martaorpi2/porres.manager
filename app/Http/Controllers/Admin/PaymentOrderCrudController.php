@@ -36,7 +36,7 @@ class PaymentOrderCrudController extends CrudController
     {
         // Bloquear acceso para role_responsable_area
         $user = backpack_user();
-        if ($user && $user->hasResponsableAreaOrInstituteAuthorityRole()) {
+        if ($user && ! ($user instanceof User && $user->isAdminSistema()) && $user->hasResponsableAreaOrInstituteAuthorityRole()) {
             abort(403, 'No tienes permiso para acceder a órdenes de pago.');
         }
 

@@ -25,7 +25,10 @@ class StockLevelRequest extends FormRequest
     public function rules()
     {
         return [
-            // 'name' => 'required|min:5|max:255'
+            'product_id' => ['required', 'exists:products,id'],
+            'location_id' => ['required', 'exists:locations,id'],
+            'quantity' => ['required', 'integer', 'min:0'],
+            'date' => ['required', 'date'],
         ];
     }
 
@@ -37,7 +40,10 @@ class StockLevelRequest extends FormRequest
     public function attributes()
     {
         return [
-            //
+            'product_id' => 'producto',
+            'location_id' => 'depósito',
+            'quantity' => 'cantidad',
+            'date' => 'fecha',
         ];
     }
 

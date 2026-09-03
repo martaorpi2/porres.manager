@@ -131,6 +131,11 @@ class StockLevelCrudController extends CrudController
             'type' => 'number',
         ]);
         CRUD::addColumn([
+            'name' => 'date',
+            'label' => 'Fecha',
+            'type' => 'date',
+        ]);
+        CRUD::addColumn([
             'name' => 'last_updated_by',
             'label' => 'Actualizado por',
             'type' => 'select',
@@ -300,6 +305,8 @@ class StockLevelCrudController extends CrudController
                 'min' => 0,
             ],
         ]);
+
+        CRUD::field('date')->label('Fecha')->type('date')->default(now()->format('Y-m-d'));
         
         // Campo hidden para asignar automáticamente el usuario actual
         $user = backpack_user();

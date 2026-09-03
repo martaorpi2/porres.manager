@@ -198,6 +198,15 @@ class User extends Authenticatable
             || $this->hasAdministradoraInstitucionRole();
     }
 
+    /**
+     * Facturas de proveedor: administradora, sector de compras y administrador del sistema.
+     */
+    public function canManageSupplierInvoices(): bool
+    {
+        return $this->canActAsAdministradoraInstitucion()
+            || $this->canActAsResponsableCompras();
+    }
+
     public function canActAsApoderado(): bool
     {
         return $this->canActOnBehalfOfPurchaseStakeholders()
