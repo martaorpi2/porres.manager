@@ -130,6 +130,7 @@ class StockLevelCrudController extends CrudController
             'label' => 'Cantidad',
             'type' => 'number',
         ]);
+        CRUD::column('entry_date')->label('Fecha de ingreso')->type('date');
         CRUD::addColumn([
             'name' => 'last_updated_by',
             'label' => 'Actualizado por',
@@ -299,6 +300,13 @@ class StockLevelCrudController extends CrudController
                 'step' => 1,
                 'min' => 0,
             ],
+        ]);
+
+        CRUD::addField([
+            'name' => 'entry_date',
+            'label' => 'Fecha de ingreso',
+            'type' => 'date',
+            'default' => now()->format('Y-m-d'),
         ]);
         
         // Campo hidden para asignar automáticamente el usuario actual

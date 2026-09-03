@@ -27,7 +27,8 @@ class TestDataSeeder extends Seeder
             ['name' => 'Construcción', 'description' => 'Materiales y servicios de construcción'],
             ['name' => 'Alimentación', 'description' => 'Proveedores de alimentos y bebidas'],
             ['name' => 'Limpieza', 'description' => 'Productos y servicios de limpieza'],
-            ['name' => 'Oficina', 'description' => 'Materiales y servicios de oficina']
+            ['name' => 'Oficina', 'description' => 'Materiales y servicios de oficina'],
+            ['name' => 'Insumos Generales', 'description' => 'Proveedores de insumos de uso general'],
         ];
 
         foreach ($rubros as $rubro) {
