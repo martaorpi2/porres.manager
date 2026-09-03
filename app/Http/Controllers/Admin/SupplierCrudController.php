@@ -112,21 +112,6 @@ class SupplierCrudController extends CrudController
             },
         ]);
         CRUD::addColumn([
-            'name'  => 'sectors',
-            'label' => 'Sectores',
-            'type'  => 'closure',
-            'function' => function($entry) {
-                $html = '';
-                foreach ($entry->sectors as $sector) {
-                    $html .= '<span class="badge rounded-pill bg-secondary me-1" style="font-size:0.8rem;">' 
-                            . e($sector->name) . '</span>';
-                }
-                return $html;
-            },
-            'escaped' => false, // permitimos HTML para mostrar las badges
-        ]);
-
-        CRUD::addColumn([
             'name' => 'average_rating',
             'label' => 'Calificación',
             'type' => 'closure',
@@ -157,16 +142,6 @@ class SupplierCrudController extends CrudController
             $rubroId = request()->get('rubro');
             if ($rubroId) {
                 CRUD::addClause('where', 'supplier_heading_id', $rubroId);
-            }
-        }
-
-        // Filtro personalizado por sector usando parámetros de URL
-        if (request()->has('sector')) {
-            $sectorId = request()->get('sector');
-            if ($sectorId) {
-                CRUD::addClause('whereHas', 'sectors', function($query) use ($sectorId) {
-                    $query->where('sector_id', $sectorId);
-                });
             }
         }
 
@@ -261,15 +236,6 @@ class SupplierCrudController extends CrudController
                 'attribute' => 'name',
             ]);
         }
-        CRUD::addField([
-            'name' => 'sectors',
-            'label' => 'Sectores',
-            'type' => 'select_multiple',
-            'entity' => 'sectors',
-            'attribute' => 'name',
-            'model' => 'App\Models\Sector',
-            'pivot' => true,
-        ]);
         /**
          * Fields can be defined using the fluent syntax:
          * - CRUD::field('price')->type('number');
@@ -292,7 +258,7 @@ class SupplierCrudController extends CrudController
      */
     public function exportExcel()
     {
-        $query = \App\Models\Supplier::with(['heading', 'sectors']);
+        $query = \App\Models\Supplier::with(['heading']);
         
         // Filtrar proveedores por área si el usuario es responsable de área
         $user = backpack_user();
@@ -342,15 +308,6 @@ class SupplierCrudController extends CrudController
             $rubroId = request()->get('rubro');
             if ($rubroId) {
                 $query->where('supplier_heading_id', $rubroId);
-            }
-        }
-
-        if (request()->has('sector')) {
-            $sectorId = request()->get('sector');
-            if ($sectorId) {
-                $query->whereHas('sectors', function($q) use ($sectorId) {
-                    $q->where('sector_id', $sectorId);
-                });
             }
         }
 
@@ -374,7 +331,6 @@ class SupplierCrudController extends CrudController
             $sheet->setCellValue('B1', 'CUIT');
             $sheet->setCellValue('C1', 'Dirección');
             $sheet->setCellValue('D1', 'Rubro');
-            $sheet->setCellValue('E1', 'Sectores');
             
             // Data
             $row = 2;
@@ -383,7 +339,6 @@ class SupplierCrudController extends CrudController
                 $sheet->setCellValue('B' . $row, $supplier->cuit);
                 $sheet->setCellValue('C' . $row, $supplier->address);
                 $sheet->setCellValue('D' . $row, $supplier->heading->name ?? '');
-                $sheet->setCellValue('E' . $row, $supplier->sectors->pluck('name')->join(', '));
                 $row++;
             }
             
@@ -399,7 +354,7 @@ class SupplierCrudController extends CrudController
      */
     public function exportPdf()
     {
-        $query = \App\Models\Supplier::with(['heading', 'sectors']);
+        $query = \App\Models\Supplier::with(['heading']);
         
         // Filtrar proveedores por área si el usuario es responsable de área
         $user = backpack_user();
@@ -449,15 +404,6 @@ class SupplierCrudController extends CrudController
             $rubroId = request()->get('rubro');
             if ($rubroId) {
                 $query->where('supplier_heading_id', $rubroId);
-            }
-        }
-
-        if (request()->has('sector')) {
-            $sectorId = request()->get('sector');
-            if ($sectorId) {
-                $query->whereHas('sectors', function($q) use ($sectorId) {
-                    $q->where('sector_id', $sectorId);
-                });
             }
         }
 
