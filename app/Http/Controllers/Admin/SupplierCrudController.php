@@ -170,13 +170,20 @@ class SupplierCrudController extends CrudController
         CRUD::setValidation(SupplierRequest::class);
         $this->crud->removeAllFields();
         //CRUD::setFromDb(); // set fields from db columns.
-        CRUD::field('company_name')->label('Nombre');
-        CRUD::field('cuit')->label('Cuit');
-        CRUD::field('address')->label('Dirección');
-        CRUD::field('email')->label('Email')->type('email');
-        CRUD::field('contact')->label('Teléfono');
-        CRUD::field('cvu')->label('CBU/CVU')->attributes(['placeholder' => 'Ej: 0000003100123456789012']);
-        CRUD::field('alias')->label('Alias')->attributes(['placeholder' => 'Ej: proveedor.cbu.alias']);
+        CRUD::field('company_name')->label('Nombre')
+            ->wrapper(['class' => 'form-group col-sm-12 col-md-6']);
+        CRUD::field('cuit')->label('Cuit')
+            ->wrapper(['class' => 'form-group col-sm-12 col-md-6']);
+        CRUD::field('address')->label('Dirección')
+            ->wrapper(['class' => 'form-group col-sm-12']);
+        CRUD::field('email')->label('Email')->type('email')
+            ->wrapper(['class' => 'form-group col-sm-12 col-md-6']);
+        CRUD::field('contact')->label('Teléfono')
+            ->wrapper(['class' => 'form-group col-sm-12 col-md-6']);
+        CRUD::field('cvu')->label('CBU/CVU')->attributes(['placeholder' => 'Ej: 0000003100123456789012'])
+            ->wrapper(['class' => 'form-group col-sm-12 col-md-6']);
+        CRUD::field('alias')->label('Alias')->attributes(['placeholder' => 'Ej: proveedor.cbu.alias'])
+            ->wrapper(['class' => 'form-group col-sm-12 col-md-6']);
         
         // Filtrar rubros según el área del responsable
         $user = backpack_user();
@@ -225,6 +232,7 @@ class SupplierCrudController extends CrudController
                 'type' => 'select_from_array',
                 'options' => $rubroOptions,
                 'allows_null' => false,
+                'wrapper' => ['class' => 'form-group col-sm-12'],
             ]);
         } else {
             CRUD::addField([
@@ -234,6 +242,7 @@ class SupplierCrudController extends CrudController
                 'entity' => 'heading',
                 'model' => 'App\Models\SuppliersHeading',
                 'attribute' => 'name',
+                'wrapper' => ['class' => 'form-group col-sm-12'],
             ]);
         }
         /**
