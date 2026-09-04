@@ -44,6 +44,7 @@
         <x-backpack::menu-dropdown-item title="Listado" :link="backpack_url('supplier')" />
         <x-backpack::menu-dropdown-item title="Calificaciones" :link="backpack_url('supplier-rating')" />
         <x-backpack::menu-dropdown-item title="Rubros" :link="backpack_url('suppliers-heading')" />
+        <x-backpack::menu-dropdown-item title="Cuentas contables" :link="backpack_url('accounting-account')" />
     </x-backpack::menu-dropdown>
 
     <x-backpack::menu-dropdown title="Inventario" icon="la la-boxes" trigger="click">

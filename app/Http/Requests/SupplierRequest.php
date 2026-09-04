@@ -17,6 +17,17 @@ class SupplierRequest extends FormRequest
         return backpack_auth()->check();
     }
 
+    protected function prepareForValidation()
+    {
+        if ($this->input('accounting_account_id') === '') {
+            $this->merge(['accounting_account_id' => null]);
+        }
+
+        if ($this->has('cuit')) {
+            $this->merge(['cuit' => trim((string) $this->input('cuit'))]);
+        }
+    }
+
     /**
      * Get the validation rules that apply to the request.
      *
@@ -26,13 +37,14 @@ class SupplierRequest extends FormRequest
     {
         return [
             'company_name' => ['required', 'string', 'max:255'],
-            'cuit' => ['required', 'string', 'max:20'],
+            'cuit' => ['required', 'string', 'max:20', 'unique:suppliers,cuit,' . $this->route('id')],
             'address' => ['nullable', 'string', 'max:255'],
             'email' => ['nullable', 'email', 'max:255'],
             'contact' => ['nullable', 'string', 'max:150'],
             'cvu' => ['nullable', 'string', 'max:22'],
             'alias' => ['nullable', 'string', 'max:50'],
             'supplier_heading_id' => ['required', 'exists:suppliers_headings,id'],
+            'accounting_account_id' => ['nullable', 'exists:accounting_accounts,id'],
         ];
     }
 
@@ -52,6 +64,7 @@ class SupplierRequest extends FormRequest
             'cvu' => 'CBU/CVU',
             'alias' => 'alias',
             'supplier_heading_id' => 'rubro',
+            'accounting_account_id' => 'cuenta contable',
         ];
     }
 
@@ -63,7 +76,8 @@ class SupplierRequest extends FormRequest
     public function messages()
     {
         return [
-            //
+            'cuit.required' => 'El CUIT es obligatorio.',
+            'cuit.unique' => 'Ya existe un proveedor con este CUIT.',
         ];
     }
 }

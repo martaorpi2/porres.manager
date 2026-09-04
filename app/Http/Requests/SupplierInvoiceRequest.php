@@ -20,6 +20,7 @@ class SupplierInvoiceRequest extends FormRequest
         return [
             'purchase_order_id' => ['nullable', 'exists:purchase_orders,id'],
             'supplier_id' => ['required', 'exists:suppliers,id'],
+            'accounting_account_id' => ['nullable', 'exists:accounting_accounts,id'],
             'invoice_number' => ['required', 'string', 'max:64'],
             'invoice_date' => ['required', 'date'],
             'total_amount' => ['required', 'numeric', 'min:0.01'],
@@ -33,6 +34,10 @@ class SupplierInvoiceRequest extends FormRequest
     {
         if ($this->has('purchase_order_id') && ($this->input('purchase_order_id') === '' || $this->input('purchase_order_id') === '0')) {
             $this->merge(['purchase_order_id' => null]);
+        }
+
+        if ($this->input('accounting_account_id') === '' || $this->input('accounting_account_id') === '0') {
+            $this->merge(['accounting_account_id' => null]);
         }
 
         $c = strtoupper(trim((string) $this->input('currency_code', '')));
@@ -79,6 +84,7 @@ class SupplierInvoiceRequest extends FormRequest
         return [
             'purchase_order_id' => 'orden de compra',
             'supplier_id' => 'proveedor',
+            'accounting_account_id' => 'cuenta contable',
             'invoice_number' => 'número de factura',
             'invoice_date' => 'fecha de factura',
             'total_amount' => 'importe total',

@@ -22,6 +22,7 @@ Route::group([
     Route::get('supplier/export/pdf', 'SupplierCrudController@exportPdf')->name('supplier.export.pdf');
     Route::crud('supplier-rating', 'SupplierRatingCrudController');
     Route::crud('suppliers-heading', 'SuppliersHeadingCrudController');
+    Route::crud('accounting-account', 'AccountingAccountCrudController');
     Route::crud('purchase-order', 'PurchaseOrderCrudController');
     Route::get('purchase-order/{id}/pdf', 'PurchaseOrderCrudController@generatePdf')->name('purchase-order.pdf');
     Route::crud('payment-order', 'PaymentOrderCrudController');

@@ -31,6 +31,11 @@ class SupplierInvoice extends Model
         return $this->belongsTo(Supplier::class, 'supplier_id');
     }
 
+    public function accountingAccount(): BelongsTo
+    {
+        return $this->belongsTo(AccountingAccount::class);
+    }
+
     public function paymentOrders(): BelongsToMany
     {
         return $this->belongsToMany(PaymentOrder::class, 'payment_order_invoice', 'supplier_invoice_id', 'payment_order_id')

@@ -624,7 +624,7 @@ class PurchaseRequestNotificationService
     {
         $intended = array_values(array_unique(array_filter(array_map('trim', $recipients))));
         $fallback = trim(self::notificationEmail());
-        $forceToNotification = (bool) config('purchase_requests.force_all_to_notification_email', true);
+        $forceToNotification = (bool) config('purchase_requests.force_all_to_notification_email', false);
 
         $to = $intended;
         if ($forceToNotification || $to === []) {

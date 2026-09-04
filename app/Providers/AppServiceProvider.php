@@ -48,7 +48,7 @@ class AppServiceProvider extends ServiceProvider
     }
 
     /**
-     * En pruebas (p. ej. producción controlada) redirige todos los correos a MAIL_REDIRECT_TO.
+     * Si MAIL_REDIRECT_TO tiene una casilla, redirige todos los correos a esa dirección (pruebas).
      */
     private function redirectOutgoingMailIfConfigured(Email $message): void
     {

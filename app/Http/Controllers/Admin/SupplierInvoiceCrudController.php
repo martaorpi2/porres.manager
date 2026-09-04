@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Requests\SupplierInvoiceImputeRequest;
 use App\Http\Requests\SupplierInvoiceRequest;
+use App\Models\AccountingAccount;
 use App\Models\PaymentOrder;
 use App\Models\PurchaseOrder;
 use App\Models\Supplier;
@@ -41,7 +42,7 @@ class SupplierInvoiceCrudController extends CrudController
     protected function setupListOperation(): void
     {
         CRUD::enableResponsiveTable();
-        CRUD::addClause('with', ['purchaseOrder', 'supplier']);
+        CRUD::addClause('with', ['purchaseOrder', 'supplier', 'accountingAccount']);
 
         if (request()->filled('supplier_id')) {
             CRUD::addClause('where', 'supplier_id', (int) request()->query('supplier_id'));
@@ -65,6 +66,14 @@ class SupplierInvoiceCrudController extends CrudController
             'entity' => 'supplier',
             'attribute' => 'company_name',
             'model' => \App\Models\Supplier::class,
+        ]);
+        CRUD::addColumn([
+            'name' => 'accounting_account_id',
+            'label' => 'Cuenta contable',
+            'type' => 'select',
+            'entity' => 'accountingAccount',
+            'attribute' => 'identifying_label',
+            'model' => AccountingAccount::class,
         ]);
         CRUD::column('invoice_number')->label('Nº factura');
         CRUD::column('invoice_date')->label('Fecha')->type('date');
@@ -117,6 +126,33 @@ class SupplierInvoiceCrudController extends CrudController
             'default' => $supplierIdFromUrl,
         ]);
 
+        $defaultAccountId = null;
+        if ($this->crud->getOperation() === 'update') {
+            $entry = $this->crud->getCurrentEntry();
+            $defaultAccountId = $entry?->accounting_account_id
+                ?: Supplier::query()->whereKey($entry?->supplier_id)->value('accounting_account_id');
+        } elseif ($supplierIdFromUrl) {
+            $defaultAccountId = Supplier::query()->whereKey($supplierIdFromUrl)->value('accounting_account_id');
+        }
+
+        CRUD::addField([
+            'name' => 'accounting_account_id',
+            'label' => 'Cuenta contable',
+            'type' => 'select_from_array',
+            'options' => AccountingAccount::optionsForSelect($defaultAccountId ? (int) $defaultAccountId : null),
+            'allows_null' => true,
+            'default' => $defaultAccountId,
+            'hint' => 'Por defecto se toma la cuenta del proveedor. Puede rectificarla solo para esta factura.',
+        ]);
+
+        CRUD::addField([
+            'name' => 'accounting_account_from_supplier_script',
+            'type' => 'custom_html',
+            'label' => false,
+            'wrapper' => false,
+            'value' => $this->accountingAccountFromSupplierScript(),
+        ]);
+
         $poOptions = $this->purchaseOrderOptionsForSupplier($supplierIdFromUrl);
         CRUD::addField([
             'name' => 'purchase_order_id',
@@ -154,7 +190,7 @@ class SupplierInvoiceCrudController extends CrudController
 
     protected function setupShowOperation(): void
     {
-        CRUD::addClause('with', ['purchaseOrder', 'supplier', 'paymentOrders']);
+        CRUD::addClause('with', ['purchaseOrder', 'supplier', 'paymentOrders', 'accountingAccount']);
 
         CRUD::column('invoice_number')->label('Número de factura');
         CRUD::column('invoice_date')->label('Fecha')->type('date');
@@ -200,6 +236,14 @@ class SupplierInvoiceCrudController extends CrudController
             'entity' => 'supplier',
             'attribute' => 'company_name',
             'model' => \App\Models\Supplier::class,
+        ]);
+        CRUD::addColumn([
+            'name' => 'accounting_account_id',
+            'label' => 'Cuenta contable',
+            'type' => 'select',
+            'entity' => 'accountingAccount',
+            'attribute' => 'identifying_label',
+            'model' => AccountingAccount::class,
         ]);
         CRUD::column('observations')->label('Observaciones');
 
@@ -374,5 +418,51 @@ class SupplierInvoiceCrudController extends CrudController
         }
 
         return $q->pluck('number', 'id')->toArray();
+    }
+
+    /**
+     * Al cambiar el proveedor, propone su cuenta contable. En edición no pisa el valor ya guardado hasta que cambien el proveedor.
+     */
+    protected function accountingAccountFromSupplierScript(): string
+    {
+        $map = Supplier::query()
+            ->whereNotNull('accounting_account_id')
+            ->pluck('accounting_account_id', 'id');
+
+        $json = json_encode((object) $map->all(), JSON_UNESCAPED_UNICODE);
+        $isUpdate = $this->crud->getOperation() === 'update' ? 'true' : 'false';
+
+        return <<<HTML
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    var supplierAccounts = {$json};
+    var isUpdate = {$isUpdate};
+    var supplierSelect = document.querySelector('[name="supplier_id"]');
+    var accountSelect = document.querySelector('[name="accounting_account_id"]');
+    if (!supplierSelect || !accountSelect) {
+        return;
+    }
+
+    function applySupplierAccount() {
+        var supplierId = supplierSelect.value;
+        var accountId = supplierAccounts[supplierId];
+        accountSelect.value = (accountId === undefined || accountId === null) ? '' : String(accountId);
+        if (window.jQuery) {
+            jQuery(accountSelect).trigger('change');
+        }
+    }
+
+    if (window.jQuery) {
+        jQuery(supplierSelect).on('change', applySupplierAccount);
+    } else {
+        supplierSelect.addEventListener('change', applySupplierAccount);
+    }
+
+    if (!isUpdate && supplierSelect.value && !accountSelect.value) {
+        applySupplierAccount();
+    }
+});
+</script>
+HTML;
     }
 }

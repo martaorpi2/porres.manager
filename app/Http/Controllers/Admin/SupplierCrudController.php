@@ -112,6 +112,20 @@ class SupplierCrudController extends CrudController
             },
         ]);
         CRUD::addColumn([
+            'name' => 'accounting_account_id',
+            'label' => 'Cuenta contable',
+            'type' => 'select',
+            'entity' => 'accountingAccount',
+            'attribute' => 'identifying_label',
+            'model' => 'App\Models\AccountingAccount',
+            'searchLogic' => function ($query, $column, $searchTerm) {
+                $query->orWhereHas('accountingAccount', function ($q) use ($searchTerm) {
+                    $q->where('code', 'like', '%'.$searchTerm.'%')
+                        ->orWhere('name', 'like', '%'.$searchTerm.'%');
+                });
+            },
+        ]);
+        CRUD::addColumn([
             'name' => 'average_rating',
             'label' => 'Calificación',
             'type' => 'closure',
@@ -173,6 +187,8 @@ class SupplierCrudController extends CrudController
         CRUD::field('company_name')->label('Nombre')
             ->wrapper(['class' => 'form-group col-sm-12 col-md-6']);
         CRUD::field('cuit')->label('Cuit')
+            ->attributes(['required' => 'required', 'placeholder' => 'Ej: 30-12345678-9'])
+            ->hint('Obligatorio y único.')
             ->wrapper(['class' => 'form-group col-sm-12 col-md-6']);
         CRUD::field('address')->label('Dirección')
             ->wrapper(['class' => 'form-group col-sm-12']);
@@ -245,6 +261,23 @@ class SupplierCrudController extends CrudController
                 'wrapper' => ['class' => 'form-group col-sm-12'],
             ]);
         }
+
+        $currentAccountId = null;
+        if ($this->crud->getOperation() === 'update') {
+            $currentAccountId = $this->crud->getCurrentEntry()?->accounting_account_id;
+        }
+
+        $accountOptions = \App\Models\AccountingAccount::optionsForSelect($currentAccountId ? (int) $currentAccountId : null);
+
+        CRUD::addField([
+            'name' => 'accounting_account_id',
+            'label' => 'Cuenta contable',
+            'type' => 'select_from_array',
+            'options' => $accountOptions,
+            'allows_null' => true,
+            'hint' => 'Opcional. Si todavía no está el plan de cuentas, puede dejarlo sin asignar.',
+            'wrapper' => ['class' => 'form-group col-sm-12'],
+        ]);
         /**
          * Fields can be defined using the fluent syntax:
          * - CRUD::field('price')->type('number');

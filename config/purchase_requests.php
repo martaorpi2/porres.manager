@@ -8,7 +8,8 @@ return [
     |--------------------------------------------------------------------------
     |
     | Los avisos se envían a los usuarios del sistema según su rol (guard backpack).
-    | En pruebas, force_all_to_notification_email redirige todos esos avisos a
+    | notification_email se usa solo si no hay destinatarios válidos por rol.
+    | En pruebas, force_all_to_notification_email=true redirige esos avisos a
     | notification_email. Configurar con PURCHASE_REQUEST_NOTIFICATION_EMAIL en .env.
     |
     */
@@ -20,7 +21,7 @@ return [
     | notification_email (no a los correos de cada usuario/rol).
     */
     'force_all_to_notification_email' => filter_var(
-        env('PURCHASE_REQUEST_FORCE_ALL_EMAILS_TO_NOTIFICATION', true),
+        env('PURCHASE_REQUEST_FORCE_ALL_EMAILS_TO_NOTIFICATION', false),
         FILTER_VALIDATE_BOOLEAN
     ),
 

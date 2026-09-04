@@ -111,6 +111,6 @@ return [
     |
     */
 
-    'redirect_all_to' => env('MAIL_REDIRECT_TO', 'morpi@ismp.edu.ar'),
+    'redirect_all_to' => env('MAIL_REDIRECT_TO', ''),
 
 ];

@@ -45,6 +45,11 @@ class Supplier extends Model
         return $this->belongsTo(\App\Models\SuppliersHeading::class, 'supplier_heading_id');
     }
 
+    public function accountingAccount()
+    {
+        return $this->belongsTo(AccountingAccount::class);
+    }
+
     /**
      * Get all ratings for this supplier.
      */
