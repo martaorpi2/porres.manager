@@ -29,6 +29,8 @@ Route::group([
     Route::get('payment-order/{id}/pdf', 'PaymentOrderCrudController@generatePdf')->name('payment-order.pdf');
     Route::get('payment-order/{id}/anular', 'PaymentOrderCrudController@showAnularForm')->name('payment-order.anular');
     Route::post('payment-order/{id}/anular', 'PaymentOrderCrudController@anular')->name('payment-order.anular.store');
+    Route::get('payment-order/{id}/imputar', 'PaymentOrderCrudController@showImputeForm')->name('payment-order.imputar');
+    Route::post('payment-order/{id}/imputar', 'PaymentOrderCrudController@storeImputation')->name('payment-order.imputar.store');
     Route::get('supplier-invoice/{id}/imputar', 'SupplierInvoiceCrudController@showImputeForm')->name('supplier-invoice.imputar');
     Route::post('supplier-invoice/{id}/imputar', 'SupplierInvoiceCrudController@storeImputation')->name('supplier-invoice.imputar.store');
     Route::crud('supplier-invoice', 'SupplierInvoiceCrudController');

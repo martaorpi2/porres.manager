@@ -231,6 +231,26 @@ class User extends Authenticatable
     }
 
     /**
+     * Durante pruebas, el responsable de compras puede autorizar como nivel superior.
+     */
+    public function comprasCanAuthorizeDuringTests(): bool
+    {
+        if (! $this->canActAsResponsableCompras()) {
+            return false;
+        }
+
+        return (bool) config('purchase_requests.compras_can_authorize', false);
+    }
+
+    /**
+     * Puede autorizar solicitudes / compra directa (nivel superior o compras en modo prueba).
+     */
+    public function canActAsPurchaseAuthorizer(): bool
+    {
+        return $this->canActAsSuperiorApprover() || $this->comprasCanAuthorizeDuringTests();
+    }
+
+    /**
      * Sector de compras, administradora del instituto (o admin. de sistema). No área ni representante legal.
      */
     public function canGeneratePurchaseOrders(): bool

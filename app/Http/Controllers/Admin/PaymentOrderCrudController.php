@@ -2,10 +2,13 @@
 
 namespace App\Http\Controllers\Admin;
 
+use App\Http\Requests\PaymentOrderInvoiceImputeRequest;
 use App\Http\Requests\PaymentOrderRequest;
 use App\Models\OpDetail;
 use App\Models\PaymentOrder;
+use App\Models\SupplierInvoice;
 use App\Models\User;
+use App\Services\PaymentOrderInvoiceImputationService;
 use Backpack\CRUD\app\Http\Controllers\CrudController;
 use Backpack\CRUD\app\Library\CrudPanel\CrudPanelFacade as CRUD;
 use Barryvdh\DomPDF\Facade\Pdf;
@@ -83,6 +86,7 @@ class PaymentOrderCrudController extends CrudController
         CRUD::addButton('line', 'update', 'view', 'crud::buttons.payment_order_update', 'end');
         // Botón Anular: solo administradora (role_admin_institucion), solo si no está anulada
         CRUD::addButton('line', 'anular', 'view', 'crud::buttons.payment_order_anular', 'end');
+        CRUD::addButton('line', 'imputar', 'view', 'crud::buttons.payment_order_impute', 'end');
 
         CRUD::column('payment_number')->label('Número');
         CRUD::column('date')->label('Fecha');
@@ -266,7 +270,7 @@ class PaymentOrderCrudController extends CrudController
             ],
             'default' => 'normal',
             'allows_null' => false,
-            'hint' => 'Anticipo: puede existir sin factura asociada; luego se vincula en Facturas proveedor → Imputar.',
+            'hint' => 'Anticipo: puede existir sin factura asociada; luego se imputa a factura desde Facturas proveedor o desde esta orden de pago (después de guardar).',
         ]);
         CRUD::addField([
             'name' => 'currency_code',
@@ -318,6 +322,15 @@ class PaymentOrderCrudController extends CrudController
                 'type' => 'custom_html',
                 'value' => $this->htmlPaymentOrderImputacionesSummary($entry),
             ]);
+            $user = backpack_user();
+            if ($user instanceof User && $user->canManageSupplierInvoices() && $entry->status !== 'Anulada') {
+                CRUD::addField([
+                    'name' => 'payment_order_imputar_action',
+                    'label' => 'Imputar a factura',
+                    'type' => 'custom_html',
+                    'value' => $this->htmlPaymentOrderImputarAction($entry),
+                ]);
+            }
         }
         CRUD::addField([
             'name' => 'authorizing_user_id',
@@ -526,7 +539,13 @@ class PaymentOrderCrudController extends CrudController
                     ? $entry->supplierInvoices
                     : $entry->supplierInvoices()->get();
                 if ($rows->isEmpty()) {
-                    return '<p class="text-muted mb-0">Sin imputaciones a facturas registradas en la tabla pivote.</p>';
+                    $empty = '<p class="text-muted mb-0">Sin imputaciones a facturas registradas en la tabla pivote.</p>';
+                    $user = backpack_user();
+                    if ($user instanceof User && $user->canManageSupplierInvoices() && $entry->status !== 'Anulada') {
+                        $empty .= $this->htmlPaymentOrderImputarAction($entry, true);
+                    }
+
+                    return $empty;
                 }
                 $html = '<div class="table-responsive"><table class="table table-sm table-bordered mb-0"><thead><tr>'
                     . '<th>Factura</th><th>Fecha fact.</th><th>Monto imputado</th><th>Fecha imputación</th></tr></thead><tbody>';
@@ -540,6 +559,11 @@ class PaymentOrderCrudController extends CrudController
                     $imputed = (float) $rows->sum(fn ($i) => (float) $i->pivot->amount_applied);
                     $avail = max(0, (float) $entry->total_amount - $imputed);
                     $html .= '<p class="mt-2 mb-0"><strong>Anticipo disponible:</strong> $' . number_format($avail, 2) . '</p>';
+                }
+
+                $user = backpack_user();
+                if ($user instanceof User && $user->canManageSupplierInvoices() && $entry->status !== 'Anulada') {
+                    $html .= $this->htmlPaymentOrderImputarAction($entry, true);
                 }
 
                 return $html;
@@ -722,7 +746,7 @@ class PaymentOrderCrudController extends CrudController
                 . '<td class="text-end">$' . number_format($inv->openBalance(), 2) . '</td></tr>';
         }
         $html .= '</tbody></table></div>';
-        $html .= '<div class="p-2 small text-muted mb-0">Para aplicar esta u otras OP a una factura use <strong>Facturas proveedor</strong> → Ver → <em>Imputar orden de pago</em>.</div></div></div>';
+        $html .= '<div class="p-2 small text-muted mb-0">Para aplicar esta u otras OP a una factura use <strong>Facturas proveedor</strong> → Ver → <em>Imputar orden de pago</em>, o <strong>Imputar a factura</strong> en esta orden de pago (después de guardar).</div></div></div>';
 
         return $html;
     }
@@ -749,6 +773,131 @@ class PaymentOrderCrudController extends CrudController
         $html .= '</tbody></table></div></div></div>';
 
         return $html;
+    }
+
+    /**
+     * Botón o aviso para imputar esta OP a una factura (misma OC, saldo, misma moneda).
+     */
+    protected function htmlPaymentOrderImputarAction(PaymentOrder $paymentOrder, bool $compact = false): string
+    {
+        if ($paymentOrder->status === 'Anulada') {
+            return '';
+        }
+
+        $wrapStart = $compact ? '<div class="mt-2">' : '';
+        $wrapEnd = $compact ? '</div>' : '';
+
+        if (! $paymentOrder->purchase_order_id) {
+            return $wrapStart . '<div class="alert alert-warning mb-0">Asocie una orden de compra a esta OP para imputar facturas.</div>' . $wrapEnd;
+        }
+
+        $service = app(PaymentOrderInvoiceImputationService::class);
+        $remaining = $service->remainingImputableCapacityOnPaymentOrder($paymentOrder);
+        if ($remaining < 0.01) {
+            return $wrapStart . '<p class="text-muted mb-0">Esta orden de pago no tiene saldo imputable.</p>' . $wrapEnd;
+        }
+
+        $candidates = $service->candidateInvoicesForPaymentOrder($paymentOrder);
+        if ($candidates->isEmpty()) {
+            return $wrapStart . '<div class="alert alert-warning mb-0">No hay facturas con saldo pendiente (misma moneda) para la OC de esta orden de pago. Regístrelas en <strong>Facturas proveedor</strong> o imputelas desde ahí cuando existan.</div>' . $wrapEnd;
+        }
+
+        $btn = '<a href="' . backpack_url('payment-order/' . $paymentOrder->id . '/imputar') . '" class="btn btn-primary' . ($compact ? ' btn-sm' : '') . '"><i class="la la-link"></i> Imputar a factura</a>'
+            . ' <span class="text-muted small">Saldo imputable: $' . number_format($remaining, 2) . '</span>';
+
+        return $wrapStart . $btn . $wrapEnd;
+    }
+
+    /**
+     * Muestra el formulario para imputar esta OP a una factura (total o parcial).
+     */
+    public function showImputeForm(int $id)
+    {
+        $user = backpack_user();
+        if (! $user instanceof User || ! $user->canManageSupplierInvoices()) {
+            abort(403, 'Solo la administradora del instituto, el sector de compras o el administrador del sistema pueden registrar imputaciones.');
+        }
+
+        $paymentOrder = PaymentOrder::with('purchase_order')->findOrFail($id);
+        if ($paymentOrder->status === 'Anulada') {
+            \Alert::warning('No se puede imputar una orden de pago anulada.')->flash();
+
+            return redirect()->to(backpack_url('payment-order/' . $paymentOrder->id . '/show'));
+        }
+        if (! $paymentOrder->purchase_order_id) {
+            \Alert::warning('Debe asociar una orden de compra a la orden de pago antes de imputar facturas.')->flash();
+
+            return redirect()->to(backpack_url('payment-order/' . $paymentOrder->id . '/edit'));
+        }
+
+        $service = app(PaymentOrderInvoiceImputationService::class);
+        $remaining = $service->remainingImputableCapacityOnPaymentOrder($paymentOrder);
+        if ($remaining < 0.01) {
+            \Alert::warning('Esta orden de pago no tiene saldo imputable.')->flash();
+
+            return redirect()->to(backpack_url('payment-order/' . $paymentOrder->id . '/show'));
+        }
+
+        $candidates = $service->candidateInvoicesForPaymentOrder($paymentOrder);
+        if ($candidates->isEmpty()) {
+            \Alert::error('No hay facturas con saldo pendiente en la misma moneda para la orden de compra de esta OP.')->flash();
+
+            return redirect()->to(backpack_url('payment-order/' . $paymentOrder->id . '/show'));
+        }
+
+        $options = [];
+        foreach ($candidates as $invoice) {
+            $saldo = $invoice->openBalance();
+            $label = $invoice->invoice_number
+                . ($invoice->invoice_date ? ' — ' . $invoice->invoice_date->format('d/m/Y') : '')
+                . ' — saldo $' . number_format($saldo, 2);
+            $options[$invoice->id] = [
+                'label' => $label,
+                'saldo' => $saldo,
+            ];
+        }
+
+        $this->data['paymentOrder'] = $paymentOrder;
+        $this->data['remaining'] = $remaining;
+        $this->data['invoiceOptions'] = $options;
+        $this->data['title'] = 'Imputar a factura — ' . $paymentOrder->payment_number;
+        $this->data['breadcrumbs'] = [
+            trans('backpack::crud.admin') => backpack_url('dashboard'),
+            'Ordenes de pago' => backpack_url('payment-order'),
+            $paymentOrder->payment_number => backpack_url('payment-order/' . $paymentOrder->id . '/show'),
+            'Imputar' => false,
+        ];
+
+        return view('vendor.backpack.crud.payment_order_impute', $this->data);
+    }
+
+    public function storeImputation(int $id, PaymentOrderInvoiceImputeRequest $request)
+    {
+        $user = backpack_user();
+        if (! $user instanceof User || ! $user->canManageSupplierInvoices()) {
+            abort(403, 'Solo la administradora del instituto, el sector de compras o el administrador del sistema pueden registrar imputaciones.');
+        }
+
+        $paymentOrder = PaymentOrder::findOrFail($id);
+        $validated = $request->validated();
+        $invoice = SupplierInvoice::findOrFail((int) $validated['supplier_invoice_id']);
+
+        try {
+            app(PaymentOrderInvoiceImputationService::class)->apply(
+                $paymentOrder,
+                $invoice,
+                (float) $validated['amount'],
+                $validated['imputed_at']
+            );
+        } catch (\InvalidArgumentException $e) {
+            \Alert::error($e->getMessage())->flash();
+
+            return redirect()->back()->withInput();
+        }
+
+        \Alert::success('Imputación registrada correctamente.')->flash();
+
+        return redirect()->to(backpack_url('payment-order/' . $paymentOrder->id . '/show'));
     }
 
     /**

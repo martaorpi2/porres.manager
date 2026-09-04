@@ -538,13 +538,13 @@ class PurchaseRequest extends Model
             if ($user->canActAsResponsableCompras() && ! $this->requires_admin_approval) {
                 $candidateRoles[] = 'role_responsable_compras';
             }
-            if ($user->canActAsAdministradoraInstitucion()) {
+            if ($user->canActAsAdministradoraInstitucion() || $user->comprasCanAuthorizeDuringTests()) {
                 $candidateRoles[] = 'role_admin_institucion';
             }
-            if ($user->canActAsApoderado()) {
+            if ($user->canActAsApoderado() || $user->comprasCanAuthorizeDuringTests()) {
                 $candidateRoles[] = 'role_apoderado';
             }
-            if ($user->canActAsRepresentanteLegal()) {
+            if ($user->canActAsRepresentanteLegal() || $user->comprasCanAuthorizeDuringTests()) {
                 $candidateRoles[] = 'role_representante_legal';
             }
         } else {

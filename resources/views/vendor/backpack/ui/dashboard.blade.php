@@ -1723,7 +1723,8 @@
     </div>
     @endif
 
-    @if(((isset($isApoderado) && $isApoderado) || (isset($isRepresentanteLegal) && $isRepresentanteLegal)) && !($isAdminInstitucion ?? false) && isset($pendingApprovalRequests))
+    @if((((isset($isApoderado) && $isApoderado) || (isset($isRepresentanteLegal) && $isRepresentanteLegal)) && !($isAdminInstitucion ?? false) && isset($pendingApprovalRequests))
+        || (($comprasCanAuthorize ?? false) && (isset($isResponsableCompras) && $isResponsableCompras) && !($isAdminInstitucion ?? false) && isset($pendingApprovalRequests)))
         @include('admin.dashboard.inc.pending_approval_section')
     @endif
 

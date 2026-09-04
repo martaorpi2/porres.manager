@@ -214,9 +214,10 @@ class DashboardController extends Controller
                 ->get();
         }
 
-        // Obtener solicitudes de compra pendientes de aprobación del administrador del instituto, apoderado o representante legal
+        // Obtener solicitudes de compra pendientes de aprobación del administrador del instituto, apoderado, representante legal o compras (pruebas)
         $pendingApprovalRequests = collect();
-        if ($isAdminInstitucion || $isApoderado || $isRepresentanteLegal || $isAdminSistema) {
+        $comprasCanAuthorize = $isResponsableCompras && (bool) config('purchase_requests.compras_can_authorize', false);
+        if ($isAdminInstitucion || $isApoderado || $isRepresentanteLegal || $isAdminSistema || $comprasCanAuthorize) {
             $comprasLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_responsable_compras');
 
             if ($isAdminSistema) {
@@ -231,6 +232,12 @@ class DashboardController extends Controller
                 $userLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_apoderado');
             } elseif ($isRepresentanteLegal) {
                 $userLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_representante_legal');
+            } elseif ($comprasCanAuthorize) {
+                $userLimit = max(
+                    (float) \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_admin_institucion'),
+                    (float) \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_apoderado'),
+                    (float) \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_representante_legal')
+                );
             } else {
                 $userLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_admin_institucion');
             }
@@ -564,6 +571,7 @@ class DashboardController extends Controller
             'purchaseRequestsAgeStats',
             'adminInstitucionInbox',
             'superiorAuthorityInbox',
+            'comprasCanAuthorize',
         ));
     }
 

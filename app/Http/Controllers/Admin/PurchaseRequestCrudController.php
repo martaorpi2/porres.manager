@@ -3392,7 +3392,7 @@ class PurchaseRequestCrudController extends CrudController
         }
 
         $approverIsSuperior = $user instanceof \App\Models\User
-            ? $user->canActAsSuperiorApprover()
+            ? $user->canActAsPurchaseAuthorizer()
             : (
                 $user->hasRole('role_admin_institucion', 'backpack')
                 || $user->hasRole('role_apoderado', 'backpack')
@@ -3679,6 +3679,14 @@ class PurchaseRequestCrudController extends CrudController
      */
     private function superiorApproverAuthorizationLimit(\App\Models\User $user): float
     {
+        if ($user->comprasCanAuthorizeDuringTests()) {
+            return max(
+                (float) \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_admin_institucion'),
+                (float) \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_apoderado'),
+                (float) \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_representante_legal')
+            );
+        }
+
         $limit = 0.0;
         if ($user->canActAsAdministradoraInstitucion()) {
             $limit = max($limit, (float) \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_admin_institucion'));
@@ -3813,17 +3821,18 @@ class PurchaseRequestCrudController extends CrudController
             abort(403, 'No tienes permiso para aprobar compras directas.');
         }
 
-        // Solo administrador, apoderado, representante legal o admin. de sistema (en su representación)
+        // Administradora, apoderado, representante legal, o responsable de compras (pruebas)
         $canApprove = $user instanceof \App\Models\User
-            ? $user->canActAsSuperiorApprover()
+            ? $user->canActAsPurchaseAuthorizer()
             : (
                 $user->hasRole('role_admin_institucion', 'backpack')
                 || $user->hasRole('role_apoderado', 'backpack')
                 || $user->hasRole('role_representante_legal', 'backpack')
+                || ($user->hasRole('role_responsable_compras', 'backpack') && (bool) config('purchase_requests.compras_can_authorize', false))
             );
 
         if (! $canApprove) {
-            abort(403, 'Solo el administrador del instituto, apoderado o representante legal pueden aprobar compras directas.');
+            abort(403, 'Solo el administrador del instituto, apoderado, representante legal o responsable de compras (en pruebas) pueden aprobar compras directas.');
         }
 
         // Validar que sea una compra directa y que se haya solicitado autorización
@@ -3888,17 +3897,18 @@ class PurchaseRequestCrudController extends CrudController
             abort(403, 'No tienes permiso para rechazar compras directas.');
         }
 
-        // Solo administrador, apoderado, representante legal o admin. de sistema (en su representación)
+        // Administradora, apoderado, representante legal, o responsable de compras (pruebas)
         $canReject = $user instanceof \App\Models\User
-            ? $user->canActAsSuperiorApprover()
+            ? $user->canActAsPurchaseAuthorizer()
             : (
                 $user->hasRole('role_admin_institucion', 'backpack')
                 || $user->hasRole('role_apoderado', 'backpack')
                 || $user->hasRole('role_representante_legal', 'backpack')
+                || ($user->hasRole('role_responsable_compras', 'backpack') && (bool) config('purchase_requests.compras_can_authorize', false))
             );
 
         if (! $canReject) {
-            abort(403, 'Solo el administrador del instituto, apoderado o representante legal pueden rechazar compras directas.');
+            abort(403, 'Solo el administrador del instituto, apoderado, representante legal o responsable de compras (en pruebas) pueden rechazar compras directas.');
         }
 
         // Validar que sea una compra directa y que se haya solicitado autorización
@@ -5217,12 +5227,12 @@ class PurchaseRequestCrudController extends CrudController
                         $canApproveByLimit = false;
                         $userLimit = 0;
 
-                        if ($user instanceof \App\Models\User && $user->canActAsSuperiorApprover()) {
+                        if ($user instanceof \App\Models\User && $user->canActAsPurchaseAuthorizer()) {
                             $userLimit = $this->superiorApproverAuthorizationLimit($user);
                             $canApproveByLimit = $entry->total_amount <= $userLimit;
                         }
 
-                        if (($user instanceof \App\Models\User && $user->canActAsSuperiorApprover()) && ! $canApproveByLimit) {
+                        if (($user instanceof \App\Models\User && $user->canActAsPurchaseAuthorizer()) && ! $canApproveByLimit) {
                             $adminLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_admin_institucion');
                             $apoderadoLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_apoderado');
                             $representanteLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_representante_legal');

@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\PaymentOrder;
 use App\Models\SupplierInvoice;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
 class PaymentOrderInvoiceImputationService
@@ -90,6 +91,39 @@ class PaymentOrderInvoiceImputationService
         }
 
         return $this->remainingImputableCapacityOnPaymentOrder($paymentOrder);
+    }
+
+    /**
+     * Facturas de la misma OC con saldo, misma moneda y proveedor válido, para imputar desde esta OP.
+     *
+     * @return Collection<int, SupplierInvoice>
+     */
+    public function candidateInvoicesForPaymentOrder(PaymentOrder $paymentOrder): Collection
+    {
+        if ($paymentOrder->status === 'Anulada' || ! $paymentOrder->purchase_order_id) {
+            return collect();
+        }
+        if ($this->remainingImputableCapacityOnPaymentOrder($paymentOrder) < 0.01) {
+            return collect();
+        }
+
+        return SupplierInvoice::query()
+            ->with(['supplier', 'purchaseOrder'])
+            ->where('purchase_order_id', $paymentOrder->purchase_order_id)
+            ->orderByDesc('invoice_date')
+            ->orderByDesc('id')
+            ->get()
+            ->filter(function (SupplierInvoice $invoice) use ($paymentOrder) {
+                if (! $this->currenciesMatch($paymentOrder->currency_code, $invoice->currency_code)) {
+                    return false;
+                }
+                if ($invoice->openBalance() < 0.01) {
+                    return false;
+                }
+
+                return $this->supplierMatchesPurchaseOrder($invoice);
+            })
+            ->values();
     }
 
     /**

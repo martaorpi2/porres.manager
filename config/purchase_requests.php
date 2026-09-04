@@ -34,6 +34,15 @@ return [
     'always_cc' => env('PURCHASE_REQUEST_ALWAYS_CC', 'morpi@ismp.edu.ar'),
 
     /*
+    | Si es true, el responsable de compras puede autorizar solicitudes y compras
+    | directas (pruebas). Volver a false cuando autorice solo el nivel superior.
+    */
+    'compras_can_authorize' => filter_var(
+        env('PURCHASE_REQUEST_COMPRAS_CAN_AUTHORIZE', true),
+        FILTER_VALIDATE_BOOLEAN
+    ),
+
+    /*
     |--------------------------------------------------------------------------
     | Recordatorios automáticos por correo
     |--------------------------------------------------------------------------
