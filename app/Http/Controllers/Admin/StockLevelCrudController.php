@@ -45,7 +45,7 @@ class StockLevelCrudController extends CrudController
         CRUD::enableResponsiveTable();
         
         // Cargar relación location para evitar problemas con whereHas
-        CRUD::addClause('with', ['location', 'product']);
+        CRUD::addClause('with', ['location', 'product', 'supplierInvoice.supplier', 'remito.supplier']);
         
         // Ocultar botones de editar y eliminar para role_admin_institucion y role_representante_legal
         $user = backpack_user();
@@ -134,6 +134,14 @@ class StockLevelCrudController extends CrudController
             'name' => 'date',
             'label' => 'Fecha de ingreso',
             'type' => 'date',
+        ]);
+        CRUD::addColumn([
+            'name' => 'document_label',
+            'label' => 'Comprobante',
+            'type' => 'closure',
+            'function' => function ($entry) {
+                return e($entry->document_label);
+            },
         ]);
         CRUD::addColumn([
             'name' => 'last_updated_by',
@@ -311,6 +319,72 @@ class StockLevelCrudController extends CrudController
             'label' => 'Fecha de ingreso',
             'type' => 'date',
             'default' => now()->format('Y-m-d'),
+        ]);
+
+        $current = $this->crud->getOperation() === 'update' ? $this->crud->getCurrentEntry() : null;
+
+        CRUD::addField([
+            'name' => 'document_kind',
+            'label' => 'Comprobante de ingreso',
+            'type' => 'select_from_array',
+            'options' => [
+                'factura' => 'Factura',
+                'remito' => 'Remito',
+            ],
+            'allows_null' => true,
+            'default' => $current?->document_kind,
+            'hint' => 'El ingreso de stock debe quedar asociado a una factura de proveedor o a un remito.',
+            'wrapper' => ['class' => 'form-group col-sm-12'],
+        ]);
+        CRUD::addField([
+            'name' => 'supplier_invoice_id',
+            'label' => 'Factura',
+            'type' => 'select_from_array',
+            'options' => \App\Models\SupplierInvoice::optionsForSelect(),
+            'allows_null' => true,
+            'default' => $current?->supplier_invoice_id,
+            'wrapper' => ['class' => 'form-group col-sm-12 js-stock-doc-factura'],
+        ]);
+        CRUD::addField([
+            'name' => 'remito_id',
+            'label' => 'Remito',
+            'type' => 'select_from_array',
+            'options' => \App\Models\Remito::optionsForSelect(),
+            'allows_null' => true,
+            'default' => $current?->remito_id,
+            'hint' => 'Si el remito todavía no está cargado, créelo desde Remitos.',
+            'wrapper' => ['class' => 'form-group col-sm-12 js-stock-doc-remito'],
+        ]);
+        CRUD::addField([
+            'name' => 'stock_document_kind_script',
+            'type' => 'custom_html',
+            'label' => false,
+            'wrapper' => false,
+            'value' => <<<'HTML'
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    var kindSelect = document.querySelector('[name="document_kind"]');
+    var facturaWrap = document.querySelector('.js-stock-doc-factura');
+    var remitoWrap = document.querySelector('.js-stock-doc-remito');
+    if (!kindSelect || !facturaWrap || !remitoWrap) {
+        return;
+    }
+
+    function toggleDocumentFields() {
+        var kind = kindSelect.value;
+        facturaWrap.style.display = kind === 'factura' ? '' : 'none';
+        remitoWrap.style.display = kind === 'remito' ? '' : 'none';
+    }
+
+    if (window.jQuery) {
+        jQuery(kindSelect).on('change', toggleDocumentFields);
+    } else {
+        kindSelect.addEventListener('change', toggleDocumentFields);
+    }
+    toggleDocumentFields();
+});
+</script>
+HTML,
         ]);
         
         // Campo hidden para asignar automáticamente el usuario actual

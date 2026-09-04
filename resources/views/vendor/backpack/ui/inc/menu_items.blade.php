@@ -16,6 +16,7 @@
     <x-backpack::menu-item title="Productos" icon="la la-cube" :link="backpack_url('product')" />
     <x-backpack::menu-item title="Proveedores" icon="la la-truck" :link="backpack_url('supplier')" />
     <x-backpack::menu-item title="Stock" icon="la la-boxes" :link="backpack_url('stock-level')" />
+    <x-backpack::menu-item title="Remitos" icon="la la-file-alt" :link="backpack_url('remito')" />
     <x-backpack::menu-item title="Entregas" icon="la la-people-carry" :link="backpack_url('delivery')" />
     <x-backpack::menu-item title="Recepciones" icon="la la-truck-loading" :link="backpack_url('reception')" />
     <x-backpack::menu-item title="Devoluciones" icon="la la-undo-alt" :link="backpack_url('devolution')" />
@@ -36,6 +37,7 @@
         <x-backpack::menu-dropdown-item title="Categorías" :link="backpack_url('category')" />
         <x-backpack::menu-dropdown-item title="Ubicaciones" :link="backpack_url('location')" />
         <x-backpack::menu-item title="Stock" :link="backpack_url('stock-level')" />
+        <x-backpack::menu-dropdown-item title="Remitos" :link="backpack_url('remito')" />
         <x-backpack::menu-item title="Movimientos" :link="backpack_url('inventory-movement')" />
     </x-backpack::menu-dropdown>
 @else
@@ -54,6 +56,7 @@
             <x-backpack::menu-dropdown-item title="Ubicaciones" :link="backpack_url('location')" />
         @endunless
         <x-backpack::menu-item title="Stock" :link="backpack_url('stock-level')" />
+        <x-backpack::menu-dropdown-item title="Remitos" :link="backpack_url('remito')" />
         <x-backpack::menu-item title="Movimientos" :link="backpack_url('inventory-movement')" />
     </x-backpack::menu-dropdown>
 

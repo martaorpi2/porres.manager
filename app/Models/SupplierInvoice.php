@@ -6,6 +6,7 @@ use Backpack\CRUD\app\Models\Traits\CrudTrait;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Facades\DB;
 
 class SupplierInvoice extends Model
@@ -34,6 +35,35 @@ class SupplierInvoice extends Model
     public function accountingAccount(): BelongsTo
     {
         return $this->belongsTo(AccountingAccount::class);
+    }
+
+    public function stockLevels(): HasMany
+    {
+        return $this->hasMany(StockLevel::class);
+    }
+
+    public function getIdentifyingLabelAttribute(): string
+    {
+        $supplier = $this->supplier?->company_name ?? 'Proveedor';
+        $date = $this->invoice_date?->format('d/m/Y');
+
+        return $supplier.' — '.$this->invoice_number.($date ? ' ('.$date.')' : '');
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    public static function optionsForSelect(): array
+    {
+        return static::query()
+            ->with('supplier')
+            ->orderByDesc('invoice_date')
+            ->orderByDesc('id')
+            ->get()
+            ->mapWithKeys(function (self $invoice) {
+                return [$invoice->id => $invoice->identifying_label];
+            })
+            ->all();
     }
 
     public function paymentOrders(): BelongsToMany

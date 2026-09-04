@@ -16,6 +16,9 @@ class StockLevel extends Model
         'location_id',
         'quantity',
         'date',
+        'document_kind',
+        'supplier_invoice_id',
+        'remito_id',
         'last_updated_by',
     ];
 
@@ -46,5 +49,28 @@ class StockLevel extends Model
     public function lastUpdatedBy()
     {
         return $this->belongsTo(User::class, 'last_updated_by');
+    }
+
+    public function supplierInvoice()
+    {
+        return $this->belongsTo(SupplierInvoice::class);
+    }
+
+    public function remito()
+    {
+        return $this->belongsTo(Remito::class);
+    }
+
+    public function getDocumentLabelAttribute(): string
+    {
+        if ($this->document_kind === 'factura') {
+            return 'Factura: '.($this->supplierInvoice?->identifying_label ?? '—');
+        }
+
+        if ($this->document_kind === 'remito') {
+            return 'Remito: '.($this->remito?->identifying_label ?? '—');
+        }
+
+        return '—';
     }
 }
