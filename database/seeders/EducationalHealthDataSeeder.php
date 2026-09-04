@@ -378,6 +378,7 @@ class EducationalHealthDataSeeder extends Seeder
             'Equipos de Hemoterapia',
             'Instrumentación Quirúrgica',
             'Reactivos y Soluciones',
+            'Insumos Generales',
         ];
 
         foreach ($headings as $heading) {

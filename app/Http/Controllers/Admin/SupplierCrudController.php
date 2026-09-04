@@ -57,7 +57,7 @@ class SupplierCrudController extends CrudController
                     'Salud' => ['Salud'],
                     'Insumos de Salud' => ['Salud'],
                     'Mantenimiento' => ['Herramientas'],
-                    'Insumos Generales' => ['Oficina'],
+                    'Insumos Generales' => ['Oficina', 'Insumos Generales'],
                 ];
                 
                 // Obtener todos los rubros permitidos para las áreas del usuario
@@ -216,7 +216,7 @@ class SupplierCrudController extends CrudController
                     'Salud' => ['Salud'],
                     'Insumos de Salud' => ['Salud'],
                     'Mantenimiento' => ['Herramientas'],
-                    'Insumos Generales' => ['Oficina'],
+                    'Insumos Generales' => ['Oficina', 'Insumos Generales'],
                 ];
                 
                 // Obtener todos los rubros permitidos para las áreas del usuario
@@ -315,7 +315,7 @@ class SupplierCrudController extends CrudController
                     'Salud' => ['Salud'],
                     'Insumos de Salud' => ['Salud'],
                     'Mantenimiento' => ['Herramientas'],
-                    'Insumos Generales' => ['Oficina'],
+                    'Insumos Generales' => ['Oficina', 'Insumos Generales'],
                 ];
                 
                 // Obtener todos los rubros permitidos para las áreas del usuario
@@ -411,7 +411,7 @@ class SupplierCrudController extends CrudController
                     'Salud' => ['Salud'],
                     'Insumos de Salud' => ['Salud'],
                     'Mantenimiento' => ['Herramientas'],
-                    'Insumos Generales' => ['Oficina'],
+                    'Insumos Generales' => ['Oficina', 'Insumos Generales'],
                 ];
                 
                 // Obtener todos los rubros permitidos para las áreas del usuario

@@ -472,6 +472,7 @@ class CompleteDataSeeder extends Seeder
             \App\Models\SuppliersHeading::create(['name' => 'Herramientas']),
             \App\Models\SuppliersHeading::create(['name' => 'Salud']),
             \App\Models\SuppliersHeading::create(['name' => 'Oficina']),
+            \App\Models\SuppliersHeading::create(['name' => 'Insumos Generales']),
         ];
         
         return $headings;

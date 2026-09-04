@@ -45,7 +45,7 @@ class ResetEducationalData extends Command
         $this->info('🎉 ¡Proceso completado exitosamente!');
         $this->newLine();
         $this->info('📊 Datos generados:');
-        $this->line('   • 8 Rubros de proveedores');
+        $this->line('   • 9 Rubros de proveedores');
         $this->line('   • 5 Sectores (Laboratorio, Hemoterapia, Radiología, etc.)');
         $this->line('   • 5 Proveedores especializados');
         $this->line('   • 10 Categorías de productos');

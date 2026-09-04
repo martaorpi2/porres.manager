@@ -43,7 +43,7 @@ class StockLevelRequest extends FormRequest
             'product_id' => 'producto',
             'location_id' => 'depósito',
             'quantity' => 'cantidad',
-            'date' => 'fecha',
+            'date' => 'fecha de ingreso',
         ];
     }
 
@@ -55,7 +55,8 @@ class StockLevelRequest extends FormRequest
     public function messages()
     {
         return [
-            //
+            'date.required' => 'La fecha de ingreso es obligatoria.',
+            'date.date' => 'La fecha de ingreso debe ser una fecha válida.',
         ];
     }
 }

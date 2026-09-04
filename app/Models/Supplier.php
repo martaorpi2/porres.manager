@@ -125,7 +125,7 @@ class Supplier extends Model
             'Salud' => ['Salud'],
             'Insumos de Salud' => ['Salud'],
             'Mantenimiento' => ['Herramientas'],
-            'Insumos Generales' => ['Oficina'],
+            'Insumos Generales' => ['Oficina', 'Insumos Generales'],
         ];
 
         $allowedRubroNames = collect();
