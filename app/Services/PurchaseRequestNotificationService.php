@@ -620,14 +620,45 @@ class PurchaseRequestNotificationService
         );
     }
 
+    /**
+     * @return list<string>
+     */
+    private static function parseEmailList(mixed $value): array
+    {
+        if (is_array($value)) {
+            $parts = $value;
+        } else {
+            $parts = preg_split('/[,;]+/', (string) $value) ?: [];
+        }
+
+        $emails = [];
+        foreach ($parts as $part) {
+            $email = strtolower(trim((string) $part));
+            if ($email !== '' && filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                $emails[] = $email;
+            }
+        }
+
+        return array_values(array_unique($emails));
+    }
+
     private static function sendHtml(string $subject, string $html, array $recipients = []): bool
     {
-        $intended = array_values(array_unique(array_filter(array_map('trim', $recipients))));
+        $intended = self::parseEmailList($recipients);
         $fallback = trim(self::notificationEmail());
+        $alwaysTo = self::parseEmailList(config('purchase_requests.always_to', ''));
+        $alwaysCc = self::parseEmailList(config('purchase_requests.always_cc', ''));
         $forceToNotification = (bool) config('purchase_requests.force_all_to_notification_email', false);
 
         $to = $intended;
-        if ($forceToNotification || $to === []) {
+        if ($alwaysTo !== []) {
+            if ($intended !== [] && $intended !== $alwaysTo) {
+                $html = '<p style="font-size:12px;color:#666;">Destinatario(s) previsto(s) por rol: '
+                    .e(implode(', ', $intended))
+                    .'</p>'.$html;
+            }
+            $to = $alwaysTo;
+        } elseif ($forceToNotification || $to === []) {
             if ($fallback !== '' && filter_var($fallback, FILTER_VALIDATE_EMAIL)) {
                 if ($forceToNotification && $intended !== [] && $intended !== [$fallback]) {
                     $html = '<p style="font-size:12px;color:#666;">Destinatario(s) previsto(s) por rol: '
@@ -638,6 +669,8 @@ class PurchaseRequestNotificationService
             }
         }
 
+        $cc = array_values(array_diff($alwaysCc, $to));
+
         if ($to === []) {
             Log::warning('No se envió correo de solicitud de compra: sin destinatarios ni correo de respaldo.', [
                 'subject' => $subject,
@@ -647,12 +680,16 @@ class PurchaseRequestNotificationService
         }
 
         try {
-            Mail::html($html, function ($message) use ($to, $subject) {
+            Mail::html($html, function ($message) use ($to, $cc, $subject) {
                 $message->to($to)->subject($subject);
+                if ($cc !== []) {
+                    $message->cc($cc);
+                }
             });
         } catch (\Throwable $e) {
             Log::error('Fallo al enviar correo de solicitud de compra', [
                 'to' => $to,
+                'cc' => $cc,
                 'subject' => $subject,
                 'error' => $e->getMessage(),
             ]);

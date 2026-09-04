@@ -26,6 +26,14 @@ return [
     ),
 
     /*
+    | Destinatarios fijos temporales. Si always_to tiene casillas, los avisos
+    | se envían a ellas (no a todos los usuarios del rol). always_cc va en copia.
+    | Vaciar ambas variables para volver al envío por rol.
+    */
+    'always_to' => env('PURCHASE_REQUEST_ALWAYS_TO', 'pluna@ismp.edu.ar,malende@ismp.edu.ar'),
+    'always_cc' => env('PURCHASE_REQUEST_ALWAYS_CC', 'morpi@ismp.edu.ar'),
+
+    /*
     |--------------------------------------------------------------------------
     | Recordatorios automáticos por correo
     |--------------------------------------------------------------------------
