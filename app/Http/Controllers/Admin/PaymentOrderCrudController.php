@@ -297,13 +297,6 @@ class PaymentOrderCrudController extends CrudController
             'allows_null' => false,
             'hint' => 'Anticipo: puede existir sin factura asociada; luego se imputa a factura desde Facturas proveedor o desde esta orden de pago (después de guardar).',
         ]);
-        CRUD::addField([
-            'name' => 'currency_code',
-            'label' => 'Moneda (ISO 4217)',
-            'type' => 'text',
-            'attributes' => ['maxlength' => 3, 'placeholder' => 'ARS', 'style' => 'text-transform:uppercase'],
-            'hint' => 'Opcional; si queda vacío se asume ARS al comparar con facturas.',
-        ]);
         CRUD::field('total_amount')->label('Monto Total')->default($defaultTotal);
         CRUD::addField([
             'name' => 'status',

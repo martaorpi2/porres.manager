@@ -233,15 +233,7 @@ class InternalVoucherCrudController extends CrudController
             ->wrapper(['class' => 'form-group col-sm-12 col-md-6']);
         CRUD::field('amount')->label('Importe')->type('number')
             ->attributes(['step' => '0.01', 'min' => '0.01'])
-            ->wrapper(['class' => 'form-group col-sm-12 col-md-3']);
-        CRUD::addField([
-            'name' => 'currency_code',
-            'label' => 'Moneda',
-            'type' => 'text',
-            'default' => 'ARS',
-            'attributes' => ['maxlength' => 3, 'style' => 'text-transform:uppercase'],
-            'wrapper' => ['class' => 'form-group col-sm-12 col-md-3'],
-        ]);
+            ->wrapper(['class' => 'form-group col-sm-12 col-md-6']);
 
         $accountId = $isUpdate ? $entry->accounting_account_id : null;
         CRUD::addField([

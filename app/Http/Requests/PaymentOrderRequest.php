@@ -159,11 +159,7 @@ class PaymentOrderRequest extends FormRequest
         }
 
         $cc = strtoupper(trim((string) $this->input('currency_code', '')));
-        if ($cc === '') {
-            $merge['currency_code'] = null;
-        } else {
-            $merge['currency_code'] = $cc;
-        }
+        $merge['currency_code'] = $cc === '' ? 'ARS' : $cc;
 
         foreach (['imputation_account_id', 'funds_account_id', 'purchase_order_id', 'supplier_id'] as $accountField) {
             $rawAccount = $this->input($accountField);
