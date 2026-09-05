@@ -177,15 +177,7 @@ class FundMovementCrudController extends CrudController
             ->wrapper(['class' => 'form-group col-sm-12 col-md-8']);
         CRUD::field('amount')->label('Importe')->type('number')->default($defaults['amount'])
             ->attributes(['step' => '0.01', 'min' => '0.01'])
-            ->wrapper(['class' => 'form-group col-sm-12 col-md-4']);
-        CRUD::addField([
-            'name' => 'currency_code',
-            'label' => 'Moneda',
-            'type' => 'text',
-            'default' => $defaults['currency_code'],
-            'attributes' => ['maxlength' => 3, 'style' => 'text-transform:uppercase'],
-            'wrapper' => ['class' => 'form-group col-sm-12 col-md-2'],
-        ]);
+            ->wrapper(['class' => 'form-group col-sm-12 col-md-6']);
         CRUD::field('payment_method')->label('Medio')->default($defaults['payment_method'])
             ->attributes(['placeholder' => 'Ej: Banco Galicia, Caja, Transferencia'])
             ->wrapper(['class' => 'form-group col-sm-12 col-md-6']);
