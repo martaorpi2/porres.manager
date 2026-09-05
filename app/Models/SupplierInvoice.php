@@ -15,6 +15,8 @@ class SupplierInvoice extends Model
 
     protected $table = 'supplier_invoices';
 
+    public const UNPAID_ALERT_AFTER_DAYS = 20;
+
     protected $guarded = ['id'];
 
     protected $casts = [
@@ -73,6 +75,11 @@ class SupplierInvoice extends Model
             ->withTimestamps();
     }
 
+    public function fundMovements(): HasMany
+    {
+        return $this->hasMany(FundMovement::class)->orderByDesc('id');
+    }
+
     /**
      * Suma imputada desde órdenes de pago no anuladas (pagos normales + anticipos aplicados).
      */
@@ -93,5 +100,50 @@ class SupplierInvoice extends Model
         $open = (float) $this->total_amount - $this->allocatedAmountFromActiveOrders();
 
         return round(max(0, $open), 2);
+    }
+
+    /**
+     * Días transcurridos desde la fecha de factura (reloj para alerta de pago).
+     */
+    public function daysSinceInvoice(): int
+    {
+        $from = $this->invoice_date ?? $this->created_at;
+        if (! $from) {
+            return 0;
+        }
+
+        return (int) floor($from->copy()->startOfDay()->diffInDays(now()->startOfDay()));
+    }
+
+    /**
+     * Facturas con saldo pendiente (total menos imputaciones de OP no anuladas).
+     */
+    public function scopeUnpaid($query)
+    {
+        $allocated = self::allocatedAmountSql();
+
+        return $query->whereRaw('(supplier_invoices.total_amount - '.$allocated.') >= 0.01');
+    }
+
+    /**
+     * Facturas impagas cuya fecha tiene al menos $days días de antigüedad.
+     */
+    public function scopeOverdueUnpaid($query, ?int $days = null)
+    {
+        $days = $days ?? self::UNPAID_ALERT_AFTER_DAYS;
+        $cutoff = now()->subDays($days)->toDateString();
+
+        return $query->unpaid()->whereDate('invoice_date', '<=', $cutoff);
+    }
+
+    private static function allocatedAmountSql(): string
+    {
+        return 'COALESCE((
+            SELECT SUM(poi.amount_applied)
+            FROM payment_order_invoice poi
+            INNER JOIN payment_orders po ON po.id = poi.payment_order_id
+            WHERE poi.supplier_invoice_id = supplier_invoices.id
+              AND po.status <> \'Anulada\'
+        ), 0)';
     }
 }

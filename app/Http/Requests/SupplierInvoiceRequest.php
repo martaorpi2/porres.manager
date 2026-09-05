@@ -87,7 +87,7 @@ class SupplierInvoiceRequest extends FormRequest
             'accounting_account_id' => 'cuenta contable',
             'invoice_number' => 'número de factura',
             'invoice_date' => 'fecha de factura',
-            'total_amount' => 'importe total',
+            'total_amount' => 'monto total',
             'currency_code' => 'moneda',
         ];
     }

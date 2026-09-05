@@ -50,19 +50,11 @@
 </head>
 <body>
     @php
+        $totalValue = $marketRate->effectiveTotalWithVat();
         $detailsSubtotal = (float) $marketRate->quoteDetails->sum(function ($detail) {
             return ((float) ($detail->quantity ?? 0)) * ((float) ($detail->unit_price ?? 0));
         });
-        $storedSubtotal = (float) ($marketRate->total_amount ?? 0);
-        $subtotalValue = $detailsSubtotal > 0 ? $detailsSubtotal : $storedSubtotal;
-
-        $vatValue = (float) ($marketRate->vat_amount ?? 0);
-        $storedTotalWithVat = (float) ($marketRate->total_amount_with_vat ?? 0);
-        if ($vatValue <= 0 && $storedTotalWithVat > 0 && $subtotalValue > 0) {
-            $vatValue = max(0, $storedTotalWithVat - $subtotalValue);
-        }
-
-        $totalWithVatValue = $storedTotalWithVat > 0 ? $storedTotalWithVat : ($subtotalValue + $vatValue);
+        $lineTotalValue = $detailsSubtotal > 0 ? $detailsSubtotal : $totalValue;
     @endphp
     <div class="watermark">porresManager - ISMP</div>
     <div class="quote-header">
@@ -83,11 +75,7 @@
         @if($marketRate->payment_method)
         <div><strong>Forma de pago:</strong> {{ $marketRate->payment_method }}</div>
         @endif
-        <div><strong>Subtotal:</strong> {{ money_format_local($subtotalValue) }}</div>
-        @if($vatValue > 0)
-        <div><strong>IVA:</strong> {{ money_format_local($vatValue) }}</div>
-        @endif
-        <div><strong>Monto Total:</strong> {{ money_format_local($totalWithVatValue) }}</div>
+        <div><strong>Monto Total:</strong> {{ money_format_local($totalValue) }}</div>
     </div>
 
     <div class="box">
@@ -125,7 +113,7 @@
                 <td><strong>Cotización global</strong><br><small class="muted">Sin detalle por producto/unidad.</small></td>
                 <td class="center">-</td>
                 <td class="right">-</td>
-                <td class="right">{{ money_format_local($subtotalValue) }}</td>
+                <td class="right">{{ money_format_local($lineTotalValue) }}</td>
             </tr>
             @else
                 @foreach($marketRate->quoteDetails as $index => $detail)
@@ -153,11 +141,7 @@
     </table>
 
     <div class="total-box">
-        Subtotal: {{ money_format_local($subtotalValue) }}
-        @if($vatValue > 0)
-        <br>IVA: {{ money_format_local($vatValue) }}
-        @endif
-        <br>Total de la Cotización: {{ money_format_local($totalWithVatValue) }}
+        Total de la Cotización: {{ money_format_local($totalValue) }}
     </div>
 
     @php
@@ -187,15 +171,6 @@
     <div class="box">
         <div><strong>Condiciones Generales:</strong></div>
         <div>• Validez de la cotización: {{ $marketRate->validity_term ?: 'No especificada' }}</div>
-        @php
-            $hasVatAmount = $vatValue > 0;
-            $totalDiffersFromSubtotal = $totalWithVatValue > $subtotalValue;
-        @endphp
-        @if($hasVatAmount || $totalDiffersFromSubtotal)
-        <div>• Tratamiento de IVA: Incluye IVA</div>
-        @else
-        <div>• Tratamiento de IVA: IVA no informado / no incluido</div>
-        @endif
         @if($marketRate->delivery_term)
         <div>• Plazo de entrega: {{ $marketRate->delivery_term }}</div>
         @elseif($marketRate->delivery_date)

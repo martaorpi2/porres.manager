@@ -469,6 +469,25 @@ class PurchaseOrderCrudController extends CrudController
             },
             'escaped' => false,
         ]);
+
+        CRUD::addColumn([
+            'name' => 'internal_vouchers',
+            'label' => 'Comprobantes internos',
+            'type' => 'closure',
+            'function' => function (PurchaseOrder $entry) {
+                $user = backpack_user();
+                if (! ($user instanceof User && $user->canManageInternalVouchers())) {
+                    return '—';
+                }
+                $createUrl = backpack_url('internal-voucher/create?purchase_order_id='.$entry->id);
+                $rows = $entry->relationLoaded('internalVouchers')
+                    ? $entry->internalVouchers
+                    : $entry->internalVouchers()->get();
+
+                return InternalVoucherCrudController::htmlRelatedTable($rows, $createUrl);
+            },
+            'escaped' => false,
+        ]);
     }
 
     /**

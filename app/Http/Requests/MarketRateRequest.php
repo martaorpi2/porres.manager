@@ -35,28 +35,6 @@ class MarketRateRequest extends FormRequest
             }
             $this->merge(['total_amount' => $amount]);
         }
-        $vatAmount = $this->input('vat_amount');
-        if ($vatAmount !== null && $vatAmount !== '') {
-            if (is_string($vatAmount)) {
-                $vatAmount = trim($vatAmount);
-                if (str_contains($vatAmount, ',')) {
-                    $vatAmount = str_replace('.', '', $vatAmount);
-                    $vatAmount = str_replace(',', '.', $vatAmount);
-                }
-            }
-            $this->merge(['vat_amount' => $vatAmount]);
-        }
-        $totalWithVat = $this->input('total_amount_with_vat');
-        if ($totalWithVat !== null && $totalWithVat !== '') {
-            if (is_string($totalWithVat)) {
-                $totalWithVat = trim($totalWithVat);
-                if (str_contains($totalWithVat, ',')) {
-                    $totalWithVat = str_replace('.', '', $totalWithVat);
-                    $totalWithVat = str_replace(',', '.', $totalWithVat);
-                }
-            }
-            $this->merge(['total_amount_with_vat' => $totalWithVat]);
-        }
     }
 
     /**
@@ -75,8 +53,6 @@ class MarketRateRequest extends FormRequest
             'payment_method' => 'nullable|string|max:255',
             'validity_term' => 'nullable|string|max:255',
             'total_amount' => 'required|numeric|gt:0',
-            'vat_amount' => 'nullable|numeric|min:0',
-            'total_amount_with_vat' => 'nullable|numeric|min:0',
             'reference_links' => 'nullable|string|max:20000',
             'clear_document_files' => 'nullable|array',
             'clear_document_files.*' => 'nullable|string|max:500',
@@ -99,8 +75,6 @@ class MarketRateRequest extends FormRequest
             'payment_method' => 'forma de pago',
             'validity_term' => 'validez de la cotización',
             'total_amount' => 'monto total',
-            'vat_amount' => 'IVA',
-            'total_amount_with_vat' => 'monto total con IVA',
             'reference_links' => 'enlaces de referencia',
         ];
     }
@@ -126,10 +100,6 @@ class MarketRateRequest extends FormRequest
             'total_amount.required' => 'El monto total es obligatorio.',
             'total_amount.numeric' => 'El campo monto total debe ser un número.',
             'total_amount.gt' => 'El monto total debe ser mayor a cero.',
-            'vat_amount.numeric' => 'El campo IVA debe ser un número.',
-            'vat_amount.min' => 'El campo IVA debe ser mayor o igual a 0.',
-            'total_amount_with_vat.numeric' => 'El campo monto total con IVA debe ser un número.',
-            'total_amount_with_vat.min' => 'El campo monto total con IVA debe ser mayor o igual a 0.',
         ];
     }
 }

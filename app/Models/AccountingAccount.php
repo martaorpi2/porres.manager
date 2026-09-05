@@ -29,6 +29,47 @@ class AccountingAccount extends Model
         return $this->hasMany(SupplierInvoice::class);
     }
 
+    public function internalVouchers()
+    {
+        return $this->hasMany(InternalVoucher::class);
+    }
+
+    public function imputationPaymentOrders()
+    {
+        return $this->hasMany(PaymentOrder::class, 'imputation_account_id');
+    }
+
+    public function fundsPaymentOrders()
+    {
+        return $this->hasMany(PaymentOrder::class, 'funds_account_id');
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    public static function typeOptions(): array
+    {
+        return [
+            'activo' => 'Activo (caja, banco, bienes de uso)',
+            'pasivo' => 'Pasivo',
+            'patrimonio' => 'Patrimonio neto',
+            'ingreso' => 'Ingreso',
+            'gasto' => 'Gasto',
+        ];
+    }
+
+    public function getTypeLabelAttribute(): string
+    {
+        $types = self::typeOptions();
+
+        return $types[$this->account_type] ?? ($this->account_type ?: '—');
+    }
+
+    public static function chartIsLoaded(): bool
+    {
+        return static::query()->where('is_active', true)->exists();
+    }
+
     /**
      * @return array<int, string>
      */

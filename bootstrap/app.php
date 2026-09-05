@@ -16,6 +16,7 @@ return Application::configure(basePath: dirname(__DIR__))
     })
     ->withSchedule(function (Schedule $schedule) {
         $schedule->command('purchase-requests:send-auto-reminders')->hourly();
+        $schedule->command('supplier-invoices:send-overdue-payment-alerts')->dailyAt('08:00');
     })
     ->withExceptions(function (Exceptions $exceptions) {
         //

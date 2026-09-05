@@ -30,12 +30,21 @@
                 $count = (int) ($item['count'] ?? 0);
                 $variant = $item['variant'] ?? 'primary';
                 $purchaseRequests = $item['purchase_requests'] ?? null;
+                $supplierInvoices = $item['supplier_invoices'] ?? null;
+                $purchaseOrders = $item['purchase_orders'] ?? null;
                 $hasRequestList = $purchaseRequests instanceof \Illuminate\Support\Collection
                     ? $purchaseRequests->isNotEmpty()
                     : (is_countable($purchaseRequests) && count($purchaseRequests) > 0);
+                $hasInvoiceList = $supplierInvoices instanceof \Illuminate\Support\Collection
+                    ? $supplierInvoices->isNotEmpty()
+                    : (is_countable($supplierInvoices) && count($supplierInvoices) > 0);
+                $hasPurchaseOrderList = $purchaseOrders instanceof \Illuminate\Support\Collection
+                    ? $purchaseOrders->isNotEmpty()
+                    : (is_countable($purchaseOrders) && count($purchaseOrders) > 0);
+                $hasList = $hasRequestList || $hasInvoiceList || $hasPurchaseOrderList;
             @endphp
             <div class="col-md-6 col-xl-4">
-                @if ($hasRequestList)
+                @if ($hasList)
                 <div class="admin-inbox__card admin-inbox__card--active admin-inbox__card--with-list card h-100 border shadow-sm text-dark border-{{ $variant }}">
                     <div class="card-body d-flex flex-column">
                         <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
@@ -48,11 +57,27 @@
                         </div>
                         <h3 class="h6 mb-1 text-dark">{{ $item['title'] ?? '' }}</h3>
                         <p class="small mb-0 text-dark">{{ $item['description'] ?? '' }}</p>
-                        @include('admin.dashboard.inc.admin_inbox_purchase_request_entries', [
-                            'purchaseRequests' => $purchaseRequests,
-                            'variant' => $variant,
-                            'listUrl' => $item['url'] ?? null,
-                        ])
+                        @if ($hasRequestList)
+                            @include('admin.dashboard.inc.admin_inbox_purchase_request_entries', [
+                                'purchaseRequests' => $purchaseRequests,
+                                'variant' => $variant,
+                                'listUrl' => $item['url'] ?? null,
+                            ])
+                        @endif
+                        @if ($hasInvoiceList)
+                            @include('admin.dashboard.inc.admin_inbox_supplier_invoice_entries', [
+                                'supplierInvoices' => $supplierInvoices,
+                                'variant' => $variant,
+                                'listUrl' => $item['url'] ?? null,
+                            ])
+                        @endif
+                        @if ($hasPurchaseOrderList)
+                            @include('admin.dashboard.inc.admin_inbox_purchase_order_entries', [
+                                'purchaseOrders' => $purchaseOrders,
+                                'variant' => $variant,
+                                'listUrl' => $item['url'] ?? null,
+                            ])
+                        @endif
                     </div>
                 </div>
                 @else

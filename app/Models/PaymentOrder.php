@@ -133,6 +133,62 @@ class PaymentOrder extends Model
             ->withTimestamps();
     }
 
+    public function internalVouchers()
+    {
+        return $this->hasMany(InternalVoucher::class, 'payment_order_id')->orderByDesc('id');
+    }
+
+    public function supplier()
+    {
+        return $this->belongsTo(Supplier::class, 'supplier_id');
+    }
+
+    public function fundMovements()
+    {
+        return $this->hasMany(FundMovement::class)->orderByDesc('id');
+    }
+
+    /**
+     * Proveedor de la OP: el indicado en la cabecera o, si no, el de la orden de compra.
+     */
+    public function resolvedSupplierId(): ?int
+    {
+        if ($this->supplier_id) {
+            return (int) $this->supplier_id;
+        }
+        $this->loadMissing('purchase_order');
+        if ($this->purchase_order?->supplier_id) {
+            return (int) $this->purchase_order->supplier_id;
+        }
+
+        return null;
+    }
+
+    public function resolvedSupplierName(): string
+    {
+        $this->loadMissing(['supplier', 'purchase_order.supplier']);
+        if ($this->supplier) {
+            return (string) $this->supplier->company_name;
+        }
+
+        return (string) ($this->purchase_order?->supplier_display_name ?? '—');
+    }
+
+    public function imputationAccount()
+    {
+        return $this->belongsTo(AccountingAccount::class, 'imputation_account_id');
+    }
+
+    public function fundsAccount()
+    {
+        return $this->belongsTo(AccountingAccount::class, 'funds_account_id');
+    }
+
+    public function accountingEntries()
+    {
+        return $this->morphMany(AccountingEntry::class, 'source')->orderByDesc('id');
+    }
+
     public function isAnticipo(): bool
     {
         return $this->billing_kind === 'anticipo';

@@ -248,6 +248,20 @@
       100% { box-shadow: 0 0 0 0 rgba(220, 53, 69, 0); }
   }
 
+  .supplier-overdue-payment-alert {
+      border-left: 6px solid #dc3545;
+      background: #fff3cd;
+      color: #664d03;
+      box-shadow: 0 4px 10px rgba(220, 53, 69, 0.15);
+      animation: supplierOverduePulse 1.8s ease-in-out infinite;
+  }
+
+  @keyframes supplierOverduePulse {
+      0% { box-shadow: 0 0 0 0 rgba(220, 53, 69, 0.25); }
+      70% { box-shadow: 0 0 0 10px rgba(220, 53, 69, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(220, 53, 69, 0); }
+  }
+
   /* Estados de Solicitudes Generales */
   .process-item-status.status-creada { background: #6c757d !important; color: #fff !important; }
   .process-item-status.status-revisada-area {
@@ -1255,6 +1269,40 @@
         <div class="d-flex flex-wrap gap-2">
             <a href="{{ backpack_url('purchase-request') }}?aprobadas_por_superior=1" class="btn btn-sm btn-success">Ver y generar OC</a>
             <a href="{{ $dashboardPanel }}#purchase-requests-process-section" class="btn btn-sm btn-outline-primary">Panel de solicitudes</a>
+        </div>
+    </div>
+    @endif
+
+    @php
+        $overdueInvoiceCount = isset($overdueSupplierInvoices) ? $overdueSupplierInvoices->count() : 0;
+        $overduePoUnpaidCount = isset($overduePurchaseOrdersWithoutPayment) ? $overduePurchaseOrdersWithoutPayment->count() : 0;
+        $overdueDays = $overdueSupplierPaymentDays ?? 20;
+        $canOpenSupplierInvoices = isset($user) && $user instanceof \App\Models\User && $user->canManageSupplierInvoices();
+    @endphp
+    @if($overdueInvoiceCount > 0 || $overduePoUnpaidCount > 0)
+    <div class="alert supplier-overdue-payment-alert d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-2 mb-4" role="alert">
+        <div>
+            <i class="la la-exclamation-triangle mr-2"></i>
+            <strong>Pago a proveedores:</strong>
+            @if($overdueInvoiceCount > 0)
+                hay {{ $overdueInvoiceCount }} factura(s) impaga(s) con {{ $overdueDays }} días o más.
+            @endif
+            @if($overdueInvoiceCount > 0 && $overduePoUnpaidCount > 0)
+                Además,
+            @endif
+            @if($overduePoUnpaidCount > 0)
+                hay {{ $overduePoUnpaidCount }} orden(es) de compra sin factura ni pago ejecutado con {{ $overdueDays }} días o más.
+            @endif
+        </div>
+        <div class="d-flex flex-wrap gap-2">
+            @if($overdueInvoiceCount > 0 && $canOpenSupplierInvoices)
+                <a href="{{ backpack_url('supplier-invoice') }}?impagas_20_dias=1" class="btn btn-sm btn-danger">Ver facturas impagas</a>
+            @elseif($overdueInvoiceCount > 0)
+                <a href="{{ backpack_url('payment-order') }}" class="btn btn-sm btn-danger">Ver órdenes de pago</a>
+            @endif
+            @if($overduePoUnpaidCount > 0)
+                <a href="{{ backpack_url('purchase-order') }}" class="btn btn-sm btn-outline-danger">Ver órdenes de compra</a>
+            @endif
         </div>
     </div>
     @endif

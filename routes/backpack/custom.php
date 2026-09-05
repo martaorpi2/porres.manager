@@ -34,6 +34,13 @@ Route::group([
     Route::get('supplier-invoice/{id}/imputar', 'SupplierInvoiceCrudController@showImputeForm')->name('supplier-invoice.imputar');
     Route::post('supplier-invoice/{id}/imputar', 'SupplierInvoiceCrudController@storeImputation')->name('supplier-invoice.imputar.store');
     Route::crud('supplier-invoice', 'SupplierInvoiceCrudController');
+    Route::get('internal-voucher/{id}/pdf', 'InternalVoucherCrudController@generatePdf')->name('internal-voucher.pdf');
+    Route::get('internal-voucher/{id}/anular', 'InternalVoucherCrudController@showAnularForm')->name('internal-voucher.anular');
+    Route::post('internal-voucher/{id}/anular', 'InternalVoucherCrudController@anular')->name('internal-voucher.anular.store');
+    Route::crud('internal-voucher', 'InternalVoucherCrudController');
+    Route::get('fund-movement/{id}/anular', 'FundMovementCrudController@showAnularForm')->name('fund-movement.anular');
+    Route::post('fund-movement/{id}/anular', 'FundMovementCrudController@anular')->name('fund-movement.anular.store');
+    Route::crud('fund-movement', 'FundMovementCrudController');
     Route::crud('sector', 'SectorCrudController');
     Route::crud('product', 'ProductCrudController');
     Route::get('product/export/excel', 'ProductCrudController@exportExcel')->name('product.export.excel');

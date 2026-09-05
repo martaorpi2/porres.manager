@@ -207,6 +207,19 @@ class User extends Authenticatable
             || $this->canActAsResponsableCompras();
     }
 
+    /**
+     * Comprobantes internos: administradora del instituto o sector de compras.
+     */
+    public function canManageInternalVouchers(): bool
+    {
+        return $this->canManageSupplierInvoices();
+    }
+
+    public function canManageFundMovements(): bool
+    {
+        return $this->canManageInternalVouchers();
+    }
+
     public function canActAsApoderado(): bool
     {
         return $this->canActOnBehalfOfPurchaseStakeholders()

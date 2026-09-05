@@ -18,15 +18,15 @@
 <div class="row">
     <div class="col-md-10 col-lg-7">
         <div class="alert alert-info">
-            <strong>OC:</strong> {{ $invoice->purchaseOrder?->number ?? '—' }} —
+            <strong>OC:</strong> {{ $invoice->purchaseOrder?->number ?? 'Sin OC' }} —
             <strong>Proveedor:</strong> {{ $invoice->supplier?->company_name ?? '—' }} —
             <strong>Saldo factura:</strong> ${{ number_format($invoice->openBalance(), 2) }} —
-            <strong>Moneda:</strong> {{ $invoice->currency_code }}
+            <strong>Moneda:</strong> {{ $invoice->currency_code ?: 'ARS' }}
         </div>
         <div class="card">
             <div class="card-header">
                 <strong>Registrar imputación contable</strong>
-                <br><small class="text-muted">El monto no puede superar el saldo de la factura ni el saldo imputable de la orden de pago elegida. Misma moneda y mismo proveedor que la OC.</small>
+                <br><small class="text-muted">El monto no puede superar el saldo de la factura ni el saldo imputable de la orden de pago. Mismo proveedor y moneda; la OC solo debe coincidir si ambos documentos la tienen.</small>
             </div>
             <div class="card-body">
                 <form method="post" action="{{ backpack_url('supplier-invoice/' . $invoice->id . '/imputar') }}">

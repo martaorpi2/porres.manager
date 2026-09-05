@@ -48,6 +48,11 @@ class SupplierInvoiceCrudController extends CrudController
             CRUD::addClause('where', 'supplier_id', (int) request()->query('supplier_id'));
         }
 
+        if (request()->boolean('impagas_20_dias')) {
+            CRUD::addClause('overdueUnpaid');
+            $this->crud->setHeading('Facturas impagas ('.SupplierInvoice::UNPAID_ALERT_AFTER_DAYS.' días o más)');
+        }
+
         CRUD::addColumn([
             'name' => 'purchase_order_id',
             'label' => 'Orden de compra',
@@ -77,7 +82,7 @@ class SupplierInvoiceCrudController extends CrudController
         ]);
         CRUD::column('invoice_number')->label('Nº factura');
         CRUD::column('invoice_date')->label('Fecha')->type('date');
-        CRUD::column('total_amount')->label('Monto')->type('number')->decimals(2)->prefix('$');
+        CRUD::column('total_amount')->label('Monto total')->type('number')->decimals(2)->prefix('$');
         CRUD::column('currency_code')->label('Moneda');
         CRUD::addColumn([
             'name' => 'attachment',
@@ -100,6 +105,19 @@ class SupplierInvoiceCrudController extends CrudController
             'function' => function (SupplierInvoice $entry) {
                 return '$' . number_format($entry->openBalance(), 2);
             },
+        ]);
+        CRUD::addColumn([
+            'name' => 'days_since_invoice',
+            'label' => 'Días',
+            'type' => 'closure',
+            'function' => function (SupplierInvoice $entry) {
+                $days = $entry->daysSinceInvoice();
+                $overdue = $days >= SupplierInvoice::UNPAID_ALERT_AFTER_DAYS && $entry->openBalance() >= 0.01;
+                $class = $overdue ? 'bg-danger' : 'bg-secondary';
+
+                return '<span class="badge '.$class.'">'.$days.'</span>';
+            },
+            'escaped' => false,
         ]);
     }
 
@@ -161,13 +179,14 @@ class SupplierInvoiceCrudController extends CrudController
             'options' => $poOptions,
             'allows_null' => true,
             'default' => $purchaseOrderIdFromUrl,
-            'hint' => 'Puede registrar la factura solo por proveedor y vincular una OC después (edición). Para imputar órdenes de pago debe existir OC asociada.',
+            'hint' => 'Opcional. Puede registrar la factura solo por proveedor (honorarios, servicios, etc.) e imputar una orden de pago sin que ambos tengan la misma OC.',
         ]);
         CRUD::field('invoice_number')->label('Número de factura');
         CRUD::field('invoice_date')->label('Fecha de factura')->type('date');
-        CRUD::field('total_amount')->label('Monto')
+        CRUD::field('total_amount')->label('Monto total')
             ->type('number')
-            ->attributes(['step' => '0.01', 'min' => '0.01']);
+            ->attributes(['step' => '0.01', 'min' => '0.01'])
+            ->hint('Cargue el monto total de la factura, sin discriminar IVA.');
         CRUD::addField([
             'name' => 'currency_code',
             'label' => 'Moneda (ISO 4217)',
@@ -190,7 +209,7 @@ class SupplierInvoiceCrudController extends CrudController
 
     protected function setupShowOperation(): void
     {
-        CRUD::addClause('with', ['purchaseOrder', 'supplier', 'paymentOrders', 'accountingAccount']);
+        CRUD::addClause('with', ['purchaseOrder', 'supplier', 'paymentOrders', 'accountingAccount', 'fundMovements']);
 
         CRUD::column('invoice_number')->label('Número de factura');
         CRUD::column('invoice_date')->label('Fecha')->type('date');
@@ -274,34 +293,46 @@ class SupplierInvoiceCrudController extends CrudController
         $user = backpack_user();
         if ($this->userCanManageSupplierInvoices($user)) {
             CRUD::addColumn([
+                'name' => 'fund_movements',
+                'label' => 'Egresos',
+                'type' => 'closure',
+                'escaped' => false,
+                'function' => function (SupplierInvoice $entry) {
+                    $user = backpack_user();
+                    if (! ($user instanceof User && $user->canManageFundMovements())) {
+                        return '—';
+                    }
+                    $rows = $entry->relationLoaded('fundMovements')
+                        ? $entry->fundMovements
+                        : $entry->fundMovements()->get();
+                    $createUrl = backpack_url('fund-movement/create?supplier_invoice_id='.$entry->id);
+
+                    return FundMovementCrudController::htmlRelatedTable($rows, $createUrl);
+                },
+            ]);
+            CRUD::addColumn([
                 'name' => 'imputar_action',
                 'label' => '',
                 'type' => 'closure',
                 'function' => function (SupplierInvoice $entry) {
-                    if (! $entry->purchase_order_id) {
-                        return '<div class="alert alert-info mb-0">Asocie una orden de compra a esta factura para poder imputar órdenes de pago.</div>';
-                    }
+                    $html = '';
+                    $user = backpack_user();
                     if ($entry->openBalance() < 0.01) {
-                        return '<p class="text-muted mb-0">Factura sin saldo pendiente.</p>';
-                    }
-                    $service = app(PaymentOrderInvoiceImputationService::class);
-                    $candidates = PaymentOrder::query()
-                        ->where('purchase_order_id', $entry->purchase_order_id)
-                        ->where('status', '!=', 'Anulada')
-                        ->orderBy('id')
-                        ->get()
-                        ->filter(function (PaymentOrder $po) use ($service, $entry) {
-                            if (! $service->currenciesMatch($po->currency_code, $entry->currency_code)) {
-                                return false;
+                        $html .= '<p class="text-muted mb-2">Factura sin saldo pendiente.</p>';
+                    } else {
+                        $candidates = app(PaymentOrderInvoiceImputationService::class)
+                            ->candidatePaymentOrdersForInvoice($entry);
+                        if ($candidates->isEmpty()) {
+                            $html .= '<div class="alert alert-warning mb-2">No hay órdenes de pago con saldo imputable del mismo proveedor y moneda. No hace falta que tengan la misma orden de compra.</div>';
+                            if ($user instanceof User && $user->canActAsAdministradoraInstitucion()) {
+                                $html .= '<a href="'.backpack_url('payment-order/create?supplier_id='.$entry->supplier_id).'" class="btn btn-outline-primary me-1"><i class="la la-plus"></i> Crear orden de pago</a>';
                             }
-
-                            return $service->remainingImputableCapacityOnPaymentOrder($po) >= 0.01;
-                        });
-                    if ($candidates->isEmpty()) {
-                        return '<div class="alert alert-warning mb-0">No hay órdenes de pago con saldo imputable (misma moneda) para esta OC.</div>';
+                        } else {
+                            $html .= '<a href="'.backpack_url('supplier-invoice/'.$entry->id.'/imputar').'" class="btn btn-primary me-1"><i class="la la-link"></i> Imputar orden de pago a esta factura</a>';
+                        }
                     }
 
-                    return '<a href="' . backpack_url('supplier-invoice/' . $entry->id . '/imputar') . '" class="btn btn-primary"><i class="la la-link"></i> Imputar orden de pago a esta factura</a>';
+                    return $html !== '' ? $html : '—';
                 },
                 'escaped' => false,
             ]);
@@ -316,11 +347,6 @@ class SupplierInvoiceCrudController extends CrudController
         }
 
         $invoice = SupplierInvoice::with(['purchaseOrder', 'supplier'])->findOrFail($id);
-        if (! $invoice->purchase_order_id) {
-            \Alert::warning('Debe asociar una orden de compra a la factura antes de registrar imputaciones.')->flash();
-
-            return redirect()->to(backpack_url('supplier-invoice/'.$invoice->id.'/edit'));
-        }
         if ($invoice->openBalance() < 0.01) {
             \Alert::warning('Esta factura no tiene saldo pendiente.')->flash();
 
@@ -328,22 +354,10 @@ class SupplierInvoiceCrudController extends CrudController
         }
 
         $service = app(PaymentOrderInvoiceImputationService::class);
-        $candidates = PaymentOrder::query()
-            ->where('purchase_order_id', $invoice->purchase_order_id)
-            ->where('status', '!=', 'Anulada')
-            ->orderByDesc('id')
-            ->get()
-            ->filter(function (PaymentOrder $po) use ($service, $invoice) {
-                if (! $service->currenciesMatch($po->currency_code, $invoice->currency_code)) {
-                    return false;
-                }
-
-                return $service->remainingImputableCapacityOnPaymentOrder($po) >= 0.01;
-            })
-            ->values();
+        $candidates = $service->candidatePaymentOrdersForInvoice($invoice);
 
         if ($candidates->isEmpty()) {
-            \Alert::error('No hay órdenes de pago con saldo imputable en la misma moneda para esta orden de compra.')->flash();
+            \Alert::error('No hay órdenes de pago con saldo imputable del mismo proveedor y moneda. Puede crear una OP sin orden de compra.')->flash();
 
             return redirect()->to(backpack_url('supplier-invoice/' . $invoice->id . '/show'));
         }

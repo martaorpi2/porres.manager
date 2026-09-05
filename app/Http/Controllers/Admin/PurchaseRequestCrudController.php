@@ -2214,20 +2214,15 @@ class PurchaseRequestCrudController extends CrudController
         $row++;
 
         $sheet->setCellValue('A'.$row, 'Proveedor');
-        $sheet->setCellValue('B'.$row, 'Subtotal');
-        $sheet->setCellValue('C'.$row, 'IVA');
-        $sheet->setCellValue('D'.$row, 'Total + IVA');
-        $sheet->setCellValue('E'.$row, 'Productos incluidos');
-        $sheet->getStyle('A'.$row.':E'.$row)->getFont()->setBold(true);
+        $sheet->setCellValue('B'.$row, 'Monto total');
+        $sheet->setCellValue('C'.$row, 'Productos incluidos');
+        $sheet->getStyle('A'.$row.':C'.$row)->getFont()->setBold(true);
         $row++;
 
         foreach ($suppliers as $supplierId => $supplierRates) {
             $supplier = $supplierRates->first()->supplier;
             $supplierName = $supplier->company_name ?? ('Proveedor '.$supplierId);
-            $effectiveTotal = 0.0;
-            $vatAmount = 0.0;
-            $totalWithVat = 0.0;
-            $totalQty = 0.0;
+            $totalAmount = 0.0;
             $productNames = [];
             $hasGlobalWithoutDetails = false;
 
@@ -2239,49 +2234,25 @@ class PurchaseRequestCrudController extends CrudController
                     }
                 }
 
-                $rateSubtotalFromDetails = (float) $rate->quoteDetails->sum(function ($d) {
-                    return ((float) ($d->quantity ?? 0)) * ((float) ($d->unit_price ?? 0));
-                });
-                $rateTotalQty = (float) $rate->quoteDetails->sum(function ($d) {
-                    return (float) ($d->quantity ?? 0);
-                });
-                $rateSubtotal = $rateSubtotalFromDetails > 0
-                    ? $rateSubtotalFromDetails
-                    : (float) ($rate->total_amount ?? 0);
-                if ($rate->quoteDetails->isEmpty() && $rateSubtotal > 0) {
+                if ($rate->quoteDetails->isEmpty() && (float) ($rate->total_amount ?? 0) > 0) {
                     $hasGlobalWithoutDetails = true;
                 }
 
-                $rateVat = (float) ($rate->vat_amount ?? 0);
-                $rateTotalWithVat = (float) ($rate->total_amount_with_vat ?? 0);
-
-                if ($rateVat <= 0 && $rateTotalWithVat > 0 && $rateSubtotal > 0) {
-                    $rateVat = max(0, $rateTotalWithVat - $rateSubtotal);
-                }
-                if ($rateTotalWithVat <= 0 && $rateSubtotal > 0) {
-                    $rateTotalWithVat = $rateSubtotal + max(0, $rateVat);
-                }
-
-                $effectiveTotal += max(0, $rateSubtotal);
-                $vatAmount += max(0, $rateVat);
-                $totalWithVat += max(0, $rateTotalWithVat);
-                $totalQty += max(0, $rateTotalQty);
+                $totalAmount += max(0, $rate->effectiveTotalWithVat());
             }
             $sheet->setCellValue('A'.$row, $supplierName);
-            $sheet->setCellValue('B'.$row, $effectiveTotal > 0 ? '$'.number_format($effectiveTotal, 2) : 'Sin monto informado');
-            $sheet->setCellValue('C'.$row, $vatAmount > 0 ? '$'.number_format($vatAmount, 2) : '$0.00');
-            $sheet->setCellValue('D'.$row, $totalWithVat > 0 ? '$'.number_format($totalWithVat, 2) : 'Sin monto informado');
+            $sheet->setCellValue('B'.$row, $totalAmount > 0 ? '$'.number_format($totalAmount, 2) : 'Sin monto informado');
             $productNames = array_values(array_unique($productNames));
             $productsLabel = empty($productNames) ? 'Sin detalle de productos' : implode(', ', $productNames);
             if ($hasGlobalWithoutDetails) {
                 $productsLabel .= empty($productNames) ? 'Cotización global (sin detalle)' : ' + Cotización global sin detalle';
             }
-            $sheet->setCellValue('E'.$row, $productsLabel);
+            $sheet->setCellValue('C'.$row, $productsLabel);
             $row++;
         }
 
         // Auto-size columns
-        foreach (range('A', 'E') as $column) {
+        foreach (range('A', 'C') as $column) {
             $sheet->getColumnDimension($column)->setAutoSize(true);
         }
 
@@ -2704,7 +2675,7 @@ class PurchaseRequestCrudController extends CrudController
 
         $request = request();
 
-        // Calcular monto efectivo de la cotización (prioriza total con IVA).
+        // Calcular monto efectivo de la cotización.
         $newTotalAmount = $this->getMarketRateEffectiveTotal($marketRate);
         if (! $newTotalAmount || $newTotalAmount == 0) {
             $newTotalAmount = (float) ($purchaseRequest->total_amount ?? 0);
@@ -2731,7 +2702,7 @@ class PurchaseRequestCrudController extends CrudController
         // Marcar la cotización como seleccionada para permitir selección múltiple en la vista.
         $marketRate->update(['is_selected' => true]);
 
-        // Recalcular total de solicitud según cotizaciones seleccionadas (incluyendo IVA)
+        // Recalcular total de solicitud según cotizaciones seleccionadas
         $recalculatedTotal = $this->recalculateSelectedQuotationsTotalForPurchaseRequest($purchaseRequest);
         $purchaseRequest->update([
             'total_amount' => $recalculatedTotal,
@@ -3521,7 +3492,7 @@ class PurchaseRequestCrudController extends CrudController
     }
 
     /**
-     * Obtiene total efectivo de una cotización (priorizando total con IVA).
+     * Obtiene total efectivo de una cotización (monto total cargado).
      */
     private function getMarketRateEffectiveTotal(\App\Models\MarketRate $marketRate): float
     {
@@ -3651,7 +3622,7 @@ class PurchaseRequestCrudController extends CrudController
     }
 
     /**
-     * Recalcula total de la solicitud según cotizaciones seleccionadas (incluye IVA).
+     * Recalcula total de la solicitud según cotizaciones seleccionadas.
      */
     private function recalculateSelectedQuotationsTotalForPurchaseRequest(\App\Models\PurchaseRequest $purchaseRequest): float
     {
@@ -4666,23 +4637,16 @@ class PurchaseRequestCrudController extends CrudController
                 }
             });
 
-        CRUD::column('total_amount')->label('Monto total e IVA')->type('custom_html')
+        CRUD::column('total_amount')->label('Monto total')->type('custom_html')
             ->value(function ($entry) {
                 $rates = $this->marketRatesContributingToPurchaseRequestTotal($entry);
                 $totalEfectivo = $this->recalculateSelectedQuotationsTotalForPurchaseRequest($entry);
-                $ivaSum = (float) $rates->sum(fn ($mr) => max(0, (float) ($mr->vat_amount ?? 0)));
                 $stored = (float) ($entry->total_amount ?? 0);
                 $fmt = static fn (float $v): string => '$'.number_format($v, 2, ',', '.');
 
                 $html = '<div class="mb-1"><span class="text-muted small">Monto registrado en solicitud</span><br><strong class="fs-5">'.$fmt($stored).'</strong></div>';
                 if ($rates->isNotEmpty()) {
-                    $html .= '<div class="mt-2 p-2 rounded border bg-light">';
-                    $html .= '<span class="badge bg-warning text-dark me-2 fs-6">IVA</span>';
-                    $html .= '<strong class="fs-6">'.$fmt($ivaSum).'</strong>';
-                    $html .= '<div class="mt-2"><span class="text-muted small">Total con IVA (cotización seleccionada)</span><br><strong class="text-primary fs-5">'.$fmt($totalEfectivo).'</strong></div>';
-                    $html .= '</div>';
-                } else {
-                    $html .= '<div class="mt-2"><span class="badge bg-secondary">IVA</span> <span class="text-muted small">Se mostrará al seleccionar una cotización en «Cotizaciones disponibles».</span></div>';
+                    $html .= '<div class="mt-2"><span class="text-muted small">Monto total (cotización seleccionada)</span><br><strong class="text-primary fs-5">'.$fmt($totalEfectivo).'</strong></div>';
                 }
 
                 return $html;
@@ -5386,17 +5350,7 @@ class PurchaseRequestCrudController extends CrudController
                             $date = \Carbon\Carbon::parse($date);
                         }
                         $html .= '<td>'.($date ? $date->format('d/m/Y') : 'N/A').'</td>';
-                        $subtotal = (float) ($marketRate->total_amount ?? 0);
-                        $vatAmount = (float) ($marketRate->vat_amount ?? 0);
-                        $totalWithVat = (float) ($marketRate->total_amount_with_vat ?? 0);
-                        if ($totalWithVat <= 0 && ($subtotal > 0 || $vatAmount > 0)) {
-                            $totalWithVat = $subtotal + $vatAmount;
-                        }
-                        $html .= '<td class="text-end"><strong>$'.number_format($totalWithVat > 0 ? $totalWithVat : $subtotal, 2).'</strong>';
-                        if ($vatAmount > 0) {
-                            $html .= '<br><small class="text-muted">Subtotal: $'.number_format($subtotal, 2).' + IVA: $'.number_format($vatAmount, 2).'</small>';
-                        }
-                        $html .= '</td>';
+                        $html .= '<td class="text-end"><strong>$'.number_format($this->getMarketRateEffectiveTotal($marketRate), 2).'</strong></td>';
                         $documentFiles = MarketRate::normalizeDocumentFilesToPathList($marketRate->document_files);
 
                         if ($marketRate->quoteDetails->isEmpty()) {
@@ -6137,7 +6091,7 @@ class PurchaseRequestCrudController extends CrudController
                     return '';
                 }
 
-                // Recalcular monto efectivo (cotizaciones seleccionadas, incluyendo IVA) para validar límites correctamente en UI.
+                // Recalcular monto efectivo (cotizaciones seleccionadas) para validar límites correctamente en UI.
                 $effectiveTotal = $this->recalculateSelectedQuotationsTotalForPurchaseRequest($entry);
                 $comprasLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_responsable_compras');
                 $entryForApproval = clone $entry;
@@ -6312,20 +6266,13 @@ class PurchaseRequestCrudController extends CrudController
 
                 $rates = $this->marketRatesContributingToPurchaseRequestTotal($entry);
                 $totalEfectivo = $this->recalculateSelectedQuotationsTotalForPurchaseRequest($entry);
-                $ivaSum = (float) $rates->sum(fn ($mr) => max(0, (float) ($mr->vat_amount ?? 0)));
-                $subFromFields = (float) $rates->sum(fn ($mr) => (float) ($mr->total_amount ?? 0));
-                $subMostrar = $rates->isNotEmpty()
-                    ? (max(0, $totalEfectivo - $ivaSum) > 0.005 ? max(0, $totalEfectivo - $ivaSum) : max(0, $subFromFields))
-                    : (float) ($entry->total_amount ?? 0);
 
                 $fmtMoney = static fn (float $v): string => '$'.number_format($v, 2, ',', '.');
 
                 if ($isAdminDecisionLayout) {
                     $montosRow = $rates->isNotEmpty()
-                        ? '<div class="col-6 col-md-4"><div class="pr-decision-kpi"><div class="pr-decision-kpi-label">Subtotal</div><strong>'.$fmtMoney($subMostrar).'</strong></div></div>'
-                            .'<div class="col-6 col-md-4"><div class="pr-decision-kpi"><div class="pr-decision-kpi-label">IVA</div><strong>'.$fmtMoney($ivaSum).'</strong></div></div>'
-                            .'<div class="col-12 col-md-4"><div class="pr-decision-kpi"><div class="pr-decision-kpi-label">Total con IVA</div><strong class="text-primary">'.$fmtMoney($totalEfectivo).'</strong></div></div>'
-                        : '<div class="col-12"><div class="pr-decision-kpi"><div class="pr-decision-kpi-label">Monto total</div><strong class="text-primary">'.$fmtMoney((float) ($entry->total_amount ?? 0)).'</strong> <span class="text-muted small">(IVA al seleccionar cotización)</span></div></div>';
+                        ? '<div class="col-12 col-md-4"><div class="pr-decision-kpi"><div class="pr-decision-kpi-label">Monto total</div><strong class="text-primary">'.$fmtMoney($totalEfectivo).'</strong></div></div>'
+                        : '<div class="col-12"><div class="pr-decision-kpi"><div class="pr-decision-kpi-label">Monto total</div><strong class="text-primary">'.$fmtMoney((float) ($entry->total_amount ?? 0)).'</strong></div></div>';
 
                     $comprasLimit = \App\Models\PurchaseAuthorizationLimit::getLimitForRole('role_responsable_compras');
                     $effectiveForHint = $rates->isNotEmpty() ? $totalEfectivo : (float) ($entry->total_amount ?? 0);
@@ -6362,14 +6309,11 @@ class PurchaseRequestCrudController extends CrudController
                 if ($rates->isNotEmpty()) {
                     $montosHtml = '<div class="mt-2 pt-2 border-top w-100">'
                         .'<div class="d-flex flex-wrap align-items-center gap-2 gap-md-3">'
-                        .'<span class="text-nowrap"><span class="text-muted small d-block">Subtotal</span><strong class="fs-6">'.$fmtMoney($subMostrar).'</strong></span>'
-                        .'<span class="badge bg-warning text-dark px-3 py-2 fs-6 text-nowrap shadow-sm"><i class="la la-balance-scale"></i> IVA '.$fmtMoney($ivaSum).'</span>'
-                        .'<span class="text-nowrap ms-md-auto"><span class="text-muted small d-block">Total con IVA</span><strong class="fs-5 text-primary">'.$fmtMoney($totalEfectivo).'</strong></span>'
+                        .'<span class="text-nowrap"><span class="text-muted small d-block">Monto total</span><strong class="fs-5 text-primary">'.$fmtMoney($totalEfectivo).'</strong></span>'
                         .'</div></div>';
                 } else {
                     $montosHtml = '<div class="mt-2 pt-2 border-top w-100 d-flex flex-wrap align-items-center gap-2">'
                         .'<span><span class="text-muted small d-block">Monto total (solicitud)</span><strong class="fs-5 text-primary">'.$fmtMoney((float) ($entry->total_amount ?? 0)).'</strong></span>'
-                        .'<span class="badge bg-secondary fs-6">IVA: al seleccionar cotización</span>'
                         .'</div>';
                 }
 

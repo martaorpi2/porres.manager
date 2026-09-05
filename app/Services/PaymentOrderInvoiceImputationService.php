@@ -25,17 +25,7 @@ class PaymentOrderInvoiceImputationService
             throw new \InvalidArgumentException('No se puede imputar una orden de pago anulada.');
         }
 
-        if (! $invoice->purchase_order_id) {
-            throw new \InvalidArgumentException('La factura debe tener una orden de compra asociada para imputar pagos.');
-        }
-
-        if ((int) $paymentOrder->purchase_order_id !== (int) $invoice->purchase_order_id) {
-            throw new \InvalidArgumentException('La factura y la orden de pago deben pertenecer a la misma orden de compra.');
-        }
-
-        if (! $this->supplierMatchesPurchaseOrder($invoice)) {
-            throw new \InvalidArgumentException('El proveedor de la factura no corresponde a la orden de compra.');
-        }
+        $this->assertCanLink($paymentOrder, $invoice);
 
         $poCurrency = $this->normalizeCurrency($paymentOrder->currency_code);
         $invCurrency = $this->normalizeCurrency($invoice->currency_code);
@@ -45,7 +35,6 @@ class PaymentOrderInvoiceImputationService
             );
         }
 
-        $invoice->loadMissing('purchaseOrder');
         $openInvoice = $invoice->openBalance();
         if ($amount - $openInvoice > 0.01) {
             throw new \InvalidArgumentException(
@@ -94,22 +83,27 @@ class PaymentOrderInvoiceImputationService
     }
 
     /**
-     * Facturas de la misma OC con saldo, misma moneda y proveedor válido, para imputar desde esta OP.
+     * Facturas imputables a esta OP: misma moneda y mismo proveedor.
+     * Si ambos documentos tienen OC, deben coincidir; si no, no se exige compra.
      *
      * @return Collection<int, SupplierInvoice>
      */
     public function candidateInvoicesForPaymentOrder(PaymentOrder $paymentOrder): Collection
     {
-        if ($paymentOrder->status === 'Anulada' || ! $paymentOrder->purchase_order_id) {
+        if ($paymentOrder->status === 'Anulada') {
             return collect();
         }
         if ($this->remainingImputableCapacityOnPaymentOrder($paymentOrder) < 0.01) {
             return collect();
         }
 
-        return SupplierInvoice::query()
-            ->with(['supplier', 'purchaseOrder'])
-            ->where('purchase_order_id', $paymentOrder->purchase_order_id)
+        $supplierId = $paymentOrder->resolvedSupplierId();
+        $query = SupplierInvoice::query()->with(['supplier', 'purchaseOrder']);
+        if ($supplierId) {
+            $query->where('supplier_id', $supplierId);
+        }
+
+        return $query
             ->orderByDesc('invoice_date')
             ->orderByDesc('id')
             ->get()
@@ -121,7 +115,45 @@ class PaymentOrderInvoiceImputationService
                     return false;
                 }
 
-                return $this->supplierMatchesPurchaseOrder($invoice);
+                try {
+                    $this->assertCanLink($paymentOrder, $invoice);
+                } catch (\InvalidArgumentException) {
+                    return false;
+                }
+
+                return true;
+            })
+            ->values();
+    }
+
+    /**
+     * @return Collection<int, PaymentOrder>
+     */
+    public function candidatePaymentOrdersForInvoice(SupplierInvoice $invoice): Collection
+    {
+        if ($invoice->openBalance() < 0.01) {
+            return collect();
+        }
+
+        return PaymentOrder::query()
+            ->with(['purchase_order', 'supplier'])
+            ->where('status', '!=', 'Anulada')
+            ->orderByDesc('id')
+            ->get()
+            ->filter(function (PaymentOrder $po) use ($invoice) {
+                if (! $this->currenciesMatch($po->currency_code, $invoice->currency_code)) {
+                    return false;
+                }
+                if ($this->remainingImputableCapacityOnPaymentOrder($po) < 0.01) {
+                    return false;
+                }
+                try {
+                    $this->assertCanLink($po, $invoice);
+                } catch (\InvalidArgumentException) {
+                    return false;
+                }
+
+                return true;
             })
             ->values();
     }
@@ -142,11 +174,32 @@ class PaymentOrderInvoiceImputationService
         return round(max(0, (float) $paymentOrder->total_amount - $imputed), 2);
     }
 
+    public function assertCanLink(PaymentOrder $paymentOrder, SupplierInvoice $invoice): void
+    {
+        $opOc = $paymentOrder->purchase_order_id ? (int) $paymentOrder->purchase_order_id : null;
+        $invOc = $invoice->purchase_order_id ? (int) $invoice->purchase_order_id : null;
+        if ($opOc && $invOc && $opOc !== $invOc) {
+            throw new \InvalidArgumentException('La factura y la orden de pago pertenecen a distintas órdenes de compra.');
+        }
+
+        $opSupplier = $paymentOrder->resolvedSupplierId();
+        if ($opSupplier && (int) $invoice->supplier_id !== (int) $opSupplier) {
+            throw new \InvalidArgumentException('El proveedor de la factura no coincide con el de la orden de pago.');
+        }
+
+        if ($invOc) {
+            $invoice->loadMissing('purchaseOrder');
+            if ($invoice->purchaseOrder && ! $this->supplierMatchesPurchaseOrder($invoice)) {
+                throw new \InvalidArgumentException('El proveedor de la factura no corresponde a la orden de compra.');
+            }
+        }
+    }
+
     protected function supplierMatchesPurchaseOrder(SupplierInvoice $invoice): bool
     {
         $po = $invoice->purchaseOrder;
         if (! $po) {
-            return false;
+            return true;
         }
         if ($po->supplier_id && (int) $po->supplier_id === (int) $invoice->supplier_id) {
             return true;

@@ -712,7 +712,7 @@ class PurchaseRequest extends Model
     }
 
     /**
-     * Monto efectivo según cotización(es) elegidas (incluye IVA cuando corresponde), para topes y escalamiento.
+     * Monto efectivo según cotización(es) elegidas (monto total cargado), para topes y escalamiento.
      */
     public function effectiveTotalForAuthorizationLimits(): float
     {

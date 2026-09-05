@@ -26,6 +26,10 @@ class StockLevelRequest extends FormRequest
 
     protected function prepareForValidation()
     {
+        if (! $this->filled('product_id') && $this->filled('product')) {
+            $this->merge(['product_id' => $this->input('product')]);
+        }
+
         $kind = $this->input('document_kind');
 
         if ($kind === 'factura') {

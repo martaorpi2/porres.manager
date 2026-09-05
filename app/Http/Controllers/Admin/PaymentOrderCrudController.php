@@ -4,10 +4,12 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Requests\PaymentOrderInvoiceImputeRequest;
 use App\Http\Requests\PaymentOrderRequest;
+use App\Models\AccountingAccount;
 use App\Models\OpDetail;
 use App\Models\PaymentOrder;
 use App\Models\SupplierInvoice;
 use App\Models\User;
+use App\Services\AccountingOutflowService;
 use App\Services\PaymentOrderInvoiceImputationService;
 use Backpack\CRUD\app\Http\Controllers\CrudController;
 use Backpack\CRUD\app\Library\CrudPanel\CrudPanelFacade as CRUD;
@@ -66,6 +68,7 @@ class PaymentOrderCrudController extends CrudController
         
         // Las órdenes de pago no se eliminan; solo se pueden anular (solo la administradora).
         CRUD::removeButton('delete');
+        CRUD::addClause('with', ['supplier', 'purchase_order.supplier', 'imputationAccount']);
 
         // Ocultar crear/editar para admin institucional / apoderado / representante legal, salvo que también sea responsable de compras (cuenta típica «compras» del seeder).
         $user = backpack_user();
@@ -113,6 +116,22 @@ class PaymentOrderCrudController extends CrudController
             'escaped' => false,
         ]);
         CRUD::column('status')->label('Estado');
+        CRUD::addColumn([
+            'name' => 'supplier_id',
+            'label' => 'Proveedor',
+            'type' => 'closure',
+            'function' => function (PaymentOrder $entry) {
+                return e($entry->resolvedSupplierName());
+            },
+        ]);
+        CRUD::addColumn([
+            'name' => 'imputation_account_id',
+            'label' => 'Cuenta imputación',
+            'type' => 'select',
+            'entity' => 'imputationAccount',
+            'attribute' => 'identifying_label',
+            'model' => AccountingAccount::class,
+        ]);
         CRUD::addColumn([
             'name' => 'purchase_order_id',
             'label' => 'Orden de Compra',
@@ -202,6 +221,7 @@ class PaymentOrderCrudController extends CrudController
             $data = $this->crud->getStrippedSaveRequest($request);
             $paymentDetailsRaw = $request->input('payment_details', []);
             unset($data['payment_details']);
+            $data = $this->fillSupplierFromPurchaseOrder($data);
 
             $item = $this->crud->create($data);
             $this->data['entry'] = $this->crud->entry = $item;
@@ -215,6 +235,8 @@ class PaymentOrderCrudController extends CrudController
             if ($item->purchase_order_id) {
                 \App\Models\PurchaseOrder::find($item->purchase_order_id)?->markAsRecibidaIfHasConformeReception();
             }
+
+            app(AccountingOutflowService::class)->syncForPaymentOrder($item);
 
             \Alert::success(trans('backpack::crud.insert_success'))->flash();
             $this->crud->setSaveAction();
@@ -235,18 +257,21 @@ class PaymentOrderCrudController extends CrudController
         
         // OC: desde URL, desde el registro en edición, o desde el select (solo persistido en update)
         $purchaseOrderId = request()->get('purchase_order_id');
+        $supplierId = request()->get('supplier_id');
         $entry = $this->crud->getCurrentEntry();
         if ($entry instanceof PaymentOrder && $entry->exists) {
             $purchaseOrderId = $purchaseOrderId ?: $entry->purchase_order_id;
+            $supplierId = $supplierId ?: $entry->supplier_id;
         }
         $purchaseOrder = null;
         $defaultTotal = 0;
 
         if ($purchaseOrderId) {
             $purchaseOrder = \App\Models\PurchaseOrder::with(['details', 'supplierInvoices.supplier'])->find($purchaseOrderId);
-            if ($purchaseOrder) {
-                $defaultTotal = $purchaseOrder->total ?? 0;
-            }
+        if ($purchaseOrder) {
+            $defaultTotal = $purchaseOrder->total ?? 0;
+            $supplierId = $supplierId ?: $purchaseOrder->supplier_id;
+        }
         }
         
         $nro = PaymentOrder::getNextPaymentNumberPreview();
@@ -287,13 +312,26 @@ class PaymentOrderCrudController extends CrudController
         ]);
         CRUD::addField([
             'name' => 'purchase_order_id',
-            'label' => 'Orden de Compra',
+            'label' => 'Orden de Compra (opcional)',
             'type' => 'select',
             'entity' => 'purchase_order',
             'attribute' => 'number',
             'model' => 'App\Models\PurchaseOrder',
             'default' => $purchaseOrderId,
-            'attributes' => $purchaseOrderId ? ['readonly' => 'readonly'] : [],
+            'allows_null' => true,
+            'hint' => 'No es obligatoria. Para un servicio o gasto sin compra (ej. internet, honorarios) deje este campo vacío y elija el proveedor.',
+            'attributes' => ($purchaseOrderId && ! ($entry instanceof PaymentOrder && $entry->exists && ! $entry->purchase_order_id)) ? [] : [],
+        ]);
+        CRUD::addField([
+            'name' => 'supplier_id',
+            'label' => 'Proveedor',
+            'type' => 'select',
+            'entity' => 'supplier',
+            'attribute' => 'company_name',
+            'model' => 'App\Models\Supplier',
+            'default' => $supplierId,
+            'allows_null' => true,
+            'hint' => 'Obligatorio si no hay orden de compra. Si elige una OC, se toma el proveedor de esa compra.',
         ]);
         
         // Mostrar información de la orden de compra si viene desde ahí
@@ -365,6 +403,47 @@ class PaymentOrderCrudController extends CrudController
                 'placeholder' => 'Ej: Banco Nación, Banco Provincia, etc.'
             ],
         ]);
+
+        $outflowService = app(AccountingOutflowService::class);
+        $chartLoaded = $outflowService->chartIsLoaded();
+        $defaultImputationId = $entry instanceof PaymentOrder && $entry->exists
+            ? $entry->imputation_account_id
+            : $outflowService->suggestedImputationAccountId($purchaseOrder, $supplierId ? (int) $supplierId : null);
+        $defaultFundsId = $entry instanceof PaymentOrder && $entry->exists
+            ? $entry->funds_account_id
+            : null;
+
+        CRUD::addField([
+            'name' => 'accounting_outflow_hint',
+            'label' => 'Impacto contable del egreso',
+            'type' => 'custom_html',
+            'value' => $chartLoaded
+                ? '<div class="alert alert-info mb-0"><p class="mb-1">Al <strong>ejecutar</strong> la OP se genera un <strong>egreso</strong> (movimiento de fondos) y, con el plan cargado, el asiento: Banco disminuye / cuenta de imputación aumenta.</p><p class="mb-0 small">También puede registrar el egreso a mano desde Egresos, o respaldarlo con un comprobante interno.</p></div>'
+                : '<div class="alert alert-warning mb-0"><p class="mb-1">Todavía no hay un plan de cuentas activo. Puede guardar la OP igual.</p><p class="mb-0 small">Cuando cargue las cuentas en <strong>Proveedores → Cuentas contables</strong>, el egreso pedirá cuenta de imputación (gasto o bien) y cuenta de fondos (caja/banco) y generará el asiento.</p></div>',
+        ]);
+        CRUD::addField([
+            'name' => 'imputation_account_id',
+            'label' => 'Cuenta de imputación (egreso)',
+            'type' => 'select_from_array',
+            'options' => AccountingAccount::optionsForSelect($defaultImputationId ? (int) $defaultImputationId : null),
+            'allows_null' => true,
+            'default' => $defaultImputationId,
+            'hint' => $chartLoaded
+                ? 'Obligatoria con el plan cargado. Ej.: Útiles y papelería, Servicios de comunicaciones, Equipamiento informático, Honorarios profesionales. Si hay factura de la OC con cuenta, se propone esa.'
+                : 'Opcional hasta cargar el plan de cuentas. Si la factura o el proveedor ya tienen cuenta, se propone aquí.',
+        ]);
+        CRUD::addField([
+            'name' => 'funds_account_id',
+            'label' => 'Cuenta de fondos (origen)',
+            'type' => 'select_from_array',
+            'options' => AccountingAccount::optionsForSelect($defaultFundsId ? (int) $defaultFundsId : null),
+            'allows_null' => true,
+            'default' => $defaultFundsId,
+            'hint' => $chartLoaded
+                ? 'Caja o Banco de donde sale el dinero. Obligatoria para dejar la OP en estado Ejecutada (así se puede generar el asiento).'
+                : 'Opcional hasta cargar el plan de cuentas (Caja o Banco).',
+        ]);
+
         CRUD::addField([
             'name' => 'payment_date',
             'label' => 'Fecha de Pago',
@@ -446,6 +525,7 @@ class PaymentOrderCrudController extends CrudController
             $data = $this->crud->getStrippedSaveRequest($request);
             $paymentDetailsRaw = $request->input('payment_details', []);
             unset($data['payment_details']);
+            $data = $this->fillSupplierFromPurchaseOrder($data);
 
             $this->crud->entry = $this->crud->update($id, $data);
             $this->data['entry'] = $this->crud->entry;
@@ -455,6 +535,8 @@ class PaymentOrderCrudController extends CrudController
                 is_array($paymentDetailsRaw) ? $paymentDetailsRaw : [],
                 (string) ($request->input('payment_method') ?? '')
             );
+
+            app(AccountingOutflowService::class)->syncForPaymentOrder($this->crud->entry);
 
             \Alert::success(trans('backpack::crud.update_success'))->flash();
             $this->crud->setSaveAction();
@@ -513,7 +595,7 @@ class PaymentOrderCrudController extends CrudController
      */
     protected function setupShowOperation()
     {
-        CRUD::addClause('with', ['opDetails', 'supplierInvoices']);
+        CRUD::addClause('with', ['opDetails', 'supplierInvoices', 'imputationAccount', 'fundsAccount', 'accountingEntries.lines.account', 'internalVouchers', 'fundMovements', 'supplier', 'purchase_order.supplier']);
 
         // Configurar las columnas que se mostrarán en la vista de detalles
         CRUD::column('payment_number')->label('Número de Orden de Pago');
@@ -570,9 +652,57 @@ class PaymentOrderCrudController extends CrudController
             },
             'escaped' => false,
         ]);
+        CRUD::addColumn([
+            'name' => 'internal_vouchers',
+            'label' => 'Comprobantes internos',
+            'type' => 'closure',
+            'function' => function (PaymentOrder $entry) {
+                $user = backpack_user();
+                if (! ($user instanceof User && $user->canManageInternalVouchers())) {
+                    return '—';
+                }
+                $createUrl = $entry->status !== 'Anulada'
+                    ? backpack_url('internal-voucher/create?payment_order_id='.$entry->id.($entry->purchase_order_id ? '&purchase_order_id='.$entry->purchase_order_id : ''))
+                    : null;
+                $rows = $entry->relationLoaded('internalVouchers')
+                    ? $entry->internalVouchers
+                    : $entry->internalVouchers()->get();
+
+                return InternalVoucherCrudController::htmlRelatedTable($rows, $createUrl);
+            },
+            'escaped' => false,
+        ]);
+        CRUD::addColumn([
+            'name' => 'fund_movements',
+            'label' => 'Egresos',
+            'type' => 'closure',
+            'function' => function (PaymentOrder $entry) {
+                $user = backpack_user();
+                if (! ($user instanceof User && $user->canManageFundMovements())) {
+                    return '—';
+                }
+                $createUrl = $entry->status !== 'Anulada'
+                    ? backpack_url('fund-movement/create?payment_order_id='.$entry->id)
+                    : null;
+                $rows = $entry->relationLoaded('fundMovements')
+                    ? $entry->fundMovements
+                    : $entry->fundMovements()->get();
+
+                return FundMovementCrudController::htmlRelatedTable($rows, $createUrl);
+            },
+            'escaped' => false,
+        ]);
         CRUD::column('currency_code')->label('Moneda');
         CRUD::column('status')->label('Estado');
         
+        CRUD::addColumn([
+            'name' => 'supplier_id',
+            'label' => 'Proveedor',
+            'type' => 'closure',
+            'function' => function (PaymentOrder $entry) {
+                return e($entry->resolvedSupplierName());
+            },
+        ]);
         CRUD::addColumn([
             'name' => 'purchase_order_id',
             'label' => 'Orden de Compra Relacionada',
@@ -597,6 +727,15 @@ class PaymentOrderCrudController extends CrudController
             'name' => 'payment_date',
             'label' => 'Fecha de Pago',
             'type' => 'date',
+        ]);
+        CRUD::addColumn([
+            'name' => 'accounting_outflow',
+            'label' => 'Impacto contable',
+            'type' => 'closure',
+            'function' => function ($entry) {
+                return $this->htmlPaymentOrderAccountingOutflow($entry);
+            },
+            'escaped' => false,
         ]);
 
         // Información de anulación (si está anulada)
@@ -776,6 +915,44 @@ class PaymentOrderCrudController extends CrudController
     }
 
     /**
+     * Cuentas propuestas en la OP. El asiento se registra en el egreso confirmado.
+     */
+    protected function htmlPaymentOrderAccountingOutflow(PaymentOrder $paymentOrder): string
+    {
+        $service = app(AccountingOutflowService::class);
+        $preview = $service->previewLines($paymentOrder);
+        $html = '<p class="small mb-2">Cuentas de la OP (se copian al egreso al ejecutarla). El asiento de Caja/Banco se genera al <strong>confirmar el egreso</strong>.</p>';
+        $html .= '<div class="table-responsive mb-2"><table class="table table-sm table-bordered mb-0"><thead><tr>'
+            . '<th>Concepto</th><th>Cuenta</th><th>Efecto</th><th class="text-end">Debe</th><th class="text-end">Haber</th></tr></thead><tbody>';
+        foreach ($preview as $line) {
+            $html .= '<tr><td>'.e(ucfirst($line['role'])).'</td><td>'.e($line['account']).'</td><td>'.e($line['effect']).'</td>'
+                . '<td class="text-end">$'.number_format((float) $line['debit'], 2).'</td>'
+                . '<td class="text-end">$'.number_format((float) $line['credit'], 2).'</td></tr>';
+        }
+        $html .= '</tbody></table></div>';
+
+        $legacy = $paymentOrder->relationLoaded('accountingEntries')
+            ? $paymentOrder->accountingEntries
+            : $paymentOrder->accountingEntries()->with('lines.account')->get();
+        if ($legacy->isNotEmpty()) {
+            $html .= '<p class="small mb-1"><strong>Asientos anteriores (directos de la OP)</strong></p>';
+            foreach ($legacy as $entry) {
+                $status = $entry->status === 'posted' ? 'Registrado' : 'Revertido';
+                $html .= '<p class="mb-1 small">'.e($entry->entry_number).' — '.e($entry->kind).' — '.$status
+                    .' — '.e($entry->date?->format('d/m/Y') ?? '').' — '.e($entry->description).'</p>';
+            }
+        } elseif (! $service->chartIsLoaded()) {
+            $html .= '<p class="text-muted small mb-0">Sin asiento: el plan de cuentas todavía no está cargado.</p>';
+        } elseif ($paymentOrder->status !== 'Ejecutada') {
+            $html .= '<p class="text-muted small mb-0">Al pasar la OP a <strong>Ejecutada</strong> se crea o actualiza el egreso. Confírmelo (o déjelo confirmarse si hay ambas cuentas) para generar el asiento.</p>';
+        } elseif (! $paymentOrder->imputation_account_id || ! $paymentOrder->funds_account_id) {
+            $html .= '<p class="text-muted small mb-0">Falta la cuenta de imputación o la de fondos: el egreso queda pendiente hasta completarlas.</p>';
+        }
+
+        return $html;
+    }
+
+    /**
      * Botón o aviso para imputar esta OP a una factura (misma OC, saldo, misma moneda).
      */
     protected function htmlPaymentOrderImputarAction(PaymentOrder $paymentOrder, bool $compact = false): string
@@ -787,10 +964,6 @@ class PaymentOrderCrudController extends CrudController
         $wrapStart = $compact ? '<div class="mt-2">' : '';
         $wrapEnd = $compact ? '</div>' : '';
 
-        if (! $paymentOrder->purchase_order_id) {
-            return $wrapStart . '<div class="alert alert-warning mb-0">Asocie una orden de compra a esta OP para imputar facturas.</div>' . $wrapEnd;
-        }
-
         $service = app(PaymentOrderInvoiceImputationService::class);
         $remaining = $service->remainingImputableCapacityOnPaymentOrder($paymentOrder);
         if ($remaining < 0.01) {
@@ -799,7 +972,7 @@ class PaymentOrderCrudController extends CrudController
 
         $candidates = $service->candidateInvoicesForPaymentOrder($paymentOrder);
         if ($candidates->isEmpty()) {
-            return $wrapStart . '<div class="alert alert-warning mb-0">No hay facturas con saldo pendiente (misma moneda) para la OC de esta orden de pago. Regístrelas en <strong>Facturas proveedor</strong> o imputelas desde ahí cuando existan.</div>' . $wrapEnd;
+            return $wrapStart . '<div class="alert alert-warning mb-0">No hay facturas con saldo pendiente (mismo proveedor y moneda). Cárguelas en <strong>Facturas proveedor</strong>; no es necesario que tengan orden de compra.</div>' . $wrapEnd;
         }
 
         $btn = '<a href="' . backpack_url('payment-order/' . $paymentOrder->id . '/imputar') . '" class="btn btn-primary' . ($compact ? ' btn-sm' : '') . '"><i class="la la-link"></i> Imputar a factura</a>'
@@ -824,11 +997,6 @@ class PaymentOrderCrudController extends CrudController
 
             return redirect()->to(backpack_url('payment-order/' . $paymentOrder->id . '/show'));
         }
-        if (! $paymentOrder->purchase_order_id) {
-            \Alert::warning('Debe asociar una orden de compra a la orden de pago antes de imputar facturas.')->flash();
-
-            return redirect()->to(backpack_url('payment-order/' . $paymentOrder->id . '/edit'));
-        }
 
         $service = app(PaymentOrderInvoiceImputationService::class);
         $remaining = $service->remainingImputableCapacityOnPaymentOrder($paymentOrder);
@@ -840,7 +1008,7 @@ class PaymentOrderCrudController extends CrudController
 
         $candidates = $service->candidateInvoicesForPaymentOrder($paymentOrder);
         if ($candidates->isEmpty()) {
-            \Alert::error('No hay facturas con saldo pendiente en la misma moneda para la orden de compra de esta OP.')->flash();
+            \Alert::error('No hay facturas con saldo pendiente del mismo proveedor y moneda. Puede cargar la factura sin orden de compra.')->flash();
 
             return redirect()->to(backpack_url('payment-order/' . $paymentOrder->id . '/show'));
         }
@@ -956,6 +1124,8 @@ class PaymentOrderCrudController extends CrudController
             'annulled_by_id' => $user->id,
         ]);
 
+        app(AccountingOutflowService::class)->syncForPaymentOrder($paymentOrder);
+
         \Alert::success('La orden de pago ha sido anulada correctamente.')->flash();
         return redirect()->to(backpack_url('payment-order/' . $paymentOrder->id . '/show'));
     }
@@ -970,10 +1140,27 @@ class PaymentOrderCrudController extends CrudController
             'purchase_order.supplier',
             'purchase_order.details.supplier',
             'supplierInvoices',
+            'imputationAccount',
+            'fundsAccount',
         ])->findOrFail($id);
 
         $pdf = Pdf::loadView('payment-order-pdf', compact('paymentOrder'));
 
         return $pdf->stream('orden-pago-' . $paymentOrder->payment_number . '.pdf');
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @return array<string, mixed>
+     */
+    protected function fillSupplierFromPurchaseOrder(array $data): array
+    {
+        if (empty($data['supplier_id']) && ! empty($data['purchase_order_id'])) {
+            $data['supplier_id'] = \App\Models\PurchaseOrder::query()
+                ->whereKey($data['purchase_order_id'])
+                ->value('supplier_id');
+        }
+
+        return $data;
     }
 }

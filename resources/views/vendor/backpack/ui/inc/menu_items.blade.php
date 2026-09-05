@@ -80,6 +80,12 @@
     @if(backpack_user() instanceof \App\Models\User && backpack_user()->canManageSupplierInvoices())
         <x-backpack::menu-item title="Facturas proveedor" icon="la la-file-invoice-dollar" :link="backpack_url('supplier-invoice')" />
     @endif
+    @if(backpack_user() instanceof \App\Models\User && backpack_user()->canManageInternalVouchers())
+        <x-backpack::menu-item title="Comprobantes internos" icon="la la-file-alt" :link="backpack_url('internal-voucher')" />
+    @endif
+    @if(backpack_user() instanceof \App\Models\User && backpack_user()->canManageFundMovements())
+        <x-backpack::menu-item title="Egresos" icon="la la-university" :link="backpack_url('fund-movement')" />
+    @endif
 
     <x-backpack::menu-item title="Recepciones" icon="la la-truck-loading" :link="backpack_url('reception')" />
     <x-backpack::menu-item title="Devoluciones" icon="la la-undo-alt" :link="backpack_url('devolution')" />

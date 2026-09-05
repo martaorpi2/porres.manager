@@ -72,9 +72,6 @@
         </div>
     </div>
 </div>
-@endsection
-
-@push('after_scripts')
 <script>
 (function () {
     var select = document.getElementById('supplier_invoice_id');
@@ -94,4 +91,4 @@
     });
 })();
 </script>
-@endpush
+@endsection

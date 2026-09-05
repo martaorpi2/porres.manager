@@ -101,9 +101,10 @@ class MarketRateCrudController extends CrudController
         CRUD::column('delivery_term')->label('Plazo de entrega');
         CRUD::column('payment_method')->label('Forma de pago');
         CRUD::column('validity_term')->label('Validez de la cotización');
-        CRUD::column('total_amount')->label('Monto Total')->type('number')->decimals(2)->prefix('$');
-        CRUD::column('vat_amount')->label('IVA')->type('number')->decimals(2)->prefix('$');
-        CRUD::column('total_amount_with_vat')->label('Total + IVA')->type('number')->decimals(2)->prefix('$');
+        CRUD::column('total_amount')->label('Monto total')->type('custom_html')
+            ->value(function ($entry) {
+                return '$'.number_format($entry->effectiveTotalWithVat(), 2, ',', '.');
+            });
 
         CRUD::column('supporting_badge')->label('Adj.')->type('custom_html')
             ->value(function (\App\Models\MarketRate $entry) {
@@ -186,7 +187,8 @@ class MarketRateCrudController extends CrudController
 
         $infoMessage = '<div class="alert alert-info mb-0">'
             .'<i class="la la-info-circle"></i> '
-            .'<strong>Información:</strong> Por favor, ingrese los precios unitarios para cada producto o el monto total.<br>'
+            .'<strong>Información:</strong> Ingrese los precios unitarios de cada producto o el monto total. '
+            .'No discrimine IVA: cargue el importe total.<br>'
             .'Puede adjuntar archivos (PDF, imágenes, etc.) y/o pegar enlaces.'
             .'</div>';
 
@@ -292,18 +294,10 @@ class MarketRateCrudController extends CrudController
             'wrapper' => $colHalf,
         ]);
 
-        CRUD::field('total_amount')->label('Monto Total')->type('text')
+        CRUD::field('total_amount')->label('Monto total')->type('text')
             ->attributes(['inputmode' => 'decimal', 'placeholder' => '0,00 o 0.00'])
-            ->hint('Obligatorio. Puede usar coma o punto como separador decimal.')
-            ->wrapper($col3);
-        CRUD::field('vat_amount')->label('IVA')->type('text')
-            ->attributes(['inputmode' => 'decimal', 'placeholder' => '0,00 o 0.00'])
-            ->hint('Opcional: importe de IVA de la cotización.')
-            ->wrapper($col3);
-        CRUD::field('total_amount_with_vat')->label('Monto Total + IVA')->type('text')
-            ->attributes(['inputmode' => 'decimal', 'placeholder' => '0,00 o 0.00'])
-            ->hint('Opcional: total final con IVA incluido.')
-            ->wrapper($col3);
+            ->hint('Obligatorio. Cargue el monto total, sin discriminar IVA. Puede usar coma o punto como separador decimal.')
+            ->wrapper($colHalf);
 
         // Campo dinámico para agregar items de cotización
         CRUD::field([
@@ -368,6 +362,12 @@ class MarketRateCrudController extends CrudController
                     'value' => $this->getQuoteItemsSelectionHtml($existingItems),
                 ]);
             }
+
+            if ($this->crud->firstFieldWhere('name', 'total_amount') !== null) {
+                CRUD::modifyField('total_amount', [
+                    'value' => number_format($entry->effectiveTotalWithVat(), 2, '.', ''),
+                ]);
+            }
         }
     }
 
@@ -422,6 +422,8 @@ class MarketRateCrudController extends CrudController
         CRUD::removeColumn('document_files');
         CRUD::removeColumn('reference_links');
         CRUD::removeColumn('is_selected');
+        CRUD::removeColumn('vat_amount');
+        CRUD::removeColumn('total_amount_with_vat');
         CRUD::column('supporting_material')->label('Archivos y enlaces')->type('custom_html')
             ->value(fn (\App\Models\MarketRate $entry) => self::supportingMaterialAdminHtml($entry));
 
@@ -443,24 +445,12 @@ class MarketRateCrudController extends CrudController
             'type' => 'date',
         ]);
 
-        // Monto total
         CRUD::modifyColumn('total_amount', [
             'label' => 'Monto total',
-            'type' => 'number',
-            'decimals' => 2,
-            'prefix' => '$',
-        ]);
-        CRUD::modifyColumn('vat_amount', [
-            'label' => 'IVA',
-            'type' => 'number',
-            'decimals' => 2,
-            'prefix' => '$',
-        ]);
-        CRUD::modifyColumn('total_amount_with_vat', [
-            'label' => 'Monto total + IVA',
-            'type' => 'number',
-            'decimals' => 2,
-            'prefix' => '$',
+            'type' => 'custom_html',
+            'value' => function ($entry) {
+                return '$'.number_format($entry->effectiveTotalWithVat(), 2, ',', '.');
+            },
         ]);
 
         // Formatear fecha de entrega en vista show
@@ -676,18 +666,10 @@ class MarketRateCrudController extends CrudController
         $selectedItems = $request->input('selected_quote_items');
         $calculatedTotal = $this->sumTotalFromSelectedQuoteItemsJson($selectedItems);
         $parsedManual = $this->parseTotalAmountInput($dataToSave['total_amount'] ?? null);
-        $parsedVat = $this->parseTotalAmountInput($dataToSave['vat_amount'] ?? null);
-        $parsedTotalWithVat = $this->parseTotalAmountInput($dataToSave['total_amount_with_vat'] ?? null);
         if ($parsedManual !== null) {
-            $dataToSave['total_amount'] = $parsedManual;
+            $dataToSave = $this->withUndiscriminatedTotal($dataToSave, $parsedManual);
         } else {
-            $dataToSave['total_amount'] = $calculatedTotal;
-        }
-        $dataToSave['vat_amount'] = $parsedVat;
-        if ($parsedTotalWithVat !== null && $parsedTotalWithVat > 0) {
-            $dataToSave['total_amount_with_vat'] = $parsedTotalWithVat;
-        } elseif (($dataToSave['total_amount'] ?? null) !== null && $parsedVat !== null) {
-            $dataToSave['total_amount_with_vat'] = (float) $dataToSave['total_amount'] + $parsedVat;
+            $dataToSave = $this->withUndiscriminatedTotal($dataToSave, $calculatedTotal);
         }
         
         // insert item in the db
@@ -751,18 +733,13 @@ class MarketRateCrudController extends CrudController
         $selectedItems = $request->input('selected_quote_items');
         $calculatedTotal = $this->sumTotalFromSelectedQuoteItemsJson($selectedItems);
         $parsedManual = $this->parseTotalAmountInput($dataToSave['total_amount'] ?? null);
-        $parsedVat = $this->parseTotalAmountInput($dataToSave['vat_amount'] ?? null);
-        $parsedTotalWithVat = $this->parseTotalAmountInput($dataToSave['total_amount_with_vat'] ?? null);
         if ($parsedManual !== null) {
-            $dataToSave['total_amount'] = $parsedManual;
+            $dataToSave = $this->withUndiscriminatedTotal($dataToSave, $parsedManual);
         } else {
-            $dataToSave['total_amount'] = $calculatedTotal > 0 ? $calculatedTotal : (float) ($currentEntry ? ($currentEntry->total_amount ?? 0) : 0);
-        }
-        $dataToSave['vat_amount'] = $parsedVat;
-        if ($parsedTotalWithVat !== null && $parsedTotalWithVat > 0) {
-            $dataToSave['total_amount_with_vat'] = $parsedTotalWithVat;
-        } elseif (($dataToSave['total_amount'] ?? null) !== null && $parsedVat !== null) {
-            $dataToSave['total_amount_with_vat'] = (float) $dataToSave['total_amount'] + $parsedVat;
+            $fallback = $calculatedTotal > 0
+                ? $calculatedTotal
+                : (float) ($currentEntry ? $currentEntry->effectiveTotalWithVat() : 0);
+            $dataToSave = $this->withUndiscriminatedTotal($dataToSave, $fallback);
         }
 
         // Validar también si se está cambiando la solicitud de compra a una aprobada
@@ -963,6 +940,12 @@ class MarketRateCrudController extends CrudController
     private function getQuoteItemsSelectionHtml($existingItems = [])
     {
         $existingItemsJson = json_encode($existingItems);
+        $storedTotal = 0.0;
+        $entry = $this->crud->getCurrentEntry();
+        if ($entry instanceof \App\Models\MarketRate) {
+            $storedTotal = $entry->effectiveTotalWithVat();
+        }
+        $storedTotalJson = json_encode($storedTotal);
         
         return '
         <div id="quote-items-container">
@@ -1018,11 +1001,6 @@ class MarketRateCrudController extends CrudController
             document.getElementById("product-select").addEventListener("change", updateProductInfo);
             document.getElementById("item-quantity").addEventListener("input", calculateSubtotal);
             document.getElementById("item-price").addEventListener("input", calculateSubtotal);
-            const vatField = getVatAmountField();
-            if (vatField) {
-                vatField.addEventListener("input", updateTotalWithVatField);
-                vatField.addEventListener("change", updateTotalWithVatField);
-            }
             
             // No forzamos el total en submit para no pisar montos manuales.
             
@@ -1032,6 +1010,25 @@ class MarketRateCrudController extends CrudController
                 existingItems.forEach(item => {
                     addItemToList(item.product_id, item.product_name, item.quantity, item.unit_price, "unidad", item.product_description || "");
                 });
+            }
+            const storedTotal = ' . $storedTotalJson . ';
+            if (storedTotal && Number(storedTotal) > 0) {
+                let totalAmountField = document.querySelector("input[name=\'total_amount\']");
+                if (!totalAmountField) {
+                    totalAmountField = document.getElementById("total_amount");
+                }
+                if (!totalAmountField) {
+                    totalAmountField = document.querySelector("input[name*=\'total_amount\']");
+                }
+                if (totalAmountField) {
+                    totalAmountField.value = Number(storedTotal).toFixed(2);
+                    totalAmountField.dispatchEvent(new Event(\'change\', { bubbles: true }));
+                    totalAmountField.dispatchEvent(new Event(\'input\', { bubbles: true }));
+                }
+                const display = document.getElementById("total-amount-display");
+                if (display) {
+                    display.textContent = "$" + Number(storedTotal).toFixed(2);
+                }
             }
             
             function fetchProducts() {
@@ -1276,51 +1273,9 @@ class MarketRateCrudController extends CrudController
                         totalAmountField.dispatchEvent(new Event(\'change\', { bubbles: true }));
                         totalAmountField.dispatchEvent(new Event(\'input\', { bubbles: true }));
                     }
-                    updateTotalWithVatField();
                 } else {
                     console.warn("No se encontró el campo total_amount para actualizar");
                 }
-            }
-
-            function getVatAmountField() {
-                let field = document.querySelector("input[name=\'vat_amount\']");
-                if (!field) {
-                    field = document.getElementById("vat_amount");
-                }
-                if (!field) {
-                    field = document.querySelector("input[name*=\'vat_amount\']");
-                }
-                return field;
-            }
-
-            function getTotalWithVatField() {
-                let field = document.querySelector("input[name=\'total_amount_with_vat\']");
-                if (!field) {
-                    field = document.getElementById("total_amount_with_vat");
-                }
-                if (!field) {
-                    field = document.querySelector("input[name*=\'total_amount_with_vat\']");
-                }
-                return field;
-            }
-
-            function updateTotalWithVatField() {
-                let totalAmountField = document.querySelector("input[name=\'total_amount\']");
-                if (!totalAmountField) {
-                    totalAmountField = document.querySelector("input[name*=\'total_amount\']");
-                }
-                const vatAmountField = getVatAmountField();
-                const totalWithVatField = getTotalWithVatField();
-                if (!totalAmountField || !vatAmountField || !totalWithVatField) {
-                    return;
-                }
-
-                const subtotal = parseFloat(String(totalAmountField.value || "0").replace(",", ".")) || 0;
-                const vat = parseFloat(String(vatAmountField.value || "0").replace(",", ".")) || 0;
-                const totalWithVat = subtotal + vat;
-                totalWithVatField.value = totalWithVat.toFixed(2);
-                totalWithVatField.dispatchEvent(new Event(\'change\', { bubbles: true }));
-                totalWithVatField.dispatchEvent(new Event(\'input\', { bubbles: true }));
             }
         });
         </script>';
@@ -1344,7 +1299,7 @@ class MarketRateCrudController extends CrudController
         if (!$selectedItems) {
             Log::info('No hay items de cotización seleccionados');
             if ($manualTotal !== null) {
-                $marketRate->update(['total_amount' => $manualTotal]);
+                $marketRate->update($this->withUndiscriminatedTotal([], $manualTotal));
             }
             return;
         }
@@ -1354,7 +1309,7 @@ class MarketRateCrudController extends CrudController
         if (!is_array($items) || empty($items)) {
             Log::warning('Items de cotización no válidos o vacíos:', ['selectedItems' => $selectedItems]);
             if ($manualTotal !== null) {
-                $marketRate->update(['total_amount' => $manualTotal]);
+                $marketRate->update($this->withUndiscriminatedTotal([], $manualTotal));
             }
             return;
         }
@@ -1407,19 +1362,23 @@ class MarketRateCrudController extends CrudController
         }
 
         $marketRate->refresh();
-        $vatAmount = $this->parseTotalAmountInput($request->input('vat_amount'));
-        $totalWithVatInput = $this->parseTotalAmountInput($request->input('total_amount_with_vat'));
-        $updateData = ['total_amount' => $finalTotal];
-        if ($vatAmount !== null) {
-            $updateData['vat_amount'] = $vatAmount;
-        }
-        if ($totalWithVatInput !== null && $totalWithVatInput > 0) {
-            $updateData['total_amount_with_vat'] = $totalWithVatInput;
-        } elseif ($vatAmount !== null) {
-            $updateData['total_amount_with_vat'] = $finalTotal + $vatAmount;
-        }
-        $marketRate->update($updateData);
+        $marketRate->update($this->withUndiscriminatedTotal([], $finalTotal));
         Log::info('Monto total actualizado:', ['market_rate_id' => $marketRate->id, 'total_amount' => $finalTotal, 'from_lines' => $totalAmount, 'manual' => $manualTotal]);
+    }
+
+    /**
+     * El importe cargado es el total: no se discrimina IVA.
+     *
+     * @param  array<string, mixed>  $dataToSave
+     * @return array<string, mixed>
+     */
+    private function withUndiscriminatedTotal(array $dataToSave, float $total): array
+    {
+        $dataToSave['total_amount'] = $total;
+        $dataToSave['vat_amount'] = 0;
+        $dataToSave['total_amount_with_vat'] = $total;
+
+        return $dataToSave;
     }
 
     private function parseTotalAmountInput($raw): ?float

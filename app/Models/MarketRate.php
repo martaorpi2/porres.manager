@@ -122,7 +122,8 @@ class MarketRate extends Model
     }
 
     /**
-     * Total de la cotización con IVA (para topes de autorización y montos en pantalla).
+     * Monto total de la cotización (el importe cargado, sin discriminar IVA).
+     * Conserva compatibilidad con cotizaciones antiguas que tenían IVA separado.
      */
     public function effectiveTotalWithVat(): float
     {

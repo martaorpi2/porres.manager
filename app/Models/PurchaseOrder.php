@@ -83,12 +83,64 @@ class PurchaseOrder extends Model
         return $this->hasMany(SupplierInvoice::class, 'purchase_order_id');
     }
 
+    public function internalVouchers()
+    {
+        return $this->hasMany(InternalVoucher::class, 'purchase_order_id')->orderByDesc('id');
+    }
+
     /**
      * Hay al menos una orden de pago no anulada: la OC no debe editarse ni eliminarse.
      */
     public function hasBlockingPaymentOrder(): bool
     {
         return $this->paymentOrders()->where('status', '!=', 'Anulada')->exists();
+    }
+
+    /**
+     * Fecha de la OC para antigüedad de pago (emisión, o fecha de la orden).
+     */
+    public function paymentAgingDate(): ?\Carbon\CarbonInterface
+    {
+        return $this->issue_date ?? $this->date ?? $this->created_at;
+    }
+
+    /**
+     * Días transcurridos desde la emisión/fecha de la OC.
+     */
+    public function daysSinceIssue(): int
+    {
+        $from = $this->paymentAgingDate();
+        if (! $from) {
+            return 0;
+        }
+
+        return (int) floor($from->copy()->startOfDay()->diffInDays(now()->startOfDay()));
+    }
+
+    /**
+     * OC sin factura y sin pago ejecutado, con al menos $days días desde la emisión.
+     */
+    public function scopeOverdueWithoutPayment($query, ?int $days = null)
+    {
+        $days = $days ?? \App\Models\SupplierInvoice::UNPAID_ALERT_AFTER_DAYS;
+        $cutoff = now()->subDays($days)->toDateString();
+
+        return $query
+            ->where(function ($q) use ($cutoff) {
+                $q->whereDate('issue_date', '<=', $cutoff)
+                    ->orWhere(function ($q2) use ($cutoff) {
+                        $q2->whereNull('issue_date')->whereDate('date', '<=', $cutoff);
+                    })
+                    ->orWhere(function ($q3) use ($cutoff) {
+                        $q3->whereNull('issue_date')
+                            ->whereNull('date')
+                            ->whereDate('created_at', '<=', $cutoff);
+                    });
+            })
+            ->whereDoesntHave('supplierInvoices')
+            ->whereDoesntHave('paymentOrders', function ($q) {
+                $q->where('status', 'Ejecutada');
+            });
     }
 
     public function purchaseRequest()

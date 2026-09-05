@@ -28,8 +28,17 @@ class PaymentOrderRequest extends FormRequest
 
         return [
             'purchase_order_id' => [
-                'required',
+                'nullable',
                 'exists:purchase_orders,id',
+            ],
+            'supplier_id' => [
+                'nullable',
+                'exists:suppliers,id',
+                function ($attribute, $value, $fail) {
+                    if (! $this->input('purchase_order_id') && empty($value)) {
+                        $fail('Indique el proveedor o una orden de compra.');
+                    }
+                },
             ],
             'billing_kind' => ['required', 'in:normal,anticipo'],
             'currency_code' => ['nullable', 'string', 'size:3'],
@@ -110,6 +119,25 @@ class PaymentOrderRequest extends FormRequest
             'status' => 'required|in:Pendiente,Aprobada,Ejecutada,Anulada',
             'authorizing_user_id' => 'required|exists:users,id',
             'payment_details' => 'nullable|array',
+            'imputation_account_id' => [
+                'nullable',
+                'exists:accounting_accounts,id',
+                function ($attribute, $value, $fail) {
+                    if (app(\App\Services\AccountingOutflowService::class)->chartIsLoaded() && empty($value)) {
+                        $fail('Con el plan de cuentas cargado debe indicar la cuenta de imputación del egreso (gasto o bien).');
+                    }
+                },
+            ],
+            'funds_account_id' => [
+                'nullable',
+                'exists:accounting_accounts,id',
+                function ($attribute, $value, $fail) {
+                    $chartLoaded = app(\App\Services\AccountingOutflowService::class)->chartIsLoaded();
+                    if ($chartLoaded && ($this->input('status') === 'Ejecutada') && empty($value)) {
+                        $fail('Para ejecutar el egreso debe indicar la cuenta de fondos (Caja o Banco).');
+                    }
+                },
+            ],
             'payment_details.*.concept' => 'required|in:advance,residue,partiality',
             'payment_details.*.amount' => 'required|numeric|min:0.01',
             'payment_details.*.method_payment' => 'nullable|string|max:255',
@@ -135,6 +163,13 @@ class PaymentOrderRequest extends FormRequest
             $merge['currency_code'] = null;
         } else {
             $merge['currency_code'] = $cc;
+        }
+
+        foreach (['imputation_account_id', 'funds_account_id', 'purchase_order_id', 'supplier_id'] as $accountField) {
+            $rawAccount = $this->input($accountField);
+            if ($rawAccount === '' || $rawAccount === '0') {
+                $merge[$accountField] = null;
+            }
         }
 
         $raw = $this->input('payment_details');
@@ -196,6 +231,7 @@ class PaymentOrderRequest extends FormRequest
     {
         return [
             'purchase_order_id' => 'orden de compra',
+            'supplier_id' => 'proveedor',
             'billing_kind' => 'tipo de orden de pago',
             'currency_code' => 'moneda',
             'total_amount' => 'monto total',
@@ -207,6 +243,8 @@ class PaymentOrderRequest extends FormRequest
             'payment_number' => 'número de orden de pago',
             'status' => 'estado',
             'authorizing_user_id' => 'usuario autorizador',
+            'imputation_account_id' => 'cuenta de imputación',
+            'funds_account_id' => 'cuenta de fondos',
         ];
     }
 
@@ -218,7 +256,6 @@ class PaymentOrderRequest extends FormRequest
     public function messages()
     {
         return [
-            'purchase_order_id.required' => 'El campo orden de compra es obligatorio.',
             'purchase_order_id.exists' => 'La orden de compra seleccionada no existe.',
             'total_amount.required' => 'El campo monto total es obligatorio.',
             'total_amount.numeric' => 'El campo monto total debe ser un número.',

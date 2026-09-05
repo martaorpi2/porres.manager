@@ -240,7 +240,7 @@ class StockLevelCrudController extends CrudController
             }
         }
         
-        // Configurar el campo de producto
+        // El request valida product_id (no el nombre de la relación "product").
         if ($productOptions !== null && is_array($productOptions)) {
             CRUD::addField([
                 'name' => 'product_id',
@@ -250,7 +250,15 @@ class StockLevelCrudController extends CrudController
                 'allows_null' => false,
             ]);
         } else {
-            CRUD::field('product')->label('Producto');
+            CRUD::addField([
+                'name' => 'product_id',
+                'label' => 'Producto',
+                'type' => 'select',
+                'entity' => 'product',
+                'model' => \App\Models\Product::class,
+                'attribute' => 'name',
+                'allows_null' => false,
+            ]);
         }
         
         // Si el usuario tiene rol role_responsable_area, solo mostrar ubicaciones de sus áreas

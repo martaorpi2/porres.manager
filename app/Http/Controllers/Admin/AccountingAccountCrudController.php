@@ -34,6 +34,14 @@ class AccountingAccountCrudController extends CrudController
 
         CRUD::column('code')->label('Código');
         CRUD::column('name')->label('Nombre');
+        CRUD::addColumn([
+            'name' => 'account_type',
+            'label' => 'Tipo',
+            'type' => 'closure',
+            'function' => function ($entry) {
+                return e($entry->type_label);
+            },
+        ]);
         CRUD::column('is_active')->label('Activa')->type('boolean');
     }
 
@@ -41,9 +49,18 @@ class AccountingAccountCrudController extends CrudController
     {
         CRUD::setValidation(AccountingAccountRequest::class);
         CRUD::field('code')->label('Código')->attributes(['placeholder' => 'Ej: 2110001'])
-            ->wrapper(['class' => 'form-group col-sm-12 col-md-4']);
-        CRUD::field('name')->label('Nombre')->attributes(['placeholder' => 'Ej: Proveedores varios'])
+            ->wrapper(['class' => 'form-group col-sm-12 col-md-3']);
+        CRUD::field('name')->label('Nombre')->attributes(['placeholder' => 'Ej: Útiles y papelería'])
             ->wrapper(['class' => 'form-group col-sm-12 col-md-5']);
+        CRUD::addField([
+            'name' => 'account_type',
+            'label' => 'Tipo',
+            'type' => 'select_from_array',
+            'options' => \App\Models\AccountingAccount::typeOptions(),
+            'allows_null' => true,
+            'hint' => 'Permite distinguir Caja/Banco (activo) de un gasto (útiles, honorarios) o un bien (equipamiento).',
+            'wrapper' => ['class' => 'form-group col-sm-12 col-md-4'],
+        ]);
         CRUD::field('is_active')->label('Activa')->type('boolean')->default(true)
             ->wrapper(['class' => 'form-group col-sm-12 col-md-3']);
     }

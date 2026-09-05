@@ -14,8 +14,10 @@ use App\Models\PurchaseAuthorizationLimit;
 use App\Models\PurchaseRequest;
 use App\Models\Reception;
 use App\Models\Supplier;
+use App\Models\SupplierInvoice;
 use App\Models\User;
 use App\Services\PurchaseRequestNotificationService;
+use App\Services\SupplierPaymentOverdueAlertService;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Schema;
 
@@ -522,13 +524,24 @@ class DashboardController extends Controller
             'has_pending' => $hasPendingPurchaseRequests,
         ];
 
+        $overdueSupplierInvoices = collect();
+        $overduePurchaseOrdersWithoutPayment = collect();
+        $overdueSupplierPaymentDays = SupplierPaymentOverdueAlertService::alertAfterDays();
+        if ($this->userShouldSeeSupplierPaymentOverdueAlerts($user)) {
+            $overdueAlertService = app(SupplierPaymentOverdueAlertService::class);
+            $overdueSupplierInvoices = $overdueAlertService->overdueInvoices();
+            $overduePurchaseOrdersWithoutPayment = $overdueAlertService->overduePurchaseOrdersWithoutPayment();
+        }
+
         $adminInstitucionInbox = ($isAdminInstitucion || $isAdminSistema)
             ? $this->buildAdminInstitucionInbox(
                 $user,
                 $pendingApprovalRequests,
                 $purchaseOrdersPendingPaymentAfterConformeCount,
                 $purchaseRequestsAwaitingQuoteSelectionCount,
-                $superiorApprovedPurchaseRequests
+                $superiorApprovedPurchaseRequests,
+                $overdueSupplierInvoices,
+                $overduePurchaseOrdersWithoutPayment
             )
             : null;
 
@@ -572,6 +585,9 @@ class DashboardController extends Controller
             'adminInstitucionInbox',
             'superiorAuthorityInbox',
             'comprasCanAuthorize',
+            'overdueSupplierInvoices',
+            'overduePurchaseOrdersWithoutPayment',
+            'overdueSupplierPaymentDays',
         ));
     }
 
@@ -589,9 +605,13 @@ class DashboardController extends Controller
             ->get();
     }
 
+    private function userShouldSeeSupplierPaymentOverdueAlerts(User $user): bool
+    {
+        return $user->canActAsAdministradoraInstitucion()
+            || $user->canActAsResponsableCompras();
+    }
+
     /**
-     * Accesos directos y contadores para la administradora del instituto.
-     *
      * @return array{acts_as_compras: bool, total_actionable: int, items: array<int, array<string, mixed>>}
      */
     private function buildAdminInstitucionInbox(
@@ -599,7 +619,9 @@ class DashboardController extends Controller
         Collection $pendingApprovalRequests,
         int $purchaseOrdersPendingPaymentCount,
         int $purchaseRequestsAwaitingQuoteSelectionCount,
-        Collection $superiorApprovedPurchaseRequests
+        Collection $superiorApprovedPurchaseRequests,
+        Collection $overdueSupplierInvoices,
+        Collection $overduePurchaseOrdersWithoutPayment
     ): array {
         $actsAsCompras = $user->canActAsResponsableCompras();
         $items = [];
@@ -690,6 +712,36 @@ class DashboardController extends Controller
             'icon' => 'la la-money-bill-wave',
             'variant' => $purchaseOrdersPendingPaymentCount > 0 ? 'success' : 'secondary',
         ];
+
+        $overdueInvoiceCount = $overdueSupplierInvoices->count();
+        if ($overdueInvoiceCount > 0) {
+            $days = SupplierPaymentOverdueAlertService::alertAfterDays();
+            $items[] = [
+                'key' => 'overdue_supplier_invoices',
+                'title' => 'Proveedores sin pago ('.$days.' días)',
+                'description' => 'Facturas con saldo pendiente y '.$days.' días o más desde la fecha de factura.',
+                'count' => $overdueInvoiceCount,
+                'url' => backpack_url('supplier-invoice').'?impagas_20_dias=1',
+                'icon' => 'la la-exclamation-triangle',
+                'variant' => 'danger',
+                'supplier_invoices' => $overdueSupplierInvoices,
+            ];
+        }
+
+        $overduePoCount = $overduePurchaseOrdersWithoutPayment->count();
+        if ($overduePoCount > 0) {
+            $days = SupplierPaymentOverdueAlertService::alertAfterDays();
+            $items[] = [
+                'key' => 'overdue_purchase_orders_unpaid',
+                'title' => 'OC sin pago ('.$days.' días)',
+                'description' => 'Órdenes de compra sin factura ni pago ejecutado, con '.$days.' días o más de antigüedad.',
+                'count' => $overduePoCount,
+                'url' => backpack_url('purchase-order'),
+                'icon' => 'la la-hourglass-half',
+                'variant' => 'warning',
+                'purchase_orders' => $overduePurchaseOrdersWithoutPayment,
+            ];
+        }
 
         $items = array_values(array_filter(
             $items,
