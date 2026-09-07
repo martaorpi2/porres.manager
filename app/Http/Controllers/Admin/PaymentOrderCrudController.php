@@ -453,6 +453,19 @@ class PaymentOrderCrudController extends CrudController
             'hint' => 'Si agrega líneas, la suma de los montos debe coincidir con el <strong>monto total</strong> de la cabecera. Si no agrega líneas, use solo el monto total. Si queda vacío el método por línea, se usa la forma de pago de la cabecera.',
         ]);
 
+        $currencyCode = 'ARS';
+        if ($entry instanceof PaymentOrder && $entry->exists) {
+            $currencyCode = strtoupper(trim((string) ($entry->currency_code ?? ''))) ?: 'ARS';
+        }
+        CRUD::addField([
+            'name' => 'currency_code',
+            'type' => 'hidden',
+            'value' => $currencyCode,
+            'default' => $currencyCode,
+            'label' => false,
+            'wrapper' => false,
+        ]);
+
         /**
          * Fields can be defined using the fluent syntax:
          * - CRUD::field('price')->type('number');

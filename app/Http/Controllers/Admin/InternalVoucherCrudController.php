@@ -295,6 +295,18 @@ class InternalVoucherCrudController extends CrudController
             ->disk('public')
             ->path('internal-vouchers')
             ->hint('Opcional: ticket, extracto u otro respaldo.');
+
+        $currencyCode = $isUpdate
+            ? (strtoupper(trim((string) ($entry->currency_code ?? ''))) ?: 'ARS')
+            : 'ARS';
+        CRUD::addField([
+            'name' => 'currency_code',
+            'type' => 'hidden',
+            'value' => $currencyCode,
+            'default' => $currencyCode,
+            'label' => false,
+            'wrapper' => false,
+        ]);
     }
 
     protected function setupUpdateOperation(): void

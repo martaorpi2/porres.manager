@@ -187,13 +187,18 @@ class SupplierInvoiceCrudController extends CrudController
             ->type('number')
             ->attributes(['step' => '0.01', 'min' => '0.01'])
             ->hint('Cargue el monto total de la factura, sin discriminar IVA.');
+        $currencyCode = 'ARS';
+        if ($this->crud->getOperation() === 'update') {
+            $entry = $this->crud->getCurrentEntry();
+            $currencyCode = strtoupper(trim((string) ($entry?->currency_code ?? ''))) ?: 'ARS';
+        }
         CRUD::addField([
             'name' => 'currency_code',
-            'label' => 'Moneda (ISO 4217)',
-            'type' => 'text',
-            'default' => 'ARS',
-            'attributes' => ['maxlength' => 3, 'style' => 'text-transform:uppercase'],
-            'hint' => 'Debe coincidir con la moneda indicada en la orden de pago al imputar.',
+            'type' => 'hidden',
+            'value' => $currencyCode,
+            'default' => $currencyCode,
+            'label' => false,
+            'wrapper' => false,
         ]);
         CRUD::field('observations')->label('Observaciones')->type('textarea');
         CRUD::field('attachment')->label('Archivo de factura (PDF o imagen)')->type('upload')

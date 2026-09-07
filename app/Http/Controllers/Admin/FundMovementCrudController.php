@@ -240,6 +240,16 @@ class FundMovementCrudController extends CrudController
             'wrapper' => ['class' => 'form-group col-sm-12 col-md-4'],
         ]);
         CRUD::field('observations')->label('Observaciones')->type('textarea')->default($defaults['observations']);
+
+        $currencyCode = strtoupper(trim((string) ($defaults['currency_code'] ?? ''))) ?: 'ARS';
+        CRUD::addField([
+            'name' => 'currency_code',
+            'type' => 'hidden',
+            'value' => $currencyCode,
+            'default' => $currencyCode,
+            'label' => false,
+            'wrapper' => false,
+        ]);
     }
 
     protected function setupUpdateOperation(): void
