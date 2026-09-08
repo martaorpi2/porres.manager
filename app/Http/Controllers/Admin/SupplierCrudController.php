@@ -3,8 +3,12 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Requests\SupplierRequest;
+use App\Models\Supplier;
+use App\Models\SuppliersHeading;
 use Backpack\CRUD\app\Http\Controllers\CrudController;
 use Backpack\CRUD\app\Library\CrudPanel\CrudPanelFacade as CRUD;
+use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 
 /**
  * Class SupplierCrudController
@@ -462,5 +466,56 @@ class SupplierCrudController extends CrudController
         $filename = 'proveedores_' . date('Y-m-d_H-i-s') . '.pdf';
         
         return $pdf->download($filename);
+    }
+
+    /**
+     * Alta mínima de proveedor desde el formulario de cotización (nombre, CUIT y rubro).
+     */
+    public function quickStore(Request $request)
+    {
+        $user = backpack_user();
+        $allowedHeadingIds = SuppliersHeading::query()
+            ->visibleForBackpackUser($user)
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+
+        $request->merge([
+            'cuit' => trim((string) $request->input('cuit', '')),
+            'company_name' => trim((string) $request->input('company_name', '')),
+        ]);
+
+        $validated = $request->validate(
+            [
+                'company_name' => ['required', 'string', 'max:255'],
+                'cuit' => ['required', 'string', 'max:20', 'unique:suppliers,cuit'],
+                'supplier_heading_id' => ['required', Rule::in($allowedHeadingIds ?: [0])],
+            ],
+            [
+                'company_name.required' => 'El nombre es obligatorio.',
+                'cuit.required' => 'El CUIT es obligatorio.',
+                'cuit.unique' => 'Ya existe un proveedor con este CUIT.',
+                'supplier_heading_id.required' => 'El rubro es obligatorio.',
+                'supplier_heading_id.in' => 'El rubro seleccionado no está permitido.',
+            ],
+            [
+                'company_name' => 'nombre',
+                'cuit' => 'CUIT',
+                'supplier_heading_id' => 'rubro',
+            ]
+        );
+
+        $validated['cuit'] = trim((string) $validated['cuit']);
+
+        $supplier = Supplier::create([
+            'company_name' => trim((string) $validated['company_name']),
+            'cuit' => $validated['cuit'],
+            'supplier_heading_id' => (int) $validated['supplier_heading_id'],
+        ]);
+
+        return response()->json([
+            'id' => $supplier->id,
+            'company_name' => $supplier->company_name,
+        ]);
     }
 }

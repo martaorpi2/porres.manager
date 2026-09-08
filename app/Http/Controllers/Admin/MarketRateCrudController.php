@@ -210,6 +210,26 @@ class MarketRateCrudController extends CrudController
             'model' => 'App\Models\Supplier',
             'wrapper' => $col3,
         ]);
+
+        CRUD::field([
+            'name' => 'quick_create_supplier_ui',
+            'type' => 'custom_html',
+            'label' => false,
+            'wrapper' => false,
+            'value' => view('admin.market-rate.quick-create-supplier', [
+                'storeUrl' => backpack_url('api/suppliers'),
+                'csrfToken' => csrf_token(),
+                'headings' => \App\Models\SuppliersHeading::query()
+                    ->visibleForBackpackUser($user)
+                    ->get(['id', 'name'])
+                    ->map(fn ($heading) => [
+                        'id' => (int) $heading->id,
+                        'name' => $heading->name,
+                    ])
+                    ->values()
+                    ->all(),
+            ])->render(),
+        ]);
         
         // Campo para seleccionar solicitud de compra (solo solicitudes no aprobadas)
         CRUD::field([

@@ -86,6 +86,7 @@ Route::group([
     Route::get('api/purchase-request/{id}', 'PurchaseRequestCrudController@getPurchaseRequestData')->name('api.purchase-request.data');
     Route::crud('purchase-request', 'PurchaseRequestCrudController');
     Route::get('api/suppliers', 'PurchaseRequestCrudController@getSuppliers')->name('api.suppliers');
+    Route::post('api/suppliers', 'SupplierCrudController@quickStore')->name('api.suppliers.store');
     Route::crud('general-request', 'GeneralRequestCrudController');
     Route::get('general-request-converted', 'GeneralRequestCrudController@showConverted')->name('general-request.converted');
     Route::post('general-request/{id}/approve-by-analyst', 'GeneralRequestCrudController@approveByAnalyst')->name('general-request.approve-by-analyst');
