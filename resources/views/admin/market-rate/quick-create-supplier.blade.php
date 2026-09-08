@@ -54,7 +54,7 @@
         var btn = document.createElement('button');
         btn.type = 'button';
         btn.id = 'btnQuickCreateSupplier';
-        btn.className = 'btn btn-outline-primary';
+        btn.className = 'btn btn-primary';
         btn.style.whiteSpace = 'nowrap';
         btn.innerHTML = '<i class="la la-plus"></i> Nuevo';
         btn.setAttribute('aria-haspopup', 'dialog');
