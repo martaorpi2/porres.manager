@@ -199,6 +199,16 @@ class User extends Authenticatable
     }
 
     /**
+     * Corregir cotizaciones ya cargadas: compras, admin. sistema y administradora del instituto.
+     */
+    public function canEditLoadedPurchaseRequestQuotations(): bool
+    {
+        return $this->hasResponsableComprasRole()
+            || $this->isAdminSistema()
+            || $this->hasAdministradoraInstitucionRole();
+    }
+
+    /**
      * Facturas de proveedor: administradora, sector de compras y administrador del sistema.
      */
     public function canManageSupplierInvoices(): bool

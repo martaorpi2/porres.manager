@@ -68,6 +68,8 @@ Route::group([
     Route::get('purchase-request/{id}/select-market-rate/{marketRateId}', 'PurchaseRequestCrudController@showSelectMarketRateForm')->name('purchase-request.show-select-market-rate');
     Route::post('purchase-request/{id}/select-market-rate/{marketRateId}', 'PurchaseRequestCrudController@storeMarketRateSelection')->name('purchase-request.store-market-rate-selection');
     Route::post('purchase-request/{id}/toggle-market-rate/{marketRateId}', 'PurchaseRequestCrudController@toggleMarketRateSelection')->name('purchase-request.toggle-market-rate');
+    Route::get('purchase-request/{id}/market-rate/{marketRateId}/edit-data', 'PurchaseRequestCrudController@editLoadedMarketRateData')->name('purchase-request.market-rate.edit-data');
+    Route::post('purchase-request/{id}/market-rate/{marketRateId}', 'PurchaseRequestCrudController@updateLoadedMarketRate')->name('purchase-request.market-rate.update');
     Route::post('purchase-request/{id}/request-quotation-superior-authorization', 'PurchaseRequestCrudController@requestQuotationSuperiorAuthorization')->name('purchase-request.request-quotation-superior-authorization');
     Route::post('purchase-request/{id}/request-quotation-higher-level-authorization', 'PurchaseRequestCrudController@requestQuotationHigherLevelAuthorization')->name('purchase-request.request-quotation-higher-level-authorization');
     Route::post('purchase-request/{id}/request-superior-reapproval-after-revision', 'PurchaseRequestCrudController@requestSuperiorReapprovalAfterRevision')->name('purchase-request.request-superior-reapproval-after-revision');

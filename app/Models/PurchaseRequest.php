@@ -341,6 +341,31 @@ class PurchaseRequest extends Model
             || $this->locksQuotationAndAssignmentChanges();
     }
 
+    /**
+     * Ya se generó al menos una orden de compra a partir de esta solicitud.
+     */
+    public function hasGeneratedPurchaseOrder(): bool
+    {
+        if ($this->relationLoaded('purchaseOrders')) {
+            return $this->purchaseOrders->isNotEmpty();
+        }
+
+        return $this->purchaseOrders()->exists();
+    }
+
+    /**
+     * Compras, admin. sistema y administradora pueden corregir cotizaciones cargadas
+     * hasta que exista una orden de compra (aunque la solicitud esté aprobada).
+     */
+    public function allowsLoadedQuotationEditsFor(?User $user): bool
+    {
+        if (! $user instanceof User || ! $user->canEditLoadedPurchaseRequestQuotations()) {
+            return false;
+        }
+
+        return ! $this->hasGeneratedPurchaseOrder();
+    }
+
     public function markSuperiorQuotationEscalationPending(): void
     {
         if (! Schema::hasColumn($this->getTable(), 'superior_quotation_escalation_pending_at')) {

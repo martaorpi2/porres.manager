@@ -63,4 +63,14 @@
 	</div>
 	</div>
 </div>
+@if ($entry instanceof \App\Models\PurchaseRequest)
+    @php
+        $prModalUser = backpack_user();
+        $prCanEditLoadedQuotes = $prModalUser instanceof \App\Models\User
+            && $entry->allowsLoadedQuotationEditsFor($prModalUser);
+    @endphp
+    @if ($prCanEditLoadedQuotes)
+        @include('admin.purchase-request.inc.edit_quotation_modal')
+    @endif
+@endif
 @endsection

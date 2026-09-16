@@ -2773,6 +2773,120 @@ class PurchaseRequestCrudController extends CrudController
     }
 
     /**
+     * Datos JSON para el modal de edición de una cotización cargada.
+     */
+    public function editLoadedMarketRateData($id, $marketRateId)
+    {
+        $purchaseRequest = \App\Models\PurchaseRequest::with(['details.product', 'purchaseOrders'])->findOrFail($id);
+        $user = backpack_user();
+        $editor = $user instanceof \App\Models\User ? $user : null;
+        app(\App\Services\MarketRateUpdateService::class)->abortIfCannotEditLoadedQuotation($purchaseRequest, $editor);
+
+        $marketRate = \App\Models\MarketRate::with(['quoteDetails.product', 'supplier'])
+            ->where('purchase_request_id', $purchaseRequest->id)
+            ->findOrFail($marketRateId);
+
+        $files = [];
+        foreach (MarketRate::normalizeDocumentFilesToPathList($marketRate->document_files) as $idx => $path) {
+            $files[] = [
+                'path' => $path,
+                'label' => $idx === 0 ? 'Archivo subido' : ('Archivo '.($idx + 1)),
+                'url' => route('market-rate.uploaded-file', ['id' => $marketRate->id, 'index' => $idx]),
+            ];
+        }
+
+        $items = $marketRate->quoteDetails->map(function ($detail) {
+            return [
+                'product_id' => (int) $detail->product_id,
+                'product_name' => $detail->product->name ?? ('Producto #'.$detail->product_id),
+                'quantity' => (float) $detail->quantity,
+                'unit_price' => (float) $detail->unit_price,
+                'product_description' => $detail->product_description ?? ($detail->product->description ?? ''),
+            ];
+        })->values();
+
+        $products = $purchaseRequest->details->map(function ($detail) {
+            return [
+                'id' => (int) $detail->product_id,
+                'name' => $detail->product->name ?? ('Producto #'.$detail->product_id),
+                'quantity' => (float) ($detail->requested_quantity ?? 0),
+                'description' => $detail->product->description ?? '',
+            ];
+        })->unique('id')->values();
+
+        $suppliers = \App\Models\Supplier::query()
+            ->orderBy('company_name')
+            ->get(['id', 'company_name'])
+            ->map(fn ($supplier) => [
+                'id' => (int) $supplier->id,
+                'name' => $supplier->company_name,
+            ])
+            ->values();
+
+        return response()->json([
+            'id' => $marketRate->id,
+            'supplier_id' => (int) $marketRate->supplier_id,
+            'date' => optional($marketRate->date)->format('Y-m-d'),
+            'delivery_date' => optional($marketRate->delivery_date)->format('Y-m-d'),
+            'delivery_term' => $marketRate->delivery_term,
+            'payment_method' => $marketRate->payment_method,
+            'validity_term' => $marketRate->validity_term,
+            'total_amount' => number_format($marketRate->effectiveTotalWithVat(), 2, '.', ''),
+            'reference_links' => $marketRate->reference_links,
+            'files' => $files,
+            'items' => $items,
+            'products' => $products,
+            'suppliers' => $suppliers,
+            'update_url' => route('purchase-request.market-rate.update', [
+                'id' => $purchaseRequest->id,
+                'marketRateId' => $marketRate->id,
+            ]),
+        ]);
+    }
+
+    /**
+     * Guardar cotización editada desde el modal de la solicitud.
+     */
+    public function updateLoadedMarketRate($id, $marketRateId)
+    {
+        $purchaseRequest = \App\Models\PurchaseRequest::with('purchaseOrders')->findOrFail($id);
+        $user = backpack_user();
+        $editor = $user instanceof \App\Models\User ? $user : null;
+        $service = app(\App\Services\MarketRateUpdateService::class);
+        $service->abortIfCannotEditLoadedQuotation($purchaseRequest, $editor);
+
+        $marketRate = \App\Models\MarketRate::where('purchase_request_id', $purchaseRequest->id)->findOrFail($marketRateId);
+        $oldQuoteTotal = $marketRate->effectiveTotalWithVat();
+
+        $request = request();
+        $request->merge([
+            'purchase_request_id' => $purchaseRequest->id,
+        ]);
+        $amount = $request->input('total_amount');
+        if (is_string($amount) && $amount !== '' && str_contains($amount, ',')) {
+            $normalized = str_replace('.', '', trim($amount));
+            $normalized = str_replace(',', '.', $normalized);
+            $request->merge(['total_amount' => $normalized]);
+        }
+        $formRequest = new \App\Http\Requests\MarketRateRequest;
+        $request->validate($formRequest->rules(), $formRequest->messages(), $formRequest->attributes());
+
+        $updated = $service->persistFromRequest($marketRate, $request, true);
+        $service->recordAndNotifyAfterEdit($updated, $oldQuoteTotal, $editor);
+
+        \Alert::success('Cotización actualizada.')->flash();
+
+        if ($request->expectsJson() || $request->ajax()) {
+            return response()->json([
+                'ok' => true,
+                'redirect' => route('purchase-request.show', $purchaseRequest->id),
+            ]);
+        }
+
+        return redirect()->route('purchase-request.show', $purchaseRequest->id);
+    }
+
+    /**
      * Compras solicita aprobación inicial de cotizaciones a administradora.
      */
     public function requestQuotationSuperiorAuthorization($id)
@@ -5274,7 +5388,7 @@ class PurchaseRequestCrudController extends CrudController
         CRUD::column('market_rates_table')->label('Cotizaciones Disponibles')->type('custom_html')
             ->value(function ($entry) {
                 // Usar la relación del modelo en lugar de consulta directa
-                $entry->load(['marketRates.supplier', 'marketRates.quoteDetails.product', 'purchaseRequestEvents']);
+                $entry->load(['marketRates.supplier', 'marketRates.quoteDetails.product', 'purchaseRequestEvents.user', 'purchaseOrders']);
                 $marketRates = $entry->marketRates;
 
                 $quotationsViewer = backpack_user();
@@ -5302,10 +5416,19 @@ class PurchaseRequestCrudController extends CrudController
                 $comprasPuedeEditarSeleccionCotizaciones = (! $comprasSinAdmin || $this->statusAllowsComprasSinAdminQuotationSelection((string) $entry->status))
                     && ! $frozenPendingSuperior
                     && ! $quotationsLockedAfterApproval;
+                $canEditLoadedQuotations = $quotationsViewer instanceof \App\Models\User
+                    && $entry->allowsLoadedQuotationEditsFor($quotationsViewer);
 
                 $html = '';
 
-                if ($quotationsLockedAfterApproval && ! $entry->wasApprovedBySuperiorAuthority()) {
+                if ($entry->hasGeneratedPurchaseOrder() && $quotationsViewer instanceof \App\Models\User && $quotationsViewer->canEditLoadedPurchaseRequestQuotations()) {
+                    $html .= '<div class="alert alert-secondary mb-3"><i class="la la-lock"></i> '
+                        .'Ya se generó una <strong>orden de compra</strong>. Las cotizaciones no pueden editarse.</div>';
+                } elseif ($canEditLoadedQuotations && ($quotationsLockedAfterApproval || $frozenPendingSuperior)) {
+                    $html .= '<div class="alert alert-info mb-3"><i class="la la-edit"></i> '
+                        .'Puede <strong>corregir cotizaciones cargadas</strong> (compras, admin. sistema o administradora) hasta generar la orden de compra. '
+                        .'No se puede agregar, seleccionar ni asignar cotizaciones en este estado.</div>';
+                } elseif ($quotationsLockedAfterApproval && ! $entry->wasApprovedBySuperiorAuthority()) {
                     $html .= '<div class="alert alert-secondary mb-3"><i class="la la-lock"></i> ';
                     $html .= 'La solicitud está <strong>aprobada</strong>. Las cotizaciones y la asignación por producto no pueden modificarse.';
                     $html .= '</div>';
@@ -5379,6 +5502,15 @@ class PurchaseRequestCrudController extends CrudController
                         $html .= '<i class="la la-file-pdf-o"></i> PDF';
                         $html .= '</a>';
 
+                        if ($canEditLoadedQuotations) {
+                            $editDataUrl = route('purchase-request.market-rate.edit-data', [
+                                'id' => $entry->id,
+                                'marketRateId' => $marketRate->id,
+                            ]);
+                            $html .= '<button type="button" class="btn btn-sm btn-outline-warning me-1 js-pr-edit-quotation" data-edit-url="'.e($editDataUrl).'">';
+                            $html .= '<i class="la la-edit"></i> Editar</button>';
+                        }
+
                         if ($documentFiles !== []) {
                             foreach ($documentFiles as $idx => $filePath) {
                                 $label = $idx === 0 ? 'Archivo subido' : ('Archivo '.($idx + 1));
@@ -5419,6 +5551,25 @@ class PurchaseRequestCrudController extends CrudController
                     $html .= '</tbody>';
                     $html .= '</table>';
                     $html .= '</div>';
+
+                    $quoteEdits = $entry->purchaseRequestEvents
+                        ->where('event_type', \App\Models\PurchaseRequestEvent::EVENT_QUOTATION_EDITED)
+                        ->sortByDesc(fn ($event) => $event->created_at?->timestamp ?? 0)
+                        ->take(8);
+                    if ($quoteEdits->isNotEmpty() && $quotationsViewer instanceof \App\Models\User && $quotationsViewer->canEditLoadedPurchaseRequestQuotations()) {
+                        $html .= '<div class="small text-muted mt-2">';
+                        $html .= '<strong>Modificaciones de cotización:</strong><ul class="mb-0 ps-3">';
+                        foreach ($quoteEdits as $event) {
+                            $payload = is_array($event->payload) ? $event->payload : [];
+                            $when = $event->created_at ? $event->created_at->format('d/m/Y H:i') : '—';
+                            $who = $event->user?->name ?? 'Usuario';
+                            $supplier = $payload['supplier_name'] ?? ('#'.($payload['market_rate_id'] ?? ''));
+                            $oldAmt = isset($payload['old_quote_total']) ? number_format((float) $payload['old_quote_total'], 2, ',', '.') : '—';
+                            $newAmt = isset($payload['new_quote_total']) ? number_format((float) $payload['new_quote_total'], 2, ',', '.') : '—';
+                            $html .= '<li>'.e($when).' — '.e($who).': '.e((string) $supplier).' ($'.$oldAmt.' → $'.$newAmt.')</li>';
+                        }
+                        $html .= '</ul></div>';
+                    }
 
                     $canRequestAdministratorApproval = $quotationsViewer
                         && ! $quotationsViewer->hasAdministradoraInstitucionRole()
