@@ -7,6 +7,7 @@ use App\Http\Requests\PaymentOrderRequest;
 use App\Models\AccountingAccount;
 use App\Models\OpDetail;
 use App\Models\PaymentOrder;
+use App\Models\Remito;
 use App\Models\SupplierInvoice;
 use App\Models\User;
 use App\Services\AccountingOutflowService;
@@ -294,13 +295,21 @@ class PaymentOrderCrudController extends CrudController
             ],
             'default' => 'normal',
             'allows_null' => false,
-            'hint' => 'Anticipo: puede existir sin factura asociada; luego se imputa a factura desde Facturas proveedor o desde esta orden de pago (después de guardar).',
+            'hint' => 'Anticipo: el pago puede imputarse después. Igual debe quedar asociado a una factura o a un remito.',
         ]);
+        $this->addSupportDocumentFields($entry instanceof PaymentOrder ? $entry : null, $purchaseOrderId ? (int) $purchaseOrderId : null, $supplierId ? (int) $supplierId : null);
         CRUD::field('total_amount')->label('Monto Total')->default($defaultTotal);
         CRUD::addField([
             'name' => 'status',
             'label' => 'Estado',
-            'type' => 'enum',
+            'type' => 'select_from_array',
+            'options' => [
+                'Pendiente' => 'Pendiente',
+                'Ejecutada' => 'Ejecutada',
+                'Anulada' => 'Anulada',
+            ],
+            'default' => 'Pendiente',
+            'allows_null' => false,
         ]);
         CRUD::addField([
             'name' => 'purchase_order_id',
@@ -600,10 +609,34 @@ class PaymentOrderCrudController extends CrudController
      */
     protected function setupShowOperation()
     {
-        CRUD::addClause('with', ['opDetails', 'supplierInvoices', 'imputationAccount', 'fundsAccount', 'accountingEntries.lines.account', 'internalVouchers', 'fundMovements', 'supplier', 'purchase_order.supplier', 'purchase_order.purchaseRequest']);
+        CRUD::addClause('with', ['opDetails', 'supplierInvoices', 'supplierInvoice.supplier', 'remito.supplier', 'imputationAccount', 'fundsAccount', 'accountingEntries.lines.account', 'internalVouchers', 'fundMovements', 'supplier', 'purchase_order.supplier', 'purchase_order.purchaseRequest']);
 
         // Configurar las columnas que se mostrarán en la vista de detalles
         CRUD::column('payment_number')->label('Número de Orden de Pago');
+        CRUD::addColumn([
+            'name' => 'support_document',
+            'label' => 'Comprobante asociado',
+            'type' => 'closure',
+            'function' => function ($entry) {
+                if ($entry->support_document_kind === 'factura' && $entry->supplierInvoice) {
+                    $invoice = $entry->supplierInvoice;
+
+                    return '<a href="'.backpack_url('supplier-invoice/'.$invoice->id.'/show').'" class="text-primary">Factura '
+                        .e($invoice->invoice_number).'</a>'
+                        .'<br><small class="text-muted">'.e($invoice->identifying_label).'</small>';
+                }
+                if ($entry->support_document_kind === 'remito' && $entry->remito) {
+                    $remito = $entry->remito;
+
+                    return '<a href="'.backpack_url('remito/'.$remito->id.'/show').'" class="text-primary">Remito '
+                        .e($remito->number).'</a>'
+                        .'<br><small class="text-muted">'.e($remito->identifying_label).'</small>';
+                }
+
+                return '<span class="text-muted">Sin factura ni remito</span>';
+            },
+            'escaped' => false,
+        ]);
         CRUD::column('date')->label('Fecha');
         CRUD::column('total_amount')->label('Monto Total');
         CRUD::addColumn([
@@ -890,6 +923,92 @@ class PaymentOrderCrudController extends CrudController
     /**
      * Resumen HTML: facturas de proveedor cargadas contra la OC (montos y saldo).
      */
+    protected function addSupportDocumentFields(?PaymentOrder $entry, ?int $purchaseOrderId, ?int $supplierId): void
+    {
+        $invoiceQuery = SupplierInvoice::query()->with('supplier')->orderByDesc('invoice_date')->orderByDesc('id');
+        $remitoQuery = Remito::query()->with('supplier')->orderByDesc('date')->orderByDesc('id');
+        if ($purchaseOrderId) {
+            $invoiceQuery->where('purchase_order_id', $purchaseOrderId);
+            $remitoQuery->where('purchase_order_id', $purchaseOrderId);
+        } elseif ($supplierId) {
+            $invoiceQuery->where('supplier_id', $supplierId);
+            $remitoQuery->where('supplier_id', $supplierId);
+        }
+
+        $invoices = $invoiceQuery->get();
+        $remitos = $remitoQuery->get();
+        if ($entry?->supplier_invoice_id && ! $invoices->contains('id', $entry->supplier_invoice_id)) {
+            $currentInvoice = SupplierInvoice::query()->with('supplier')->find($entry->supplier_invoice_id);
+            if ($currentInvoice) {
+                $invoices->prepend($currentInvoice);
+            }
+        }
+        if ($entry?->remito_id && ! $remitos->contains('id', $entry->remito_id)) {
+            $currentRemito = Remito::query()->with('supplier')->find($entry->remito_id);
+            if ($currentRemito) {
+                $remitos->prepend($currentRemito);
+            }
+        }
+
+        $invoiceOptions = $invoices->mapWithKeys(fn (SupplierInvoice $invoice) => [$invoice->id => $invoice->identifying_label])->all();
+        $remitoOptions = $remitos->mapWithKeys(fn (Remito $remito) => [$remito->id => $remito->identifying_label])->all();
+        $kind = $entry?->support_document_kind ?: 'factura';
+
+        CRUD::addField([
+            'name' => 'support_document_kind',
+            'label' => 'Comprobante asociado',
+            'type' => 'select_from_array',
+            'options' => [
+                'factura' => 'Factura',
+                'remito' => 'Remito',
+            ],
+            'default' => $kind,
+            'value' => $entry?->support_document_kind,
+            'allows_null' => false,
+            'hint' => 'La orden de pago debe quedar asociada a una factura o a un remito.',
+            'attributes' => ['id' => 'support_document_kind'],
+        ]);
+        CRUD::addField([
+            'name' => 'supplier_invoice_id',
+            'label' => 'Factura',
+            'type' => 'select_from_array',
+            'options' => $invoiceOptions,
+            'default' => $entry?->supplier_invoice_id,
+            'allows_null' => true,
+            'wrapper' => ['class' => 'form-group col-sm-12 js-op-doc-factura'],
+        ]);
+        CRUD::addField([
+            'name' => 'remito_id',
+            'label' => 'Remito',
+            'type' => 'select_from_array',
+            'options' => $remitoOptions,
+            'default' => $entry?->remito_id,
+            'allows_null' => true,
+            'wrapper' => ['class' => 'form-group col-sm-12 js-op-doc-remito'],
+        ]);
+        CRUD::addField([
+            'name' => 'support_document_script',
+            'type' => 'custom_html',
+            'value' => <<<'HTML'
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+    var kind = document.querySelector("[name=support_document_kind]");
+    var factura = document.querySelector(".js-op-doc-factura");
+    var remito = document.querySelector(".js-op-doc-remito");
+    if (!kind || !factura || !remito) return;
+    function toggle() {
+        var isFactura = kind.value !== "remito";
+        factura.style.display = isFactura ? "" : "none";
+        remito.style.display = isFactura ? "none" : "";
+    }
+    kind.addEventListener("change", toggle);
+    toggle();
+});
+</script>
+HTML,
+        ]);
+    }
+
     protected function htmlPurchaseOrderInvoicesSummary(\App\Models\PurchaseOrder $purchaseOrder): string
     {
         $invoices = $purchaseOrder->relationLoaded('supplierInvoices')

@@ -143,6 +143,16 @@ class PaymentOrder extends Model
         return $this->belongsTo(Supplier::class, 'supplier_id');
     }
 
+    public function supplierInvoice()
+    {
+        return $this->belongsTo(SupplierInvoice::class, 'supplier_invoice_id');
+    }
+
+    public function remito()
+    {
+        return $this->belongsTo(Remito::class, 'remito_id');
+    }
+
     public function fundMovements()
     {
         return $this->hasMany(FundMovement::class)->orderByDesc('id');
@@ -253,7 +263,7 @@ class PaymentOrder extends Model
 
     /**
      * Órdenes de pago que aún no figuran como pagadas en el dashboard
-     * (incluye Aprobada y Ejecutada con fecha de pago futura).
+     * (Pendiente, o Ejecutada con fecha de pago futura).
      */
     public function scopeDashboardPendingPayment($query)
     {

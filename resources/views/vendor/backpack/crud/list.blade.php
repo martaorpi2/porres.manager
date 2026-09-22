@@ -784,7 +784,7 @@ a:hover {
                 <i class="fas fa-filter"></i> Filtros
               </h6>
               @if (count(request()->except(['page'])) > 0)
-                <a href="{{ url($crud->route) }}" class="small text-white" style="text-decoration: underline;">Quitar</a>
+                <a href="{{ url($crud->route) }}" class="small text-white" style="text-decoration: underline;">Quitar todos los filtros</a>
               @endif
             </div>
             <div class="card-body py-2">
@@ -817,7 +817,7 @@ a:hover {
                 <i class="fas fa-filter"></i> Filtros
               </h6>
               @if (count(request()->except(['page'])) > 0)
-                <a href="{{ url($crud->route) }}" class="small text-white" style="text-decoration: underline;">Quitar</a>
+                <a href="{{ url($crud->route) }}" class="small text-white" style="text-decoration: underline;">Quitar todos los filtros</a>
               @endif
             </div>
             <div class="card-body py-2">
@@ -843,7 +843,7 @@ a:hover {
                 <i class="fas fa-filter"></i> Filtros
               </h6>
               @if (count(request()->except(['page'])) > 0)
-                <a href="{{ url($crud->route) }}" class="small text-white" style="text-decoration: underline;">Quitar</a>
+                <a href="{{ url($crud->route) }}" class="small text-white" style="text-decoration: underline;">Quitar todos los filtros</a>
               @endif
             </div>
             <div class="card-body py-2">
@@ -880,7 +880,7 @@ a:hover {
                 <i class="fas fa-filter"></i> Filtros
               </h6>
               @if (count(request()->except(['page'])) > 0)
-                <a href="{{ url($crud->route) }}" class="small text-white" style="text-decoration: underline;">Quitar</a>
+                <a href="{{ url($crud->route) }}" class="small text-white" style="text-decoration: underline;">Quitar todos los filtros</a>
               @endif
             </div>
             <div class="card-body py-2">
@@ -902,7 +902,7 @@ a:hover {
                 <i class="fas fa-filter"></i> Filtros
               </h6>
               @if (count(request()->except(['page'])) > 0)
-                <a href="{{ url($crud->route) }}" class="small text-white" style="text-decoration: underline;">Quitar</a>
+                <a href="{{ url($crud->route) }}" class="small text-white" style="text-decoration: underline;">Quitar todos los filtros</a>
               @endif
             </div>
             <div class="card-body py-2">
@@ -968,7 +968,7 @@ a:hover {
                 <i class="fas fa-filter"></i> Filtros
               </h6>
               @if (count(request()->except(['page'])) > 0)
-                <a href="{{ url($crud->route) }}" class="small text-white" style="text-decoration: underline;">Quitar</a>
+                <a href="{{ url($crud->route) }}" class="small text-white" style="text-decoration: underline;">Quitar todos los filtros</a>
               @endif
             </div>
             <div class="card-body py-2">
@@ -1016,7 +1016,7 @@ a:hover {
                 <i class="fas fa-filter"></i> Filtros
               </h6>
               @if (count(request()->except(['page'])) > 0)
-                <a href="{{ url($crud->route) }}" class="small text-white" style="text-decoration: underline;">Quitar</a>
+                <a href="{{ url($crud->route) }}" class="small text-white" style="text-decoration: underline;">Quitar todos los filtros</a>
               @endif
             </div>
             <div class="card-body py-2">
@@ -1034,11 +1034,9 @@ a:hover {
                     <label for="estado" class="form-label">Estado:</label>
                     <select name="estado" id="estado" class="form-control select2" onchange="this.form.submit()">
                       <option value="">Todos los estados</option>
-                      <option value="pendiente" {{ request('estado') == 'pendiente' ? 'selected' : '' }}>Pendiente</option>
-                      <option value="aprobada" {{ request('estado') == 'aprobada' ? 'selected' : '' }}>Aprobada</option>
-                      <option value="rechazada" {{ request('estado') == 'rechazada' ? 'selected' : '' }}>Rechazada</option>
-                      <option value="pagada" {{ request('estado') == 'pagada' ? 'selected' : '' }}>Pagada</option>
-                      <option value="cancelada" {{ request('estado') == 'cancelada' ? 'selected' : '' }}>Cancelada</option>
+                      <option value="Pendiente" {{ request('estado') == 'Pendiente' ? 'selected' : '' }}>Pendiente</option>
+                      <option value="Ejecutada" {{ request('estado') == 'Ejecutada' ? 'selected' : '' }}>Ejecutada</option>
+                      <option value="Anulada" {{ request('estado') == 'Anulada' ? 'selected' : '' }}>Anulada</option>
                     </select>
                   </div>
                   <div class="col-md-3">
@@ -1064,7 +1062,7 @@ a:hover {
                 <i class="fas fa-filter"></i> Filtros
               </h6>
               @if (count(request()->except(['page'])) > 0)
-                <a href="{{ url($crud->route) }}" class="small text-white" style="text-decoration: underline;">Quitar</a>
+                <a href="{{ url($crud->route) }}" class="small text-white" style="text-decoration: underline;">Quitar todos los filtros</a>
               @endif
             </div>
             <div class="card-body py-2">
@@ -1100,7 +1098,7 @@ a:hover {
                 <i class="fas fa-filter"></i> Filtros
               </h6>
               @if (count(request()->except(['page'])) > 0)
-                <a href="{{ url($crud->route) }}" class="small text-white" style="text-decoration: underline;">Quitar</a>
+                <a href="{{ url($crud->route) }}" class="small text-white" style="text-decoration: underline;">Quitar todos los filtros</a>
               @endif
             </div>
             <div class="card-body py-2">
@@ -1152,7 +1150,7 @@ a:hover {
                 <i class="fas fa-filter"></i> Filtros
               </h6>
               @if (count(request()->except(['page'])) > 0)
-                <a href="{{ url($crud->route) }}" class="small text-white" style="text-decoration: underline;">Quitar</a>
+                <a href="{{ url($crud->route) }}" class="small text-white" style="text-decoration: underline;">Quitar todos los filtros</a>
               @endif
             </div>
             <div class="card-body py-2">
@@ -1174,7 +1172,7 @@ a:hover {
                 <i class="fas fa-filter"></i> Filtros
               </h6>
               @if (count(request()->except(['page'])) > 0)
-                <a href="{{ url($crud->route) }}" class="small text-white" style="text-decoration: underline;">Quitar</a>
+                <a href="{{ url($crud->route) }}" class="small text-white" style="text-decoration: underline;">Quitar todos los filtros</a>
               @endif
             </div>
             <div class="card-body py-2">
@@ -1196,7 +1194,7 @@ a:hover {
                 <i class="fas fa-filter"></i> Filtros
               </h6>
               @if (count(request()->except(['page'])) > 0)
-                <a href="{{ url($crud->route) }}" class="small text-white" style="text-decoration: underline;">Quitar</a>
+                <a href="{{ url($crud->route) }}" class="small text-white" style="text-decoration: underline;">Quitar todos los filtros</a>
               @endif
             </div>
             <div class="card-body py-2">
@@ -1229,7 +1227,7 @@ a:hover {
                 <i class="fas fa-filter"></i> Filtros
               </h6>
               @if (count(request()->except(['page'])) > 0)
-                <a href="{{ url($crud->route) }}" class="small text-white" style="text-decoration: underline;">Quitar</a>
+                <a href="{{ url($crud->route) }}" class="small text-white" style="text-decoration: underline;">Quitar todos los filtros</a>
               @endif
             </div>
             <div class="card-body py-2">
@@ -1272,7 +1270,7 @@ a:hover {
                 <i class="fas fa-filter"></i> Filtros
               </h6>
               @if (count(request()->except(['page'])) > 0)
-                <a href="{{ url($crud->route) }}" class="small text-white" style="text-decoration: underline;">Quitar</a>
+                <a href="{{ url($crud->route) }}" class="small text-white" style="text-decoration: underline;">Quitar todos los filtros</a>
               @endif
             </div>
             <div class="card-body py-2">
