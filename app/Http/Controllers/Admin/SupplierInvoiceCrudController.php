@@ -329,7 +329,7 @@ class SupplierInvoiceCrudController extends CrudController
                             ->candidatePaymentOrdersForInvoice($entry);
                         if ($candidates->isEmpty()) {
                             $html .= '<div class="alert alert-warning mb-2">No hay órdenes de pago con saldo imputable del mismo proveedor y moneda. No hace falta que tengan la misma orden de compra.</div>';
-                            if ($user instanceof User && $user->canActAsAdministradoraInstitucion()) {
+                            if ($user instanceof User && $user->canCreatePaymentOrder()) {
                                 $html .= '<a href="'.backpack_url('payment-order/create?supplier_id='.$entry->supplier_id).'" class="btn btn-outline-primary me-1"><i class="la la-plus"></i> Crear orden de pago</a>';
                             }
                         } else {

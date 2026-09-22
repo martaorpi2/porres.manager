@@ -111,6 +111,7 @@ Route::group([
 
     // Dashboard custom route
     Route::get('dashboard', 'DashboardController@index')->name('dashboard');
+    Route::get('delivery/products-form', 'DeliveryCrudController@productsForm')->name('delivery.products-form');
     Route::crud('delivery', 'DeliveryCrudController');
     Route::get('delivery/{id}/pdf', 'DeliveryCrudController@generatePdf')->name('delivery.pdf');
 }); // this should be the absolute last line of this file

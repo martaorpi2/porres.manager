@@ -27,8 +27,22 @@
 @endsection
 
 @section('content')
+@php
+    $traceSteps = (
+        $entry instanceof \App\Models\GeneralRequest
+        || $entry instanceof \App\Models\PurchaseRequest
+        || $entry instanceof \App\Models\PurchaseOrder
+        || $entry instanceof \App\Models\Reception
+        || $entry instanceof \App\Models\PaymentOrder
+        || $entry instanceof \App\Models\Delivery
+    )
+        ? app(\App\Services\RequestTraceability::class)->stepsFor($entry)
+        : [];
+@endphp
 <div class="row" bp-section="crud-operation-show">
     <div class="{{ $crud->getShowContentClass() }}">
+    <div class="d-flex flex-column flex-lg-row align-items-start" style="gap: 12px;">
+    <div class="flex-grow-1" style="min-width: 0; width: 100%;">
 
 	{{-- Default box --}}
 	<div class="">
@@ -61,6 +75,9 @@
 			@endif
 		@endif
 	</div>
+	</div>
+    @include('admin.partials.trace_rail', ['traceSteps' => $traceSteps])
+    </div>
 	</div>
 </div>
 @if ($entry instanceof \App\Models\PurchaseRequest)

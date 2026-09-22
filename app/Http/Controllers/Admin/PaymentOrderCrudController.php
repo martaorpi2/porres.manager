@@ -45,8 +45,7 @@ class PaymentOrderCrudController extends CrudController
             abort(403, 'No tienes permiso para acceder a órdenes de pago.');
         }
 
-        // Crear órdenes de pago: solo administradora del instituto
-        if ($user instanceof User && ! $user->canActAsAdministradoraInstitucion()) {
+        if ($user instanceof User && ! $user->canCreatePaymentOrder()) {
             CRUD::denyAccess('create');
         }
         
@@ -206,8 +205,8 @@ class PaymentOrderCrudController extends CrudController
         $this->crud->hasAccessOrFail('create');
 
         $user = backpack_user();
-        if (! $user instanceof User || ! $user->canActAsAdministradoraInstitucion()) {
-            \Alert::error('Solo la administradora del instituto puede crear órdenes de pago.')->flash();
+        if (! $user instanceof User || ! $user->canCreatePaymentOrder()) {
+            \Alert::error('No tienes permiso para crear órdenes de pago.')->flash();
 
             return redirect()->back()->withInput();
         }
@@ -601,7 +600,7 @@ class PaymentOrderCrudController extends CrudController
      */
     protected function setupShowOperation()
     {
-        CRUD::addClause('with', ['opDetails', 'supplierInvoices', 'imputationAccount', 'fundsAccount', 'accountingEntries.lines.account', 'internalVouchers', 'fundMovements', 'supplier', 'purchase_order.supplier']);
+        CRUD::addClause('with', ['opDetails', 'supplierInvoices', 'imputationAccount', 'fundsAccount', 'accountingEntries.lines.account', 'internalVouchers', 'fundMovements', 'supplier', 'purchase_order.supplier', 'purchase_order.purchaseRequest']);
 
         // Configurar las columnas que se mostrarán en la vista de detalles
         CRUD::column('payment_number')->label('Número de Orden de Pago');
@@ -712,10 +711,21 @@ class PaymentOrderCrudController extends CrudController
         CRUD::addColumn([
             'name' => 'purchase_order_id',
             'label' => 'Orden de Compra Relacionada',
-            'type' => 'select',
-            'entity' => 'purchase_order',
-            'attribute' => 'number',
-            'model' => 'App\Models\PurchaseOrder',
+            'type' => 'closure',
+            'function' => function (PaymentOrder $entry) {
+                $purchaseOrder = $entry->purchase_order;
+                if (! $purchaseOrder) {
+                    return '—';
+                }
+                $html = '<a href="'.e(backpack_url('purchase-order/'.$purchaseOrder->id.'/show')).'">'.e($purchaseOrder->number).'</a>';
+                $purchaseRequest = $purchaseOrder->purchaseRequest;
+                if ($purchaseRequest) {
+                    $html .= '<br><a href="'.e(backpack_url('purchase-request/'.$purchaseRequest->id.'/show')).'">'.e($purchaseRequest->request_number).'</a>';
+                }
+
+                return $html;
+            },
+            'escaped' => false,
         ]);
         
         CRUD::addColumn([
@@ -784,17 +794,27 @@ class PaymentOrderCrudController extends CrudController
                     $html .= '<div class="card-body">';
                     $html .= '<div class="row">';
                     $html .= '<div class="col-md-6">';
-                    $html .= '<p class="mb-1"><strong>Número:</strong> ' . e($purchaseOrder->number) . '</p>';
+                    $ocUrl = backpack_url('purchase-order/'.$purchaseOrder->id.'/show');
+                    $html .= '<p class="mb-1"><strong>Número:</strong> <a href="'.e($ocUrl).'">'.e($purchaseOrder->number).'</a></p>';
                     $html .= '<p class="mb-1"><strong>Proveedor:</strong> ' . e($purchaseOrder->supplier_display_name) . '</p>';
                     $html .= '</div>';
                     $html .= '<div class="col-md-6">';
-                    $html .= '<p class="mb-1"><strong>Fecha:</strong> ' . $purchaseOrder->date->format('d/m/Y') . '</p>';
+                    $html .= '<p class="mb-1"><strong>Fecha:</strong> ' . ($purchaseOrder->date ? $purchaseOrder->date->format('d/m/Y') : '—') . '</p>';
                     $html .= '<p class="mb-1"><strong>Estado:</strong> <span class="badge bg-info">' . e($purchaseOrder->status) . '</span></p>';
+                    $purchaseRequest = $purchaseOrder->purchaseRequest;
+                    if ($purchaseRequest) {
+                        $scUrl = backpack_url('purchase-request/'.$purchaseRequest->id.'/show');
+                        $html .= '<p class="mb-1"><strong>Solicitud de compra:</strong> <a href="'.e($scUrl).'">'.e($purchaseRequest->request_number).'</a></p>';
+                    }
                     $html .= '</div>';
                     $html .= '</div>';
                     $html .= '<div class="row mt-2">';
                     $html .= '<div class="col-12">';
-                    $html .= '<p class="mb-0"><strong>Total:</strong> <span class="h5 text-success">$' . number_format($purchaseOrder->total, 2) . '</span></p>';
+                    $html .= '<p class="mb-2"><strong>Total:</strong> <span class="h5 text-success">$' . number_format($purchaseOrder->total, 2) . '</span></p>';
+                    $html .= '<a href="'.e($ocUrl).'" class="btn btn-sm btn-primary"><i class="la la-shopping-cart"></i> Ver orden de compra</a>';
+                    if ($purchaseRequest) {
+                        $html .= ' <a href="'.e($scUrl).'" class="btn btn-sm btn-outline-primary"><i class="la la-file-alt"></i> Ver solicitud de compra</a>';
+                    }
                     $html .= '</div>';
                     $html .= '</div>';
                     $html .= '</div></div>';

@@ -405,22 +405,22 @@ class PurchaseOrderCrudController extends CrudController
             CRUD::removeButton('delete');
         }
         
-        // Botón Crear Orden de Pago: solo administradora del instituto, tras la OC (no depende de recepción conforme)
+        // Botón Crear Orden de Pago: administradora del instituto, administrador del sistema o compras.
         CRUD::addColumn([
             'name' => 'create_payment_order',
             'label' => 'Acciones',
             'type' => 'closure',
             'function' => function($entry) {
                 $user = backpack_user();
-                if ($user && $user->hasResponsableAreaOrInstituteAuthorityRole()) {
+                if ($user && $user->hasResponsableAreaOrInstituteAuthorityRole() && ! ($user instanceof User && $user->canCreatePaymentOrder())) {
                     return '';
                 }
                 $entry->load(['purchaseRequest', 'paymentOrders']);
                 if ($entry->paymentOrders->isNotEmpty()) {
                     return '';
                 }
-                if (! $user instanceof User || ! $user->canActAsAdministradoraInstitucion()) {
-                    return '<div class="mt-3"><span class="text-muted"><i class="la la-info-circle"></i> La orden de pago la genera la administradora del instituto desde aquí cuando corresponda (luego de emitida la orden de compra; no requiere recepción conforme).</span></div>';
+                if (! $user instanceof User || ! $user->canCreatePaymentOrder()) {
+                    return '<div class="mt-3"><span class="text-muted"><i class="la la-info-circle"></i> La orden de pago la generan la administradora del instituto, el administrador del sistema o el responsable de compras, luego de emitida la orden de compra.</span></div>';
                 }
                 $html = '<div class="mt-3">';
                 $html .= '<a href="' . backpack_url('payment-order/create?purchase_order_id=' . $entry->id) . '" class="btn btn-success">';
@@ -624,7 +624,7 @@ class PurchaseOrderCrudController extends CrudController
                 $html .= '<td><a href="' . e(backpack_url('payment-order/' . $paymentOrder->id . '/show')) . '" class="btn btn-sm btn-info"><i class="la la-eye"></i> Ver</a></td></tr>';
             }
             $html .= '</tbody><tfoot class="table-light"><tr>';
-            $html .= '<th colspan="3" class="text-end">Suma OP no anuladas (monto cabecera)</th>';
+            $html .= '<th colspan="3" class="text-end"></th>';
             $html .= '<th class="text-end">$' . number_format($sumActiveOp, 2) . '</th>';
             $html .= '<th colspan="6">';
             if ($gapOp > 0.009) {

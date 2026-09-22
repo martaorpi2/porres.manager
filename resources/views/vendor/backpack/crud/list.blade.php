@@ -779,10 +779,13 @@ a:hover {
         @if($crud->route == 'admin/supplier')
           <!-- Filtro personalizado para proveedores -->
           <div class="card mb-3">
-            <div class="card-header bg-primary text-white">
+            <div class="card-header bg-primary text-white d-flex align-items-center justify-content-between py-2">
               <h6 class="card-title mb-0">
                 <i class="fas fa-filter"></i> Filtros
               </h6>
+              @if (count(request()->except(['page'])) > 0)
+                <a href="{{ url($crud->route) }}" class="small text-white" style="text-decoration: underline;">Quitar</a>
+              @endif
             </div>
             <div class="card-body py-2">
               <form method="GET" action="{{ url($crud->route) }}">
@@ -809,10 +812,13 @@ a:hover {
         @elseif($crud->route == 'admin/devolution')
           <!-- Filtro personalizado para devoluciones -->
           <div class="card mb-3">
-            <div class="card-header bg-primary text-white">
+            <div class="card-header bg-primary text-white d-flex align-items-center justify-content-between py-2">
               <h6 class="card-title mb-0">
                 <i class="fas fa-filter"></i> Filtros
               </h6>
+              @if (count(request()->except(['page'])) > 0)
+                <a href="{{ url($crud->route) }}" class="small text-white" style="text-decoration: underline;">Quitar</a>
+              @endif
             </div>
             <div class="card-body py-2">
               <form method="GET" action="{{ url($crud->route) }}">
@@ -832,10 +838,13 @@ a:hover {
         @elseif($crud->route == 'admin/product')
           <!-- Filtro personalizado para productos -->
           <div class="card mb-3">
-            <div class="card-header bg-primary text-white">
+            <div class="card-header bg-primary text-white d-flex align-items-center justify-content-between py-2">
               <h6 class="card-title mb-0">
                 <i class="fas fa-filter"></i> Filtros
               </h6>
+              @if (count(request()->except(['page'])) > 0)
+                <a href="{{ url($crud->route) }}" class="small text-white" style="text-decoration: underline;">Quitar</a>
+              @endif
             </div>
             <div class="card-body py-2">
               <form method="GET" action="{{ url($crud->route) }}">
@@ -866,10 +875,13 @@ a:hover {
         @elseif($crud->route == 'admin/category')
           <!-- Filtro personalizado para categorías -->
           <div class="card mb-3">
-            <div class="card-header bg-primary text-white">
+            <div class="card-header bg-primary text-white d-flex align-items-center justify-content-between py-2">
               <h6 class="card-title mb-0">
                 <i class="fas fa-filter"></i> Filtros
               </h6>
+              @if (count(request()->except(['page'])) > 0)
+                <a href="{{ url($crud->route) }}" class="small text-white" style="text-decoration: underline;">Quitar</a>
+              @endif
             </div>
             <div class="card-body py-2">
               <form method="GET" action="{{ url($crud->route) }}">
@@ -885,10 +897,13 @@ a:hover {
         @elseif($crud->route == 'admin/general-request')
           <!-- Filtro personalizado para solicitudes generales -->
           <div class="card mb-3">
-            <div class="card-header bg-primary text-white">
+            <div class="card-header bg-primary text-white d-flex align-items-center justify-content-between py-2">
               <h6 class="card-title mb-0">
                 <i class="fas fa-filter"></i> Filtros
               </h6>
+              @if (count(request()->except(['page'])) > 0)
+                <a href="{{ url($crud->route) }}" class="small text-white" style="text-decoration: underline;">Quitar</a>
+              @endif
             </div>
             <div class="card-body py-2">
               <form method="GET" action="{{ url($crud->route) }}">
@@ -948,10 +963,13 @@ a:hover {
         @elseif($crud->route == 'admin/purchase-order')
           <!-- Filtro personalizado para órdenes de compra -->
           <div class="card mb-3">
-            <div class="card-header bg-primary text-white">
+            <div class="card-header bg-primary text-white d-flex align-items-center justify-content-between py-2">
               <h6 class="card-title mb-0">
                 <i class="fas fa-filter"></i> Filtros
               </h6>
+              @if (count(request()->except(['page'])) > 0)
+                <a href="{{ url($crud->route) }}" class="small text-white" style="text-decoration: underline;">Quitar</a>
+              @endif
             </div>
             <div class="card-body py-2">
               <form method="GET" action="{{ url($crud->route) }}">
@@ -993,10 +1011,13 @@ a:hover {
         @elseif($crud->route == 'admin/payment-order')
           <!-- Filtro personalizado para órdenes de pago -->
           <div class="card mb-3">
-            <div class="card-header bg-primary text-white">
+            <div class="card-header bg-primary text-white d-flex align-items-center justify-content-between py-2">
               <h6 class="card-title mb-0">
                 <i class="fas fa-filter"></i> Filtros
               </h6>
+              @if (count(request()->except(['page'])) > 0)
+                <a href="{{ url($crud->route) }}" class="small text-white" style="text-decoration: underline;">Quitar</a>
+              @endif
             </div>
             <div class="card-body py-2">
               <form method="GET" action="{{ url($crud->route) }}">
@@ -1038,10 +1059,13 @@ a:hover {
         @elseif($crud->route == 'admin/purchase-request')
           <!-- Filtro personalizado para solicitudes de compra -->
           <div class="card mb-3">
-            <div class="card-header bg-primary text-white">
+            <div class="card-header bg-primary text-white d-flex align-items-center justify-content-between py-2">
               <h6 class="card-title mb-0">
                 <i class="fas fa-filter"></i> Filtros
               </h6>
+              @if (count(request()->except(['page'])) > 0)
+                <a href="{{ url($crud->route) }}" class="small text-white" style="text-decoration: underline;">Quitar</a>
+              @endif
             </div>
             <div class="card-body py-2">
               <form method="GET" action="{{ url($crud->route) }}">
@@ -1071,10 +1095,13 @@ a:hover {
         @elseif($crud->route == 'admin/reception')
           <!-- Filtro personalizado para recepciones -->
           <div class="card mb-3">
-            <div class="card-header bg-primary text-white">
+            <div class="card-header bg-primary text-white d-flex align-items-center justify-content-between py-2">
               <h6 class="card-title mb-0">
                 <i class="fas fa-filter"></i> Filtros
               </h6>
+              @if (count(request()->except(['page'])) > 0)
+                <a href="{{ url($crud->route) }}" class="small text-white" style="text-decoration: underline;">Quitar</a>
+              @endif
             </div>
             <div class="card-body py-2">
               <form method="GET" action="{{ url($crud->route) }}">
@@ -1120,10 +1147,13 @@ a:hover {
         @elseif($crud->route == 'admin/suppliers-heading')
           <!-- Filtro personalizado para rubros de proveedores -->
           <div class="card mb-3">
-            <div class="card-header bg-primary text-white">
+            <div class="card-header bg-primary text-white d-flex align-items-center justify-content-between py-2">
               <h6 class="card-title mb-0">
                 <i class="fas fa-filter"></i> Filtros
               </h6>
+              @if (count(request()->except(['page'])) > 0)
+                <a href="{{ url($crud->route) }}" class="small text-white" style="text-decoration: underline;">Quitar</a>
+              @endif
             </div>
             <div class="card-body py-2">
               <form method="GET" action="{{ url($crud->route) }}">
@@ -1139,10 +1169,13 @@ a:hover {
         @elseif($crud->route == 'admin/location')
           <!-- Filtro personalizado para ubicaciones -->
           <div class="card mb-3">
-            <div class="card-header bg-primary text-white">
+            <div class="card-header bg-primary text-white d-flex align-items-center justify-content-between py-2">
               <h6 class="card-title mb-0">
                 <i class="fas fa-filter"></i> Filtros
               </h6>
+              @if (count(request()->except(['page'])) > 0)
+                <a href="{{ url($crud->route) }}" class="small text-white" style="text-decoration: underline;">Quitar</a>
+              @endif
             </div>
             <div class="card-body py-2">
               <form method="GET" action="{{ url($crud->route) }}">
@@ -1158,10 +1191,13 @@ a:hover {
         @elseif($crud->route == 'admin/stock-level')
           <!-- Filtro personalizado para stock levels -->
           <div class="card mb-3">
-            <div class="card-header bg-primary text-white">
+            <div class="card-header bg-primary text-white d-flex align-items-center justify-content-between py-2">
               <h6 class="card-title mb-0">
                 <i class="fas fa-filter"></i> Filtros
               </h6>
+              @if (count(request()->except(['page'])) > 0)
+                <a href="{{ url($crud->route) }}" class="small text-white" style="text-decoration: underline;">Quitar</a>
+              @endif
             </div>
             <div class="card-body py-2">
               <form method="GET" action="{{ url($crud->route) }}">
@@ -1188,10 +1224,13 @@ a:hover {
         @elseif($crud->route == 'admin/inventory-movement')
           <!-- Filtro personalizado para movimientos de inventario -->
           <div class="card mb-3">
-            <div class="card-header bg-primary text-white">
+            <div class="card-header bg-primary text-white d-flex align-items-center justify-content-between py-2">
               <h6 class="card-title mb-0">
                 <i class="fas fa-filter"></i> Filtros
               </h6>
+              @if (count(request()->except(['page'])) > 0)
+                <a href="{{ url($crud->route) }}" class="small text-white" style="text-decoration: underline;">Quitar</a>
+              @endif
             </div>
             <div class="card-body py-2">
               <form method="GET" action="{{ url($crud->route) }}">
@@ -1228,10 +1267,13 @@ a:hover {
         @elseif($crud->route == 'admin/supplier-rating')
           <!-- Filtro personalizado para calificaciones de proveedores -->
           <div class="card mb-3">
-            <div class="card-header bg-primary text-white">
+            <div class="card-header bg-primary text-white d-flex align-items-center justify-content-between py-2">
               <h6 class="card-title mb-0">
                 <i class="fas fa-filter"></i> Filtros
               </h6>
+              @if (count(request()->except(['page'])) > 0)
+                <a href="{{ url($crud->route) }}" class="small text-white" style="text-decoration: underline;">Quitar</a>
+              @endif
             </div>
             <div class="card-body py-2">
               <form method="GET" action="{{ url($crud->route) }}">

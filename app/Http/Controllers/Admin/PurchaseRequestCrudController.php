@@ -1664,6 +1664,8 @@ class PurchaseRequestCrudController extends CrudController
                 } else {
                     \Log::error('No se encontró la solicitud general con ID:', ['id' => $item->converted_from_general_request_id]);
                 }
+
+                return redirect(backpack_url('purchase-request/'.$item->getKey().'/show'));
             } else {
                 \Log::info('No hay converted_from_general_request_id en el item guardado');
             }
@@ -5422,7 +5424,7 @@ class PurchaseRequestCrudController extends CrudController
                 $html = '';
 
                 if ($entry->hasGeneratedPurchaseOrder() && $quotationsViewer instanceof \App\Models\User && $quotationsViewer->canEditLoadedPurchaseRequestQuotations()) {
-                    $html .= '<div class="alert alert-secondary mb-3"><i class="la la-lock"></i> '
+                    $html .= '<div class="alert mb-3" style="color:#000; background-color:#fff3cd; border:1px solid #856404;"><i class="la la-lock"></i> '
                         .'Ya se generó una <strong>orden de compra</strong>. Las cotizaciones no pueden editarse.</div>';
                 } elseif ($canEditLoadedQuotations && ($quotationsLockedAfterApproval || $frozenPendingSuperior)) {
                     $html .= '<div class="alert alert-info mb-3"><i class="la la-edit"></i> '
@@ -5859,23 +5861,17 @@ class PurchaseRequestCrudController extends CrudController
         CRUD::column('create_payment_orders_from_pr')->label('Órdenes de Pago')->type('custom_html')
             ->value(function ($entry) {
                 $user = backpack_user();
-                if ($user && $user->hasResponsableAreaOrInstituteAuthorityRole()) {
-                    return '';
-                }
-                if (! $user instanceof \App\Models\User) {
-                    return '';
-                }
-                if (! $user->hasAdministradoraInstitucionRole() && ! $user->hasResponsableComprasRole()) {
+                if (! $user instanceof \App\Models\User || ! $user->canCreatePaymentOrder()) {
                     return '';
                 }
 
                 $entry->load(['purchaseOrders.paymentOrders']);
                 $purchaseOrders = $entry->purchaseOrders;
                 if ($purchaseOrders->isEmpty()) {
-                    return '<p class="mb-0" style="color:#000;">No hay orden de compra asociada. Cuando exista una OC, la administradora del instituto podrá generar la orden de pago.</p>';
+                    return '<p class="mb-0" style="color:#000;">No hay orden de compra asociada. Cuando exista una OC se podrá generar la orden de pago.</p>';
                 }
 
-                $isAdmin = $user instanceof \App\Models\User && $user->hasAdministradoraInstitucionRole();
+                $isAdmin = true;
 
                 $html = '<div class="card border-success mt-1">';
                 $html .= '<div class="card-header bg-success text-white py-2"><h6 class="mb-0"><i class="la la-money-bill-wave"></i> Orden de pago desde esta solicitud</h6></div>';
@@ -5904,7 +5900,7 @@ class PurchaseRequestCrudController extends CrudController
                             $html .= '<i class="la la-money-bill-wave"></i> Crear Orden de Pago';
                             $html .= '</a>';
                         } else {
-                            $html .= '<p class="text-muted small mb-0"><i class="la la-info-circle"></i> La orden de pago la genera la <strong>administradora del instituto</strong> luego de la orden de compra; no requiere recepción conforme.</p>';
+                            $html .= '<p class="text-muted small mb-0"><i class="la la-info-circle"></i> La orden de pago la generan la administradora del instituto, el administrador del sistema o el responsable de compras.</p>';
                         }
                     }
                     $html .= '</div>';
@@ -5958,11 +5954,12 @@ class PurchaseRequestCrudController extends CrudController
                 return $html;
             });
 
-        // Agregar botones para crear entregas y recepciones (solo para role_responsable_area) y estado de recepción (todos los perfiles)
+        // Crear entrega: responsable de área, administración del sistema, administración del instituto y compras.
         CRUD::column('delivery_reception_actions')->label('Acciones de Entrega y Recepción')->type('custom_html')
             ->value(function ($entry) {
                 $user = backpack_user();
                 $isResponsableArea = $user && $user->hasResponsableAreaOrInstituteAuthorityRole();
+                $canCreateDelivery = $isResponsableArea || ($user && $user->canRegisterDeliveryForAnyArea());
 
                 $entry->load(['purchaseOrders.receptions', 'purchaseOrders.paymentOrders']);
 
@@ -5987,7 +5984,7 @@ class PurchaseRequestCrudController extends CrudController
                     $receptionsBlock .= '<ul class="mb-0 ps-3">'.implode('', $receptionsLines).'</ul></div>';
                 }
 
-                if (! $isResponsableArea) {
+                if (! $canCreateDelivery) {
                     if ($receptionsBlock === '') {
                         return '';
                     }
@@ -6000,9 +5997,8 @@ class PurchaseRequestCrudController extends CrudController
                         .'</div>';
                 }
 
-                // Verificar condiciones para acciones (responsable de área):
-                // 1. La solicitud debe estar aprobada
-                $isApproved = $entry->status === 'Aprobada';
+                // Aprobada, o Completada porque al generar la OC el estado deja de ser Aprobada.
+                $isApproved = in_array($entry->status, ['Aprobada', 'Completada'], true);
 
                 // 2. Debe existir al menos una orden de compra relacionada
                 $hasPurchaseOrder = $entry->purchaseOrders->isNotEmpty();
@@ -6044,7 +6040,7 @@ class PurchaseRequestCrudController extends CrudController
 
                     // Botón para crear recepción solo si la primera OC aún no tiene recepción
                     $firstPurchaseOrder = $entry->purchaseOrders->first();
-                    if ($firstPurchaseOrder && $firstPurchaseOrder->receptions->isEmpty()) {
+                    if ($isResponsableArea && $firstPurchaseOrder && $firstPurchaseOrder->receptions->isEmpty()) {
                         $html .= '<div class="col-md-6 mb-2">';
                         $html .= '<a href="'.backpack_url('reception/create?purchase_order_id='.$firstPurchaseOrder->id).'" class="btn btn-success btn-block">';
                         $html .= '<i class="la la-truck-loading"></i> Crear Recepción';

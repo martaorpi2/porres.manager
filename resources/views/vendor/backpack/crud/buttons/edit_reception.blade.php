@@ -4,11 +4,9 @@
 
     if ($entry->isAccordingComplete()) {
         $canEdit = false;
-    } elseif ($user && $user->hasRole('role_responsable_compras', 'backpack')) {
-        // Si es role_responsable_compras, solo puede editar si creó la recepción
+    } elseif ($user && $user->hasResponsableComprasRole() && ! $user->canRegisterArcaCorroboration()) {
         $canEdit = ($entry->area_manager_id == $user->id);
     } else {
-        // Otros roles pueden editar normalmente
         $canEdit = $crud->hasAccess('update', $entry);
     }
 @endphp

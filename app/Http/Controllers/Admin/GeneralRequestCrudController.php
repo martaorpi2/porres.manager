@@ -1253,8 +1253,8 @@ class GeneralRequestCrudController extends CrudController
                     $requestedQuantity = $detail->requested_quantity ?? 0;
                     $deliveredQuantity = $detail->delivered_quantity ?? 0;
                     $pendingQuantity = max(0, $requestedQuantity - $deliveredQuantity);
-                    $hasEnoughStock = $stockAvailable >= $requestedQuantity;
-                    $stockDifference = $stockAvailable - $requestedQuantity;
+                    $hasEnoughStock = $stockAvailable >= $pendingQuantity;
+                    $stockDifference = $stockAvailable - $pendingQuantity;
                     
                     // Determinar estado de entrega
                     $deliveryStatus = $detail->delivery_status ?? 'Pendiente';
@@ -1316,7 +1316,7 @@ class GeneralRequestCrudController extends CrudController
                     $html .= '<span class="badge bg-' . ($stockAvailable > 0 ? 'info' : 'secondary') . ' fs-6" title="Stock total del producto">' . number_format($stockAvailable, 0, ',', '.') . '</span>';
                     $html .= '</td>';
                     $html .= '<td class="text-center">';
-                    $html .= '<span class="badge bg-' . $availabilityColor . '" title="Stock disponible: ' . number_format($stockAvailable) . ', Solicitado: ' . number_format($requestedQuantity) . ($stockDifference < 0 ? ', Faltante: ' . number_format(abs($stockDifference)) : '') . '">';
+                    $html .= '<span class="badge bg-' . $availabilityColor . '" title="Stock disponible: ' . number_format($stockAvailable) . ', Pendiente de entregar: ' . number_format($pendingQuantity) . ($stockDifference < 0 ? ', Faltante: ' . number_format(abs($stockDifference)) : '') . '">';
                     $html .= '<i class="la la-' . ($hasEnoughStock ? 'check-circle' : ($stockAvailable == 0 ? 'times-circle' : 'exclamation-triangle')) . '"></i> ';
                     $html .= $availabilityBadge;
                     $html .= '</span>';
@@ -1350,9 +1350,11 @@ class GeneralRequestCrudController extends CrudController
                     $html = '<div class="alert alert-success">';
                     $html .= '<h5><i class="la la-check-circle"></i> Solicitud Convertida a Compra</h5>';
                     foreach ($entry->purchaseRequests as $purchaseRequest) {
-                        $html .= '<p><strong>Solicitud de Compra:</strong> ' . e($purchaseRequest->request_number) . '</p>';
+                        $showUrl = backpack_url('purchase-request/'.$purchaseRequest->id.'/show');
+                        $html .= '<p><strong>Solicitud de Compra:</strong> <a href="'.$showUrl.'">'.e($purchaseRequest->request_number).'</a></p>';
                         $html .= '<p><strong>Fecha de Conversión:</strong> ' . $purchaseRequest->created_at->format('d/m/Y H:i') . '</p>';
                         $html .= '<p><strong>Estado:</strong> ' . e($purchaseRequest->status) . '</p>';
+                        $html .= '<p class="mb-0"><a href="'.$showUrl.'" class="btn btn-primary"><i class="la la-shopping-cart"></i> Ir a la solicitud de compra</a></p>';
                     }
                     $html .= '</div>';
                     return $html;
@@ -1428,17 +1430,19 @@ class GeneralRequestCrudController extends CrudController
                 });
         }
 
-        // Agregar botón para registrar entrega solo para role_responsable_area y solo si la solicitud es de su área
-        if ($user && $user->hasResponsableAreaOrInstituteAuthorityRole()) {
+        // Responsable de área (solo su área), administración y compras pueden registrar la entrega desde la vista previa.
+        $canRegisterDelivery = $user && (
+            $user->hasResponsableAreaOrInstituteAuthorityRole()
+            || $user->canRegisterDeliveryForAnyArea()
+        );
+        if ($canRegisterDelivery) {
             CRUD::column('register_delivery_button')->label('Acciones')->type('custom_html')
                 ->value(function($entry) use ($user) {
-                    // Verificar si la solicitud pertenece a un área donde el usuario es responsable
-                    $userAreas = \App\Models\ResponsibilityArea::where('responsible_user_id', $user->id)->pluck('id');
-                    $canDeliver = false;
-                    
-                    // Puede entregar si la solicitud pertenece a una de sus áreas
-                    if ($entry->area_id && $userAreas->contains($entry->area_id)) {
-                        $canDeliver = true;
+                    $canDeliver = $user->canRegisterDeliveryForAnyArea();
+
+                    if (! $canDeliver && $user->hasResponsableAreaOrInstituteAuthorityRole()) {
+                        $userAreas = \App\Models\ResponsibilityArea::where('responsible_user_id', $user->id)->pluck('id');
+                        $canDeliver = $entry->area_id && $userAreas->contains($entry->area_id);
                     }
                     
                     if (!$canDeliver) {
