@@ -59,6 +59,21 @@ return [
             ]) : [],
         ],
 
+        'eporres' => [
+            'driver' => 'mysql',
+            'host' => env('EPORRES_DB_HOST', '127.0.0.1'),
+            'port' => env('EPORRES_DB_PORT', '3306'),
+            'database' => env('EPORRES_DB_DATABASE', 'db_ismp_academic'),
+            'username' => env('EPORRES_DB_USERNAME', 'root'),
+            'password' => env('EPORRES_DB_PASSWORD', ''),
+            'charset' => 'utf8mb4',
+            'collation' => 'utf8mb4_unicode_ci',
+            'prefix' => '',
+            'prefix_indexes' => true,
+            'strict' => true,
+            'engine' => null,
+        ],
+
         'mariadb' => [
             'driver' => 'mariadb',
             'url' => env('DB_URL'),
