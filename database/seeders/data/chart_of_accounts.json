@@ -1,0 +1,1187 @@
+[
+    {
+        "code": "11101100",
+        "name": "FONDO FIJO AREA COMPRAS",
+        "account_type": "activo"
+    },
+    {
+        "code": "11101200",
+        "name": "CAJA CHICA REP. LEGAL",
+        "account_type": "activo"
+    },
+    {
+        "code": "11101300",
+        "name": "CAJA CHICA RECTORIA",
+        "account_type": "activo"
+    },
+    {
+        "code": "11101400",
+        "name": "CAJA CHICA DIR. REL. PUBLICAS",
+        "account_type": "activo"
+    },
+    {
+        "code": "11101500",
+        "name": "FONDO ASIGNACION ESPECIFICA",
+        "account_type": "activo"
+    },
+    {
+        "code": "11101600",
+        "name": "CAJA CUOTAS",
+        "account_type": "activo"
+    },
+    {
+        "code": "11101700",
+        "name": "CAJA COCHERAS",
+        "account_type": "activo"
+    },
+    {
+        "code": "11101800",
+        "name": "FONDO FIJO AREA ADMIN",
+        "account_type": "activo"
+    },
+    {
+        "code": "11102001",
+        "name": "BANCO S. RIO CC 151-4674\/3",
+        "account_type": "activo"
+    },
+    {
+        "code": "11102002",
+        "name": "BANCO BSE CC 1200885\/03",
+        "account_type": "activo"
+    },
+    {
+        "code": "11102003",
+        "name": "BANCO BBVA FRANCES CC 330247\/1",
+        "account_type": "activo"
+    },
+    {
+        "code": "11102004",
+        "name": "BANCO BBVA FRANCES CC 330246\/4",
+        "account_type": "activo"
+    },
+    {
+        "code": "11102005",
+        "name": "TARJETA BNA INET",
+        "account_type": "activo"
+    },
+    {
+        "code": "11104000",
+        "name": "MERCADO PAGO",
+        "account_type": "activo"
+    },
+    {
+        "code": "11105000",
+        "name": "CAJA DE AHORRO",
+        "account_type": "activo"
+    },
+    {
+        "code": "11201000",
+        "name": "DEUDORES POR CUOTAS",
+        "account_type": "activo"
+    },
+    {
+        "code": "11201200",
+        "name": "DEUDORES MOROSOS",
+        "account_type": "activo"
+    },
+    {
+        "code": "11201400",
+        "name": "PREV. PARA DEUDORES INCOBR.",
+        "account_type": "activo"
+    },
+    {
+        "code": "11202001",
+        "name": "TARJETA SOL A COBRAR",
+        "account_type": "activo"
+    },
+    {
+        "code": "11202002",
+        "name": "TARJETA UNICA A COBRAR",
+        "account_type": "activo"
+    },
+    {
+        "code": "11202003",
+        "name": "TARJETA NARANJA A COBRAR",
+        "account_type": "activo"
+    },
+    {
+        "code": "11202004",
+        "name": "TARJETA DE DEBITO A COBRAR",
+        "account_type": "activo"
+    },
+    {
+        "code": "11203000",
+        "name": "PRESTAMOS A ESTUDIANTES",
+        "account_type": "activo"
+    },
+    {
+        "code": "11204000",
+        "name": "MERCADO PAGO A COBRAR",
+        "account_type": "activo"
+    },
+    {
+        "code": "11301000",
+        "name": "ANTICIPO SUELDOS",
+        "account_type": "activo"
+    },
+    {
+        "code": "11302000",
+        "name": "ANTICIPO A PROVEEDORES",
+        "account_type": "activo"
+    },
+    {
+        "code": "11303000",
+        "name": "ANTICIPO A CONVENTO",
+        "account_type": "activo"
+    },
+    {
+        "code": "11304000",
+        "name": "ANTICIPO A LA ORDEN",
+        "account_type": "activo"
+    },
+    {
+        "code": "11305000",
+        "name": "ANTICIPO PARA CAPACITACION",
+        "account_type": "activo"
+    },
+    {
+        "code": "11306000",
+        "name": "ANTICIPO HONORARIOS",
+        "account_type": "activo"
+    },
+    {
+        "code": "11307000",
+        "name": "COBROS TRANSITORIOS DE CUOTAS",
+        "account_type": "activo"
+    },
+    {
+        "code": "11308000",
+        "name": "PRESTAMO A PERSONAL",
+        "account_type": "activo"
+    },
+    {
+        "code": "11309000",
+        "name": "GASTOS CONVENTO A CTA",
+        "account_type": "activo"
+    },
+    {
+        "code": "11310000",
+        "name": "COMISIONES MERCADO PAGO COCHERAS",
+        "account_type": "activo"
+    },
+    {
+        "code": "11311000",
+        "name": "COMISIONES TARJETA DE DEBITO COCHERAS",
+        "account_type": "activo"
+    },
+    {
+        "code": "11401000",
+        "name": "PAPELERIA EN STOCK",
+        "account_type": "activo"
+    },
+    {
+        "code": "11402000",
+        "name": "LIBRERIA EN STOCK",
+        "account_type": "activo"
+    },
+    {
+        "code": "11403000",
+        "name": "ARTICULOS LIMPIEZA EN STOCK",
+        "account_type": "activo"
+    },
+    {
+        "code": "11404000",
+        "name": "INSUMOS MEDICOS EN STOCK",
+        "account_type": "activo"
+    },
+    {
+        "code": "11501000",
+        "name": "PLAZO FIJO",
+        "account_type": "activo"
+    },
+    {
+        "code": "11502000",
+        "name": "FONDOS COMUNES DE INVERSION",
+        "account_type": "activo"
+    },
+    {
+        "code": "11503000",
+        "name": "MONEDA EXTRANJERA",
+        "account_type": "activo"
+    },
+    {
+        "code": "11504000",
+        "name": "RESERVA FONDO PARA DESPIDO",
+        "account_type": "activo"
+    },
+    {
+        "code": "11505000",
+        "name": "RESERVA FONDO PARA OBRAS",
+        "account_type": "activo"
+    },
+    {
+        "code": "11506000",
+        "name": "BONOS AL 30 DEL BBVA",
+        "account_type": "activo"
+    },
+    {
+        "code": "12101000",
+        "name": "MUEBLES Y UTILES",
+        "account_type": "activo"
+    },
+    {
+        "code": "12102000",
+        "name": "DEP.ACUM.MUEBLES Y UTILES",
+        "account_type": "activo"
+    },
+    {
+        "code": "12103000",
+        "name": "EQUIPOS DE COMPUTACION",
+        "account_type": "activo"
+    },
+    {
+        "code": "12104000",
+        "name": "DEP.ACUM.EQ.DE COMPUTACION",
+        "account_type": "activo"
+    },
+    {
+        "code": "12105000",
+        "name": "INSTALACIONES",
+        "account_type": "activo"
+    },
+    {
+        "code": "12106000",
+        "name": "DEP.ACUM.INSTALACIONES",
+        "account_type": "activo"
+    },
+    {
+        "code": "12107001",
+        "name": "OBRA EN CONSTRUCCION",
+        "account_type": "activo"
+    },
+    {
+        "code": "12107002",
+        "name": "INMUEBLES",
+        "account_type": "activo"
+    },
+    {
+        "code": "12108000",
+        "name": "DEP.ACUM.INMUEBLE\/EDIFICIOS",
+        "account_type": "activo"
+    },
+    {
+        "code": "12109000",
+        "name": "HERRAMIENTAS",
+        "account_type": "activo"
+    },
+    {
+        "code": "12110000",
+        "name": "DEP.ACUM. HERRAMIENTAS",
+        "account_type": "activo"
+    },
+    {
+        "code": "12111000",
+        "name": "EQUIPOS DE LABORATORIO",
+        "account_type": "activo"
+    },
+    {
+        "code": "12112000",
+        "name": "DEP.ACUM.EQ. DE LABORATORIO",
+        "account_type": "activo"
+    },
+    {
+        "code": "12113000",
+        "name": "BIBLIOTECA",
+        "account_type": "activo"
+    },
+    {
+        "code": "12114000",
+        "name": "DEP.ACUM.BIBLIOTECA",
+        "account_type": "activo"
+    },
+    {
+        "code": "12201000",
+        "name": "SOFTWARE",
+        "account_type": "activo"
+    },
+    {
+        "code": "12202000",
+        "name": "AMORT. ACUM. SOFWARE",
+        "account_type": "activo"
+    },
+    {
+        "code": "12301000",
+        "name": "INMUEBLE PARA RENTA",
+        "account_type": "activo"
+    },
+    {
+        "code": "13100000",
+        "name": "PARTIDAS EN SUSPENSO",
+        "account_type": "activo"
+    },
+    {
+        "code": "13200000",
+        "name": "INTS. GANADOS A DEVENGAR",
+        "account_type": "activo"
+    },
+    {
+        "code": "21101001",
+        "name": "PROVEEDOR UNO",
+        "account_type": "pasivo"
+    },
+    {
+        "code": "21101002",
+        "name": "PROVEEDOR DOS",
+        "account_type": "pasivo"
+    },
+    {
+        "code": "21101003",
+        "name": "TARJ CRED BBVA A PAGAR",
+        "account_type": "pasivo"
+    },
+    {
+        "code": "21101004",
+        "name": "TARJETA CRED SANTANDER A PAGAR",
+        "account_type": "pasivo"
+    },
+    {
+        "code": "21101005",
+        "name": "TARJETA BCO NACION A PAGAR",
+        "account_type": "pasivo"
+    },
+    {
+        "code": "21201000",
+        "name": "SUELDOS A PAGAR",
+        "account_type": "pasivo"
+    },
+    {
+        "code": "21202000",
+        "name": "SEG. SOC. AP. Y CONTR. A PAGAR",
+        "account_type": "pasivo"
+    },
+    {
+        "code": "21203000",
+        "name": "OBRA SOC. AP. Y CONTR. A PAGAR",
+        "account_type": "pasivo"
+    },
+    {
+        "code": "21204000",
+        "name": "ART A PAGAR",
+        "account_type": "pasivo"
+    },
+    {
+        "code": "21205000",
+        "name": "SEGURO DE VIDA A PAGAR",
+        "account_type": "pasivo"
+    },
+    {
+        "code": "21206000",
+        "name": "CAJA COMPLEMENTARIA A PAGAR",
+        "account_type": "pasivo"
+    },
+    {
+        "code": "21207000",
+        "name": "SADOP A PAGAR",
+        "account_type": "pasivo"
+    },
+    {
+        "code": "21208000",
+        "name": "SOEME A PAGAR",
+        "account_type": "pasivo"
+    },
+    {
+        "code": "21209000",
+        "name": "EMBARGOS A PAGAR",
+        "account_type": "pasivo"
+    },
+    {
+        "code": "21210000",
+        "name": "PREVISION PARA DESPIDOS",
+        "account_type": "pasivo"
+    },
+    {
+        "code": "21211000",
+        "name": "RED A PAGAR",
+        "account_type": "pasivo"
+    },
+    {
+        "code": "21212000",
+        "name": "RETENCION GCIAS 4 ta CATEG A PAGAR",
+        "account_type": "pasivo"
+    },
+    {
+        "code": "21213000",
+        "name": "INDEMNIZACIONES A PAGAR",
+        "account_type": "pasivo"
+    },
+    {
+        "code": "21301000",
+        "name": "RET. IMP. A LAS GCIAS. A PAGAR",
+        "account_type": "pasivo"
+    },
+    {
+        "code": "21301001",
+        "name": "ING. BRUTOS A PAGAR PCIA.1",
+        "account_type": "pasivo"
+    },
+    {
+        "code": "21301002",
+        "name": "ING. BRUTOS A PAGAR PCIA.2",
+        "account_type": "pasivo"
+    },
+    {
+        "code": "21302000",
+        "name": "RET. IIBB SDE A PAGAR",
+        "account_type": "pasivo"
+    },
+    {
+        "code": "21303000",
+        "name": "RET. SUSS A PAGAR",
+        "account_type": "pasivo"
+    },
+    {
+        "code": "21401000",
+        "name": "DESCUBIERTO BANCO S. RIO",
+        "account_type": "pasivo"
+    },
+    {
+        "code": "21402000",
+        "name": "DESCUBIERTO BSE",
+        "account_type": "pasivo"
+    },
+    {
+        "code": "21403000",
+        "name": "PRESTAMO BANCO S. RIO",
+        "account_type": "pasivo"
+    },
+    {
+        "code": "21404000",
+        "name": "PRESTAMO BSE",
+        "account_type": "pasivo"
+    },
+    {
+        "code": "21405000",
+        "name": "BONIFICACIONES A REINTEGRAR BCO RIO",
+        "account_type": "pasivo"
+    },
+    {
+        "code": "21501000",
+        "name": "OTRAS DEUDAS A PAGAR",
+        "account_type": "pasivo"
+    },
+    {
+        "code": "21502000",
+        "name": "COCHERAS A RENDIR",
+        "account_type": "pasivo"
+    },
+    {
+        "code": "21503000",
+        "name": "DESCUENTO POR DOC. A PAGAR",
+        "account_type": "pasivo"
+    },
+    {
+        "code": "21504000",
+        "name": "MATRICULA COBRADA POR ADELANT.",
+        "account_type": "pasivo"
+    },
+    {
+        "code": "21505000",
+        "name": "DESCUENTO OTORGADO A DEVENGAR",
+        "account_type": "pasivo"
+    },
+    {
+        "code": "21506000",
+        "name": "COCHERAS A PAGAR",
+        "account_type": "pasivo"
+    },
+    {
+        "code": "21507000",
+        "name": "CONVENTO A PAGAR",
+        "account_type": "pasivo"
+    },
+    {
+        "code": "21508000",
+        "name": "ORDEN DE PREDICADORES A PAGAR",
+        "account_type": "pasivo"
+    },
+    {
+        "code": "21509000",
+        "name": "CONVENTO FCI A PAGAR",
+        "account_type": "pasivo"
+    },
+    {
+        "code": "21511000",
+        "name": "APORTE SAED A PAGAR",
+        "account_type": "pasivo"
+    },
+    {
+        "code": "21601000",
+        "name": "I.V.A. DEBITO FISCAL",
+        "account_type": "pasivo"
+    },
+    {
+        "code": "21602000",
+        "name": "I.V.A. RESP. NO INSCRIPTO",
+        "account_type": "pasivo"
+    },
+    {
+        "code": "21603000",
+        "name": "ALQUILERES A PAGAR",
+        "account_type": "pasivo"
+    },
+    {
+        "code": "21604000",
+        "name": "SEGUROS A PAGAR",
+        "account_type": "pasivo"
+    },
+    {
+        "code": "21605000",
+        "name": "COBRO PENDIENTE DE ASIGNACION",
+        "account_type": "pasivo"
+    },
+    {
+        "code": "21606000",
+        "name": "DEP GARANTIA LLAVES COCHERAS",
+        "account_type": "pasivo"
+    },
+    {
+        "code": "31101000",
+        "name": "CAPITAL SOCIAL",
+        "account_type": "patrimonio"
+    },
+    {
+        "code": "31102000",
+        "name": "AJUSTE AL CAPITAL",
+        "account_type": "patrimonio"
+    },
+    {
+        "code": "31103000",
+        "name": "APORTE IRREVOCABLE A CTA. FUT.",
+        "account_type": "patrimonio"
+    },
+    {
+        "code": "31201000",
+        "name": "RESERVA LEGAL",
+        "account_type": "patrimonio"
+    },
+    {
+        "code": "31301000",
+        "name": "RESULTADO DEL EJERCICIO",
+        "account_type": "patrimonio"
+    },
+    {
+        "code": "31302000",
+        "name": "RESULTADOS NO ASIGNADOS",
+        "account_type": "patrimonio"
+    },
+    {
+        "code": "31303000",
+        "name": "AJUSTE EJERCICIOS ANTERIORES",
+        "account_type": "patrimonio"
+    },
+    {
+        "code": "41101000",
+        "name": "INSCRIPCIONES",
+        "account_type": "ingreso"
+    },
+    {
+        "code": "41102000",
+        "name": "CUOTAS",
+        "account_type": "ingreso"
+    },
+    {
+        "code": "41103000",
+        "name": "RECUPERACION DE INSCR. Y CUOTA",
+        "account_type": "ingreso"
+    },
+    {
+        "code": "41104000",
+        "name": "RECUPERACION DEUDORES INCOBR.",
+        "account_type": "ingreso"
+    },
+    {
+        "code": "41105000",
+        "name": "CURSOS Y SEMINARIOS",
+        "account_type": "ingreso"
+    },
+    {
+        "code": "41106000",
+        "name": "GESTION ADMINISTRATIVA ALUMNOS",
+        "account_type": "ingreso"
+    },
+    {
+        "code": "41107000",
+        "name": "VENTA DE LIBROS",
+        "account_type": "ingreso"
+    },
+    {
+        "code": "41108000",
+        "name": "CUOTAS TRANSITORIAS",
+        "account_type": "ingreso"
+    },
+    {
+        "code": "41201000",
+        "name": "INTS. POR MORA CUOTAS",
+        "account_type": "ingreso"
+    },
+    {
+        "code": "41202000",
+        "name": "INTS. PLAZO FIJO",
+        "account_type": "ingreso"
+    },
+    {
+        "code": "41203000",
+        "name": "DIFERENCIA COTIZACION FCI",
+        "account_type": "ingreso"
+    },
+    {
+        "code": "41204000",
+        "name": "DESCUENTOS OBTENIDOS",
+        "account_type": "ingreso"
+    },
+    {
+        "code": "41205000",
+        "name": "BONIFICACIONES OBTENIDAS",
+        "account_type": "ingreso"
+    },
+    {
+        "code": "41206000",
+        "name": "RESULT. FINAN. Y POR TENENCIA",
+        "account_type": "ingreso"
+    },
+    {
+        "code": "41207000",
+        "name": "RESULT. VENTA BIENES USO",
+        "account_type": "ingreso"
+    },
+    {
+        "code": "41208000",
+        "name": "OTROS INGRESOS FINANCIEROS",
+        "account_type": "ingreso"
+    },
+    {
+        "code": "41209000",
+        "name": "INTS. GANADOS",
+        "account_type": "ingreso"
+    },
+    {
+        "code": "41210000",
+        "name": "INT POR COBRO TARJETA",
+        "account_type": "ingreso"
+    },
+    {
+        "code": "41211000",
+        "name": "RESULTADO POR VENTA DE INMUEBLE",
+        "account_type": "ingreso"
+    },
+    {
+        "code": "41301000",
+        "name": "SUBSIDIO SPEP",
+        "account_type": "ingreso"
+    },
+    {
+        "code": "41302000",
+        "name": "DONACIONES RECIBIDAS",
+        "account_type": "ingreso"
+    },
+    {
+        "code": "41303000",
+        "name": "INT POR COBRO MP",
+        "account_type": "ingreso"
+    },
+    {
+        "code": "41304000",
+        "name": "COMISIONES COCHERAS",
+        "account_type": "ingreso"
+    },
+    {
+        "code": "41305000",
+        "name": "DESCUENTO ESPECIAL-RECUPERO",
+        "account_type": "ingreso"
+    },
+    {
+        "code": "41306000",
+        "name": "COCHERAS",
+        "account_type": "ingreso"
+    },
+    {
+        "code": "41307000",
+        "name": "COMISIONES POR COCHERA",
+        "account_type": "ingreso"
+    },
+    {
+        "code": "41308000",
+        "name": "BONIF POR AFILIACION TARJETA",
+        "account_type": "ingreso"
+    },
+    {
+        "code": "41309000",
+        "name": "SUBSIDIO SPEP BONOS",
+        "account_type": "ingreso"
+    },
+    {
+        "code": "52101000",
+        "name": "SUELDOS SPEP",
+        "account_type": "gasto"
+    },
+    {
+        "code": "52102000",
+        "name": "CARGAS SOCIALES SPEP",
+        "account_type": "gasto"
+    },
+    {
+        "code": "52103000",
+        "name": "CAPACITACIONES",
+        "account_type": "gasto"
+    },
+    {
+        "code": "52104000",
+        "name": "UNIFORMES Y ROPA DE TRABAJO",
+        "account_type": "gasto"
+    },
+    {
+        "code": "52105000",
+        "name": "SEGUROS",
+        "account_type": "gasto"
+    },
+    {
+        "code": "52106000",
+        "name": "EVENTOS INSTITUCIONALES",
+        "account_type": "gasto"
+    },
+    {
+        "code": "52107000",
+        "name": "AGASAJOS Y PRESENTES",
+        "account_type": "gasto"
+    },
+    {
+        "code": "52108000",
+        "name": "MATERIALES E INSUMOS CARRERAS",
+        "account_type": "gasto"
+    },
+    {
+        "code": "52109000",
+        "name": "VIATICOS Y TRASLADOS",
+        "account_type": "gasto"
+    },
+    {
+        "code": "52110000",
+        "name": "PUBLICIDAD",
+        "account_type": "gasto"
+    },
+    {
+        "code": "52120000",
+        "name": "DEUDORES INCOBRABLES",
+        "account_type": "gasto"
+    },
+    {
+        "code": "52130000",
+        "name": "BONO SUBSIDIO ESTATAL",
+        "account_type": "gasto"
+    },
+    {
+        "code": "52140000",
+        "name": "EXPOCARRERAS",
+        "account_type": "gasto"
+    },
+    {
+        "code": "52201000",
+        "name": "SUELDOS PRIVADOS",
+        "account_type": "gasto"
+    },
+    {
+        "code": "52202000",
+        "name": "CARGAS SOCIALES PRIVADOS",
+        "account_type": "gasto"
+    },
+    {
+        "code": "52203000",
+        "name": "HONORARIOS",
+        "account_type": "gasto"
+    },
+    {
+        "code": "52204000",
+        "name": "SERVICIO DE AGUA",
+        "account_type": "gasto"
+    },
+    {
+        "code": "52205000",
+        "name": "SERVICIO DE TELEFONIA",
+        "account_type": "gasto"
+    },
+    {
+        "code": "52206000",
+        "name": "SERVICIO DE INTERNET",
+        "account_type": "gasto"
+    },
+    {
+        "code": "52207000",
+        "name": "SERVICIO DE ELECTRICIDAD",
+        "account_type": "gasto"
+    },
+    {
+        "code": "52208000",
+        "name": "SERVICIO DE VIGILANCIA",
+        "account_type": "gasto"
+    },
+    {
+        "code": "52209000",
+        "name": "SERVICIO DE LIMPIEZA",
+        "account_type": "gasto"
+    },
+    {
+        "code": "52210000",
+        "name": "ALQUILER DE POSNET",
+        "account_type": "gasto"
+    },
+    {
+        "code": "52211000",
+        "name": "SERVICIOS FUNERARIOS",
+        "account_type": "gasto"
+    },
+    {
+        "code": "52212000",
+        "name": "EMERGENCIAS MEDICAS",
+        "account_type": "gasto"
+    },
+    {
+        "code": "52213000",
+        "name": "MEDICO Y FARMACIA",
+        "account_type": "gasto"
+    },
+    {
+        "code": "52214000",
+        "name": "CONTROL DE PRESENTISMO",
+        "account_type": "gasto"
+    },
+    {
+        "code": "52215000",
+        "name": "ARTICULOS DE LIMPIEZA",
+        "account_type": "gasto"
+    },
+    {
+        "code": "52216000",
+        "name": "FLETES Y ACARREOS",
+        "account_type": "gasto"
+    },
+    {
+        "code": "52217000",
+        "name": "GRATIFICACIONES PRIVADOS",
+        "account_type": "gasto"
+    },
+    {
+        "code": "52218000",
+        "name": "LIBRERIAS E IMPRESIONES",
+        "account_type": "gasto"
+    },
+    {
+        "code": "52219000",
+        "name": "CADETERIA Y SIMILARES",
+        "account_type": "gasto"
+    },
+    {
+        "code": "52220000",
+        "name": "CORREOS Y ENCOMIENDAS",
+        "account_type": "gasto"
+    },
+    {
+        "code": "52221000",
+        "name": "ALQUILER FOTOCOPIADORA",
+        "account_type": "gasto"
+    },
+    {
+        "code": "52222000",
+        "name": "SUSCRIPCIONES",
+        "account_type": "gasto"
+    },
+    {
+        "code": "52222001",
+        "name": "SUSCRIPCION HOLISTOR",
+        "account_type": "gasto"
+    },
+    {
+        "code": "52222002",
+        "name": "SUSCRIPCION LATINCLOUD",
+        "account_type": "gasto"
+    },
+    {
+        "code": "52223000",
+        "name": "ACTUALIZACIONES SOFTWARE",
+        "account_type": "gasto"
+    },
+    {
+        "code": "52224000",
+        "name": "GASTOS POR JUICIOS",
+        "account_type": "gasto"
+    },
+    {
+        "code": "52225000",
+        "name": "IMPUESTOS Y TASAS MUNICIPALES",
+        "account_type": "gasto"
+    },
+    {
+        "code": "52226000",
+        "name": "ALQUILERES PAGADOS",
+        "account_type": "gasto"
+    },
+    {
+        "code": "52227000",
+        "name": "BAZAR Y UTILES DOMESTICOS",
+        "account_type": "gasto"
+    },
+    {
+        "code": "52228000",
+        "name": "CANON POR FOTOCOPIADORA",
+        "account_type": "gasto"
+    },
+    {
+        "code": "52229000",
+        "name": "GRATIFICACIONES",
+        "account_type": "gasto"
+    },
+    {
+        "code": "52230000",
+        "name": "DIF. DE HABERES NEG.",
+        "account_type": "gasto"
+    },
+    {
+        "code": "52240000",
+        "name": "GASTOS REPARACION",
+        "account_type": "gasto"
+    },
+    {
+        "code": "52250000",
+        "name": "GASTOS CERTIFICACION BALANCE",
+        "account_type": "gasto"
+    },
+    {
+        "code": "52260000",
+        "name": "COFFE Y REFRIGERIOS",
+        "account_type": "gasto"
+    },
+    {
+        "code": "52270000",
+        "name": "INDEMNIZACION POR DESPIDO",
+        "account_type": "gasto"
+    },
+    {
+        "code": "52301000",
+        "name": "DESCUENTO POR PRONTO PAGO",
+        "account_type": "gasto"
+    },
+    {
+        "code": "52302000",
+        "name": "DESCUENTOS POR BECA",
+        "account_type": "gasto"
+    },
+    {
+        "code": "52303000",
+        "name": "DEUDORES INCOBRABLES",
+        "account_type": "gasto"
+    },
+    {
+        "code": "52304000",
+        "name": "COMISIONES Y GASTOS BSRIO",
+        "account_type": "gasto"
+    },
+    {
+        "code": "52305000",
+        "name": "COMISIONES Y GASTOS BSE",
+        "account_type": "gasto"
+    },
+    {
+        "code": "52306000",
+        "name": "COMISIONES TARJETA NARANJA",
+        "account_type": "gasto"
+    },
+    {
+        "code": "52307000",
+        "name": "COMISIONES TARJETA SOL",
+        "account_type": "gasto"
+    },
+    {
+        "code": "52308000",
+        "name": "COMISIONES TARJETA UNICA",
+        "account_type": "gasto"
+    },
+    {
+        "code": "52309000",
+        "name": "COMISIONES MERCADO PAGO",
+        "account_type": "gasto"
+    },
+    {
+        "code": "52310000",
+        "name": "IMPUESTO A LOS DEB. Y CRED.",
+        "account_type": "gasto"
+    },
+    {
+        "code": "52311000",
+        "name": "INTERESES PAGADOS AFIP",
+        "account_type": "gasto"
+    },
+    {
+        "code": "52312000",
+        "name": "INTERESES PAGADOS",
+        "account_type": "gasto"
+    },
+    {
+        "code": "52313000",
+        "name": "DIFERENCIAS DE CAMBIO",
+        "account_type": "gasto"
+    },
+    {
+        "code": "52314000",
+        "name": "COMISIONES PAGADAS",
+        "account_type": "gasto"
+    },
+    {
+        "code": "52315000",
+        "name": "PERDIDA DIF COTIZACION FCI",
+        "account_type": "gasto"
+    },
+    {
+        "code": "52316000",
+        "name": "COMISIONES Y GASTOS BBVA\/1",
+        "account_type": "gasto"
+    },
+    {
+        "code": "52317000",
+        "name": "COMISIONES Y GASTOS BBVA\/4",
+        "account_type": "gasto"
+    },
+    {
+        "code": "52318000",
+        "name": "COMISIONES TARJETA DE DEBITO",
+        "account_type": "gasto"
+    },
+    {
+        "code": "52319000",
+        "name": "RETENCION ISIB",
+        "account_type": "gasto"
+    },
+    {
+        "code": "52320000",
+        "name": "COMISIONES COBRANZAS QR",
+        "account_type": "gasto"
+    },
+    {
+        "code": "52330000",
+        "name": "COMISIONES BSE COBRANZA CUPONES",
+        "account_type": "gasto"
+    },
+    {
+        "code": "52401000",
+        "name": "MANTENIMIENTO EDIFICIO",
+        "account_type": "gasto"
+    },
+    {
+        "code": "52402000",
+        "name": "MANTENIMIENTO MOBILIARIO",
+        "account_type": "gasto"
+    },
+    {
+        "code": "52403000",
+        "name": "MANTENIMIENTO INSTALACIONES",
+        "account_type": "gasto"
+    },
+    {
+        "code": "52404000",
+        "name": "MANTENIMIENTO EQ.INFORMATICOS",
+        "account_type": "gasto"
+    },
+    {
+        "code": "52405000",
+        "name": "INSUMOS INFORMATICOS",
+        "account_type": "gasto"
+    },
+    {
+        "code": "52406000",
+        "name": "DEPRECIACION MUEBLES Y UTILES",
+        "account_type": "gasto"
+    },
+    {
+        "code": "52407000",
+        "name": "DEPRECIACION EQUIPOS COMPUTAC",
+        "account_type": "gasto"
+    },
+    {
+        "code": "52408000",
+        "name": "DEPRECIACION INSTALACIONES",
+        "account_type": "gasto"
+    },
+    {
+        "code": "52409000",
+        "name": "DEPRECIACION INMUEBLE\/EDIFICIO",
+        "account_type": "gasto"
+    },
+    {
+        "code": "52410000",
+        "name": "DEPRECIACION HERRAMIENTAS",
+        "account_type": "gasto"
+    },
+    {
+        "code": "52411000",
+        "name": "DEPRECIACION EQ.LABORATORIO",
+        "account_type": "gasto"
+    },
+    {
+        "code": "52412000",
+        "name": "DEPRECIACION BIBLIOTECA",
+        "account_type": "gasto"
+    },
+    {
+        "code": "52413000",
+        "name": "AMORT. SOFWARE",
+        "account_type": "gasto"
+    },
+    {
+        "code": "52501000",
+        "name": "APORTES AL CONVENTO",
+        "account_type": "gasto"
+    },
+    {
+        "code": "52502000",
+        "name": "CONTRIBUCION A LA ORDEN",
+        "account_type": "gasto"
+    },
+    {
+        "code": "52503000",
+        "name": "AYUDA A LAS FAMILIAS",
+        "account_type": "gasto"
+    },
+    {
+        "code": "52504000",
+        "name": "DONACIONES REALIZADAS",
+        "account_type": "gasto"
+    },
+    {
+        "code": "52505000",
+        "name": "DEVOLUCION INSCRIP. Y CUOTAS",
+        "account_type": "gasto"
+    },
+    {
+        "code": "52506000",
+        "name": "GASTOS PASTORALES",
+        "account_type": "gasto"
+    },
+    {
+        "code": "52507000",
+        "name": "GASTOS GENERALES",
+        "account_type": "gasto"
+    },
+    {
+        "code": "52508000",
+        "name": "APORTE SAED",
+        "account_type": "gasto"
+    },
+    {
+        "code": "52509000",
+        "name": "PROYECTO REVALORIZACION BIBLIOTECA CASA STA INES",
+        "account_type": "gasto"
+    },
+    {
+        "code": "52510000",
+        "name": "75 ANIVERSARIO",
+        "account_type": "gasto"
+    }
+]
