@@ -40,6 +40,29 @@
         <x-backpack::menu-dropdown-item title="Remitos" :link="backpack_url('remito')" />
         <x-backpack::menu-item title="Movimientos" :link="backpack_url('inventory-movement')" />
     </x-backpack::menu-dropdown>
+@elseif(backpack_user() instanceof \App\Models\User && backpack_user()->seesRestrictedRoleMenu())
+    @if(backpack_user()->canViewAccounting())
+        <x-backpack::menu-dropdown title="Contabilidad" icon="la la-book" trigger="click">
+            <x-backpack::menu-dropdown-item title="Libro diario" :link="backpack_url('accounting-journal')" />
+            <x-backpack::menu-dropdown-item title="Sumas y saldos" :link="backpack_url('accounting-ledger')" />
+            <x-backpack::menu-dropdown-item title="Plan de cuentas" :link="backpack_url('accounting-account')" />
+        </x-backpack::menu-dropdown>
+    @endif
+    @if(backpack_user()->hasContabilidadRole())
+        <x-backpack::menu-item title="Recepciones" icon="la la-truck-loading" :link="backpack_url('reception')" />
+    @endif
+    @if(backpack_user()->hasTesoreriaRole())
+        <x-backpack::menu-item title="Ordenes de Pago" icon="la la-money-bill-wave" :link="backpack_url('payment-order')" />
+    @endif
+    @if(backpack_user()->hasConsejoRole())
+        <x-backpack::menu-item title="Solicitudes de Compra" icon="la la-shopping-cart" :link="backpack_url('purchase-request')" />
+        <x-backpack::menu-item title="Cotizaciones" icon="la la-calculator" :link="backpack_url('market-rate')" />
+        <x-backpack::menu-item title="Ordenes de Compra" icon="la la-clipboard-list" :link="backpack_url('purchase-order')" />
+        <x-backpack::menu-item title="Ordenes de Pago" icon="la la-money-bill-wave" :link="backpack_url('payment-order')" />
+    @endif
+    @if(backpack_user()->hasAnalistaAreaRole())
+        <x-backpack::menu-item title="Solicitudes Generales" icon="la la-file-alt" :link="backpack_url('general-request')" />
+    @endif
 @else
     {{-- Menú completo para otros roles --}}
     @if(backpack_user() instanceof \App\Models\User && backpack_user()->canViewAccounting())

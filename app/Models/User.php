@@ -271,6 +271,42 @@ class User extends Authenticatable
             || $this->isAdminSistema();
     }
 
+    public function hasTesoreriaRole(): bool
+    {
+        return $this->hasRole('role_tesoreria', 'backpack')
+            || $this->hasRole('role_tesoreria', 'web')
+            || $this->getRoleNames()->contains('role_tesoreria');
+    }
+
+    public function hasConsejoRole(): bool
+    {
+        return $this->hasRole('role_consejo', 'backpack')
+            || $this->hasRole('role_consejo', 'web')
+            || $this->getRoleNames()->contains('role_consejo');
+    }
+
+    public function hasAnalistaAreaRole(): bool
+    {
+        return $this->hasRole('role_analista_area', 'backpack')
+            || $this->hasRole('role_analista_area', 'web')
+            || $this->getRoleNames()->contains('role_analista_area');
+    }
+
+    /**
+     * Roles que no operan compras ni administración y no deben ver el menú completo.
+     */
+    public function seesRestrictedRoleMenu(): bool
+    {
+        if ($this->isAdminSistema() || $this->hasAdministradoraInstitucionRole() || $this->hasResponsableComprasRole()) {
+            return false;
+        }
+
+        return $this->hasContabilidadRole()
+            || $this->hasTesoreriaRole()
+            || $this->hasConsejoRole()
+            || $this->hasAnalistaAreaRole();
+    }
+
     public function canActAsApoderado(): bool
     {
         return $this->canActOnBehalfOfPurchaseStakeholders()
