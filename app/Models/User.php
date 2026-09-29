@@ -261,15 +261,14 @@ class User extends Authenticatable
     }
 
     /**
-     * Libro diario y sumas y saldos: contabilidad, tesorería y quienes gestionan egresos.
+     * Libro diario, sumas y saldos y plan de cuentas.
+     * Solo contabilidad, administradora del instituto y administrador del sistema.
      */
     public function canViewAccounting(): bool
     {
         return $this->hasContabilidadRole()
-            || $this->canManageFundMovements()
-            || $this->hasRole('role_tesoreria', 'backpack')
-            || $this->hasRole('role_tesoreria', 'web')
-            || $this->getRoleNames()->contains('role_tesoreria');
+            || $this->hasAdministradoraInstitucionRole()
+            || $this->isAdminSistema();
     }
 
     public function canActAsApoderado(): bool

@@ -1865,8 +1865,8 @@
                         @endif
                     </div>
                     <div class="process-item-meta">
-                        <span><i class="la la-clipboard-list"></i> {{ $reception->purchase_order->number ?? 'N/A' }}</span>
-                        <span><i class="la la-truck"></i> {{ $reception->purchase_order->supplier_display_name }}</span>
+                        <span><i class="la la-clipboard-list"></i> {{ $reception->purchase_order?->number ?? 'Sin OC' }}</span>
+                        <span><i class="la la-truck"></i> {{ $reception->purchase_order?->supplier_display_name ?? 'Sin proveedor' }}</span>
                     </div>
                     <div class="process-item-meta">
                         <span><i class="la la-calendar"></i> {{ $reception->created_at->format('d/m/Y') }}</span>
@@ -1897,8 +1897,8 @@
                         <span class="process-item-status status-{{ $paymentOrder->dashboard_payment_status_css_suffix }}">{{ $paymentOrder->dashboard_payment_status_label }}</span>
                     </div>
                     <div class="process-item-meta">
-                        <span><i class="la la-truck"></i> {{ $paymentOrder->purchase_order->supplier_display_name }}</span>
-                        <span><i class="la la-clipboard-list"></i> {{ $paymentOrder->purchase_order->number ?? 'N/A' }}</span>
+                        <span><i class="la la-truck"></i> {{ $paymentOrder->resolvedSupplierName() }}</span>
+                        <span><i class="la la-clipboard-list"></i> {{ $paymentOrder->purchase_order?->number ?? 'Sin OC' }}</span>
                     </div>
                     <div class="process-item-meta">
                         <span><i class="la la-calendar"></i> {{ $paymentOrder->date ? $paymentOrder->date->format('d/m/Y') : 'N/A' }}</span>
