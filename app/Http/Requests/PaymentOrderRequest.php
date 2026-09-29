@@ -41,6 +41,17 @@ class PaymentOrderRequest extends FormRequest
                 },
             ],
             'billing_kind' => ['required', 'in:normal,anticipo'],
+            'support_document_kind' => ['required', 'in:factura,remito'],
+            'supplier_invoice_id' => [
+                'nullable',
+                'exists:supplier_invoices,id',
+                'required_if:support_document_kind,factura',
+            ],
+            'remito_id' => [
+                'nullable',
+                'exists:remitos,id',
+                'required_if:support_document_kind,remito',
+            ],
             'currency_code' => ['nullable', 'string', 'size:3'],
             'total_amount' => [
                 'required',
@@ -116,7 +127,7 @@ class PaymentOrderRequest extends FormRequest
             'bank' => 'nullable|string|max:255',
             'observations' => 'nullable|string',
             'payment_number' => 'required|string|max:255',
-            'status' => 'required|in:Pendiente,Aprobada,Ejecutada,Anulada',
+            'status' => 'required|in:Pendiente,Ejecutada,Anulada',
             'authorizing_user_id' => 'required|exists:users,id',
             'payment_details' => 'nullable|array',
             'imputation_account_id' => [
@@ -161,7 +172,14 @@ class PaymentOrderRequest extends FormRequest
         $cc = strtoupper(trim((string) $this->input('currency_code', '')));
         $merge['currency_code'] = $cc === '' ? 'ARS' : $cc;
 
-        foreach (['imputation_account_id', 'funds_account_id', 'purchase_order_id', 'supplier_id'] as $accountField) {
+        $kind = $this->input('support_document_kind');
+        if ($kind === 'factura') {
+            $merge['remito_id'] = null;
+        } elseif ($kind === 'remito') {
+            $merge['supplier_invoice_id'] = null;
+        }
+
+        foreach (['imputation_account_id', 'funds_account_id', 'purchase_order_id', 'supplier_id', 'supplier_invoice_id', 'remito_id'] as $accountField) {
             $rawAccount = $this->input($accountField);
             if ($rawAccount === '' || $rawAccount === '0') {
                 $merge[$accountField] = null;
@@ -229,6 +247,9 @@ class PaymentOrderRequest extends FormRequest
             'purchase_order_id' => 'orden de compra',
             'supplier_id' => 'proveedor',
             'billing_kind' => 'tipo de orden de pago',
+            'support_document_kind' => 'comprobante',
+            'supplier_invoice_id' => 'factura',
+            'remito_id' => 'remito',
             'currency_code' => 'moneda',
             'total_amount' => 'monto total',
             'date' => 'fecha',
@@ -253,13 +274,16 @@ class PaymentOrderRequest extends FormRequest
     {
         return [
             'purchase_order_id.exists' => 'La orden de compra seleccionada no existe.',
+            'support_document_kind.required' => 'Debe asociar una factura o un remito.',
+            'supplier_invoice_id.required_if' => 'Debe seleccionar la factura.',
+            'remito_id.required_if' => 'Debe seleccionar el remito.',
             'total_amount.required' => 'El campo monto total es obligatorio.',
             'total_amount.numeric' => 'El campo monto total debe ser un número.',
             'total_amount.min' => 'El campo monto total debe ser mayor a 0.',
             'date.required' => 'El campo fecha es obligatorio.',
             'date.date' => 'El campo fecha debe ser una fecha válida.',
             'status.required' => 'El campo estado es obligatorio.',
-            'status.in' => 'El campo estado debe ser: Pendiente, Aprobada, Ejecutada o Anulada.',
+            'status.in' => 'El campo estado debe ser: Pendiente, Ejecutada o Anulada.',
             'authorizing_user_id.required' => 'El campo usuario autorizador es obligatorio.',
             'authorizing_user_id.exists' => 'El usuario autorizador seleccionado no existe.',
             'payment_date.date' => 'La fecha de pago debe ser una fecha válida.',

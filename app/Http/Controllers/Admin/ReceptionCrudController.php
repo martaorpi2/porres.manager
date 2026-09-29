@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Requests\ReceptionRequest;
+use App\Services\PurchaseOrderStockService;
 use Backpack\CRUD\app\Http\Controllers\CrudController;
 use Backpack\CRUD\app\Library\CrudPanel\CrudPanelFacade as CRUD;
 use App\Models\Reception;
@@ -60,10 +61,16 @@ class ReceptionCrudController extends CrudController
         if ($user && $user->hasRole('role_admin_institucion', 'backpack')) {
             CRUD::removeButton('update');
             CRUD::removeButton('delete');
+            CRUD::addButton('line', 'edit_reception', 'view', 'crud::buttons.edit_reception', 'beginning');
         }
         
-        // Si el usuario tiene rol role_responsable_area, solo mostrar recepciones donde él es el responsable
-        if ($user && $user->hasResponsableAreaOrInstituteAuthorityRole()) {
+        // El responsable de área ve sus recepciones. Compras y administración ven todas, para corroborar ARCA.
+        $seesAllReceptions = $user && (
+            $user->hasResponsableComprasRole()
+            || $user->isAdminSistema()
+            || $user->hasAdministradoraInstitucionRole()
+        );
+        if ($user && $user->hasResponsableAreaOrInstituteAuthorityRole() && ! $seesAllReceptions) {
             CRUD::addClause('where', 'area_manager_id', $user->id);
         }
         
@@ -129,6 +136,16 @@ class ReceptionCrudController extends CrudController
         ]);
         
         // Agregar botón PDF en la lista
+        CRUD::addColumn([
+            'name' => 'deliver_button',
+            'label' => 'Entrega',
+            'type' => 'closure',
+            'function' => function ($entry) {
+                return $this->receptionDeliveryActionHtml($entry, true);
+            },
+            'escaped' => false,
+        ]);
+
         CRUD::addColumn([
             'name' => 'pdf_button',
             'label' => 'PDF',
@@ -245,7 +262,7 @@ class ReceptionCrudController extends CrudController
         CRUD::addField([
             'name' => 'according_info',
             'type' => 'custom_html',
-            'value' => '<p class="text-muted small">La recepción queda <strong>conforme</strong> solo cuando las tres conformidades son <strong>Sí</strong>, el área de <strong>contabilidad</strong> ha registrado la <strong>corroboración ARCA</strong> y, en un paso posterior, el <strong>comprobante válido</strong> (factura). La <strong>orden de pago</strong> la registra la <strong>administradora del instituto</strong> desde el detalle de la orden de compra cuando corresponda, <strong>sin depender</strong> de que esta recepción esté conforme.</p>',
+            'value' => '<p class="text-muted small">La recepción queda <strong>conforme</strong> solo cuando las tres conformidades son <strong>Sí</strong> y se registró la <strong>corroboración ARCA</strong> (contabilidad, compras o administración).</p>',
         ]);
         
         // Campo oculto: en crear, responsable = usuario actual; en editar, no fijar «value» (Backpack usa el del modelo).
@@ -302,6 +319,11 @@ class ReceptionCrudController extends CrudController
         return $user instanceof \App\Models\User && $user->hasContabilidadRole();
     }
 
+    protected function userCanRegisterArcaCorroboration($user): bool
+    {
+        return $user instanceof \App\Models\User && $user->canRegisterArcaCorroboration();
+    }
+
     /**
      * Corroboración ARCA y comprobante válido (factura): ambos pasos corresponden al área de contabilidad. En create getCurrentEntry() es null: la visibilidad lo contempla.
      */
@@ -318,14 +340,15 @@ class ReceptionCrudController extends CrudController
         $user = backpack_user();
         $entry = $this->resolveReceptionEntryForCheckboxState();
         $esContabilidad = $this->userHasContabilidadRole($user);
+        $puedeCorroborarArca = $this->userCanRegisterArcaCorroboration($user);
 
         // No usar solo `visible` en checkbox: en algunos entornos el campo igual se renderiza; solo registramos el campo si corresponde.
-        if ($esContabilidad && (! $entry || ! $entry->corroborado_por_arca_at)) {
+        if ($puedeCorroborarArca && (! $entry || ! $entry->corroborado_por_arca_at)) {
             CRUD::addField([
                 'name' => 'marcar_corroborado_arca',
                 'label' => 'Marcar como corroborado por ARCA',
                 'type' => 'checkbox',
-                'hint' => 'Solo el área de contabilidad puede registrar la corroboración ARCA; ningún otro perfil puede usar esta opción.',
+                'hint' => 'Pueden registrarla contabilidad, compras o administración.',
             ]);
         }
 
@@ -354,16 +377,7 @@ class ReceptionCrudController extends CrudController
      */
     protected function setupUpdateOperation()
     {
-        // Verificar permisos para role_responsable_compras
-        $user = backpack_user();
         $entry = $this->crud->getCurrentEntry();
-        
-        if ($user && $user->hasRole('role_responsable_compras', 'backpack')) {
-            // El responsable de compras solo puede editar recepciones que creó
-            if ($entry && $entry->area_manager_id != $user->id) {
-                abort(403, 'Solo puedes editar las recepciones que creaste.');
-            }
-        }
 
         if ($entry && $entry->isAccordingComplete()) {
             abort(403, 'No se puede editar una recepción que ya está conforme.');
@@ -421,22 +435,106 @@ class ReceptionCrudController extends CrudController
         ]);
 
         $this->addReceptionArcaComprobanteCheckboxes($corroboradoArcaInfoHtml, $comprobanteValidoInfoHtml);
+
+        $deliveryHtml = $this->receptionDeliveryActionHtml($entryForInfo instanceof Reception ? $entryForInfo : null);
+        if ($deliveryHtml !== '') {
+            CRUD::addField([
+                'name' => 'delivery_action',
+                'type' => 'custom_html',
+                'value' => $deliveryHtml,
+            ]);
+        }
+    }
+
+    /**
+     * Botón para registrar la entrega cuando la recepción ya tiene las tres conformidades y ARCA.
+     */
+    protected function receptionDeliveryActionHtml(?Reception $reception, bool $compact = false): string
+    {
+        $user = backpack_user();
+        if (! $reception || ! $user || $user->hasRole('role_personal')) {
+            return '';
+        }
+        $canDeliver = $user->canRegisterDeliveryForAnyArea() || $user->hasResponsableAreaOrInstituteAuthorityRole();
+        if (! $canDeliver) {
+            return '';
+        }
+
+        $ready = ($reception->conformidad_estado ?? null) === 'Si'
+            && ($reception->conformidad_cantidad ?? null) === 'Si'
+            && ($reception->conformidad_factura ?? null) === 'Si'
+            && $reception->corroborado_por_arca_at;
+        if (! $ready) {
+            return '';
+        }
+
+        $reception->loadMissing('purchase_order');
+        $purchaseRequestId = $reception->purchase_order->purchase_request_id ?? null;
+        $url = backpack_url('delivery/create?reception_id='.$reception->id.($purchaseRequestId ? '&purchase_request_id='.$purchaseRequestId : ''));
+
+        if ($compact) {
+            return '<a href="'.e($url).'" class="btn btn-sm btn-success"><i class="la la-people-carry"></i> Entregar</a>';
+        }
+
+        return '<div class="card mb-0" style="border-left: 4px solid #28a745;">'
+            .'<div class="card-body">'
+            .'<h5 class="card-title"><i class="la la-people-carry"></i> Registrar entrega</h5>'
+            .'<p class="card-text">Las conformidades y la corroboración ARCA ya están registradas. Desde aquí podés entregar los productos, también en forma parcial.</p>'
+            .'<a href="'.e($url).'" class="btn btn-success"><i class="la la-plus"></i> Registrar entrega</a>'
+            .'</div></div>';
     }
 
     protected function setupShowOperation()
     {
+        CRUD::addClause('with', [
+            'purchase_order.details.input',
+            'purchase_order.details.supplier',
+            'purchase_order.supplier',
+            'purchase_order.purchaseRequest',
+            'user',
+            'corroboradoPorArcaBy',
+            'comprobanteValidoBy',
+        ]);
+
+        CRUD::addColumn([
+            'name' => 'number',
+            'label' => 'Número',
+            'type' => 'closure',
+            'function' => function ($entry) {
+                return e($entry->number);
+            },
+        ]);
+
         CRUD::addColumn([
             'name' => 'purchase_order_id',
-            'label' => 'Orden de Compra',
-            'type' => 'select',
-            'entity' => 'purchase_order',
-            'attribute' => 'number',
-            'model' => 'App\Models\PurchaseOrder',
-            'searchLogic' => function ($query, $column, $searchTerm) {
-                $query->orWhereHas('purchase_order', function ($q) use ($searchTerm) {
-                    $q->where('number', 'like', '%'.$searchTerm.'%');
-                });
+            'label' => 'Orden de compra',
+            'type' => 'closure',
+            'function' => function ($entry) {
+                $order = $entry->purchase_order;
+                if (! $order) {
+                    return '<span class="text-muted">Sin orden de compra</span>';
+                }
+
+                $html = '<a href="'.backpack_url('purchase-order/'.$order->id.'/show').'" class="text-primary"><strong>'
+                    .e($order->number ?? 'OC-'.$order->id).'</strong></a>';
+                $bits = array_filter([
+                    $order->supplier_display_name,
+                    $order->status,
+                    $order->date ? $order->date->format('d/m/Y') : null,
+                    '$'.number_format((float) $order->total, 2),
+                ]);
+                if ($bits !== []) {
+                    $html .= '<br><small class="text-muted">'.e(implode(' · ', $bits)).'</small>';
+                }
+                if ($order->purchaseRequest) {
+                    $html .= '<br><small>Solicitud de compra: <a href="'
+                        .backpack_url('purchase-request/'.$order->purchaseRequest->id.'/show')
+                        .'" class="text-primary">'.e($order->purchaseRequest->request_number ?? 'SC-'.$order->purchaseRequest->id).'</a></small>';
+                }
+
+                return $html;
             },
+            'escaped' => false,
         ]);
         CRUD::column('date')->label('Fecha');
         CRUD::column('conformidad_estado')->label('Conformidad estado');
@@ -479,6 +577,96 @@ class ReceptionCrudController extends CrudController
         
         // Agregar botón PDF en la vista show
         CRUD::addButton('top', 'pdf', 'view', 'crud::buttons.reception_pdf', 'end');
+
+        CRUD::addColumn([
+            'name' => 'received_detail',
+            'label' => 'Detalle recibido',
+            'type' => 'closure',
+            'function' => function ($entry) {
+                return $this->receptionReceivedDetailHtml($entry);
+            },
+            'escaped' => false,
+        ]);
+
+        CRUD::addColumn([
+            'name' => 'delivery_action',
+            'label' => 'Entrega',
+            'type' => 'closure',
+            'function' => function ($entry) {
+                return $this->receptionDeliveryActionHtml($entry);
+            },
+            'escaped' => false,
+        ]);
+    }
+
+    /**
+     * Líneas de la orden de compra que cubre esta recepción.
+     */
+    private function receptionReceivedDetailHtml(Reception $entry): string
+    {
+        $order = $entry->purchase_order;
+        if (! $order) {
+            return '<div class="alert alert-info mb-0">Esta recepción no tiene una orden de compra asociada.</div>';
+        }
+
+        $order->loadMissing(['details.input', 'details.supplier', 'supplier']);
+        $details = $order->details;
+
+        if ($details->isEmpty()) {
+            return '<div class="alert alert-info mb-0">La orden de compra no tiene productos cargados.</div>';
+        }
+
+        $html = '<div class="card border-primary mb-0">';
+        $html .= '<div class="card-header bg-primary text-white">';
+        $html .= '<h6 class="mb-0"><i class="la la-truck-loading"></i> Productos recibidos de '
+            .e($order->number ?? 'OC-'.$order->id).'</h6>';
+        $html .= '</div>';
+        $html .= '<div class="card-body p-0"><div class="table-responsive">';
+        $html .= '<table class="table table-sm table-bordered mb-0">';
+        $html .= '<thead class="table-light"><tr>';
+        $html .= '<th>Producto</th>';
+        $html .= '<th>Proveedor</th>';
+        $html .= '<th class="text-center">Cantidad</th>';
+        $html .= '<th class="text-end">Precio unitario</th>';
+        $html .= '<th class="text-end">Importe</th>';
+        $html .= '</tr></thead><tbody>';
+
+        $lineTotal = 0.0;
+        foreach ($details as $detail) {
+            $input = $detail->input;
+            $name = $input?->name ?? 'Producto';
+            $description = $input?->description ?? '';
+            $unit = $input?->unit ?? '';
+            $quantity = (float) $detail->quantity;
+            $unitPrice = (float) ($detail->getAttributes()['unit_price'] ?? 0);
+            $amount = $quantity * $unitPrice;
+            $lineTotal += $amount;
+            $supplierName = $detail->supplier?->company_name ?? $order->supplier?->company_name;
+
+            $html .= '<tr>';
+            $html .= '<td><strong>'.e($name).'</strong>';
+            if ($description !== '') {
+                $html .= '<br><small class="text-muted">'.e($description).'</small>';
+            }
+            $html .= '</td>';
+            $html .= '<td>'.($supplierName ? e($supplierName) : '<span class="text-muted">—</span>').'</td>';
+            $html .= '<td class="text-center"><span class="badge bg-info">'.e(rtrim(rtrim(number_format($quantity, 2, ',', '.'), '0'), ',')).'</span>';
+            if ($unit !== '') {
+                $html .= ' <small class="text-muted">'.e($unit).'</small>';
+            }
+            $html .= '</td>';
+            $html .= '<td class="text-end">$'.number_format($unitPrice, 2, ',', '.').'</td>';
+            $html .= '<td class="text-end">$'.number_format($amount, 2, ',', '.').'</td>';
+            $html .= '</tr>';
+        }
+
+        $shownTotal = $lineTotal > 0 ? $lineTotal : (float) $order->total;
+        $html .= '</tbody><tfoot class="table-light">';
+        $html .= '<tr><td colspan="4" class="text-end"><strong>Total de la orden</strong></td>';
+        $html .= '<td class="text-end"><span class="badge bg-success fs-6">$'.number_format($shownTotal, 2, ',', '.').'</span></td></tr>';
+        $html .= '</tfoot></table></div></div></div>';
+
+        return $html;
     }
 
     /**
@@ -532,7 +720,7 @@ class ReceptionCrudController extends CrudController
         $this->data['entry'] = $this->crud->entry = $entry;
 
         $entry = Reception::find($entry->id);
-        if ($marcarArca && $this->userHasContabilidadRole($user) && $entry && ! $entry->corroborado_por_arca_at) {
+        if ($marcarArca && $this->userCanRegisterArcaCorroboration($user) && $entry && ! $entry->corroborado_por_arca_at) {
             $entry->update([
                 'corroborado_por_arca_at' => now(),
                 'corroborado_por_arca_by_id' => $user->id,
@@ -552,9 +740,7 @@ class ReceptionCrudController extends CrudController
         $this->syncReceptionAccordingFlag($entry);
         $entry->refresh();
 
-        if ($entry->according === 'Si') {
-            $this->processStockLevelDeduction($entry, true);
-        }
+        $this->syncPurchaseOrderStock($entry);
 
         // Actualizar estado de detalles de solicitud general si la recepción está conforme
         if ($entry->according === 'Si') {
@@ -652,7 +838,7 @@ class ReceptionCrudController extends CrudController
         $this->data['entry'] = $this->crud->entry = $entry;
 
         $entry = Reception::find($entry->id);
-        if ($marcarArca && $this->userHasContabilidadRole($user) && $entry && ! $entry->corroborado_por_arca_at) {
+        if ($marcarArca && $this->userCanRegisterArcaCorroboration($user) && $entry && ! $entry->corroborado_por_arca_at) {
             $entry->update([
                 'corroborado_por_arca_at' => now(),
                 'corroborado_por_arca_by_id' => $user->id,
@@ -672,9 +858,7 @@ class ReceptionCrudController extends CrudController
         $this->syncReceptionAccordingFlag($entry);
         $entry->refresh();
 
-        if ($entry->according === 'Si' && $beforeAccording !== 'Si') {
-            $this->processStockLevelDeduction($entry, false, true);
-        }
+        $this->syncPurchaseOrderStock($entry);
 
         // Actualizar estado de detalles de solicitud general si la recepción está conforme
         if ($entry->according === 'Si') {
@@ -708,106 +892,21 @@ class ReceptionCrudController extends CrudController
     }
 
     /**
-     * Process stock level deduction for reception
-     *
-     * @param Reception $reception
-     * @param bool $isNew Indica si es una recepción nueva
-     * @param bool $bypassStaleGuard Pasar true cuando la recepción pasa a conforme en una edición posterior (primera vez conforme)
-     * @return void
+     * Ingresa el stock de la OC al cargar la recepción. Si la factura ya lo hizo, no suma de nuevo.
      */
-    protected function processStockLevelDeduction(Reception $reception, $isNew = false, $bypassStaleGuard = false)
+    protected function syncPurchaseOrderStock(Reception $reception): void
     {
-        try {
-            // Solo procesar si es una recepción nueva o si no se ha procesado antes
-            // Para recepciones existentes, verificamos si fue creada y actualizada al mismo tiempo
-            if (! $isNew && ! $bypassStaleGuard && $reception->created_at->ne($reception->updated_at)) {
-                // La recepción fue actualizada después de ser creada
-                // Por ahora, solo procesamos si es nueva para evitar descuentos duplicados
-                // TODO: Implementar lógica para revertir y recalcular si es necesario
-                Log::info('Recepción actualizada - saltando procesamiento de stock para evitar descuentos duplicados', [
-                    'reception_id' => $reception->id
-                ]);
-                return;
-            }
+        if (! $reception->purchase_order_id) {
+            return;
+        }
 
-            // Cargar la orden de compra con sus detalles
-            $purchaseOrder = $reception->purchase_order()->with('details.input')->first();
-            
-            if (!$purchaseOrder) {
-                Log::warning('Orden de compra no encontrada para recepción', ['reception_id' => $reception->id]);
-                return;
-            }
+        $result = app(PurchaseOrderStockService::class)->receiveOnce(
+            (int) $reception->purchase_order_id,
+            'recepción REC-'.$reception->id
+        );
 
-            // Obtener la ubicación basándose en el área de responsabilidad
-            // Intentar obtener la ubicación desde el área de responsabilidad del usuario
-            $location = $this->getLocationForReception($reception);
-            
-            if (!$location) {
-                Log::warning('Ubicación no encontrada para recepción', ['reception_id' => $reception->id]);
-                return;
-            }
-
-            $currentUser = backpack_user();
-            
-            // Procesar cada detalle de la orden de compra
-            foreach ($purchaseOrder->details as $detail) {
-                $input = $detail->input;
-                
-                if (!$input) {
-                    Log::warning('Input no encontrado para detalle de orden de compra', [
-                        'detail_id' => $detail->id,
-                        'input_id' => $detail->input_id
-                    ]);
-                    continue;
-                }
-
-                // Buscar o crear el producto correspondiente al input
-                $product = $this->findOrCreateProductFromInput($input);
-                
-                if (!$product) {
-                    Log::warning('No se pudo obtener o crear producto desde input', [
-                        'input_id' => $input->id,
-                        'input_name' => $input->name
-                    ]);
-                    continue;
-                }
-
-                // Buscar el stock level para este producto y ubicación
-                $stockLevel = StockLevel::where('product_id', $product->id)
-                    ->where('location_id', $location->id)
-                    ->first();
-
-                if ($stockLevel) {
-                    // Descontar la cantidad del stock
-                    $quantityToDeduct = $detail->quantity;
-                    $newQuantity = max(0, $stockLevel->quantity - $quantityToDeduct);
-                    
-                    $stockLevel->quantity = $newQuantity;
-                    $stockLevel->last_updated_by = $currentUser ? $currentUser->id : null;
-                    $stockLevel->save();
-
-                    Log::info('Stock descontado exitosamente', [
-                        'reception_id' => $reception->id,
-                        'product_id' => $product->id,
-                        'location_id' => $location->id,
-                        'quantity_deducted' => $quantityToDeduct,
-                        'new_quantity' => $newQuantity
-                    ]);
-                } else {
-                    Log::warning('Stock level no encontrado para producto y ubicación', [
-                        'product_id' => $product->id,
-                        'location_id' => $location->id,
-                        'product_name' => $product->name,
-                        'location_name' => $location->name
-                    ]);
-                }
-            }
-        } catch (\Exception $e) {
-            Log::error('Error al procesar descuento de stock en recepción', [
-                'reception_id' => $reception->id,
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
-            ]);
+        if ($result === 'posted') {
+            \Alert::success('El stock se actualizó con las cantidades de la orden de compra.')->flash();
         }
     }
 

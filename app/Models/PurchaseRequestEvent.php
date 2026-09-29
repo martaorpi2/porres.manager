@@ -19,6 +19,9 @@ class PurchaseRequestEvent extends Model
     /** Administración reabrió la solicitud tras observaciones del nivel superior para ajustar cotización. */
     public const EVENT_REOPENED_AFTER_SUPERIOR_REVISION = 'reopened_after_superior_revision';
 
+    /** Compras, admin. sistema o administradora corrigió una cotización ya cargada. */
+    public const EVENT_QUOTATION_EDITED = 'quotation_edited';
+
     public $timestamps = false;
 
     protected $fillable = [

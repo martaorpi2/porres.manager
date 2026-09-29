@@ -349,7 +349,7 @@ class MarketRateCrudController extends CrudController
         $entry = $this->crud->getCurrentEntry();
         if ($entry && $entry->purchase_request_id) {
             $purchaseRequest = \App\Models\PurchaseRequest::with(['marketRates', 'details', 'purchaseRequestEvents', 'purchaseOrders'])->find($entry->purchase_request_id);
-            if ($redirect = $this->redirectIfPurchaseRequestFrozenForSuperiorApproval($purchaseRequest)) {
+            if ($redirect = $this->redirectIfPurchaseRequestFrozenForSuperiorApproval($purchaseRequest, true)) {
                 return $redirect;
             }
         }
@@ -732,13 +732,15 @@ class MarketRateCrudController extends CrudController
         if ($currentEntry && $currentEntry->purchase_request_id) {
             $linkedPurchaseRequest = \App\Models\PurchaseRequest::with(['marketRates', 'details', 'purchaseRequestEvents', 'purchaseOrders'])
                 ->find($currentEntry->purchase_request_id);
-            if ($redirect = $this->redirectIfPurchaseRequestFrozenForSuperiorApproval($linkedPurchaseRequest)) {
+            if ($redirect = $this->redirectIfPurchaseRequestFrozenForSuperiorApproval($linkedPurchaseRequest, true)) {
                 return $redirect;
             }
         }
-        
-        // Advertir pero permitir editar si la solicitud está aprobada (solo bloqueamos asociar a otra solicitud aprobada más abajo)
-        // Así se pueden corregir fecha de entrega, forma de pago, etc. sin bloquear todo el guardado.
+
+        $oldQuoteTotal = $currentEntry ? $currentEntry->effectiveTotalWithVat() : 0.0;
+
+        // Compras / admin. sistema / administradora pueden corregir la cotización aunque la solicitud esté aprobada,
+        // hasta que exista una orden de compra. No se puede reasignar a otra solicitud aprobada.
 
         // Obtener datos para guardar
         $dataToSave = $this->crud->getStrippedSaveRequest($request) ?? [];
@@ -766,12 +768,16 @@ class MarketRateCrudController extends CrudController
         if (isset($dataToSave['purchase_request_id']) && !empty($dataToSave['purchase_request_id'])) {
             $purchaseRequest = \App\Models\PurchaseRequest::with(['marketRates', 'details', 'purchaseRequestEvents', 'purchaseOrders'])
                 ->find($dataToSave['purchase_request_id']);
-            if ($redirect = $this->redirectIfPurchaseRequestFrozenForSuperiorApproval($purchaseRequest)) {
-                return $redirect;
-            }
-            if ($purchaseRequest && $purchaseRequest->status === 'Aprobada' && ! $purchaseRequest->canReopenForSuperiorAuthorizationAfterRevision()) {
-                \Alert::error('No se puede asociar una cotización a una solicitud de compra que ya está aprobada.')->flash();
-                return redirect()->back()->withInput();
+            $isReassigningPurchaseRequest = $currentEntry
+                && (int) $dataToSave['purchase_request_id'] !== (int) $currentEntry->purchase_request_id;
+            if ($isReassigningPurchaseRequest) {
+                if ($redirect = $this->redirectIfPurchaseRequestFrozenForSuperiorApproval($purchaseRequest)) {
+                    return $redirect;
+                }
+                if ($purchaseRequest && $purchaseRequest->status === 'Aprobada' && ! $purchaseRequest->canReopenForSuperiorAuthorizationAfterRevision()) {
+                    \Alert::error('No se puede asociar una cotización a una solicitud de compra que ya está aprobada.')->flash();
+                    return redirect()->back()->withInput();
+                }
             }
         }
 
@@ -792,6 +798,13 @@ class MarketRateCrudController extends CrudController
 
         // Procesar los items de cotización (eliminar existentes y crear nuevos)
         $this->processSelectedQuoteItems($item, $request, true);
+
+        $editor = backpack_user();
+        app(\App\Services\MarketRateUpdateService::class)->recordAndNotifyAfterEdit(
+            $item,
+            $oldQuoteTotal,
+            $editor instanceof \App\Models\User ? $editor : null
+        );
 
         // show a success message
         \Alert::success(trans('backpack::crud.update_success'))->flash();
@@ -822,13 +835,25 @@ class MarketRateCrudController extends CrudController
     /**
      * @return \Illuminate\Http\RedirectResponse|null
      */
-    private function redirectIfPurchaseRequestFrozenForSuperiorApproval(?\App\Models\PurchaseRequest $purchaseRequest)
+    private function redirectIfPurchaseRequestFrozenForSuperiorApproval(?\App\Models\PurchaseRequest $purchaseRequest, bool $isUpdate = false)
     {
         if (! $purchaseRequest) {
             return null;
         }
 
         $purchaseRequest->loadMissing(['purchaseRequestEvents', 'details', 'purchaseOrders', 'marketRates']);
+        $user = backpack_user();
+
+        if ($isUpdate && $user instanceof \App\Models\User && $purchaseRequest->allowsLoadedQuotationEditsFor($user)) {
+            return null;
+        }
+
+        if ($isUpdate && $user instanceof \App\Models\User && $user->canEditLoadedPurchaseRequestQuotations() && $purchaseRequest->hasGeneratedPurchaseOrder()) {
+            \Alert::error('No se puede editar la cotización: ya se generó una orden de compra.')->flash();
+
+            return redirect()->route('purchase-request.show', $purchaseRequest->id);
+        }
+
         if (! $purchaseRequest->blocksQuotationAndAssignmentMutations()) {
             return null;
         }

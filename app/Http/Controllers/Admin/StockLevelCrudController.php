@@ -144,6 +144,16 @@ class StockLevelCrudController extends CrudController
             },
         ]);
         CRUD::addColumn([
+            'name' => 'deliver_button',
+            'label' => 'Entrega',
+            'type' => 'closure',
+            'function' => function ($entry) {
+                return $this->stockDeliveryActionHtml($entry, true);
+            },
+            'escaped' => false,
+        ]);
+
+        CRUD::addColumn([
             'name' => 'last_updated_by',
             'label' => 'Actualizado por',
             'type' => 'select',
@@ -433,6 +443,43 @@ HTML,
                 'value' => $user->id,
             ]);
         }
+
+        $entry = $this->crud->getCurrentEntry();
+        $deliveryHtml = $entry instanceof \App\Models\StockLevel ? $this->stockDeliveryActionHtml($entry) : '';
+        if ($deliveryHtml !== '') {
+            CRUD::addField([
+                'name' => 'delivery_from_stock',
+                'type' => 'custom_html',
+                'value' => $deliveryHtml,
+            ]);
+        }
+    }
+
+    /**
+     * Entrega desde este stock: administración del sistema, administración del instituto y compras.
+     */
+    protected function stockDeliveryActionHtml(\App\Models\StockLevel $stock, bool $compact = false): string
+    {
+        $user = backpack_user();
+        if (! $user || ! $user->canRegisterDeliveryForAnyArea() || (int) $stock->quantity <= 0) {
+            return '';
+        }
+
+        $url = backpack_url('delivery/create?product_id='.$stock->product_id.'&location_id='.$stock->location_id);
+        if ($compact) {
+            return '<a href="'.e($url).'" class="btn btn-sm btn-success"><i class="la la-people-carry"></i> Entregar</a>';
+        }
+
+        $stock->loadMissing(['product', 'location']);
+        $productName = $stock->product->name ?? 'este producto';
+        $locationName = $stock->location->name ?? 'este depósito';
+
+        return '<div class="card mb-0" style="border-left: 4px solid #28a745;">'
+            .'<div class="card-body">'
+            .'<h5 class="card-title"><i class="la la-people-carry"></i> Registrar entrega</h5>'
+            .'<p class="card-text">Hay <strong>'.number_format((int) $stock->quantity).'</strong> de '.e($productName).' en '.e($locationName).'. Podés entregarlas a una solicitud general pendiente, también en forma parcial.</p>'
+            .'<a href="'.e($url).'" class="btn btn-success"><i class="la la-plus"></i> Registrar entrega</a>'
+            .'</div></div>';
     }
 
     /**

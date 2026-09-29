@@ -72,6 +72,17 @@ class User extends Authenticatable
     }
 
     /**
+     * Puede registrar la corroboración ARCA en una recepción.
+     */
+    public function canRegisterArcaCorroboration(): bool
+    {
+        return $this->hasContabilidadRole()
+            || $this->hasResponsableComprasRole()
+            || $this->isAdminSistema()
+            || $this->hasAdministradoraInstitucionRole();
+    }
+
+    /**
      * ¿Existe al menos un usuario con el rol en Backpack? (p. ej. decidir fallback de notificaciones a administradora.)
      */
     public static function backpackHasAnyUserWithRole(string $roleName, string $guard = 'backpack'): bool
@@ -113,6 +124,16 @@ class User extends Authenticatable
         }
 
         return $this->getRoleNames()->contains('role_responsable_compras');
+    }
+
+    /**
+     * Puede registrar entregas de cualquier área (administración y compras).
+     */
+    public function canRegisterDeliveryForAnyArea(): bool
+    {
+        return $this->isAdminSistema()
+            || $this->hasAdministradoraInstitucionRole()
+            || $this->hasResponsableComprasRole();
     }
 
     /**
@@ -195,6 +216,25 @@ class User extends Authenticatable
     public function canActAsAdministradoraInstitucion(): bool
     {
         return $this->canActOnBehalfOfPurchaseStakeholders()
+            || $this->hasAdministradoraInstitucionRole();
+    }
+
+    /**
+     * Generar una orden de pago: administradora del instituto, administrador del sistema y responsable de compras.
+     */
+    public function canCreatePaymentOrder(): bool
+    {
+        return $this->canActAsAdministradoraInstitucion()
+            || $this->canActAsResponsableCompras();
+    }
+
+    /**
+     * Corregir cotizaciones ya cargadas: compras, admin. sistema y administradora del instituto.
+     */
+    public function canEditLoadedPurchaseRequestQuotations(): bool
+    {
+        return $this->hasResponsableComprasRole()
+            || $this->isAdminSistema()
             || $this->hasAdministradoraInstitucionRole();
     }
 

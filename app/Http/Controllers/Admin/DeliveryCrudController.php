@@ -44,8 +44,6 @@ class DeliveryCrudController extends CrudController
      */
     protected function setupListOperation()
     {
-        CRUD::removeButton('show');
-        
         // Cargar relaciones para evitar N+1 queries
         CRUD::addClause('with', ['reception', 'generalRequest', 'purchaseRequest', 'receivedBy', 'deliveredBy']);
         
@@ -158,11 +156,31 @@ class DeliveryCrudController extends CrudController
         
         CRUD::setValidation(DeliveryRequest::class);
         
-        // Verificar si viene desde una solicitud general específica
+        // Verificar si viene desde una solicitud general, una solicitud de compra o una recepción
         $generalRequestId = request()->get('general_request_id');
+        $purchaseRequestId = request()->get('purchase_request_id');
+        $receptionId = request()->get('reception_id');
         $generalRequest = null;
         if ($generalRequestId) {
             $generalRequest = \App\Models\GeneralRequest::with(['createdBy', 'requestingUser'])->find($generalRequestId);
+        }
+        if ($receptionId && ! $purchaseRequestId) {
+            $linkedReception = Reception::with('purchase_order')->find($receptionId);
+            $purchaseRequestId = $linkedReception?->purchase_order?->purchase_request_id;
+        }
+        $fromPurchase = $purchaseRequestId && ! $generalRequestId;
+        $stockProductId = request()->get('product_id');
+        $stockLocationId = request()->get('location_id');
+        $stockAreaIds = collect();
+        if ($stockLocationId && ! $fromPurchase && ! $generalRequestId) {
+            $stockLocation = \App\Models\Location::find($stockLocationId);
+            if ($stockLocation) {
+                $locationAreaNames = [
+                    'Insumos de Salud' => ['Salud', 'Insumos de Salud'],
+                ];
+                $areaNames = $locationAreaNames[$stockLocation->name] ?? [$stockLocation->name];
+                $stockAreaIds = \App\Models\ResponsibilityArea::whereIn('name', $areaNames)->pluck('id');
+            }
         }
         
         // Campo informativo
@@ -174,6 +192,15 @@ class DeliveryCrudController extends CrudController
         if ($generalRequest) {
             $infoMessage = '<div class="alert alert-success">
                 <i class="la la-info-circle"></i> <strong>Registrando entrega para:</strong> ' . e($generalRequest->number) . ' - ' . e($generalRequest->title) . '
+            </div>';
+        } elseif ($stockProductId && ! $fromPurchase) {
+            $stockProduct = \App\Models\Product::find($stockProductId);
+            $stockLocation = isset($stockLocation) ? $stockLocation : \App\Models\Location::find($stockLocationId);
+            $infoMessage = '<div class="alert alert-success">
+                <i class="la la-people-carry"></i> <strong>Entrega desde stock:</strong> '
+                .e($stockProduct->name ?? 'producto')
+                .' en '.e($stockLocation->name ?? 'depósito')
+                .'. Elegí la solicitud general y la cantidad a entregar.
             </div>';
         }
         
@@ -193,7 +220,7 @@ class DeliveryCrudController extends CrudController
                 'general' => 'Solicitud General',
                 'purchase' => 'Solicitud de Compra',
             ],
-            'default' => $generalRequestId ? 'general' : 'general',
+            'default' => $fromPurchase ? 'purchase' : 'general',
             'allows_null' => false,
             'attributes' => [
                 'id' => 'request_type_select',
@@ -203,28 +230,36 @@ class DeliveryCrudController extends CrudController
         // Campo para solicitud general (mostrar/ocultar según tipo)
         // Si viene desde una solicitud general específica, pre-seleccionarla
         $user = backpack_user();
-        $generalRequestOptions = function ($query) use ($generalRequestId, $user) {
-            // Excluir solicitudes totalmente entregadas
-            $query->where('status', '!=', 'entregada_totalmente');
-            
-            // Si es role_responsable_area, solo mostrar solicitudes de su área
-            if ($user && $user->hasResponsableAreaOrInstituteAuthorityRole()) {
+        $generalRequestOptions = function ($query) use ($generalRequestId, $user, $stockProductId, $stockAreaIds, $fromPurchase) {
+            // Incluye entregas parciales. Oculta las que ya no admiten más entregas.
+            $query->whereNotIn('status', ['entregada_totalmente', 'archivada'])
+                ->orderByDesc('id');
+
+            $seesAllAreas = $user && $user->canRegisterDeliveryForAnyArea();
+            // El responsable de área solo ve solicitudes de su área. Administración y compras ven todas.
+            if ($user && $user->hasResponsableAreaOrInstituteAuthorityRole() && ! $seesAllAreas) {
                 $userAreas = \App\Models\ResponsibilityArea::where('responsible_user_id', $user->id)->pluck('id');
                 if ($userAreas->isNotEmpty()) {
                     $query->whereIn('area_id', $userAreas);
                 } else {
-                    // Si no tiene áreas asignadas, no mostrar ninguna solicitud
                     $query->where('id', 0);
+                }
+            }
+
+            if (! $generalRequestId && ! $fromPurchase && $stockProductId) {
+                $query->whereHas('details', function ($q) use ($stockProductId) {
+                    $q->where('product_id', $stockProductId);
+                });
+                if ($stockAreaIds->isNotEmpty()) {
+                    $query->whereIn('area_id', $stockAreaIds);
                 }
             }
             
             if ($generalRequestId) {
-                // Si viene desde una solicitud específica, incluirla aunque ya tenga entregas
-                // pero solo si no está totalmente entregada y pertenece a su área (si es responsable)
                 return $query->where('id', $generalRequestId)->get();
             }
-            // Si no, solo mostrar solicitudes que no tienen entregas asociadas
-            return $query->whereDoesntHave('deliveries')->get();
+
+            return $query->get();
         };
         
         CRUD::addField([
@@ -234,7 +269,18 @@ class DeliveryCrudController extends CrudController
             'model' => 'App\Models\GeneralRequest',
             'attribute' => 'number',
             'allows_null' => false,
-            'default' => $generalRequestId,
+            'default' => $generalRequestId ?: ($stockProductId && ! $fromPurchase
+                ? \App\Models\GeneralRequest::query()
+                    ->whereNotIn('status', ['entregada_totalmente', 'archivada'])
+                    ->when($stockAreaIds->isNotEmpty(), function ($q) use ($stockAreaIds) {
+                        $q->whereIn('area_id', $stockAreaIds);
+                    })
+                    ->whereHas('details', function ($q) use ($stockProductId) {
+                        $q->where('product_id', $stockProductId);
+                    })
+                    ->orderByDesc('id')
+                    ->value('id')
+                : null),
             'options' => $generalRequestOptions,
             'attributes' => [
                 'id' => 'general_request_select',
@@ -251,7 +297,15 @@ class DeliveryCrudController extends CrudController
             'model' => 'App\Models\PurchaseRequest',
             'attribute' => 'request_number',
             'allows_null' => false,
-            'options' => function ($query) {
+            'default' => $purchaseRequestId,
+            'options' => function ($query) use ($purchaseRequestId) {
+                $query->orderByDesc('id');
+                if ($purchaseRequestId) {
+                    return $query->where(function ($q) use ($purchaseRequestId) {
+                        $q->whereDoesntHave('deliveries')->orWhere('id', $purchaseRequestId);
+                    })->get();
+                }
+
                 return $query->whereDoesntHave('deliveries')->get();
             },
             'attributes' => [
@@ -262,7 +316,7 @@ class DeliveryCrudController extends CrudController
         // Campo opcional para recepción
         // Si es role_responsable_area, solo mostrar sus propias recepciones
         $receptionOptions = function ($query) use ($user) {
-            if ($user && $user->hasResponsableAreaOrInstituteAuthorityRole()) {
+            if ($user && $user->hasResponsableAreaOrInstituteAuthorityRole() && ! $user->canRegisterDeliveryForAnyArea()) {
                 // Solo mostrar recepciones donde el usuario es el area_manager_id
                 return $query->where('area_manager_id', $user->id)->get();
             }
@@ -278,11 +332,13 @@ class DeliveryCrudController extends CrudController
             'attribute' => 'number',
             'model' => 'App\Models\Reception',
             'allows_null' => true,
+            'default' => $receptionId,
             'hint' => 'Opcional: Solo si la entrega proviene de una recepción específica',
             'options' => $receptionOptions,
         ]);
         
-        // Script para mostrar/ocultar campos según el tipo de solicitud
+        $productsFormUrl = json_encode(route('delivery.products-form'));
+        // Script para mostrar/ocultar campos y cargar cantidades al elegir la solicitud general
         CRUD::addField([
             'name' => 'request_type_script',
             'type' => 'custom_html',
@@ -290,23 +346,119 @@ class DeliveryCrudController extends CrudController
             <script>
             document.addEventListener("DOMContentLoaded", function() {
                 const requestTypeSelect = document.getElementById("request_type_select");
-                const generalRequestSelect = document.getElementById("general_request_select").closest(".form-group");
-                const purchaseRequestSelect = document.getElementById("purchase_request_select").closest(".form-group");
+                const generalRequestSelectEl = document.getElementById("general_request_select");
+                const purchaseRequestSelectEl = document.getElementById("purchase_request_select");
+                const generalRequestSelect = generalRequestSelectEl.closest(".form-group");
+                const purchaseRequestSelect = purchaseRequestSelectEl.closest(".form-group");
+                const productsUrl = '.$productsFormUrl.';
+                const isEdit = /\\/delivery\\/\\d+\\/edit/.test(window.location.pathname);
+
+                function loadDeliveryProducts(generalRequestId) {
+                    const slot = document.getElementById("delivery-products-slot");
+                    if (!slot || isEdit) {
+                        return;
+                    }
+                    if (!generalRequestId) {
+                        slot.innerHTML = "<div class=\"alert alert-secondary mb-0\">Elegí una solicitud general para indicar las cantidades a entregar.</div>";
+                        return;
+                    }
+                    slot.innerHTML = "<div class=\"alert alert-info mb-0\">Cargando productos...</div>";
+                    fetch(productsUrl + "?general_request_id=" + encodeURIComponent(generalRequestId), {
+                        headers: { "X-Requested-With": "XMLHttpRequest", "Accept": "text/html" },
+                        credentials: "same-origin"
+                    }).then(function(response) {
+                        if (!response.ok) {
+                            throw new Error("load failed");
+                        }
+                        return response.text();
+                    }).then(function(html) {
+                        slot.innerHTML = html;
+                        const box = document.getElementById("delivery-products-container");
+                        const receivedBy = box ? box.getAttribute("data-received-by") : "";
+                        const receivedSelect = document.querySelector("select[name=\\"received_by\\"]");
+                        if (receivedBy && receivedSelect) {
+                            receivedSelect.value = receivedBy;
+                            if (window.jQuery) {
+                                window.jQuery(receivedSelect).trigger("change");
+                            }
+                        }
+                    }).catch(function() {
+                        slot.innerHTML = "<div class=\"alert alert-danger mb-0\">No se pudieron cargar los productos de la solicitud.</div>";
+                    });
+                }
                 
                 function toggleRequestFields() {
                     if (requestTypeSelect.value === "general") {
                         generalRequestSelect.style.display = "block";
                         purchaseRequestSelect.style.display = "none";
-                        document.getElementById("purchase_request_select").value = "";
+                        purchaseRequestSelectEl.value = "";
+                        loadDeliveryProducts(generalRequestSelectEl.value);
                     } else {
                         generalRequestSelect.style.display = "none";
                         purchaseRequestSelect.style.display = "block";
-                        document.getElementById("general_request_select").value = "";
+                        generalRequestSelectEl.value = "";
+                        loadPurchaseDeliveryProducts(purchaseRequestSelectEl.value);
                     }
+                }
+
+                function loadPurchaseDeliveryProducts(purchaseRequestId) {
+                    const slot = document.getElementById("delivery-products-slot");
+                    if (!slot || isEdit) {
+                        return;
+                    }
+                    if (!purchaseRequestId) {
+                        slot.innerHTML = "<div class=\"alert alert-secondary mb-0\">Elegí una solicitud de compra para indicar las cantidades a entregar.</div>";
+                        return;
+                    }
+                    slot.innerHTML = "<div class=\"alert alert-info mb-0\">Cargando productos...</div>";
+                    fetch(productsUrl + "?purchase_request_id=" + encodeURIComponent(purchaseRequestId), {
+                        headers: { "X-Requested-With": "XMLHttpRequest", "Accept": "text/html" },
+                        credentials: "same-origin"
+                    }).then(function(response) {
+                        if (!response.ok) {
+                            throw new Error("load failed");
+                        }
+                        return response.text();
+                    }).then(function(html) {
+                        slot.innerHTML = html;
+                        const box = document.getElementById("delivery-products-container");
+                        const receivedBy = box ? box.getAttribute("data-received-by") : "";
+                        const receivedSelect = document.querySelector("select[name=\\"received_by\\"]");
+                        if (receivedBy && receivedSelect) {
+                            receivedSelect.value = receivedBy;
+                            if (window.jQuery) {
+                                window.jQuery(receivedSelect).trigger("change");
+                            }
+                        }
+                    }).catch(function() {
+                        slot.innerHTML = "<div class=\"alert alert-danger mb-0\">No se pudieron cargar los productos de la solicitud de compra.</div>";
+                    });
                 }
                 
                 requestTypeSelect.addEventListener("change", toggleRequestFields);
-                toggleRequestFields(); // Ejecutar al cargar
+                generalRequestSelectEl.addEventListener("change", function() {
+                    if (requestTypeSelect.value === "general") {
+                        loadDeliveryProducts(generalRequestSelectEl.value);
+                    }
+                });
+                purchaseRequestSelectEl.addEventListener("change", function() {
+                    if (requestTypeSelect.value === "purchase") {
+                        loadPurchaseDeliveryProducts(purchaseRequestSelectEl.value);
+                    }
+                });
+                if (window.jQuery) {
+                    window.jQuery(generalRequestSelectEl).on("select2:select", function() {
+                        if (requestTypeSelect.value === "general") {
+                            loadDeliveryProducts(generalRequestSelectEl.value);
+                        }
+                    });
+                    window.jQuery(purchaseRequestSelectEl).on("select2:select", function() {
+                        if (requestTypeSelect.value === "purchase") {
+                            loadPurchaseDeliveryProducts(purchaseRequestSelectEl.value);
+                        }
+                    });
+                }
+                toggleRequestFields();
             });
             </script>
             ',
@@ -343,15 +495,104 @@ class DeliveryCrudController extends CrudController
             'model' => 'App\Models\User',
             'default' => $receivedByDefault,
         ]);
-        // Agregar campo para productos y cantidades si viene desde una solicitud general
-        if ($generalRequestId && $generalRequest) {
-        CRUD::addField([
-                'name' => 'delivery_products',
+        if ($this->crud->getCurrentOperation() !== 'update') {
+            CRUD::addField([
+                'name' => 'delivery_products_slot',
                 'label' => 'Productos a Entregar',
                 'type' => 'custom_html',
-                'value' => $this->getDeliveryProductsHtml($generalRequest),
+                'value' => '<div id="delivery-products-slot"></div>',
             ]);
         }
+    }
+
+    /**
+     * HTML de cantidades a entregar para la solicitud general elegida en el formulario.
+     */
+    public function productsForm()
+    {
+        $user = backpack_user();
+        if ($user && $user->hasRole('role_personal')) {
+            abort(403, 'No tienes permiso para registrar entregas.');
+        }
+
+        if (request()->filled('purchase_request_id')) {
+            $purchaseRequest = PurchaseRequest::with('details.product')->find(request()->query('purchase_request_id'));
+            if (! $purchaseRequest) {
+                return response('<div class="alert alert-warning mb-0">Seleccioná una solicitud de compra.</div>', 404);
+            }
+
+            return response($this->getPurchaseDeliveryProductsHtml($purchaseRequest));
+        }
+
+        $generalRequestId = request()->query('general_request_id');
+        $generalRequest = \App\Models\GeneralRequest::with(['details.product', 'area'])->find($generalRequestId);
+        if (! $generalRequest) {
+            return response('<div class="alert alert-warning mb-0">Seleccioná una solicitud general.</div>', 404);
+        }
+
+        if (in_array($generalRequest->status, ['entregada_totalmente', 'archivada'], true)) {
+            return response('<div class="alert alert-success mb-0">Esta solicitud ya no admite nuevas entregas.</div>');
+        }
+
+        $seesAllAreas = $user && $user->canRegisterDeliveryForAnyArea();
+        if ($user && $user->hasResponsableAreaOrInstituteAuthorityRole() && ! $seesAllAreas) {
+            $userAreas = \App\Models\ResponsibilityArea::where('responsible_user_id', $user->id)->pluck('id');
+            if ($generalRequest->area_id && ! $userAreas->contains($generalRequest->area_id)) {
+                abort(403, 'No puedes registrar entregas para solicitudes de otras áreas.');
+            }
+        }
+
+        return response($this->getDeliveryProductsHtml($generalRequest));
+    }
+
+    /**
+     * Cantidades a entregar de una solicitud de compra (permite entrega parcial).
+     */
+    private function getPurchaseDeliveryProductsHtml(PurchaseRequest $purchaseRequest): string
+    {
+        $purchaseRequest->loadMissing('details.product');
+        $receivedById = (int) ($purchaseRequest->requesting_user_id ?? 0);
+        $html = '<div id="delivery-products-container" data-received-by="'.$receivedById.'">';
+        $html .= '<div class="alert alert-info">';
+        $html .= '<i class="la la-info-circle"></i> <strong>Nota:</strong> Podés entregar cantidades parciales. Lo pendiente descuenta lo ya entregado de esta solicitud de compra.';
+        $html .= '</div>';
+        $html .= '<table class="table table-bordered">';
+        $html .= '<thead style="background-color: #871f1f; color: white;"><tr>';
+        $html .= '<th>Producto</th><th class="text-center">Solicitado</th><th class="text-center">Ya entregado</th><th class="text-center">Pendiente</th><th class="text-center">Cantidad a entregar</th><th>Observaciones</th>';
+        $html .= '</tr></thead><tbody>';
+
+        foreach ($purchaseRequest->details as $detail) {
+            if (! $detail->product_id) {
+                continue;
+            }
+            $requestedQty = (int) ($detail->requested_quantity ?? 0);
+            $deliveredQty = (int) DeliveryDetail::query()
+                ->whereHas('delivery', function ($q) use ($purchaseRequest) {
+                    $q->where('purchase_request_id', $purchaseRequest->id);
+                })
+                ->where('product_id', $detail->product_id)
+                ->sum('delivered_quantity');
+            $pendingQty = max(0, $requestedQty - $deliveredQty);
+            $productName = $detail->product->name ?? ('Producto #'.$detail->product_id);
+            if (is_array($productName)) {
+                $productName = 'Producto #'.$detail->product_id;
+            }
+
+            $html .= '<tr>';
+            $html .= '<td><strong>'.e($productName).'</strong></td>';
+            $html .= '<td class="text-center"><span class="badge bg-primary">'.number_format($requestedQty).'</span></td>';
+            $html .= '<td class="text-center"><span class="badge bg-'.($deliveredQty > 0 ? 'success' : 'secondary').'">'.number_format($deliveredQty).'</span></td>';
+            $html .= '<td class="text-center"><span class="badge bg-warning">'.number_format($pendingQty).'</span></td>';
+            $html .= '<td class="text-center">';
+            $html .= '<input type="number" name="delivery_products['.$detail->product_id.'][quantity]" class="form-control" min="0" max="'.$pendingQty.'" value="'.$pendingQty.'" style="width: 100px; margin: 0 auto;"'.($pendingQty <= 0 ? ' disabled' : '').'>';
+            $html .= '</td>';
+            $html .= '<td><input type="text" name="delivery_products['.$detail->product_id.'][observations]" class="form-control" placeholder="Observaciones (opcional)"'.($pendingQty <= 0 ? ' disabled' : '').'></td>';
+            $html .= '</tr>';
+        }
+
+        $html .= '</tbody></table></div>';
+
+        return $html;
     }
     
     /**
@@ -360,7 +601,8 @@ class DeliveryCrudController extends CrudController
     private function getDeliveryProductsHtml($generalRequest)
     {
         $generalRequest->load('details.product');
-        $productsHtml = '<div id="delivery-products-container">';
+        $receivedById = (int) $generalRequest->solicitingUserId();
+        $productsHtml = '<div id="delivery-products-container" data-received-by="'.$receivedById.'">';
         $productsHtml .= '<div class="alert alert-info">';
         $productsHtml .= '<i class="la la-info-circle"></i> <strong>Nota:</strong> Puedes entregar cantidades parciales. La cantidad máxima disponible se calcula considerando lo ya entregado.';
         $productsHtml .= '</div>';
@@ -673,11 +915,22 @@ class DeliveryCrudController extends CrudController
                         'default' => $generalRequestId,
                     ]);
                     
-                    // Actualizar el campo de productos con valores existentes
+                    // El campo de productos solo se crea en el alta si la URL trae general_request_id.
+                    // En la edición esa query no viene, así que hay que agregarlo si no existe.
                     if ($generalRequest) {
-                        CRUD::modifyField('delivery_products', [
-                            'value' => $this->getDeliveryProductsHtmlForEdit($generalRequest, $entry),
-                        ]);
+                        $productsHtml = $this->getDeliveryProductsHtmlForEdit($generalRequest, $entry);
+                        if (request()->filled('general_request_id')) {
+                            CRUD::modifyField('delivery_products', [
+                                'value' => $productsHtml,
+                            ]);
+                        } else {
+                            CRUD::addField([
+                                'name' => 'delivery_products',
+                                'label' => 'Productos a Entregar',
+                                'type' => 'custom_html',
+                                'value' => $productsHtml,
+                            ]);
+                        }
                     }
                 } elseif ($entry->purchase_request_id) {
                     $purchaseRequestId = $entry->purchase_request_id;
@@ -737,8 +990,8 @@ class DeliveryCrudController extends CrudController
         $request = $this->crud->validateRequest();
         $this->crud->registerFieldEvents();
         
-        // Validar que si es role_responsable_area, solo pueda crear entregas para solicitudes de su área
-        if ($user && $user->hasResponsableAreaOrInstituteAuthorityRole()) {
+        // El responsable de área solo entrega solicitudes de su área. Compras y administración, cualquiera.
+        if ($user && $user->hasResponsableAreaOrInstituteAuthorityRole() && ! $user->canRegisterDeliveryForAnyArea()) {
             $generalRequestId = $request->input('general_request_id');
             if ($generalRequestId) {
                 $generalRequest = \App\Models\GeneralRequest::find($generalRequestId);
@@ -893,6 +1146,24 @@ class DeliveryCrudController extends CrudController
                             $quantity = max(0, $maxToDeliver);
                         }
                     }
+                } elseif ($delivery->purchase_request_id) {
+                    $purchaseDetail = \App\Models\PurchaseRequestDetail::where('purchase_request_id', $delivery->purchase_request_id)
+                        ->where('product_id', $productId)
+                        ->first();
+                    if ($purchaseDetail) {
+                        $alreadyDelivered = (int) DeliveryDetail::query()
+                            ->whereHas('delivery', function ($q) use ($delivery) {
+                                $q->where('purchase_request_id', $delivery->purchase_request_id)
+                                    ->where('id', '!=', $delivery->id);
+                            })
+                            ->where('product_id', $productId)
+                            ->sum('delivered_quantity');
+                        $pendingQty = max(0, (int) $purchaseDetail->requested_quantity - $alreadyDelivered);
+                        if ($quantity > $pendingQty) {
+                            \Alert::warning("La cantidad a entregar excede lo pendiente. Máximo: {$pendingQty}")->flash();
+                            $quantity = $pendingQty;
+                        }
+                    }
                 }
                 
                 \App\Models\DeliveryDetail::create([
@@ -911,6 +1182,10 @@ class DeliveryCrudController extends CrudController
      */
     private function fillDeliveryDetailsFromPurchaseRequestIfEmpty(Delivery $delivery): void
     {
+        if (request()->exists('delivery_products')) {
+            return;
+        }
+
         $delivery->loadMissing('details');
         if ($delivery->details->isNotEmpty()) {
             return;
@@ -1314,8 +1589,8 @@ class DeliveryCrudController extends CrudController
         $request = $this->crud->validateRequest();
         $this->crud->registerFieldEvents();
         
-        // Validar que si es role_responsable_area, solo pueda editar entregas para solicitudes de su área
-        if ($user && $user->hasResponsableAreaOrInstituteAuthorityRole()) {
+        // El responsable de área solo edita entregas de su área. Compras y administración, cualquiera.
+        if ($user && $user->hasResponsableAreaOrInstituteAuthorityRole() && ! $user->canRegisterDeliveryForAnyArea()) {
             $entry = $this->crud->getCurrentEntry();
             if ($entry && $entry->general_request_id) {
                 $generalRequest = \App\Models\GeneralRequest::find($entry->general_request_id);
@@ -1381,56 +1656,101 @@ class DeliveryCrudController extends CrudController
 
     protected function setupShowOperation()
     {
-        // Cargar relaciones
-        CRUD::addClause('with', ['reception', 'generalRequest', 'purchaseRequest', 'receivedBy', 'deliveredBy', 'details']);
-        
-        // Columna para mostrar la solicitud relacionada
+        CRUD::addClause('with', [
+            'reception.purchase_order',
+            'generalRequest.area',
+            'generalRequest.requestingUser',
+            'generalRequest.createdBy',
+            'generalRequest.details.product',
+            'purchaseRequest.responsibilityArea',
+            'purchaseRequest.requestingUser',
+            'purchaseRequest.details.product',
+            'receivedBy',
+            'deliveredBy',
+            'details.product',
+        ]);
+
+        CRUD::addColumn([
+            'name' => 'number',
+            'label' => 'Número',
+            'type' => 'closure',
+            'function' => function ($entry) {
+                return e($entry->number);
+            },
+        ]);
+
+        CRUD::addColumn([
+            'name' => 'status',
+            'label' => 'Estado',
+            'type' => 'closure',
+            'function' => function ($entry) {
+                $status = (string) ($entry->status ?? '');
+                [$class, $label] = match ($status) {
+                    'entregada' => ['bg-success', 'Entregada'],
+                    'cancelada' => ['bg-secondary', 'Cancelada'],
+                    'pendiente' => ['bg-warning text-dark', 'Pendiente'],
+                    default => ['bg-secondary', $status !== '' ? ucfirst(str_replace('_', ' ', $status)) : 'Sin estado'],
+                };
+
+                return '<span class="badge '.$class.'">'.e($label).'</span>';
+            },
+            'escaped' => false,
+        ]);
+
+        CRUD::column('delivery_date')->label('Fecha')->type('date');
+
+        CRUD::addColumn([
+            'name' => 'delivery_origin',
+            'label' => 'Origen',
+            'type' => 'closure',
+            'function' => function ($entry) {
+                $fromPurchase = (bool) ($entry->purchase_request_id || $entry->reception_id);
+                if ($fromPurchase) {
+                    $html = '<span class="badge bg-primary">Por compra</span>';
+                    $html .= '<div class="small text-muted mt-1">Los productos salieron de una compra.</div>';
+
+                    return $html;
+                }
+
+                return '<span class="badge bg-info">Desde stock</span>'
+                    .'<div class="small text-muted mt-1">Los productos salieron del depósito.</div>';
+            },
+            'escaped' => false,
+        ]);
+
         CRUD::addColumn([
             'name' => 'request_info',
             'label' => 'Solicitud',
             'type' => 'closure',
-            'function' => function($entry) {
-                $html = '';
-                if ($entry->generalRequest) {
-                    $html .= '<div class="mb-2">';
-                    $html .= '<strong>Solicitud General:</strong> ';
-                    $html .= '<a href="' . backpack_url('general-request/' . $entry->generalRequest->id . '/show') . '" class="badge bg-info">';
-                    $html .= e($entry->generalRequest->number);
-                    $html .= '</a>';
-                    $html .= '</div>';
-                }
-                if ($entry->purchaseRequest) {
-                    $html .= '<div class="mb-2">';
-                    $html .= '<strong>Solicitud de Compra:</strong> ';
-                    $html .= '<a href="' . backpack_url('purchase-request/' . $entry->purchaseRequest->id . '/show') . '" class="badge bg-primary">';
-                    $html .= e($entry->purchaseRequest->request_number);
-                    $html .= '</a>';
-                    $html .= '</div>';
-                }
-                if (!$entry->generalRequest && !$entry->purchaseRequest) {
-                    $html .= '<span class="badge bg-secondary">Sin solicitud asociada</span>';
-                }
-                return $html;
+            'function' => function ($entry) {
+                return $this->deliveryShowRequestHtml($entry);
             },
             'escaped' => false,
         ]);
-        
-        // Columna opcional para recepción
+
         CRUD::addColumn([
             'name' => 'reception_info',
             'label' => 'Recepción',
             'type' => 'closure',
-            'function' => function($entry) {
+            'function' => function ($entry) {
                 if ($entry->reception) {
-                    return '<a href="' . backpack_url('reception/' . $entry->reception->id . '/show') . '" class="badge bg-success">REC-' . $entry->reception->id . '</a>';
+                    $label = e($entry->reception->number ?? ('REC-'.$entry->reception->id));
+                    $html = '<a href="'.backpack_url('reception/'.$entry->reception->id.'/show').'" class="text-primary">'.$label.'</a>';
+                    if ($entry->reception->purchase_order) {
+                        $oc = e($entry->reception->purchase_order->number ?? ('OC-'.$entry->reception->purchase_order->id));
+                        $html .= '<br><small class="text-muted">Orden de compra: <a href="'
+                            .backpack_url('purchase-order/'.$entry->reception->purchase_order->id.'/show')
+                            .'" class="text-primary">'.$oc.'</a></small>';
+                    }
+
+                    return $html;
                 }
-                return '<span class="badge bg-secondary">Sin recepción (desde stock)</span>';
+
+                return '<span class="text-muted">Sin recepción (desde stock)</span>';
             },
             'escaped' => false,
         ]);
-        
-        CRUD::column('delivery_date')->label('Fecha');
-        
+
         CRUD::addColumn([
             'name' => 'delivered_by',
             'label' => 'Entregado por',
@@ -1439,7 +1759,7 @@ class DeliveryCrudController extends CrudController
             'attribute' => 'name',
             'model' => 'App\Models\User',
         ]);
-        
+
         CRUD::addColumn([
             'name' => 'received_by',
             'label' => 'Recibido por',
@@ -1448,9 +1768,219 @@ class DeliveryCrudController extends CrudController
             'attribute' => 'name',
             'model' => 'App\Models\User',
         ]);
-        
-        // Agregar botón PDF en la vista show
+
+        CRUD::addColumn([
+            'name' => 'observations',
+            'label' => 'Observaciones',
+            'type' => 'closure',
+            'function' => function ($entry) {
+                $text = trim((string) ($entry->observations ?? ''));
+                if ($text === '') {
+                    return '<span class="text-muted">Sin observaciones</span>';
+                }
+
+                return '<div class="text-break" style="white-space: pre-wrap;">'.e($text).'</div>';
+            },
+            'escaped' => false,
+        ]);
+
+        CRUD::addColumn([
+            'name' => 'delivery_products_show',
+            'label' => 'Productos entregados',
+            'type' => 'closure',
+            'function' => function ($entry) {
+                return $this->deliveryShowProductsHtml($entry);
+            },
+            'escaped' => false,
+        ]);
+
         CRUD::addButton('top', 'pdf', 'view', 'crud::buttons.delivery_pdf', 'end');
+    }
+
+    private function deliveryShowRequestHtml(Delivery $entry): string
+    {
+        $html = '';
+        if ($entry->generalRequest) {
+            $general = $entry->generalRequest;
+            $html .= '<a href="'.backpack_url('general-request/'.$general->id.'/show').'" class="text-primary"><strong>'
+                .e($general->number ?? 'SG-'.$general->id).'</strong></a>';
+            if ($general->title) {
+                $html .= '<br>'.e($general->title);
+            }
+            $bits = array_filter([
+                $general->area->name ?? null,
+                $general->requestingUser->name ?? $general->createdBy->name ?? null,
+                $general->status ? ucfirst(str_replace('_', ' ', (string) $general->status)) : null,
+            ]);
+            if ($bits !== []) {
+                $html .= '<br><small class="text-muted">'.e(implode(' · ', $bits)).'</small>';
+            }
+        }
+
+        if ($entry->purchaseRequest) {
+            $purchase = $entry->purchaseRequest;
+            if ($html !== '') {
+                $html .= '<hr class="my-2">';
+            }
+            $html .= '<a href="'.backpack_url('purchase-request/'.$purchase->id.'/show').'" class="text-primary"><strong>'
+                .e($purchase->request_number ?? 'SC-'.$purchase->id).'</strong></a>';
+            $bits = array_filter([
+                $purchase->status,
+                $purchase->responsibilityArea->name ?? null,
+                $purchase->requestingUser->name ?? null,
+            ]);
+            if ($bits !== []) {
+                $html .= '<br><small class="text-muted">'.e(implode(' · ', $bits)).'</small>';
+            }
+        }
+
+        return $html !== '' ? $html : '<span class="text-muted">Sin solicitud asociada</span>';
+    }
+
+    private function deliveryShowProductsHtml(Delivery $entry): string
+    {
+        $entry->loadMissing([
+            'details.product',
+            'generalRequest.area',
+            'generalRequest.details.product',
+            'purchaseRequest.responsibilityArea',
+            'purchaseRequest.details.product',
+        ]);
+
+        $rows = [];
+        $seen = [];
+
+        if ($entry->generalRequest && $entry->generalRequest->details->isNotEmpty()) {
+            $areaName = $entry->generalRequest->area->name ?? null;
+            foreach ($entry->generalRequest->details as $detail) {
+                if (! $detail->product_id || ! $detail->product) {
+                    continue;
+                }
+                $requested = (int) ($detail->requested_quantity ?? 0);
+                $deliveredAll = (int) $detail->delivered_quantity;
+                $current = $entry->details->firstWhere('product_id', $detail->product_id);
+                $currentQty = (int) ($current->delivered_quantity ?? 0);
+                $rows[] = [
+                    'name' => $detail->product->name,
+                    'unit' => $detail->product->unit_measurement,
+                    'requested' => $requested,
+                    'delivered_other' => max(0, $deliveredAll - $currentQty),
+                    'pending' => max(0, $requested - $deliveredAll),
+                    'stock' => $this->stockForAreaName($areaName, (int) $detail->product_id),
+                    'quantity' => $currentQty,
+                    'observations' => $current->observations ?? '',
+                ];
+                $seen[(int) $detail->product_id] = true;
+            }
+        } elseif ($entry->purchaseRequest && $entry->purchaseRequest->details->isNotEmpty()) {
+            $areaName = $entry->purchaseRequest->responsibilityArea->name ?? null;
+            $purchaseId = (int) $entry->purchaseRequest->id;
+            foreach ($entry->purchaseRequest->details as $detail) {
+                if (! $detail->product_id) {
+                    continue;
+                }
+                $requested = (int) ($detail->requested_quantity ?? 0);
+                $deliveredAll = (int) DeliveryDetail::query()
+                    ->where('product_id', $detail->product_id)
+                    ->whereHas('delivery', function ($query) use ($purchaseId) {
+                        $query->where('purchase_request_id', $purchaseId);
+                    })
+                    ->sum('delivered_quantity');
+                $current = $entry->details->firstWhere('product_id', $detail->product_id);
+                $currentQty = (int) ($current->delivered_quantity ?? 0);
+                $productName = $detail->product->name ?? ('Producto #'.$detail->product_id);
+                $rows[] = [
+                    'name' => is_array($productName) ? 'Producto #'.$detail->product_id : $productName,
+                    'unit' => $detail->product->unit_measurement ?? null,
+                    'requested' => $requested,
+                    'delivered_other' => max(0, $deliveredAll - $currentQty),
+                    'pending' => max(0, $requested - $deliveredAll),
+                    'stock' => $this->stockForAreaName($areaName, (int) $detail->product_id),
+                    'quantity' => $currentQty,
+                    'observations' => $current->observations ?? '',
+                ];
+                $seen[(int) $detail->product_id] = true;
+            }
+        }
+
+        foreach ($entry->details as $detail) {
+            $productId = (int) $detail->product_id;
+            if ($productId && isset($seen[$productId])) {
+                continue;
+            }
+            $rows[] = [
+                'name' => $detail->product->name ?? ('Producto #'.$productId),
+                'unit' => $detail->product->unit_measurement ?? null,
+                'requested' => null,
+                'delivered_other' => null,
+                'pending' => null,
+                'stock' => null,
+                'quantity' => (int) ($detail->delivered_quantity ?? 0),
+                'observations' => $detail->observations ?? '',
+            ];
+        }
+
+        if ($rows === []) {
+            return '<div class="alert alert-info mb-0">No hay productos registrados en esta entrega.</div>';
+        }
+
+        $html = '<div class="card border-primary mb-0">';
+        $html .= '<div class="card-header bg-primary text-white">';
+        $html .= '<h6 class="mb-0"><i class="la la-people-carry"></i> Productos de la entrega</h6>';
+        $html .= '</div>';
+        $html .= '<div class="card-body p-0"><div class="table-responsive">';
+        $html .= '<table class="table table-sm table-bordered mb-0">';
+        $html .= '<thead class="table-light"><tr>';
+        $html .= '<th>Producto</th>';
+        $html .= '<th class="text-center">Solicitado</th>';
+        $html .= '<th class="text-center">Ya entregado</th>';
+        $html .= '<th class="text-center">Pendiente</th>';
+        $html .= '<th class="text-center">Stock</th>';
+        $html .= '<th class="text-center">Cantidad de esta entrega</th>';
+        $html .= '<th>Observaciones</th>';
+        $html .= '</tr></thead><tbody>';
+
+        foreach ($rows as $row) {
+            $html .= '<tr>';
+            $html .= '<td><strong>'.e($row['name']).'</strong>';
+            if (! empty($row['unit'])) {
+                $html .= '<br><small class="text-muted">'.e($row['unit']).'</small>';
+            }
+            $html .= '</td>';
+            $html .= '<td class="text-center">'.($row['requested'] === null ? '<span class="text-muted">—</span>' : '<span class="badge bg-primary">'.number_format($row['requested']).'</span>').'</td>';
+            $html .= '<td class="text-center">'.($row['delivered_other'] === null ? '<span class="text-muted">—</span>' : '<span class="badge bg-'.($row['delivered_other'] > 0 ? 'success' : 'secondary').'">'.number_format($row['delivered_other']).'</span>').'</td>';
+            $html .= '<td class="text-center">'.($row['pending'] === null ? '<span class="text-muted">—</span>' : '<span class="badge bg-warning text-dark">'.number_format($row['pending']).'</span>').'</td>';
+            $html .= '<td class="text-center">'.($row['stock'] === null ? '<span class="text-muted">—</span>' : '<span class="badge bg-'.($row['stock'] > 0 ? 'info' : 'secondary').'">'.number_format($row['stock']).'</span>').'</td>';
+            $html .= '<td class="text-center"><span class="badge bg-success fs-6">'.number_format($row['quantity']).'</span></td>';
+            $obs = trim((string) $row['observations']);
+            $html .= '<td>'.($obs === '' ? '<span class="text-muted">Sin observaciones</span>' : e($obs)).'</td>';
+            $html .= '</tr>';
+        }
+
+        $html .= '</tbody></table></div></div></div>';
+
+        return $html;
+    }
+
+    private function stockForAreaName(?string $areaName, int $productId): int
+    {
+        $map = [
+            'Informática' => 'Informática',
+            'Mantenimiento' => 'Mantenimiento',
+            'Salud' => 'Insumos de Salud',
+            'Insumos de Salud' => 'Insumos de Salud',
+            'Insumos Generales' => 'Insumos Generales',
+        ];
+        $locationName = $areaName ? ($map[$areaName] ?? $areaName) : null;
+        $query = \App\Models\StockLevel::query()->where('product_id', $productId);
+        if ($locationName) {
+            $locationId = \App\Models\Location::query()->where('name', $locationName)->value('id');
+            if ($locationId) {
+                $query->where('location_id', $locationId);
+            }
+        }
+
+        return (int) $query->sum('quantity');
     }
     
     /**

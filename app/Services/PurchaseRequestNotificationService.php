@@ -249,6 +249,34 @@ class PurchaseRequestNotificationService
     }
 
     /**
+     * Aviso (solo correo) a la administradora: cambió el monto de una cotización cargada.
+     */
+    public static function notifyAdministratorQuotationAmountChanged(
+        PurchaseRequest $purchaseRequest,
+        MarketRate $marketRate,
+        float $oldQuoteTotal,
+        float $newQuoteTotal,
+        float $oldRequestTotal,
+        float $newRequestTotal,
+        ?User $editedBy = null
+    ): void {
+        $url = self::purchaseRequestUrl($purchaseRequest);
+        $nro = $purchaseRequest->request_number ?? ('#'.$purchaseRequest->id);
+        $subject = 'Cotización modificada — cambió el monto — Solicitud Nº '.$nro;
+        $marketRate->loadMissing('supplier');
+        $supplierName = $marketRate->supplier->company_name ?? ('Cotización #'.$marketRate->id);
+        $fmt = static fn (float $v): string => '$'.number_format($v, 2, ',', '.');
+        $body = '<p>Se modificó una cotización ya cargada y cambió el monto. Este mensaje es solo informativo: no se reabre el circuito de aprobación.</p>'
+            .'<p><strong>Número de solicitud:</strong> '.e((string) $nro).'</p>'
+            .'<p><strong>Proveedor:</strong> '.e((string) $supplierName).'</p>'
+            .'<p><strong>Monto de la cotización:</strong> '.e($fmt($oldQuoteTotal)).' → '.e($fmt($newQuoteTotal)).'</p>'
+            .'<p><strong>Monto de la solicitud:</strong> '.e($fmt($oldRequestTotal)).' → '.e($fmt($newRequestTotal)).'</p>'
+            .'<p><a href="'.e($url).'">Acceder a la solicitud en el sistema</a></p>';
+        $body = self::appendMailFooter($body, $purchaseRequest, $editedBy);
+        self::sendHtml($subject, $body, self::emailsForBackpackRoles(self::administratorApproverRoleNames()));
+    }
+
+    /**
      * Administradora solicita aprobación al nivel superior que corresponde por monto.
      */
     public static function notifySuperiorQuotationApprovalNeededFromAdministrator(PurchaseRequest $purchaseRequest): void
