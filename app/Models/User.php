@@ -260,6 +260,18 @@ class User extends Authenticatable
         return $this->canManageInternalVouchers();
     }
 
+    /**
+     * Libro diario y sumas y saldos: contabilidad, tesorería y quienes gestionan egresos.
+     */
+    public function canViewAccounting(): bool
+    {
+        return $this->hasContabilidadRole()
+            || $this->canManageFundMovements()
+            || $this->hasRole('role_tesoreria', 'backpack')
+            || $this->hasRole('role_tesoreria', 'web')
+            || $this->getRoleNames()->contains('role_tesoreria');
+    }
+
     public function canActAsApoderado(): bool
     {
         return $this->canActOnBehalfOfPurchaseStakeholders()

@@ -23,6 +23,9 @@ Route::group([
     Route::crud('supplier-rating', 'SupplierRatingCrudController');
     Route::crud('suppliers-heading', 'SuppliersHeadingCrudController');
     Route::crud('accounting-account', 'AccountingAccountCrudController');
+    Route::get('accounting-journal', 'AccountingJournalController@index')->name('accounting-journal.index');
+    Route::get('accounting-journal/{accountingEntry}', 'AccountingJournalController@show')->name('accounting-journal.show');
+    Route::get('accounting-ledger', 'AccountingJournalController@ledger')->name('accounting-ledger');
     Route::crud('purchase-order', 'PurchaseOrderCrudController');
     Route::get('purchase-order/{id}/pdf', 'PurchaseOrderCrudController@generatePdf')->name('purchase-order.pdf');
     Route::crud('payment-order', 'PaymentOrderCrudController');

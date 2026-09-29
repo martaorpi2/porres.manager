@@ -16,6 +16,10 @@ class AccountingEntry extends Model
 
     public const KIND_REVERSAL = 'reversal';
 
+    public const KIND_QUOTA_ACCRUAL = 'quota_accrual';
+
+    public const KIND_QUOTA_COLLECTION = 'quota_collection';
+
     public const STATUS_POSTED = 'posted';
 
     public const STATUS_REVERSED = 'reversed';
@@ -46,6 +50,26 @@ class AccountingEntry extends Model
     public function createdBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by_id');
+    }
+
+    public function getKindLabelAttribute(): string
+    {
+        return match ($this->kind) {
+            self::KIND_QUOTA_ACCRUAL => 'Devengamiento de cuotas',
+            self::KIND_QUOTA_COLLECTION => 'Cobranza de cuotas',
+            self::KIND_OUTFLOW => 'Egreso',
+            self::KIND_REVERSAL => 'Reverso',
+            default => (string) $this->kind,
+        };
+    }
+
+    public function getStatusLabelAttribute(): string
+    {
+        return match ($this->status) {
+            self::STATUS_POSTED => 'Registrado',
+            self::STATUS_REVERSED => 'Revertido',
+            default => (string) $this->status,
+        };
     }
 
     public static function nextEntryNumber(): string

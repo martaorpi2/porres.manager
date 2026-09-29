@@ -42,11 +42,18 @@
     </x-backpack::menu-dropdown>
 @else
     {{-- Menú completo para otros roles --}}
+    @if(backpack_user() instanceof \App\Models\User && backpack_user()->canViewAccounting())
+        <x-backpack::menu-dropdown title="Contabilidad" icon="la la-book" trigger="click">
+            <x-backpack::menu-dropdown-item title="Libro diario" :link="backpack_url('accounting-journal')" />
+            <x-backpack::menu-dropdown-item title="Sumas y saldos" :link="backpack_url('accounting-ledger')" />
+            <x-backpack::menu-dropdown-item title="Plan de cuentas" :link="backpack_url('accounting-account')" />
+        </x-backpack::menu-dropdown>
+    @endif
+
     <x-backpack::menu-dropdown title="Proveedores" icon="la la-truck" trigger="click">
         <x-backpack::menu-dropdown-item title="Listado" :link="backpack_url('supplier')" />
         <x-backpack::menu-dropdown-item title="Calificaciones" :link="backpack_url('supplier-rating')" />
         <x-backpack::menu-dropdown-item title="Rubros" :link="backpack_url('suppliers-heading')" />
-        <x-backpack::menu-dropdown-item title="Cuentas contables" :link="backpack_url('accounting-account')" />
     </x-backpack::menu-dropdown>
 
     <x-backpack::menu-dropdown title="Inventario" icon="la la-boxes" trigger="click">
