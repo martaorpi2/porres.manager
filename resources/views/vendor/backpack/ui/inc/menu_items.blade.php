@@ -42,14 +42,9 @@
     </x-backpack::menu-dropdown>
 @elseif(backpack_user() instanceof \App\Models\User && backpack_user()->seesRestrictedRoleMenu())
     @if(backpack_user()->canViewAccounting())
-        <x-backpack::menu-dropdown title="Contabilidad" icon="la la-book" trigger="click">
-            <x-backpack::menu-dropdown-item title="Libro diario" :link="backpack_url('accounting-journal')" />
-            <x-backpack::menu-dropdown-item title="Sumas y saldos" :link="backpack_url('accounting-ledger')" />
-            <x-backpack::menu-dropdown-item title="Plan de cuentas" :link="backpack_url('accounting-account')" />
-        </x-backpack::menu-dropdown>
-    @endif
-    @if(backpack_user()->hasContabilidadRole())
-        <x-backpack::menu-item title="Recepciones" icon="la la-truck-loading" :link="backpack_url('reception')" />
+        <x-backpack::menu-item title="Libro diario" icon="la la-book" :link="backpack_url('accounting-journal')" />
+        <x-backpack::menu-item title="Sumas y saldos" icon="la la-balance-scale" :link="backpack_url('accounting-ledger')" />
+        <x-backpack::menu-item title="Plan de cuentas" icon="la la-list-ol" :link="backpack_url('accounting-account')" />
     @endif
     @if(backpack_user()->hasTesoreriaRole())
         <x-backpack::menu-item title="Ordenes de Pago" icon="la la-money-bill-wave" :link="backpack_url('payment-order')" />
