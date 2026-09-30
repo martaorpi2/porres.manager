@@ -3,8 +3,9 @@
 namespace App\Services;
 
 /**
- * Medio de pago de ePorres → cuenta de fondos del plan.
- * QR acredita en Banco BSE, igual que la cobranza del libro diario.
+ * Medio de pago de ePorres → cuenta del plan.
+ * QR acredita en Banco BSE el mismo día.
+ * Mercado Pago queda en Mercado Pago a cobrar hasta que MP libera el dinero.
  * Tarjeta de crédito no tiene cuenta imputable en el plan cargado.
  */
 final class QuotaPaymentAccounts
@@ -15,11 +16,19 @@ final class QuotaPaymentAccounts
 
     public const LATE_INTEREST = '41201000';
 
+    public const MP_RECEIVABLE = '11204000';
+
+    public const MP_AVAILABLE = '11104000';
+
+    public const MP_COMMISSION = '52309000';
+
+    public const MP_SURCHARGE_INCOME = '41303000';
+
     /** @var array<string, string> */
     public const BY_PAYMENT_TYPE = [
         'BSE' => '11102002',
         'QR' => '11102002',
-        'Mercado Pago' => '11104000',
+        'Mercado Pago' => self::MP_RECEIVABLE,
         'Tarjeta de Débito' => '11202004',
         'Tarjeta Naranja Débito' => '11202004',
         'Tarjeta Naranja' => '11202003',

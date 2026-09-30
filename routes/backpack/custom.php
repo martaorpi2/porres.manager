@@ -24,6 +24,8 @@ Route::group([
     Route::crud('suppliers-heading', 'SuppliersHeadingCrudController');
     Route::crud('accounting-account', 'AccountingAccountCrudController');
     Route::get('accounting-journal', 'AccountingJournalController@index')->name('accounting-journal.index');
+    Route::get('accounting-journal/{accountingEntry}/edit', 'AccountingJournalController@edit')->name('accounting-journal.edit');
+    Route::put('accounting-journal/{accountingEntry}', 'AccountingJournalController@update')->name('accounting-journal.update');
     Route::get('accounting-journal/{accountingEntry}', 'AccountingJournalController@show')->name('accounting-journal.show');
     Route::get('accounting-ledger', 'AccountingJournalController@ledger')->name('accounting-ledger');
     Route::crud('purchase-order', 'PurchaseOrderCrudController');

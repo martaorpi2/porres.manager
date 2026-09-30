@@ -42,6 +42,7 @@ class PostQuotaAccountingEntries extends Command
         $this->line('Mes '.$result['month']);
         $this->reportAccrual($result['accrual']);
         $this->reportCollections($result['collections']);
+        $this->reportSettlements($result['settlements']);
 
         return self::SUCCESS;
     }
@@ -130,6 +131,60 @@ class PostQuotaAccountingEntries extends Command
         }
         if ($collections['unposted_surcharge'] > 0) {
             $this->line('Recargos de medio de pago no asentados: '.$this->money($collections['unposted_surcharge']));
+        }
+        if (($skipped['adjusted'] ?? 0) > 0) {
+            $this->line('Asientos modificados a mano, sin reescribir: '.$skipped['adjusted']);
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $settlements
+     */
+    private function reportSettlements(array $settlements): void
+    {
+        $this->newLine();
+        $this->info('Liquidación Mercado Pago');
+
+        if ($settlements['groups'] === [] && ($settlements['updated'] ?? []) === []) {
+            $this->line('No hay liberaciones nuevas de Mercado Pago para asentar.');
+        }
+
+        foreach ($settlements['groups'] as $group) {
+            $this->line(sprintf(
+                '%s  Mercado Pago  pagos: %d  cuenta: %s  comisión: %s  a cobrar: %s%s',
+                $group['date'],
+                $group['orders'],
+                $this->money($group['net']),
+                $this->money($group['commission']),
+                $this->money($group['gross']),
+                $group['entry_number'] ? '  asiento '.$group['entry_number'] : '',
+            ));
+        }
+
+        foreach ($settlements['updated'] ?? [] as $group) {
+            $this->line(sprintf(
+                'Actualizado  %s  asiento %s  cuenta: %s  comisión: %s  a cobrar: %s  pagos: %d',
+                $group['date'],
+                $group['entry_number'] ?? '—',
+                $this->money($group['net']),
+                $this->money($group['commission']),
+                $this->money($group['gross']),
+                $group['orders'],
+            ));
+        }
+
+        $skipped = $settlements['skipped'];
+        if ($skipped['pending_collection'] > 0) {
+            $this->line('Liberados sin cobranza asentada todavía: '.$skipped['pending_collection']);
+        }
+        if ($skipped['not_collected'] > 0) {
+            $this->line('Liberados que no entran en la cobranza de cuotas: '.$skipped['not_collected']);
+        }
+        if ($skipped['amount_mismatch'] > 0) {
+            $this->line('Liberados con importe distinto al cobro: '.$skipped['amount_mismatch']);
+        }
+        if (($skipped['adjusted'] ?? 0) > 0) {
+            $this->line('Liquidaciones modificadas a mano, sin reescribir: '.$skipped['adjusted']);
         }
     }
 

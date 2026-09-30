@@ -20,6 +20,8 @@ class AccountingEntry extends Model
 
     public const KIND_QUOTA_COLLECTION = 'quota_collection';
 
+    public const KIND_QUOTA_MP_SETTLEMENT = 'quota_mp_settlement';
+
     public const STATUS_POSTED = 'posted';
 
     public const STATUS_REVERSED = 'reversed';
@@ -30,6 +32,7 @@ class AccountingEntry extends Model
 
     protected $casts = [
         'date' => 'date',
+        'manually_adjusted' => 'boolean',
     ];
 
     public function source(): MorphTo
@@ -57,6 +60,7 @@ class AccountingEntry extends Model
         return match ($this->kind) {
             self::KIND_QUOTA_ACCRUAL => 'Devengamiento de cuotas',
             self::KIND_QUOTA_COLLECTION => 'Cobranza de cuotas',
+            self::KIND_QUOTA_MP_SETTLEMENT => 'Liquidación Mercado Pago',
             self::KIND_OUTFLOW => 'Egreso',
             self::KIND_REVERSAL => 'Reverso',
             default => (string) $this->kind,

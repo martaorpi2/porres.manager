@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Models\AccountingAccount;
 use App\Models\AccountingEntry;
 use App\Models\User;
+use App\Services\AccountingEntryEditor;
 use Backpack\CRUD\app\Http\Controllers\CrudController;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -49,6 +50,61 @@ class AccountingJournalController extends CrudController
                 'Libro diario' => false,
             ],
         ]);
+    }
+
+    public function edit(Request $request, AccountingEntry $accountingEntry)
+    {
+        $this->authorizeAccounting();
+        $this->ensureEditable($accountingEntry);
+        $accountingEntry->load(['lines.account']);
+
+        return view('admin.accounting.journal_edit', [
+            'entry' => $accountingEntry,
+            'accounts' => $this->editableAccounts($accountingEntry),
+            'returnQuery' => $this->returnQuery($request),
+            'title' => 'Modificar '.$accountingEntry->entry_number,
+            'breadcrumbs' => [
+                trans('backpack::crud.admin') => backpack_url('dashboard'),
+                'Libro diario' => backpack_url('accounting-journal'),
+                $accountingEntry->entry_number => false,
+            ],
+        ]);
+    }
+
+    public function update(Request $request, AccountingEntry $accountingEntry)
+    {
+        $this->authorizeAccounting();
+        $this->ensureEditable($accountingEntry);
+
+        $prepared = AccountingEntryEditor::prepare($request->input('lines', []));
+        if ($prepared['error'] !== null) {
+            return back()->withInput()->withErrors(['lines' => $prepared['error']]);
+        }
+
+        $accountIds = array_values(array_unique(array_column($prepared['lines'], 'accounting_account_id')));
+        $found = AccountingAccount::query()->whereIn('id', $accountIds)->pluck('id')->map(fn ($id) => (int) $id)->all();
+        if (count($found) !== count($accountIds)) {
+            return back()->withInput()->withErrors(['lines' => 'Hay una cuenta que no existe en el plan.']);
+        }
+
+        $memos = $accountingEntry->lines()->pluck('memo', 'id');
+
+        DB::transaction(function () use ($accountingEntry, $prepared, $memos) {
+            $accountingEntry->lines()->delete();
+            foreach ($prepared['lines'] as $line) {
+                $accountingEntry->lines()->create([
+                    'accounting_account_id' => $line['accounting_account_id'],
+                    'debit' => $line['debit'],
+                    'credit' => $line['credit'],
+                    'memo' => $line['source_id'] !== null ? $memos->get($line['source_id']) : null,
+                ]);
+            }
+            $accountingEntry->update(['manually_adjusted' => true]);
+        });
+
+        \Alert::success('El asiento '.$accountingEntry->entry_number.' quedó modificado.')->flash();
+
+        return redirect(backpack_url('accounting-journal').'?'.http_build_query($this->returnQuery($request)));
     }
 
     public function show(AccountingEntry $accountingEntry)
@@ -96,6 +152,49 @@ class AccountingJournalController extends CrudController
         ]);
     }
 
+    /**
+     * @return array<int, string>
+     */
+    private function editableAccounts(AccountingEntry $entry): array
+    {
+        $current = $entry->lines->pluck('accounting_account_id')->filter()->all();
+
+        return AccountingAccount::query()
+            ->where(function ($query) use ($current) {
+                $query->where('is_active', true);
+                if ($current !== []) {
+                    $query->orWhereIn('id', $current);
+                }
+            })
+            ->orderBy('code')
+            ->get()
+            ->mapWithKeys(fn (AccountingAccount $account) => [$account->id => $account->identifying_label])
+            ->all();
+    }
+
+    private function ensureEditable(AccountingEntry $entry): void
+    {
+        if ($entry->status !== AccountingEntry::STATUS_POSTED) {
+            abort(403, 'Solo se pueden modificar asientos registrados.');
+        }
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function returnQuery(Request $request): array
+    {
+        $query = [];
+        foreach (['from', 'to', 'kind', 'account_id'] as $key) {
+            $value = $request->input($key);
+            if (is_string($value) && $value !== '') {
+                $query[$key] = $value;
+            }
+        }
+
+        return $query;
+    }
+
     private function authorizeAccounting(): void
     {
         $user = backpack_user();
@@ -112,6 +211,7 @@ class AccountingJournalController extends CrudController
         return [
             AccountingEntry::KIND_QUOTA_ACCRUAL => 'Devengamiento de cuotas',
             AccountingEntry::KIND_QUOTA_COLLECTION => 'Cobranza de cuotas',
+            AccountingEntry::KIND_QUOTA_MP_SETTLEMENT => 'Liquidación Mercado Pago',
             AccountingEntry::KIND_OUTFLOW => 'Egreso',
             AccountingEntry::KIND_REVERSAL => 'Reverso',
         ];

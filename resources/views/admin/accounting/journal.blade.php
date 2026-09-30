@@ -72,9 +72,14 @@
                                     $credit = 0.0;
                                 @endphp
                                 <tr class="journal-asiento-label">
-                                    <td colspan="4">
+                                    <td colspan="3">
                                         <strong>Asiento {{ $entry->entry_number }}</strong>
                                         <span class="journal-asiento-meta">{{ $entry->date?->format('d/m/Y') }} · {{ $entry->description }} · {{ $entry->kind_label }} ({{ $entry->status_label }})</span>
+                                    </td>
+                                    <td class="text-end">
+                                        @if($entry->status === \App\Models\AccountingEntry::STATUS_POSTED)
+                                            <a href="{{ backpack_url('accounting-journal/'.$entry->id.'/edit') }}?{{ http_build_query(array_filter(['from' => $filters['from'], 'to' => $filters['to'], 'kind' => $filters['kind'], 'account_id' => $filters['account_id']])) }}" class="btn btn-sm journal-btn-edit">Modificar</a>
+                                        @endif
                                     </td>
                                 </tr>
                                 @foreach($entry->lines as $line)
@@ -200,6 +205,17 @@
     }
     .journal-account:hover {
         text-decoration: underline;
+    }
+    .journal-btn-edit {
+        background: #fff;
+        border: 1px solid #871f1f;
+        color: #871f1f !important;
+        font-weight: 600;
+        padding: 0.15rem 0.7rem;
+    }
+    .journal-btn-edit:hover {
+        background: #871f1f;
+        color: #fff !important;
     }
 </style>
 @endsection

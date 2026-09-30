@@ -3,9 +3,9 @@
 namespace App\Services;
 
 /**
- * Reparte un cobro de cuota sin comisión del medio de pago.
- * El banco es la cuota cobrada más la mora. El recargo de Mercado Pago o tarjeta
- * queda fuera del asiento hasta definir esas cuentas.
+ * Reparte un cobro de cuota sin la comisión que retiene el medio de pago.
+ * El banco es la cuota cobrada más la mora. El recargo que se le cobra al alumno
+ * queda en unposted: Mercado Pago lo imputa a Int. por cobro MP.
  */
 final class QuotaCollectionSplit
 {

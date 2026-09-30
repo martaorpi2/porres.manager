@@ -4,6 +4,9 @@
     <section class="header-operation container-fluid animated fadeIn d-flex mb-2 align-items-center d-print-none" bp-section="page-header">
         <h1 class="mb-0 journal-title" bp-section="page-heading">Asiento {{ $entry->entry_number }}</h1>
         <a href="{{ backpack_url('accounting-journal') }}" class="btn journal-back ms-3 ml-3">Volver al diario</a>
+        @if($entry->status === \App\Models\AccountingEntry::STATUS_POSTED)
+            <a href="{{ backpack_url('accounting-journal/'.$entry->id.'/edit') }}" class="btn journal-btn-edit ms-2 ml-2">Modificar</a>
+        @endif
     </section>
 @endsection
 
@@ -34,6 +37,16 @@
     .journal-back:hover {
         background: #fdf6f6;
         color: #871f1f !important;
+    }
+    .journal-btn-edit {
+        background: #871f1f;
+        border: 1px solid #871f1f;
+        color: #fff !important;
+        font-size: 0.85rem;
+        font-weight: 600;
+        padding: 0.2rem 0.65rem;
+        border-radius: 6px;
+        line-height: 1.4;
     }
     .journal-entry-card {
         background: #fff;
