@@ -86,6 +86,7 @@
         color: #871f1f !important;
     }
     .journal-entry-card {
+        background: #fff;
         border: 1px solid #e6e8ee;
         border-left: 4px solid #871f1f !important;
         border-radius: 4px;
@@ -95,6 +96,7 @@
         color: #1e2a4a;
     }
     .journal-lines {
+        width: 100%;
         border-collapse: separate;
         border-spacing: 0;
     }

@@ -98,7 +98,9 @@
         font-weight: 600;
     }
     .journal-page .journal-card {
+        background: #fff;
         border: 1px solid #e6e8ee;
+        border-left: 1px solid #e6e8ee !important;
         border-radius: 6px;
         box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
     }
