@@ -121,7 +121,6 @@ class QuotaAccountingService
      */
     private function postCollections(Carbon $month, array $accounts, bool $dryRun): array
     {
-        $posted = $this->postedOrderIdSet(QuotaAccountingBatch::KIND_COLLECTION);
         $splitIds = $this->idSet(
             DB::connection('eporres')->table('order_split_payments')->pluck('order_id')
         );
@@ -138,43 +137,24 @@ class QuotaAccountingService
         $groups = [];
 
         foreach ($this->collectionRows($month) as $row) {
-            $orderId = (int) $row->id;
-            if (isset($posted[$orderId])) {
-                continue;
-            }
-            if (isset($splitIds[$orderId])) {
-                $skipped['split']++;
-                continue;
-            }
-            $paymentType = trim((string) $row->payment_type);
-            if ($paymentType === '' ) {
-                $skipped['no_payment_type']++;
-                continue;
-            }
-            if ($paymentType === 'Plan de Pago' || isset($settledByPlan[$orderId])) {
-                $skipped['plan']++;
-                continue;
-            }
-            $bankCode = QuotaPaymentAccounts::bankCode($paymentType);
-            if ($bankCode === null) {
-                $skipped['unmapped'][$paymentType] = ($skipped['unmapped'][$paymentType] ?? 0) + 1;
+            $classified = $this->classifyCollectionRow($row, $splitIds, $settledByPlan);
+            if ($classified === null) {
+                $reason = $this->collectionSkipReason($row, $splitIds, $settledByPlan);
+                if ($reason === 'unmapped') {
+                    $type = trim((string) $row->payment_type);
+                    $skipped['unmapped'][$type] = ($skipped['unmapped'][$type] ?? 0) + 1;
+                } elseif ($reason !== null) {
+                    $skipped[$reason]++;
+                }
                 continue;
             }
 
-            $split = QuotaCollectionSplit::fromRow($row);
-            $bankCents = $this->cents($split['bank']);
-            if ($bankCents < 1) {
-                $skipped['zero']++;
-                continue;
-            }
-
-            $date = Carbon::parse($row->paid_at)->toDateString();
-            $key = $date.'|'.$paymentType;
+            $key = $classified['date'].'|'.$classified['payment_type'];
             if (! isset($groups[$key])) {
                 $groups[$key] = [
-                    'date' => $date,
-                    'payment_type' => $paymentType,
-                    'bank_code' => $bankCode,
+                    'date' => $classified['date'],
+                    'payment_type' => $classified['payment_type'],
+                    'bank_code' => $classified['bank_code'],
                     'orders' => [],
                     'debtors' => 0,
                     'interest' => 0,
@@ -182,26 +162,66 @@ class QuotaAccountingService
                     'unposted' => 0,
                 ];
             }
-            $debtors = $this->cents($split['debtors']);
-            $interest = $this->cents($split['interest']);
-            $groups[$key]['debtors'] += $debtors;
-            $groups[$key]['interest'] += $interest;
-            $groups[$key]['bank'] += $bankCents;
-            $groups[$key]['unposted'] += $this->cents($split['unposted']);
+            $groups[$key]['debtors'] += $classified['debtors'];
+            $groups[$key]['interest'] += $classified['interest'];
+            $groups[$key]['bank'] += $classified['bank'];
+            $groups[$key]['unposted'] += $classified['unposted'];
             $groups[$key]['orders'][] = [
-                'eporres_order_id' => $orderId,
-                'debtors_amount' => $this->money($debtors),
-                'interest_amount' => $this->money($interest),
-                'bank_amount' => $this->money($bankCents),
+                'eporres_order_id' => $classified['order_id'],
+                'debtors_amount' => $this->money($classified['debtors']),
+                'interest_amount' => $this->money($classified['interest']),
+                'bank_amount' => $this->money($classified['bank']),
             ];
-            $unpostedCents += $this->cents($split['unposted']);
+            $unpostedCents += $classified['unposted'];
         }
 
         ksort($groups);
-        $postedGroups = [];
 
-        foreach ($groups as $group) {
+        $batchesByGroup = [];
+        $batches = QuotaAccountingBatch::query()
+            ->where('kind', QuotaAccountingBatch::KIND_COLLECTION)
+            ->whereDate('entry_date', '>=', $month->copy()->startOfMonth()->toDateString())
+            ->whereDate('entry_date', '<=', $month->copy()->endOfMonth()->toDateString())
+            ->whereHas('entry', fn ($query) => $query->where('status', AccountingEntry::STATUS_POSTED))
+            ->with(['orders', 'entry'])
+            ->orderBy('id')
+            ->get();
+
+        foreach ($batches as $batch) {
+            $key = $batch->entry_date->toDateString().'|'.$batch->payment_type;
+            $batchesByGroup[$key][] = $batch;
+        }
+
+        $postedGroups = [];
+        $updatedGroups = [];
+        $keys = array_unique(array_merge(array_keys($groups), array_keys($batchesByGroup)));
+        sort($keys);
+
+        foreach ($keys as $key) {
+            $group = $groups[$key] ?? null;
+            $groupBatches = $batchesByGroup[$key] ?? [];
+            if ($group === null) {
+                $sample = $groupBatches[0];
+                $group = [
+                    'date' => $sample->entry_date->toDateString(),
+                    'payment_type' => (string) $sample->payment_type,
+                    'bank_code' => QuotaPaymentAccounts::bankCode($sample->payment_type) ?? '',
+                    'orders' => [],
+                    'debtors' => 0,
+                    'interest' => 0,
+                    'bank' => 0,
+                    'unposted' => 0,
+                ];
+            }
+
             $description = 'ACREDITACION COBRANZA CUOTAS '.mb_strtoupper($group['payment_type']);
+            $stored = $this->storedCollectionCents($groupBatches);
+            $desired = $this->desiredCollectionCents($group['orders']);
+
+            if ($groupBatches !== [] && ! QuotaCollectionReconcile::differs($stored, $desired)) {
+                continue;
+            }
+
             $item = [
                 'date' => $group['date'],
                 'payment_type' => $group['payment_type'],
@@ -210,46 +230,317 @@ class QuotaAccountingService
                 'debtors' => $this->amount($group['debtors']),
                 'interest' => $this->amount($group['interest']),
                 'bank' => $this->amount($group['bank']),
+                'previous_bank' => $this->amount($this->sumCents($stored, 2)),
                 'description' => $description,
-                'entry_number' => null,
+                'entry_number' => isset($groupBatches[0]) ? $groupBatches[0]->entry?->entry_number : null,
             ];
 
             if (! $dryRun) {
-                $firstOrder = $group['orders'][0]['eporres_order_id'];
-                $lines = [
-                    $this->line($accounts[$group['bank_code']], $group['bank'], 0, 'Cobranza'),
-                ];
-                if ($group['debtors'] > 0) {
-                    $lines[] = $this->line($accounts[QuotaPaymentAccounts::DEBTORS], 0, $group['debtors'], 'Cuotas cobradas');
-                }
-                if ($group['interest'] > 0) {
-                    $lines[] = $this->line($accounts[QuotaPaymentAccounts::LATE_INTEREST], 0, $group['interest'], 'Intereses por mora');
-                }
-                $this->assertBalanced($lines);
+                if ($groupBatches === []) {
+                    $entry = DB::transaction(function () use ($group, $accounts, $description) {
+                        $this->releaseCollectionOrders(
+                            array_column($group['orders'], 'eporres_order_id'),
+                            null,
+                            $accounts,
+                        );
 
-                $entry = $this->writeBatch(
-                    kind: QuotaAccountingBatch::KIND_COLLECTION,
-                    batchKey: 'collection:'.$group['date'].':'.$group['payment_type'].':'.$firstOrder,
-                    period: null,
-                    entryDate: $group['date'],
-                    paymentType: $group['payment_type'],
-                    entryKind: AccountingEntry::KIND_QUOTA_COLLECTION,
-                    description: $description,
-                    lines: $lines,
-                    orders: $group['orders'],
-                    role: QuotaAccountingBatch::KIND_COLLECTION,
-                );
-                $item['entry_number'] = $entry->entry_number;
+                        return $this->writeBatch(
+                            kind: QuotaAccountingBatch::KIND_COLLECTION,
+                            batchKey: 'collection:'.$group['date'].':'.$group['payment_type'].':'.$group['orders'][0]['eporres_order_id'].':'.now()->format('YmdHis'),
+                            period: null,
+                            entryDate: $group['date'],
+                            paymentType: $group['payment_type'],
+                            entryKind: AccountingEntry::KIND_QUOTA_COLLECTION,
+                            description: $description,
+                            lines: $this->collectionLines($group, $accounts),
+                            orders: $group['orders'],
+                            role: QuotaAccountingBatch::KIND_COLLECTION,
+                        );
+                    });
+                    $item['entry_number'] = $entry->entry_number;
+                } else {
+                    $entry = $this->rewriteCollectionGroup($group, $groupBatches, $accounts);
+                    $item['entry_number'] = $entry?->entry_number;
+                }
             }
 
-            $postedGroups[] = $item;
+            if ($groupBatches === []) {
+                $postedGroups[] = $item;
+            } else {
+                $updatedGroups[] = $item;
+            }
         }
 
         return [
             'groups' => $postedGroups,
+            'updated' => $updatedGroups,
             'skipped' => $skipped,
             'unposted_surcharge' => $this->amount($unpostedCents),
         ];
+    }
+
+    /**
+     * @param  array<int, true>  $splitIds
+     * @param  array<int, true>  $settledByPlan
+     * @return array{order_id: int, date: string, payment_type: string, bank_code: string, debtors: int, interest: int, bank: int, unposted: int}|null
+     */
+    private function classifyCollectionRow(object $row, array $splitIds, array $settledByPlan): ?array
+    {
+        if ($this->collectionSkipReason($row, $splitIds, $settledByPlan) !== null) {
+            return null;
+        }
+
+        $paymentType = trim((string) $row->payment_type);
+        $split = QuotaCollectionSplit::fromRow($row);
+        $bank = $this->cents($split['bank']);
+
+        return [
+            'order_id' => (int) $row->id,
+            'date' => Carbon::parse($row->paid_at)->toDateString(),
+            'payment_type' => $paymentType,
+            'bank_code' => (string) QuotaPaymentAccounts::bankCode($paymentType),
+            'debtors' => $this->cents($split['debtors']),
+            'interest' => $this->cents($split['interest']),
+            'bank' => $bank,
+            'unposted' => $this->cents($split['unposted']),
+        ];
+    }
+
+    /**
+     * @param  array<int, true>  $splitIds
+     * @param  array<int, true>  $settledByPlan
+     */
+    private function collectionSkipReason(object $row, array $splitIds, array $settledByPlan): ?string
+    {
+        $orderId = (int) $row->id;
+        if (isset($splitIds[$orderId])) {
+            return 'split';
+        }
+        $paymentType = trim((string) $row->payment_type);
+        if ($paymentType === '') {
+            return 'no_payment_type';
+        }
+        if ($paymentType === 'Plan de Pago' || isset($settledByPlan[$orderId])) {
+            return 'plan';
+        }
+        if (QuotaPaymentAccounts::bankCode($paymentType) === null) {
+            return 'unmapped';
+        }
+        if ($this->cents(QuotaCollectionSplit::fromRow($row)['bank']) < 1) {
+            return 'zero';
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  list<QuotaAccountingBatch>  $batches
+     * @return array<int, array{0: int, 1: int, 2: int}>
+     */
+    private function storedCollectionCents(array $batches): array
+    {
+        $stored = [];
+        foreach ($batches as $batch) {
+            foreach ($batch->orders as $order) {
+                $stored[(int) $order->eporres_order_id] = [
+                    $this->cents($order->debtors_amount),
+                    $this->cents($order->interest_amount),
+                    $this->cents($order->bank_amount),
+                ];
+            }
+        }
+
+        return $stored;
+    }
+
+    /**
+     * @param  list<array{eporres_order_id: int, debtors_amount: string, interest_amount: string, bank_amount: string}>  $orders
+     * @return array<int, array{0: int, 1: int, 2: int}>
+     */
+    private function desiredCollectionCents(array $orders): array
+    {
+        $desired = [];
+        foreach ($orders as $order) {
+            $desired[(int) $order['eporres_order_id']] = [
+                $this->cents($order['debtors_amount']),
+                $this->cents($order['interest_amount']),
+                $this->cents($order['bank_amount']),
+            ];
+        }
+
+        return $desired;
+    }
+
+    /**
+     * @param  array<int, array{0: int, 1: int, 2: int}>  $amounts
+     */
+    private function sumCents(array $amounts, int $index): int
+    {
+        $total = 0;
+        foreach ($amounts as $row) {
+            $total += $row[$index];
+        }
+
+        return $total;
+    }
+
+    /**
+     * @param  array{date: string, payment_type: string, bank_code: string, orders: list<array{eporres_order_id: int, debtors_amount: string, interest_amount: string, bank_amount: string}>, debtors: int, interest: int, bank: int}  $group
+     * @param  list<QuotaAccountingBatch>  $batches
+     * @param  array<string, AccountingAccount>  $accounts
+     */
+    private function rewriteCollectionGroup(array $group, array $batches, array $accounts): ?AccountingEntry
+    {
+        return DB::transaction(function () use ($group, $batches, $accounts) {
+            $primary = $batches[0];
+            $orderIds = array_column($group['orders'], 'eporres_order_id');
+            $this->releaseCollectionOrders($orderIds, $primary->id, $accounts);
+
+            foreach (array_slice($batches, 1) as $extra) {
+                $extra->orders()->delete();
+                $this->clearEntry($extra->entry);
+            }
+
+            $primary->orders()->delete();
+            if ($group['orders'] === []) {
+                $this->clearEntry($primary->entry);
+
+                return $primary->entry;
+            }
+
+            $now = now();
+            foreach (array_chunk($group['orders'], 500) as $chunk) {
+                $rows = [];
+                foreach ($chunk as $order) {
+                    $rows[] = [
+                        'quota_accounting_batch_id' => $primary->id,
+                        'role' => QuotaAccountingBatch::KIND_COLLECTION,
+                        'eporres_order_id' => $order['eporres_order_id'],
+                        'debtors_amount' => $order['debtors_amount'],
+                        'interest_amount' => $order['interest_amount'],
+                        'bank_amount' => $order['bank_amount'],
+                        'created_at' => $now,
+                        'updated_at' => $now,
+                    ];
+                }
+                QuotaAccountingOrder::query()->insert($rows);
+            }
+
+            $entry = $primary->entry;
+            $entry->lines()->delete();
+            foreach ($this->collectionLines($group, $accounts) as $line) {
+                $entry->lines()->create($line);
+            }
+            if ($entry->status !== AccountingEntry::STATUS_POSTED) {
+                $entry->update(['status' => AccountingEntry::STATUS_POSTED]);
+            }
+
+            return $entry->fresh();
+        });
+    }
+
+    /**
+     * Saca estas cuotas de otros asientos vigentes para poder ubicarlas en el grupo correcto.
+     *
+     * @param  list<int>  $orderIds
+     * @param  array<string, AccountingAccount>  $accounts
+     */
+    private function releaseCollectionOrders(array $orderIds, ?int $keepBatchId, array $accounts): void
+    {
+        if ($orderIds === []) {
+            return;
+        }
+
+        $misplaced = QuotaAccountingOrder::query()
+            ->where('role', QuotaAccountingBatch::KIND_COLLECTION)
+            ->whereIn('eporres_order_id', $orderIds)
+            ->when($keepBatchId, fn ($query) => $query->where('quota_accounting_batch_id', '!=', $keepBatchId))
+            ->with('batch.entry')
+            ->get();
+
+        if ($misplaced->isEmpty()) {
+            return;
+        }
+
+        $batchIds = $misplaced->pluck('quota_accounting_batch_id')->unique()->all();
+        QuotaAccountingOrder::query()->whereIn('id', $misplaced->pluck('id'))->delete();
+
+        $batches = QuotaAccountingBatch::query()->with(['orders', 'entry'])->whereIn('id', $batchIds)->get();
+        foreach ($batches as $batch) {
+            if ($batch->entry === null || $batch->entry->status !== AccountingEntry::STATUS_POSTED) {
+                continue;
+            }
+            $this->rewriteBatchFromRemainingOrders($batch, $accounts);
+        }
+    }
+
+    /**
+     * @param  array<string, AccountingAccount>  $accounts
+     */
+    private function rewriteBatchFromRemainingOrders(QuotaAccountingBatch $batch, array $accounts): void
+    {
+        $batch->load('orders', 'entry');
+        if ($batch->orders->isEmpty()) {
+            $this->clearEntry($batch->entry);
+
+            return;
+        }
+
+        $debtors = 0;
+        $interest = 0;
+        $bank = 0;
+        foreach ($batch->orders as $order) {
+            $debtors += $this->cents($order->debtors_amount);
+            $interest += $this->cents($order->interest_amount);
+            $bank += $this->cents($order->bank_amount);
+        }
+
+        $bankCode = QuotaPaymentAccounts::bankCode($batch->payment_type);
+        if ($bankCode === null || $batch->entry === null) {
+            return;
+        }
+
+        $group = [
+            'bank_code' => $bankCode,
+            'debtors' => $debtors,
+            'interest' => $interest,
+            'bank' => $bank,
+        ];
+        $batch->entry->lines()->delete();
+        foreach ($this->collectionLines($group, $accounts) as $line) {
+            $batch->entry->lines()->create($line);
+        }
+    }
+
+    private function clearEntry(?AccountingEntry $entry): void
+    {
+        if ($entry === null || $entry->status !== AccountingEntry::STATUS_POSTED) {
+            return;
+        }
+
+        $entry->lines()->delete();
+        $entry->update(['status' => AccountingEntry::STATUS_REVERSED]);
+    }
+
+    /**
+     * @param  array{bank_code: string, debtors: int, interest: int, bank: int}  $group
+     * @param  array<string, AccountingAccount>  $accounts
+     * @return list<array{accounting_account_id: int, debit: string, credit: string, memo: string}>
+     */
+    private function collectionLines(array $group, array $accounts): array
+    {
+        $lines = [
+            $this->line($accounts[$group['bank_code']], $group['bank'], 0, 'Cobranza'),
+        ];
+        if ($group['debtors'] > 0) {
+            $lines[] = $this->line($accounts[QuotaPaymentAccounts::DEBTORS], 0, $group['debtors'], 'Cuotas cobradas');
+        }
+        if ($group['interest'] > 0) {
+            $lines[] = $this->line($accounts[QuotaPaymentAccounts::LATE_INTEREST], 0, $group['interest'], 'Intereses por mora');
+        }
+        $this->assertBalanced($lines);
+
+        return $lines;
     }
 
     /**

@@ -82,8 +82,20 @@ class PostQuotaAccountingEntries extends Command
         $this->newLine();
         $this->info('Cobranza');
 
-        if ($collections['groups'] === []) {
-            $this->line('No hay cobros nuevos para asentar.');
+        if ($collections['groups'] === [] && ($collections['updated'] ?? []) === []) {
+            $this->line('No hay cobros nuevos ni correcciones para asentar.');
+        }
+
+        foreach ($collections['updated'] ?? [] as $group) {
+            $this->line(sprintf(
+                'Actualizado  %s  %s  asiento %s  antes: %s  ahora: %s  pagos: %d',
+                $group['date'],
+                $group['payment_type'],
+                $group['entry_number'] ?? '—',
+                $this->money($group['previous_bank']),
+                $this->money($group['bank']),
+                $group['orders'],
+            ));
         }
 
         foreach ($collections['groups'] as $group) {
