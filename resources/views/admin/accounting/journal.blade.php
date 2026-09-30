@@ -46,13 +46,70 @@
             </div>
         </div>
 
-        @forelse($entries as $entry)
-            @include('admin.accounting.partials.journal_entry', ['entry' => $entry])
-        @empty
-            <div class="card journal-card">
-                <div class="card-body text-muted">No hay asientos para ese filtro.</div>
+        <div class="card journal-card journal-book">
+            <div class="card-body p-0">
+                @php
+                    $accountQuery = array_filter([
+                        'from' => request('from'),
+                        'to' => request('to'),
+                        'kind' => request('kind'),
+                    ], fn ($value) => $value !== null && $value !== '');
+                @endphp
+                <div class="table-responsive">
+                    <table class="table journal-lines mb-0">
+                        <thead>
+                            <tr>
+                                <th>Cuenta</th>
+                                <th>Nombre</th>
+                                <th class="text-end">Debe</th>
+                                <th class="text-end">Haber</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @forelse($entries as $entry)
+                                @php
+                                    $debit = 0.0;
+                                    $credit = 0.0;
+                                @endphp
+                                <tr class="journal-asiento-label">
+                                    <td colspan="4">
+                                        <strong>Asiento {{ $entry->entry_number }}</strong>
+                                        <span class="journal-asiento-meta">{{ $entry->date?->format('d/m/Y') }} · {{ $entry->description }} · {{ $entry->kind_label }} ({{ $entry->status_label }})</span>
+                                    </td>
+                                </tr>
+                                @foreach($entry->lines as $line)
+                                    @php
+                                        $debit += (float) $line->debit;
+                                        $credit += (float) $line->credit;
+                                    @endphp
+                                    <tr>
+                                        <td>
+                                            @if($line->account)
+                                                <a href="{{ backpack_url('accounting-journal') }}?{{ http_build_query($accountQuery + ['account_id' => $line->account->id]) }}" class="journal-account">{{ $line->account->code }}</a>
+                                            @else
+                                                —
+                                            @endif
+                                        </td>
+                                        <td>{{ $line->account?->name ?? '—' }}</td>
+                                        <td class="text-end text-nowrap">{{ number_format((float) $line->debit, 2, ',', '.') }}</td>
+                                        <td class="text-end text-nowrap">{{ number_format((float) $line->credit, 2, ',', '.') }}</td>
+                                    </tr>
+                                @endforeach
+                                <tr class="journal-asiento-end">
+                                    <td colspan="2">Totales</td>
+                                    <td class="text-end">{{ number_format($debit, 2, ',', '.') }}</td>
+                                    <td class="text-end">{{ number_format($credit, 2, ',', '.') }}</td>
+                                </tr>
+                            @empty
+                                <tr>
+                                    <td colspan="4" class="text-muted">No hay asientos para ese filtro.</td>
+                                </tr>
+                            @endforelse
+                        </tbody>
+                    </table>
+                </div>
             </div>
-        @endforelse
+        </div>
     </div>
 </div>
 @endsection
@@ -96,6 +153,53 @@
     .journal-btn-clear:hover {
         background: #f8f9fb;
         color: #1e2a4a !important;
+    }
+    .journal-book {
+        background: #fff;
+        border-left: 4px solid #871f1f !important;
+    }
+    .journal-lines {
+        width: 100%;
+        border-collapse: collapse;
+        margin-bottom: 0;
+    }
+    .journal-lines thead th {
+        background: #871f1f !important;
+        color: #fff !important;
+        font-weight: 700;
+        border: none;
+        text-transform: none;
+        letter-spacing: 0;
+        padding: 0.7rem 0.9rem;
+    }
+    .journal-lines tbody td {
+        padding: 0.7rem 0.9rem;
+        border-bottom: 1px solid #e6e8ee;
+        background: #fff;
+        vertical-align: middle;
+        color: #1e2a4a;
+    }
+    .journal-asiento-label td {
+        background: #f7f8fb !important;
+        border-bottom: 1px solid #e6e8ee !important;
+        padding-top: 0.85rem;
+        padding-bottom: 0.85rem;
+    }
+    .journal-asiento-meta {
+        margin-left: 0.75rem;
+        font-weight: 400;
+    }
+    .journal-asiento-end td {
+        font-weight: 700;
+        border-bottom: 3px solid #871f1f !important;
+    }
+    .journal-account {
+        color: #871f1f !important;
+        font-weight: 600;
+        text-decoration: none;
+    }
+    .journal-account:hover {
+        text-decoration: underline;
     }
 </style>
 @endsection
