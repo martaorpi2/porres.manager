@@ -46,47 +46,13 @@
             </div>
         </div>
 
-        <div class="card journal-card">
-            <div class="card-body table-responsive p-0">
-                <table class="table journal-table mb-0">
-                    <thead>
-                        <tr>
-                            <th>Fecha</th>
-                            <th>Asiento</th>
-                            <th>Descripción</th>
-                            <th>Tipo</th>
-                            <th class="text-end">Debe</th>
-                            <th class="text-end">Haber</th>
-                            <th></th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @forelse($entries as $entry)
-                            <tr>
-                                <td class="text-nowrap">{{ $entry->date?->format('d/m/Y') }}</td>
-                                <td class="text-nowrap">{{ $entry->entry_number }}</td>
-                                <td>{{ $entry->description }}</td>
-                                <td class="text-nowrap">{{ $entry->kind_label }}</td>
-                                <td class="text-end text-nowrap">{{ number_format((float) $entry->debit_total, 2, ',', '.') }}</td>
-                                <td class="text-end text-nowrap">{{ number_format((float) $entry->credit_total, 2, ',', '.') }}</td>
-                                <td class="text-end">
-                                    <a href="{{ backpack_url('accounting-journal/'.$entry->id) }}" class="journal-ver">Ver</a>
-                                </td>
-                            </tr>
-                        @empty
-                            <tr>
-                                <td colspan="7" class="text-muted">No hay asientos para ese filtro.</td>
-                            </tr>
-                        @endforelse
-                    </tbody>
-                </table>
+        @forelse($entries as $entry)
+            @include('admin.accounting.partials.journal_entry', ['entry' => $entry])
+        @empty
+            <div class="card journal-card">
+                <div class="card-body text-muted">No hay asientos para ese filtro.</div>
             </div>
-            @if($entries->hasPages())
-                <div class="card-footer journal-pagination">
-                    {{ $entries->links('pagination::bootstrap-4') }}
-                </div>
-            @endif
-        </div>
+        @endforelse
     </div>
 </div>
 @endsection
@@ -130,64 +96,6 @@
     .journal-btn-clear:hover {
         background: #f8f9fb;
         color: #1e2a4a !important;
-    }
-    .journal-table thead th {
-        background: #f7f8fb;
-        color: #1e2a4a;
-        font-weight: 700;
-        border-bottom: 1px solid #e6e8ee;
-        text-transform: none;
-        letter-spacing: 0;
-        font-size: 0.95rem;
-        padding: 0.85rem 1rem;
-        vertical-align: middle;
-    }
-    .journal-table tbody td {
-        padding: 0.85rem 1rem;
-        border-top: 1px solid #eef0f3;
-        color: #243044;
-        vertical-align: middle;
-        background: #fff;
-    }
-    .journal-table tbody tr:hover td {
-        background: #fafbfc;
-    }
-    .journal-ver {
-        color: #871f1f !important;
-        font-weight: 600;
-        text-decoration: none;
-    }
-    .journal-ver:hover {
-        color: #a02a2a !important;
-        text-decoration: underline;
-    }
-    .journal-pagination {
-        background: #fff;
-        border-top: 1px solid #e6e8ee;
-        display: flex;
-        justify-content: flex-end;
-    }
-    .journal-pagination .pagination {
-        margin-bottom: 0;
-    }
-    .journal-pagination .page-link {
-        color: #1e2a4a;
-        border-color: #e6e8ee;
-    }
-    .journal-pagination .page-link:hover {
-        color: #871f1f;
-        background: #fdf6f6;
-        border-color: #e6e8ee;
-    }
-    .journal-pagination .page-item.active .page-link {
-        background-color: #871f1f;
-        border-color: #871f1f;
-        color: #fff;
-    }
-    .journal-pagination .page-item.disabled .page-link {
-        color: #98a2b3;
-        background: #fff;
-        border-color: #e6e8ee;
     }
 </style>
 @endsection

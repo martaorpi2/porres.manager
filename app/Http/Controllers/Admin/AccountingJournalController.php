@@ -22,18 +22,16 @@ class AccountingJournalController extends CrudController
         $accountId = $request->integer('account_id') ?: null;
 
         $entries = AccountingEntry::query()
-            ->withSum('lines as debit_total', 'debit')
-            ->withSum('lines as credit_total', 'credit')
+            ->with(['lines.account'])
             ->when($from, fn ($query) => $query->whereDate('date', '>=', $from))
             ->when($to, fn ($query) => $query->whereDate('date', '<=', $to))
             ->when(in_array($kind, $this->kinds(), true), fn ($query) => $query->where('kind', $kind))
             ->when($accountId, function ($query) use ($accountId) {
                 $query->whereHas('lines', fn ($lines) => $lines->where('accounting_account_id', $accountId));
             })
-            ->orderByDesc('date')
-            ->orderByDesc('id')
-            ->paginate(25)
-            ->withQueryString();
+            ->orderBy('date')
+            ->orderBy('id')
+            ->get();
 
         return view('admin.accounting.journal', [
             'entries' => $entries,
