@@ -1,0 +1,1295 @@
+<!DOCTYPE html>
+
+<html lang="es" dir="ltr">
+
+<head>
+  <meta charset="utf-8">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, shrink-to-fit=no">
+<meta name="robots" content="noindex, nofollow"> 
+
+
+<meta name="csrf-token" content=""/> 
+<title>Asiento AS-2026-085 :: Panel Administrador</title>
+
+
+<style>
+/* Override Bootstrap primary color */
+:root {
+    --bs-primary: #871f1f !important;
+    --bs-primary-rgb: 135, 31, 31 !important;
+}
+
+/* Override any existing primary color definitions */
+.bg-primary {
+    background-color: #871f1f !important;
+    color: white !important;
+}
+
+.text-primary {
+    color: #871f1f !important;
+}
+
+.btn-primary {
+    background-color: #871f1f !important;
+    border-color: #871f1f !important;
+    color: white !important;
+}
+
+.btn-primary:hover {
+    background-color: #a02a2a !important;
+    border-color: #a02a2a !important;
+    color: white !important;
+}
+
+.btn-primary:focus {
+    background-color: #a02a2a !important;
+    border-color: #a02a2a !important;
+    color: white !important;
+    box-shadow: 0 0 0 0.2rem rgba(135, 31, 31, 0.25) !important;
+}
+
+.btn-primary:active {
+    background-color: #6b1818 !important;
+    border-color: #6b1818 !important;
+    color: white !important;
+}
+
+/* Links */
+a {
+    color: #871f1f !important;
+}
+
+a:hover {
+    color: #a02a2a !important;
+}
+
+/* Form controls */
+.form-control:focus {
+    border-color: #871f1f !important;
+    box-shadow: 0 0 0 0.2rem rgba(135, 31, 31, 0.25) !important;
+}
+
+.form-check-input:checked {
+    background-color: #871f1f !important;
+    border-color: #871f1f !important;
+}
+
+/* Select2 styling */
+.select2-container--default .select2-selection--single:focus {
+    border-color: #871f1f !important;
+}
+
+.select2-container--default .select2-results__option--highlighted[aria-selected] {
+    background-color: #871f1f !important;
+}
+
+/* Pagination */
+.page-link {
+    color: #871f1f !important;
+}
+
+.page-link:hover {
+    color: #a02a2a !important;
+}
+
+.page-item.active .page-link {
+    background-color: #871f1f !important;
+    border-color: #871f1f !important;
+    color: white !important;
+}
+
+/* Badges */
+.badge-primary {
+    background-color: #871f1f !important;
+    color: white !important;
+}
+
+/* Alerts */
+.alert-primary {
+    background-color: rgba(135, 31, 31, 0.1) !important;
+    border-color: #871f1f !important;
+    color: #6b1818 !important;
+}
+
+/* Progress bars */
+.progress-bar {
+    background-color: #871f1f !important;
+    color: white !important;
+}
+
+/* Table hover effects */
+.table-hover tbody tr:hover {
+    background-color: rgba(135, 31, 31, 0.1) !important;
+}
+
+/* Breadcrumb active */
+.breadcrumb-item.active {
+    color: #871f1f !important;
+}
+
+/* Dropdown */
+.dropdown-item:hover {
+    background-color: rgba(135, 31, 31, 0.1) !important;
+}
+
+/* Modal */
+.modal-header {
+    background-color: #871f1f !important;
+    color: white !important;
+}
+
+.modal-header .close {
+    color: white !important;
+}
+
+/* Card borders */
+.card {
+    border-left: 4px solid #871f1f !important;
+}
+
+/* Navbar */
+.navbar-brand {
+    color: #871f1f !important;
+}
+
+.navbar-brand:hover {
+    color: #a02a2a !important;
+}
+
+.navbar-nav .nav-link {
+    color: rgba(255, 255, 255, 0.9) !important;
+}
+
+.navbar-nav .nav-link:hover {
+    color: white !important;
+}
+
+/* Project Logo specific styling */
+.project_logo,
+.project-logo,
+.navbar-brand b,
+.navbar-brand strong {
+    color: #871f1f !important;
+}
+
+.project_logo:hover,
+.project-logo:hover,
+.navbar-brand:hover b,
+.navbar-brand:hover strong {
+    color: #a02a2a !important;
+}
+
+/* Convert button styling */
+.btn-convert,
+.btn[class*="convert"],
+.btn[data-action="convert"],
+.btn[title*="convert"],
+.btn[title*="Convert"],
+.btn[aria-label*="convert"],
+.btn[aria-label*="Convert"] {
+    background-color: #871f1f !important;
+    border-color: #871f1f !important;
+    color: white !important;
+}
+
+.btn-convert:hover,
+.btn[class*="convert"]:hover,
+.btn[data-action="convert"]:hover,
+.btn[title*="convert"]:hover,
+.btn[title*="Convert"]:hover,
+.btn[aria-label*="convert"]:hover,
+.btn[aria-label*="Convert"]:hover {
+    background-color: #a02a2a !important;
+    border-color: #a02a2a !important;
+    color: white !important;
+}
+
+/* PDF button styling */
+.btn-pdf,
+.btn[class*="pdf"],
+.btn[data-action="pdf"],
+.btn[title*="pdf"],
+.btn[title*="PDF"],
+.btn[aria-label*="pdf"],
+.btn[aria-label*="PDF"] {
+    background-color: #871f1f !important;
+    border-color: #871f1f !important;
+    color: white !important;
+}
+
+.btn-pdf:hover,
+.btn[class*="pdf"]:hover,
+.btn[data-action="pdf"]:hover,
+.btn[title*="pdf"]:hover,
+.btn[title*="PDF"]:hover,
+.btn[aria-label*="pdf"]:hover,
+.btn[aria-label*="PDF"]:hover {
+    background-color: #a02a2a !important;
+    border-color: #a02a2a !important;
+    color: white !important;
+}
+
+/* Account/Profile menu button styling */
+.btn-account,
+.btn-profile,
+.btn[class*="account"],
+.btn[class*="profile"],
+.btn[class*="user"],
+.btn[data-action="account"],
+.btn[data-action="profile"],
+.btn[title*="account"],
+.btn[title*="Account"],
+.btn[title*="profile"],
+.btn[title*="Profile"],
+.btn[title*="mi cuenta"],
+.btn[title*="Mi cuenta"],
+.btn[aria-label*="account"],
+.btn[aria-label*="Account"],
+.btn[aria-label*="profile"],
+.btn[aria-label*="Profile"],
+.btn[aria-label*="mi cuenta"],
+.btn[aria-label*="Mi cuenta"],
+.dropdown-toggle[data-toggle="dropdown"],
+.navbar-nav .dropdown-toggle {
+    background-color: #871f1f !important;
+    border-color: #871f1f !important;
+    color: white !important;
+}
+
+/* Override green colors specifically */
+.btn-success,
+.btn[class*="success"],
+.btn[style*="background-color: green"],
+.btn[style*="background-color: #28a745"],
+.btn[style*="background-color: #198754"],
+.btn[style*="background: green"],
+.btn[style*="background: #28a745"],
+.btn[style*="background: #198754"],
+.navbar-nav .btn-success,
+.navbar-nav .btn[class*="success"],
+.navbar-nav .dropdown-toggle.btn-success,
+.navbar-nav .dropdown-toggle.btn[class*="success"] {
+    background-color: #871f1f !important;
+    border-color: #871f1f !important;
+    color: white !important;
+}
+
+.btn-account:hover,
+.btn-profile:hover,
+.btn[class*="account"]:hover,
+.btn[class*="profile"]:hover,
+.btn[class*="user"]:hover,
+.btn[data-action="account"]:hover,
+.btn[data-action="profile"]:hover,
+.btn[title*="account"]:hover,
+.btn[title*="Account"]:hover,
+.btn[title*="profile"]:hover,
+.btn[title*="Profile"]:hover,
+.btn[title*="mi cuenta"]:hover,
+.btn[title*="Mi cuenta"]:hover,
+.btn[aria-label*="account"]:hover,
+.btn[aria-label*="Account"]:hover,
+.btn[aria-label*="profile"]:hover,
+.btn[aria-label*="Profile"]:hover,
+.btn[aria-label*="mi cuenta"]:hover,
+.btn[aria-label*="Mi cuenta"]:hover,
+.dropdown-toggle[data-toggle="dropdown"]:hover,
+.navbar-nav .dropdown-toggle:hover {
+    background-color: #a02a2a !important;
+    border-color: #a02a2a !important;
+    color: white !important;
+}
+
+/* Sidebar */
+.sidebar .nav-link.active {
+    background-color: #871f1f !important;
+    color: white !important;
+}
+
+.sidebar .nav-link:hover {
+    background-color: #a02a2a !important;
+    color: white !important;
+}
+
+/* Force white text on hover - more specific selectors */
+.sidebar .nav-link:hover span,
+.sidebar .nav-link:hover .nav-link-text,
+.sidebar .nav-link:hover .menu-text,
+.sidebar .nav-link:hover .text,
+.sidebar .nav-link:hover div,
+.sidebar .nav-link:hover p,
+.sidebar .nav-link:hover a {
+    color: white !important;
+}
+
+/* Override any text color in hover menu items */
+.sidebar .nav-link:hover *:not(i),
+.sidebar .nav-link:hover > * {
+    color: white !important;
+}
+
+/* Force white text for any text element in hover menu items */
+.sidebar .nav-link:hover,
+.sidebar .nav-link:hover > *,
+.sidebar .nav-link:hover span,
+.sidebar .nav-link:hover div,
+.sidebar .nav-link:hover p,
+.sidebar .nav-link:hover a {
+    color: white !important;
+}
+
+/* Specific rules for dashboard/home button - only when actually active */
+.sidebar .nav-link.active[href*="dashboard"],
+.sidebar .nav-link.active[href*="home"],
+.sidebar .nav-link.active[href*="inicio"],
+.sidebar .nav-link.active[href="/admin"],
+.sidebar .nav-link.active[href="/admin/"] {
+    background-color: #871f1f !important;
+    color: white !important;
+}
+
+/* Ensure dashboard button is NOT active when other pages are selected */
+.sidebar .nav-link[href*="dashboard"]:not(.active),
+.sidebar .nav-link[href*="home"]:not(.active),
+.sidebar .nav-link[href*="inicio"]:not(.active),
+.sidebar .nav-link[href="/admin"]:not(.active),
+.sidebar .nav-link[href="/admin/"]:not(.active) {
+    background-color: transparent !important;
+    color: black !important;
+}
+
+.sidebar .nav-link[href*="dashboard"]:hover,
+.sidebar .nav-link[href*="home"]:hover,
+.sidebar .nav-link[href*="inicio"]:hover,
+.sidebar .nav-link[href="/admin"]:hover,
+.sidebar .nav-link[href="/admin/"]:hover {
+    background-color: #a02a2a !important;
+    color: white !important;
+}
+
+.sidebar .nav-link[href*="dashboard"] i,
+.sidebar .nav-link[href*="home"] i,
+.sidebar .nav-link[href*="inicio"] i,
+.sidebar .nav-link[href="/admin"] i,
+.sidebar .nav-link[href="/admin/"] i,
+.sidebar .nav-link[href*="dashboard"]:hover i,
+.sidebar .nav-link[href*="home"]:hover i,
+.sidebar .nav-link[href*="inicio"]:hover i,
+.sidebar .nav-link[href="/admin"]:hover i,
+.sidebar .nav-link[href="/admin/"]:hover i {
+    color: white !important;
+}
+
+/* Menu/Sidebar specific rules */
+.sidebar {
+    color: black !important;
+}
+
+.sidebar .nav-link {
+    color: black !important;
+}
+
+.sidebar .nav-link i {
+    color: black !important;
+}
+
+.sidebar .nav-link:hover {
+    background-color: #a02a2a !important;
+    color: white !important;
+}
+
+.sidebar .nav-link:hover i {
+    color: white !important;
+}
+
+/* Force white icon on hover - more specific selectors */
+.sidebar .nav-link:hover i,
+.sidebar .nav-link:hover .fa,
+.sidebar .nav-link:hover .fas,
+.sidebar .nav-link:hover .far,
+.sidebar .nav-link:hover .fab,
+.sidebar .nav-link:hover .fal,
+.sidebar .nav-link:hover .fad,
+.sidebar .nav-link:hover .icon,
+.sidebar .nav-link:hover [class*="fa-"],
+.sidebar .nav-link:hover [class*="icon-"] {
+    color: white !important;
+}
+
+.sidebar .nav-link.active {
+    background-color: #871f1f !important;
+    color: white !important;
+}
+
+.sidebar .nav-link.active i {
+    color: white !important;
+}
+
+/* Ensure only one menu item is active at a time */
+.sidebar .nav-link:not(.active) {
+    background-color: transparent !important;
+    color: black !important;
+}
+
+.sidebar .nav-link:not(.active) i {
+    color: black !important;
+}
+
+/* Force hover to work on all menu items */
+.sidebar .nav-link:not(.active):hover {
+    background-color: #a02a2a !important;
+    color: white !important;
+}
+
+.sidebar .nav-link:not(.active):hover i {
+    color: white !important;
+}
+
+.sidebar .nav-link:not(.active):hover span,
+.sidebar .nav-link:not(.active):hover div,
+.sidebar .nav-link:not(.active):hover p,
+.sidebar .nav-link:not(.active):hover a {
+    color: white !important;
+}
+
+/* Additional specific rules for active menu items */
+.sidebar .nav-link[style*="background-color: #871f1f"],
+.sidebar .nav-link[style*="background: #871f1f"],
+.sidebar .nav-link.bg-primary,
+.sidebar .nav-link.current {
+    background-color: #871f1f !important;
+    color: white !important;
+}
+
+.sidebar .nav-link[style*="background-color: #871f1f"] i,
+.sidebar .nav-link[style*="background: #871f1f"] i,
+.sidebar .nav-link.bg-primary i,
+.sidebar .nav-link.current i {
+    color: white !important;
+}
+
+/* Force white text for any element with red background in sidebar */
+.sidebar [style*="background-color: #871f1f"],
+.sidebar [style*="background: #871f1f"],
+.sidebar .bg-primary {
+    color: white !important;
+}
+
+.sidebar [style*="background-color: #871f1f"] *,
+.sidebar [style*="background: #871f1f"] *,
+.sidebar .bg-primary * {
+    color: white !important;
+}
+
+/* Override specific purple color in sidebar */
+.sidebar [style*="color: #9563c7"],
+.sidebar [style*="color:#9563c7"],
+.sidebar .nav-link[style*="color: #9563c7"],
+.sidebar .nav-link[style*="color:#9563c7"] {
+    color: white !important;
+}
+
+/* Force override for any purple text in active menu items */
+.sidebar .nav-link.active,
+.sidebar .nav-link.active *,
+.sidebar .nav-link[style*="background-color: #871f1f"],
+.sidebar .nav-link[style*="background-color: #871f1f"] *,
+.sidebar .nav-link.bg-primary,
+.sidebar .nav-link.bg-primary * {
+    color: white !important;
+}
+
+/* Universal override for sidebar text colors */
+.sidebar .nav-link {
+    color: black !important;
+}
+
+.sidebar .nav-link.active,
+.sidebar .nav-link[style*="background-color: #871f1f"],
+.sidebar .nav-link.bg-primary {
+    color: white !important;
+}
+
+/* Force white text for active menu items - more specific selectors */
+.sidebar .nav-link.active span,
+.sidebar .nav-link.active .nav-link-text,
+.sidebar .nav-link.active .menu-text,
+.sidebar .nav-link.active .text,
+.sidebar .nav-link[style*="background-color: #871f1f"] span,
+.sidebar .nav-link[style*="background-color: #871f1f"] .nav-link-text,
+.sidebar .nav-link[style*="background-color: #871f1f"] .menu-text,
+.sidebar .nav-link[style*="background-color: #871f1f"] .text,
+.sidebar .nav-link.bg-primary span,
+.sidebar .nav-link.bg-primary .nav-link-text,
+.sidebar .nav-link.bg-primary .menu-text,
+.sidebar .nav-link.bg-primary .text {
+    color: white !important;
+}
+
+/* Override any text color in active menu items */
+.sidebar .nav-link.active *:not(i),
+.sidebar .nav-link[style*="background-color: #871f1f"] *:not(i),
+.sidebar .nav-link.bg-primary *:not(i) {
+    color: white !important;
+}
+
+/* Menu dropdown items */
+.sidebar .dropdown-menu {
+    background-color: white !important;
+    border-color: #871f1f !important;
+}
+
+.sidebar .dropdown-item {
+    color: black !important;
+}
+
+.sidebar .dropdown-item:hover {
+    background-color: #871f1f !important;
+    color: white !important;
+}
+
+/* Specific rules for dropdown items active state */
+.sidebar .dropdown-item.active {
+    background-color: #871f1f !important;
+    color: white !important;
+}
+
+.sidebar .dropdown-item.active i {
+    color: white !important;
+}
+
+/* Ensure only the current dropdown item is active */
+.sidebar .dropdown-item:not(.active) {
+    background-color: transparent !important;
+    color: black !important;
+}
+
+.sidebar .dropdown-item:not(.active) i {
+    color: black !important;
+}
+
+/* Force override for any conflicting active states */
+.sidebar .dropdown-item.active[href*="supplier"]:not([href*="suppliers-heading"]) {
+    background-color: transparent !important;
+    color: black !important;
+}
+
+.sidebar .dropdown-item.active[href*="suppliers-heading"] {
+    background-color: #871f1f !important;
+    color: white !important;
+}
+
+.sidebar .dropdown-item.active[href*="suppliers-heading"] i {
+    color: white !important;
+}
+
+/* Specific override for supplier list when suppliers-heading is active */
+.sidebar .dropdown-item[href*="supplier"]:not([href*="suppliers-heading"]) {
+    background-color: transparent !important;
+    color: black !important;
+}
+
+.sidebar .dropdown-item[href*="supplier"]:not([href*="suppliers-heading"]) i {
+    color: black !important;
+}
+
+/* Override any dark text in sidebar - only for specific cases */
+.sidebar .text-dark {
+    color: black !important;
+}
+
+.sidebar .text-muted {
+    color: #6c757d !important;
+}
+
+.sidebar .text-secondary {
+    color: #6c757d !important;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar-thumb {
+    background-color: #871f1f !important;
+}
+
+/* Loading spinner */
+.spinner-border-primary {
+    color: #871f1f !important;
+}
+
+/* Override any existing purple/violet colors */
+[style*="#7d69ef"] {
+    background-color: #871f1f !important;
+}
+
+[style*="color: #7d69ef"] {
+    color: #871f1f !important;
+}
+
+/* Force override for any CSS variables that might be using the old color */
+* {
+    --primary-color: #871f1f !important;
+    --primary: #871f1f !important;
+    --success-color: #871f1f !important;
+    --success: #871f1f !important;
+    --green: #871f1f !important;
+}
+
+/* Override any purple/violet colors specifically */
+[style*="#9563c7"],
+[style*="color: #9563c7"],
+[style*="color:#9563c7"] {
+    color: white !important;
+}
+
+/* Override purple color in sidebar specifically */
+.sidebar [style*="#9563c7"],
+.sidebar [style*="color: #9563c7"],
+.sidebar [style*="color:#9563c7"] {
+    color: white !important;
+}
+
+/* Force white text for any text element in active menu items */
+.sidebar .nav-link.active,
+.sidebar .nav-link.active > *,
+.sidebar .nav-link.active span,
+.sidebar .nav-link.active div,
+.sidebar .nav-link.active p,
+.sidebar .nav-link.active a,
+.sidebar .nav-link[style*="background-color: #871f1f"],
+.sidebar .nav-link[style*="background-color: #871f1f"] > *,
+.sidebar .nav-link[style*="background-color: #871f1f"] span,
+.sidebar .nav-link[style*="background-color: #871f1f"] div,
+.sidebar .nav-link[style*="background-color: #871f1f"] p,
+.sidebar .nav-link[style*="background-color: #871f1f"] a,
+.sidebar .nav-link.bg-primary,
+.sidebar .nav-link.bg-primary > *,
+.sidebar .nav-link.bg-primary span,
+.sidebar .nav-link.bg-primary div,
+.sidebar .nav-link.bg-primary p,
+.sidebar .nav-link.bg-primary a {
+    color: white !important;
+}
+
+/* Additional rules to ensure white text on red backgrounds */
+.card-header.bg-primary,
+.card-header[style*="background-color: #871f1f"],
+.card-header[style*="background: #871f1f"] {
+    color: white !important;
+}
+
+/* Ensure all elements with primary background have white text */
+[class*="bg-primary"],
+[style*="background-color: #871f1f"],
+[style*="background: #871f1f"] {
+    color: white !important;
+}
+
+/* Specific overrides for common elements */
+.navbar.bg-primary,
+.header.bg-primary,
+.footer.bg-primary {
+    color: white !important;
+}
+
+.navbar.bg-primary a,
+.header.bg-primary a,
+.footer.bg-primary a {
+    color: white !important;
+}
+
+.navbar.bg-primary a:hover,
+.header.bg-primary a:hover,
+.footer.bg-primary a:hover {
+    color: rgba(255, 255, 255, 0.8) !important;
+}
+
+/* Custom header background color override */
+.app-header,
+header.app-header,
+.navbar.app-header,
+header.navbar.app-header,
+.app-header.navbar,
+header[class*="app-header"],
+.navbar[class*="app-header"],
+body header.app-header.navbar,
+body header.navbar.app-header,
+html body header.app-header.navbar,
+html body header.navbar.app-header {
+    background-color: #646466 !important;
+}
+
+/* Project logo styling - white color with bordo hover - Maximum specificity */
+.navbar-brand,
+.navbar-brand b,
+.navbar-brand strong,
+.project_logo,
+.project-logo,
+header .navbar-brand,
+header .navbar-brand b,
+header .navbar-brand strong,
+.app-header .navbar-brand,
+.app-header .navbar-brand b,
+.app-header .navbar-brand strong,
+body header .navbar-brand,
+body header .navbar-brand b,
+body header .navbar-brand strong {
+    color: #ffffff !important;
+    opacity: 1 !important;
+}
+
+.navbar-brand:hover,
+.navbar-brand:hover b,
+.navbar-brand:hover strong,
+.project_logo:hover,
+.project-logo:hover,
+header .navbar-brand:hover,
+header .navbar-brand:hover b,
+header .navbar-brand:hover strong,
+.app-header .navbar-brand:hover,
+.app-header .navbar-brand:hover b,
+.app-header .navbar-brand:hover strong,
+body header .navbar-brand:hover,
+body header .navbar-brand:hover b,
+body header .navbar-brand:hover strong {
+    color: #871f1f !important;
+}
+
+/* Avatar styling - change from success green to bordo */
+.backpack-avatar-menu-container,
+.img-avatar,
+.avatar,
+[class*="avatar"] {
+    background-color: #871f1f !important;
+    color: #ffffff !important;
+}
+
+/* Specific styling for avatar text content */
+.backpack-avatar-menu-container,
+.backpack-avatar-menu-container *,
+.backpack-avatar-menu-container span,
+.backpack-avatar-menu-container div,
+.nav-item .backpack-avatar-menu-container,
+.nav-item .backpack-avatar-menu-container * {
+    color: #ffffff !important;
+    background-color: #871f1f !important;
+}
+
+/* Ultimate override for avatar text color */
+.backpack-avatar-menu-container,
+.backpack-avatar-menu-container *,
+.backpack-avatar-menu-container span,
+.backpack-avatar-menu-container div,
+.backpack-avatar-menu-container[style*="color"] {
+    color: #ffffff !important;
+}
+
+/* Nuclear option - force white color with maximum specificity */
+html body header .navbar .nav-item .nav-link .backpack-avatar-menu-container,
+html body header .navbar .nav-item .nav-link .backpack-avatar-menu-container *,
+html body header .navbar .nav-item .nav-link .backpack-avatar-menu-container span,
+html body header .navbar .nav-item .nav-link .backpack-avatar-menu-container div {
+    color: white !important;
+    background-color: #871f1f !important;
+}
+
+/* Additional nuclear option using different color values */
+.backpack-avatar-menu-container {
+    color: white !important;
+    background-color: #871f1f !important;
+}
+
+.backpack-avatar-menu-container * {
+    color: white !important;
+}
+
+/* Alertas y superficies amarillas: texto oscuro (evita heredar blanco de .text-white / fondos primarios) */
+.alert.alert-warning,
+.alert.alert-warning strong,
+.alert.alert-warning i,
+.alert.alert-warning span,
+.alert.alert-warning p,
+.card.text-white .alert.alert-warning,
+.card.text-white .alert.alert-warning *,
+.text-white .alert.alert-warning,
+.text-white .alert.alert-warning *,
+[class*="bg-primary"] .alert.alert-warning,
+[class*="bg-primary"] .alert.alert-warning * {
+    color: #212529 !important;
+}
+
+.alert.alert-warning a {
+    color: #871f1f !important;
+}
+
+.badge.bg-warning {
+    color: #212529 !important;
+}
+
+/* Alerta verde: texto oscuro y botón primario legible (escalamiento nivel superior) */
+.purchase-request-superior-escalation-alert,
+.purchase-request-superior-escalation-alert p,
+.purchase-request-superior-escalation-alert strong,
+.purchase-request-superior-escalation-alert i {
+    color: #212529 !important;
+}
+
+.purchase-request-superior-escalation-alert .purchase-request-superior-escalation-alert__btn {
+    color: #fff !important;
+    background-color: #871f1f !important;
+    border-color: #6b1818 !important;
+}
+
+.purchase-request-superior-escalation-alert .purchase-request-superior-escalation-alert__btn:hover,
+.purchase-request-superior-escalation-alert .purchase-request-superior-escalation-alert__btn:focus {
+    color: #fff !important;
+    background-color: #6b1818 !important;
+    border-color: #5a1414 !important;
+}
+</style>
+
+<script>
+// Force white color on avatar text using JavaScript
+document.addEventListener('DOMContentLoaded', function() {
+    const avatarContainers = document.querySelectorAll('.backpack-avatar-menu-container');
+    avatarContainers.forEach(function(container) {
+        container.style.color = 'white';
+        container.style.backgroundColor = '#871f1f';
+        // Also set color on any child elements
+        const children = container.querySelectorAll('*');
+        children.forEach(function(child) {
+            child.style.color = 'white';
+        });
+    });
+});
+
+// Also run after a short delay to catch any dynamically loaded content
+setTimeout(function() {
+    const avatarContainers = document.querySelectorAll('.backpack-avatar-menu-container');
+    avatarContainers.forEach(function(container) {
+        container.style.color = 'white';
+        container.style.backgroundColor = '#871f1f';
+        const children = container.querySelectorAll('*');
+        children.forEach(function(child) {
+            child.style.color = 'white';
+        });
+    });
+}, 100);
+</script>
+
+<style>
+    .journal-title {
+        color: #1e2a4a;
+        font-weight: 600;
+    }
+    .journal-back {
+        background: #fff;
+        border: 1px solid #e7c4c4;
+        color: #5c2a32 !important;
+        font-size: 0.85rem;
+        font-weight: 600;
+        padding: 0.2rem 0.65rem;
+        border-radius: 6px;
+        line-height: 1.4;
+    }
+    .journal-back:hover {
+        background: #fdf6f6;
+        color: #871f1f !important;
+    }
+    .journal-entry-card {
+        border: 1px solid #e6e8ee;
+        border-left: 4px solid #871f1f !important;
+        border-radius: 4px;
+        box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
+    }
+    .journal-entry-card .card-body {
+        color: #1e2a4a;
+    }
+    .journal-lines {
+        border-collapse: separate;
+        border-spacing: 0;
+    }
+    .journal-lines thead th {
+        background: #871f1f !important;
+        color: #fff !important;
+        font-weight: 700;
+        border: none;
+        text-transform: none;
+        letter-spacing: 0;
+        padding: 0.7rem 0.9rem;
+    }
+    .journal-lines tbody td {
+        padding: 0.7rem 0.9rem;
+        border-bottom: 1px solid #e6e8ee;
+        background: #fff;
+        vertical-align: middle;
+    }
+    .journal-lines tfoot td {
+        padding: 0.75rem 0.9rem;
+        font-weight: 700;
+        color: #1e2a4a;
+        border-top: none;
+        background: #fff;
+    }
+    .journal-account {
+        color: #871f1f !important;
+        font-weight: 600;
+        text-decoration: none;
+    }
+    .journal-account:hover {
+        text-decoration: underline;
+    }
+</style>
+
+
+
+<!--[if lt IE 9]>
+<script src="https://oss.maxcdn.com/html5shiv/3.7.3/html5shiv.min.js"></script>
+<script src="https://oss.maxcdn.com/respond/1.4.2/respond.min.js"></script>
+<![endif]-->
+
+</head>
+
+<body class="app aside-menu-fixed sidebar-lg-show">
+
+  <header class="app-header bg-light border-0 navbar">
+  
+  <button class="navbar-toggler sidebar-toggler d-lg-none mr-auto ml-3" type="button" data-toggle="sidebar-show" aria-label="Activar/desactivar la navegación">
+    <span class="navbar-toggler-icon"></span>
+  </button>
+  <a class="navbar-brand" href="http://localhost/admin" title="Panel Administrador">
+    <b>Porres</b>Manager
+  </a>
+  <button class="navbar-toggler sidebar-toggler d-md-down-none" type="button" data-toggle="sidebar-lg-show" aria-label="Activar/desactivar la navegación">
+    <span class="navbar-toggler-icon"></span>
+  </button>
+
+  <ul class="nav navbar-nav d-md-down-none">
+
+    
+</ul>
+
+
+
+
+
+
+
+<ul class="nav navbar-nav ml-auto ">
+            <li class="nav-item"><a class="nav-link" href="http://localhost/admin/login">Iniciar sesión</a>
+        </li>
+                    <li class="nav-item"><a class="nav-link" href="http://localhost/admin/register">Crear usuario</a></li>
+            </ul>
+
+</header>
+
+  <div class="app-body">
+
+    
+    <main class="main pt-2">
+
+       	
+       <nav aria-label="breadcrumb" class="d-none d-lg-block">
+	  <ol class="breadcrumb bg-transparent p-0 justify-content-end">
+	  		  					    <li class="breadcrumb-item text-capitalize"><a href="http://localhost/admin/dashboard">Admin</a></li>
+	  			  		  					    <li class="breadcrumb-item text-capitalize"><a href="http://localhost/admin/accounting-journal">Libro diario</a></li>
+	  			  		  					    <li class="breadcrumb-item text-capitalize active" aria-current="page">AS-2026-085</li>
+	  			  		  </ol>
+	</nav>
+
+       	
+           <section class="header-operation container-fluid animated fadeIn d-flex mb-2 align-items-center d-print-none" bp-section="page-header">
+        <h1 class="mb-0 journal-title" bp-section="page-heading">Asiento AS-2026-085</h1>
+        <a href="http://localhost/admin/accounting-journal" class="btn journal-back ms-3 ml-3">Volver al diario</a>
+    </section>
+
+        <div class="container-fluid animated fadeIn">
+
+          	
+          <div class="row journal-show">
+    <div class="col-12">
+        <div class="card journal-entry-card">
+            <div class="card-body">
+                <p class="mb-1"><strong>Fecha:</strong> 28/09/2026</p>
+                <p class="mb-1"><strong>Descripción:</strong> ACREDITACION COBRANZA CUOTAS TARJETA DE DÉBITO</p>
+                <p class="mb-3"><strong>Tipo:</strong> Cobranza de cuotas <span class="text-muted">(Registrado)</span></p>
+
+                <div class="table-responsive">
+                    <table class="table journal-lines mb-0">
+                        <thead>
+                            <tr>
+                                <th>Cuenta</th>
+                                <th>Nombre</th>
+                                <th class="text-end">Debe</th>
+                                <th class="text-end">Haber</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                                                                                            <tr>
+                                    <td>
+                                                                                    <a href="http://localhost/admin/accounting-journal?account_id=1" class="journal-account">11202004</a>
+                                                                            </td>
+                                    <td>TARJETA DE DEBITO A COBRAR</td>
+                                    <td class="text-end text-nowrap">192.240,00</td>
+                                    <td class="text-end text-nowrap">0,00</td>
+                                </tr>
+                                                                                            <tr>
+                                    <td>
+                                                                                    <a href="http://localhost/admin/accounting-journal?account_id=2" class="journal-account">11201000</a>
+                                                                            </td>
+                                    <td>DEUDORES POR CUOTAS</td>
+                                    <td class="text-end text-nowrap">0,00</td>
+                                    <td class="text-end text-nowrap">180.000,00</td>
+                                </tr>
+                                                                                            <tr>
+                                    <td>
+                                                                                    <a href="http://localhost/admin/accounting-journal?account_id=3" class="journal-account">41201000</a>
+                                                                            </td>
+                                    <td>INTS. POR MORA CUOTAS</td>
+                                    <td class="text-end text-nowrap">0,00</td>
+                                    <td class="text-end text-nowrap">12.240,00</td>
+                                </tr>
+                                                    </tbody>
+                        <tfoot>
+                            <tr>
+                                <td colspan="2">Totales</td>
+                                <td class="text-end">192.240,00</td>
+                                <td class="text-end">192.240,00</td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+          
+          	
+        </div>
+
+    </main>
+
+  </div>
+
+  <footer class="app-footer d-print-none">
+    <div class="text-muted ml-auto mr-auto">
+            Realizado por <a target="_blank" rel="noopener" href="https://ismp.edu.ar">ISMP</a>.
+                </div>
+  </footer>
+
+      <script type="text/javascript">
+    // Save default sidebar class
+    let sidebarClass = (document.body.className.match(/sidebar-(sm|md|lg|xl)-show/) || ['sidebar-lg-show'])[0];
+    let sidebarTransition = function(value) {
+        document.querySelector('.app-body > .sidebar').style.transition = value || '';
+    };
+
+    // Recover sidebar state
+    let sessionState = sessionStorage.getItem('sidebar-collapsed');
+    if (sessionState) {
+      // disable the transition animation temporarily, so that if you're browsing across
+      // pages with the sidebar closed, the sidebar does not flicker into the view
+      sidebarTransition("none");
+      document.body.classList.toggle(sidebarClass, sessionState === '1');
+
+      // re-enable the transition, so that if the user clicks the hamburger menu, it does have a nice transition
+      setTimeout(sidebarTransition, 100);
+    }
+  </script>
+
+  <script type="text/javascript">
+    // This is intentionaly run after dom loads so this way we can avoid showing duplicate alerts
+    // when the user is beeing redirected by persistent table, that happens before this event triggers.
+    document.onreadystatechange = function() {
+        if (document.readyState == "interactive") {
+            Noty.overrideDefaults({
+                layout: 'topRight',
+                theme: 'backstrap',
+                timeout: 2500,
+                closeWith: ['click', 'button'],
+            });
+
+            // get alerts from the alert bag
+            var $alerts_from_php = JSON.parse('[]');
+
+            // get the alerts from the localstorage
+            var $alerts_from_localstorage = JSON.parse(localStorage.getItem('backpack_alerts')) ?
+                JSON.parse(localStorage.getItem('backpack_alerts')) : {};
+
+            // merge both php alerts and localstorage alerts
+            Object.entries($alerts_from_php).forEach(function(type) {
+                if (typeof $alerts_from_localstorage[type[0]] !== 'undefined') {
+                    type[1].forEach(function(msg) {
+                        $alerts_from_localstorage[type[0]].push(msg);
+                    });
+                } else {
+                    $alerts_from_localstorage[type[0]] = type[1];
+                }
+            });
+
+            for (var type in $alerts_from_localstorage) {
+                let messages = new Set($alerts_from_localstorage[type]);
+
+                messages.forEach(function(text) {
+                    let alert = {};
+                    alert['type'] = type;
+                    alert['text'] = text;
+                    new Noty(alert).show()
+                });
+            }
+
+            // in the end, remove backpack alerts from localStorage
+            localStorage.removeItem('backpack_alerts');
+        }
+    };
+</script>
+
+    <script>
+$(document).ajaxComplete((e, result, settings) => {
+    if(result.responseJSON?.exception !== undefined) {
+        $.ajax({...settings, accepts: "text/html", backpackExceptionHandler: true});
+    }
+    else if(settings.backpackExceptionHandler) {
+        Noty.closeAll();
+        showErrorFrame(result.responseText);
+    }
+});
+
+const showErrorFrame = html => {
+    let page = document.createElement('html');
+    page.innerHTML = html;
+    page.querySelectorAll('a').forEach(a => a.setAttribute('target', '_top'));
+
+    let modal = document.getElementById('ajax-error-frame');
+
+    if (typeof modal !== 'undefined' && modal !== null) {
+        modal.innerHTML = '';
+    } else {
+        modal = document.createElement('div');
+        modal.id = 'ajax-error-frame';
+        modal.style.position = 'fixed';
+        modal.style.width = '100vw';
+        modal.style.height = '100vh';
+        modal.style.padding = '5vh 5vw';
+        modal.style.backgroundColor = 'rgba(0, 0, 0, 0.4)';
+        modal.style.zIndex = 200000;
+    }
+
+    let iframe = document.createElement('iframe');
+    iframe.style.backgroundColor = '#17161A';
+    iframe.style.borderRadius = '5px';
+    iframe.style.width = '100%';
+    iframe.style.height = '100%';
+    iframe.style.border = '0';
+    iframe.style.boxShadow = '0 0 4rem';
+    modal.appendChild(iframe);
+
+    document.body.prepend(modal);
+    document.body.style.overflow = 'hidden';
+    iframe.contentWindow.document.open();
+    iframe.contentWindow.document.write(page.outerHTML);
+    iframe.contentWindow.document.close();
+
+    // Close on click
+    modal.addEventListener('click', () => hideErrorFrame(modal));
+
+    // Close on escape key press
+    modal.setAttribute('tabindex', 0);
+    modal.addEventListener('keydown', e => e.key === 'Escape' && hideErrorFrame(modal));
+    modal.focus();
+}
+
+const hideErrorFrame = modal => {
+    modal.outerHTML = '';
+    document.body.style.overflow = 'visible';
+}
+</script>
+  
+      <script>
+      // Store sidebar state
+      document.querySelectorAll('.sidebar-toggler').forEach(function(toggler) {
+        toggler.addEventListener('click', function() {
+          sessionStorage.setItem('sidebar-collapsed', Number(!document.body.classList.contains(sidebarClass)))
+          // wait for the sidebar animation to end (250ms) and then update the table headers because datatables uses a cached version
+          // and dont update this values if there are dom changes after the table is draw. The sidebar toggling makes
+          // the table change width, so the headers need to be adjusted accordingly.
+          setTimeout(function() {
+            if(typeof crud !== "undefined" && crud.table) {
+              crud.table.fixedHeader.adjust();
+            }
+          }, 300);
+        })
+      });
+      
+      // Set active state on menu element - IMPROVED LOGIC
+      var full_url = "http://localhost/admin/accounting-journal?from=2026-09-28&amp;to=2026-09-28";
+      var current_path = "admin/accounting-journal";
+      var $navLinks = $(".sidebar-nav li a, .app-header li a");
+
+      // First look for an exact match including the search string
+      var $curentPageLink = $navLinks.filter(
+          function() { return $(this).attr('href') === full_url; }
+      );
+
+      // If not found, look for the most specific match
+      if(!$curentPageLink.length > 0){
+          // Get all links that could potentially match
+          var potentialMatches = $navLinks.filter( function() {
+            var linkHref = $(this).attr('href');
+            if (!linkHref) return false;
+            
+            // Extract path from href
+            var linkPath = linkHref.replace(/^https?:\/\/[^\/]+/, '').replace(/\/$/, '');
+            var currentPathClean = current_path.replace(/\/$/, '');
+            
+            // Check if current path starts with link path
+            if (currentPathClean.startsWith(linkPath)) {
+              return true;
+            }
+            
+            return false;
+          });
+          
+          // Find the most specific match (longest path)
+          if (potentialMatches.length > 0) {
+            var longestMatch = potentialMatches[0];
+            var longestLength = $(longestMatch).attr('href').replace(/^https?:\/\/[^\/]+/, '').replace(/\/$/, '').length;
+            
+            potentialMatches.each(function() {
+              var linkLength = $(this).attr('href').replace(/^https?:\/\/[^\/]+/, '').replace(/\/$/, '').length;
+              if (linkLength > longestLength) {
+                longestMatch = this;
+                longestLength = linkLength;
+              }
+            });
+            
+            $curentPageLink = $(longestMatch);
+          }
+      }
+
+      // for the found links that can be considered current, make sure
+      // - the parent item is open
+      $curentPageLink.parents('li').addClass('open');
+      // - the actual element is active
+      $curentPageLink.each(function() {
+        $(this).addClass('active');
+      });
+      
+      // Additional fix: Remove active class from conflicting dropdown items
+      $('.dropdown-item').each(function() {
+        var $item = $(this);
+        var itemHref = $item.attr('href');
+        
+        if (itemHref) {
+          var itemPath = itemHref.replace(/^https?:\/\/[^\/]+/, '').replace(/\/$/, '');
+          var currentPathClean = current_path.replace(/\/$/, '');
+          
+          // If this item is not the current page, remove active class
+          if (!currentPathClean.startsWith(itemPath) || currentPathClean !== itemPath) {
+            $item.removeClass('active');
+          }
+        }
+      });
+  </script>
+    </body>
+</html>
