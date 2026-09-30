@@ -210,6 +210,7 @@ class AccountingJournalController extends CrudController
     {
         return [
             AccountingEntry::KIND_QUOTA_ACCRUAL => 'Devengamiento de cuotas',
+            AccountingEntry::KIND_QUOTA_GRANT => 'Becas otorgadas',
             AccountingEntry::KIND_QUOTA_COLLECTION => 'Cobranza de cuotas',
             AccountingEntry::KIND_QUOTA_MP_SETTLEMENT => 'Liquidación Mercado Pago',
             AccountingEntry::KIND_OUTFLOW => 'Egreso',

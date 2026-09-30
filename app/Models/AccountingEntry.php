@@ -18,6 +18,8 @@ class AccountingEntry extends Model
 
     public const KIND_QUOTA_ACCRUAL = 'quota_accrual';
 
+    public const KIND_QUOTA_GRANT = 'quota_grant';
+
     public const KIND_QUOTA_COLLECTION = 'quota_collection';
 
     public const KIND_QUOTA_MP_SETTLEMENT = 'quota_mp_settlement';
@@ -59,6 +61,7 @@ class AccountingEntry extends Model
     {
         return match ($this->kind) {
             self::KIND_QUOTA_ACCRUAL => 'Devengamiento de cuotas',
+            self::KIND_QUOTA_GRANT => 'Becas otorgadas',
             self::KIND_QUOTA_COLLECTION => 'Cobranza de cuotas',
             self::KIND_QUOTA_MP_SETTLEMENT => 'Liquidación Mercado Pago',
             self::KIND_OUTFLOW => 'Egreso',

@@ -32,12 +32,14 @@ class QuotaAccountingService
         $accounts = $this->accountsByCode();
 
         $accrual = $this->postAccrual($month, $accounts, $dryRun);
+        $grants = $this->postGrants($month, $accounts, $dryRun);
         $collections = $this->postCollections($month, $accounts, $dryRun);
 
         return [
             'month' => $month->format('Y-m'),
             'dry_run' => $dryRun,
             'accrual' => $accrual,
+            'grants' => $grants,
             'collections' => $collections,
             'settlements' => $this->postMercadoPagoSettlements(
                 $month,
@@ -122,6 +124,197 @@ class QuotaAccountingService
         $result['entry_number'] = $entry->entry_number;
 
         return $result;
+    }
+
+    /**
+     * @param  array<string, AccountingAccount>  $accounts
+     * @return array<string, mixed>
+     */
+    private function postGrants(Carbon $month, array $accounts, bool $dryRun): array
+    {
+        $period = $month->format('Y-m');
+        $orders = [];
+        $totalCents = 0;
+
+        foreach ($this->grantRows($month) as $row) {
+            $amount = QuotaScholarship::amount($row);
+            if ($amount < 0.01) {
+                continue;
+            }
+            $cents = $this->cents($amount);
+            $totalCents += $cents;
+            $orders[] = [
+                'eporres_order_id' => (int) $row->id,
+                'debtors_amount' => $this->money($cents),
+                'interest_amount' => $this->money(0),
+                'bank_amount' => $this->money(0),
+            ];
+        }
+
+        $description = 'BECAS OTORGADAS MES '.$month->format('m/y');
+        $batch = QuotaAccountingBatch::query()
+            ->where('kind', QuotaAccountingBatch::KIND_GRANT)
+            ->where('period', $period)
+            ->with(['orders', 'entry'])
+            ->first();
+
+        $result = [
+            'status' => $orders === [] ? 'empty' : ($dryRun ? 'preview' : 'posted'),
+            'orders' => count($orders),
+            'amount' => $this->amount($totalCents),
+            'entry_number' => $batch?->entry?->entry_number,
+            'description' => $description,
+        ];
+
+        if ($batch?->entry?->manually_adjusted) {
+            $result['status'] = 'adjusted';
+
+            return $result;
+        }
+
+        $stored = [];
+        foreach ($batch?->orders ?? [] as $order) {
+            $stored[(int) $order->eporres_order_id] = $this->cents($order->debtors_amount);
+        }
+        $desired = [];
+        foreach ($orders as $order) {
+            $desired[(int) $order['eporres_order_id']] = $this->cents($order['debtors_amount']);
+        }
+        ksort($stored);
+        ksort($desired);
+        if ($batch !== null && $stored === $desired && $batch->entry?->status === AccountingEntry::STATUS_POSTED) {
+            $result['status'] = 'already_posted';
+
+            return $result;
+        }
+
+        if ($dryRun) {
+            $result['status'] = $batch === null ? ($orders === [] ? 'empty' : 'preview') : 'updated';
+
+            return $result;
+        }
+
+        if ($orders === []) {
+            if ($batch !== null) {
+                $this->clearEntry($batch->entry);
+                $batch->orders()->delete();
+            }
+            $result['status'] = 'empty';
+
+            return $result;
+        }
+
+        if ($batch === null) {
+            $entry = $this->writeBatch(
+                kind: QuotaAccountingBatch::KIND_GRANT,
+                batchKey: 'grant:'.$period,
+                period: $period,
+                entryDate: $month->toDateString(),
+                paymentType: null,
+                entryKind: AccountingEntry::KIND_QUOTA_GRANT,
+                description: $description,
+                lines: $this->grantLines($totalCents, $accounts),
+                orders: $orders,
+                role: QuotaAccountingBatch::KIND_GRANT,
+            );
+            $result['status'] = 'posted';
+            $result['entry_number'] = $entry->entry_number;
+
+            return $result;
+        }
+
+        $entry = DB::transaction(function () use ($batch, $orders, $totalCents, $accounts, $description, $month) {
+            $batch->orders()->delete();
+            $now = now();
+            foreach (array_chunk($orders, 500) as $chunk) {
+                $rows = [];
+                foreach ($chunk as $order) {
+                    $rows[] = [
+                        'quota_accounting_batch_id' => $batch->id,
+                        'role' => QuotaAccountingBatch::KIND_GRANT,
+                        'eporres_order_id' => $order['eporres_order_id'],
+                        'debtors_amount' => $order['debtors_amount'],
+                        'interest_amount' => $order['interest_amount'],
+                        'bank_amount' => $order['bank_amount'],
+                        'created_at' => $now,
+                        'updated_at' => $now,
+                    ];
+                }
+                QuotaAccountingOrder::query()->insert($rows);
+            }
+
+            $entry = $batch->entry;
+            if ($entry === null) {
+                $entry = AccountingEntry::query()->create([
+                    'entry_number' => AccountingEntry::nextEntryNumber(),
+                    'date' => $month->toDateString(),
+                    'kind' => AccountingEntry::KIND_QUOTA_GRANT,
+                    'status' => AccountingEntry::STATUS_POSTED,
+                    'source_type' => $batch->getMorphClass(),
+                    'source_id' => $batch->id,
+                    'description' => $description,
+                    'created_by_id' => null,
+                ]);
+                $batch->update(['accounting_entry_id' => $entry->id]);
+            }
+
+            $entry->lines()->delete();
+            foreach ($this->grantLines($totalCents, $accounts) as $line) {
+                $entry->lines()->create($line);
+            }
+            $entry->update([
+                'status' => AccountingEntry::STATUS_POSTED,
+                'description' => $description,
+                'date' => $month->toDateString(),
+            ]);
+
+            return $entry->fresh();
+        });
+
+        $result['status'] = 'updated';
+        $result['entry_number'] = $entry?->entry_number;
+
+        return $result;
+    }
+
+    /**
+     * @param  array<string, AccountingAccount>  $accounts
+     * @return list<array{accounting_account_id: int, debit: string, credit: string, memo: string}>
+     */
+    private function grantLines(int $totalCents, array $accounts): array
+    {
+        $lines = [
+            $this->line($accounts[QuotaPaymentAccounts::SCHOLARSHIP], $totalCents, 0, 'Descuentos por beca'),
+            $this->line($accounts[QuotaPaymentAccounts::DEBTORS], 0, $totalCents, 'Becas otorgadas'),
+        ];
+        $this->assertBalanced($lines);
+
+        return $lines;
+    }
+
+    /**
+     * @return list<object>
+     */
+    private function grantRows(Carbon $month): array
+    {
+        return DB::connection('eporres')->table('orders')
+            ->whereBetween('quota_number', [1, 10])
+            ->whereIn('type', self::MONTHLY_TYPES)
+            ->where('state', '!=', self::CANCELLED_STATE)
+            ->where(function ($query) {
+                $query->whereNull('estado')->orWhere('estado', 1);
+            })
+            ->whereBetween('expirated_at', [
+                $month->copy()->startOfMonth()->toDateTimeString(),
+                $month->copy()->endOfMonth()->toDateTimeString(),
+            ])
+            ->where(function ($query) {
+                $query->where('grant_amount', '>', 0)
+                    ->orWhere('discount_amount', '>', 0);
+            })
+            ->orderBy('id')
+            ->get(['id', 'quota_amount', 'grant_amount', 'discount_amount', 'discount_reason'])
+            ->all();
     }
 
     /**
@@ -1038,6 +1231,7 @@ class QuotaAccountingService
                 QuotaPaymentAccounts::DEBTORS,
                 QuotaPaymentAccounts::QUOTAS_INCOME,
                 QuotaPaymentAccounts::LATE_INTEREST,
+                QuotaPaymentAccounts::SCHOLARSHIP,
                 QuotaPaymentAccounts::MP_AVAILABLE,
                 QuotaPaymentAccounts::MP_COMMISSION,
                 QuotaPaymentAccounts::MP_SURCHARGE_INCOME,

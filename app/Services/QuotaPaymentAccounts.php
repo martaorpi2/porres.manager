@@ -14,6 +14,8 @@ final class QuotaPaymentAccounts
 
     public const QUOTAS_INCOME = '41102000';
 
+    public const SCHOLARSHIP = '52302000';
+
     public const LATE_INTEREST = '41201000';
 
     public const MP_RECEIVABLE = '11204000';

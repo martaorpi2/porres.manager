@@ -41,6 +41,7 @@ class PostQuotaAccountingEntries extends Command
 
         $this->line('Mes '.$result['month']);
         $this->reportAccrual($result['accrual']);
+        $this->reportGrants($result['grants']);
         $this->reportCollections($result['collections']);
         $this->reportSettlements($result['settlements']);
 
@@ -72,6 +73,40 @@ class PostQuotaAccountingEntries extends Command
         $this->line('Deudores / Cuotas: '.$this->money($accrual['amount']));
         if ($accrual['entry_number']) {
             $this->line('Asiento: '.$accrual['entry_number']);
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $grants
+     */
+    private function reportGrants(array $grants): void
+    {
+        $this->newLine();
+        $this->info('Becas otorgadas');
+
+        if ($grants['status'] === 'already_posted') {
+            $this->line('Ese mes ya tiene el asiento de becas. No se modificó.');
+
+            return;
+        }
+
+        if ($grants['status'] === 'adjusted') {
+            $this->line('El asiento de becas fue modificado a mano. No se reescribió.');
+
+            return;
+        }
+
+        if ($grants['status'] === 'empty') {
+            $this->line('No hay becas de ese mes para asentar.');
+
+            return;
+        }
+
+        $this->line($grants['description']);
+        $this->line('Cuotas: '.$grants['orders']);
+        $this->line('Descuentos por beca / Deudores: '.$this->money($grants['amount']));
+        if ($grants['entry_number']) {
+            $this->line('Asiento: '.$grants['entry_number']);
         }
     }
 
