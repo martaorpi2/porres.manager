@@ -120,6 +120,8 @@
 @endsection
 
 @section('after_styles')
+<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/select2-bootstrap-theme@0.1.0-beta.10/dist/select2-bootstrap.min.css" rel="stylesheet">
 <style>
     .journal-title {
         color: #1e2a4a;
@@ -217,5 +219,41 @@
         background: #871f1f;
         color: #fff !important;
     }
+    .journal-page .select2-container {
+        width: 100% !important;
+    }
+    .journal-page .select2-container--bootstrap .select2-selection--single {
+        height: 38px;
+        border-color: #d0d5dd;
+    }
+    .journal-page .select2-container--bootstrap .select2-selection--single .select2-selection__rendered {
+        line-height: 36px;
+        color: #1e2a4a;
+    }
+    .journal-page .select2-container--bootstrap .select2-selection--single .select2-selection__arrow {
+        height: 36px;
+    }
+    .select2-container--bootstrap .select2-results__option--highlighted[aria-selected] {
+        background-color: #871f1f;
+    }
 </style>
+@endsection
+
+@section('after_scripts')
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+<script>
+    $(function () {
+        $('#account_id').select2({
+            theme: 'bootstrap',
+            placeholder: 'Todas',
+            allowClear: true,
+            width: '100%',
+            dropdownParent: $(document.body),
+            language: {
+                noResults: function () { return 'Ninguna cuenta coincide'; },
+                searching: function () { return 'Buscando…'; }
+            }
+        });
+    });
+</script>
 @endsection
