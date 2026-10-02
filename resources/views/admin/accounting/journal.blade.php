@@ -20,7 +20,7 @@
                         <label for="to" class="form-label journal-label">Hasta</label>
                         <input type="date" name="to" id="to" class="form-control" value="{{ $filters['to'] }}">
                     </div>
-                    <div class="col-sm-6 col-md-3">
+                    <div class="col-sm-6 col-md-2">
                         <label for="kind" class="form-label journal-label">Tipo</label>
                         <select name="kind" id="kind" class="form-control">
                             <option value="">Todos</option>
@@ -38,10 +38,18 @@
                             @endforeach
                         </select>
                     </div>
-                    <div class="col-sm-12 col-md-2 d-flex gap-2 journal-actions">
+                    <div class="col-sm-12 col-md-3 d-flex flex-wrap gap-2 journal-actions">
                         <button type="submit" class="btn btn-primary journal-btn-filter">Filtrar</button>
                         <a href="{{ backpack_url('accounting-journal') }}" class="btn journal-btn-clear">Limpiar</a>
+                        <button type="submit" form="journal-refresh" id="journal-refresh-button" class="btn journal-btn-refresh" title="Trae la cobranza de ePorres para las fechas elegidas">Actualizar</button>
                     </div>
+                </form>
+                <form method="post" action="{{ backpack_url('accounting-journal/refresh') }}" id="journal-refresh" class="d-none">
+                    @csrf
+                    <input type="hidden" name="from" value="{{ $filters['from'] }}">
+                    <input type="hidden" name="to" value="{{ $filters['to'] }}">
+                    <input type="hidden" name="kind" value="{{ $filters['kind'] }}">
+                    <input type="hidden" name="account_id" value="{{ $filters['account_id'] }}">
                 </form>
             </div>
         </div>
@@ -161,6 +169,18 @@
         background: #f8f9fb;
         color: #1e2a4a !important;
     }
+    .journal-btn-refresh {
+        background: #fff;
+        border: 1px solid #871f1f;
+        color: #871f1f !important;
+        font-weight: 600;
+        padding: 0.45rem 1.1rem;
+    }
+    .journal-btn-refresh:hover,
+    .journal-btn-refresh:disabled {
+        background: #871f1f;
+        color: #fff !important;
+    }
     .journal-book {
         background: #fff;
         border-left: 4px solid #871f1f !important;
@@ -243,6 +263,15 @@
 <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 <script>
     $(function () {
+        $('#journal-refresh').on('submit', function () {
+            this.querySelector('[name=from]').value = $('#from').val();
+            this.querySelector('[name=to]').value = $('#to').val();
+            this.querySelector('[name=kind]').value = $('#kind').val();
+            this.querySelector('[name=account_id]').value = $('#account_id').val() || '';
+            var button = document.getElementById('journal-refresh-button');
+            button.disabled = true;
+            button.textContent = 'Actualizando…';
+        });
         $('#account_id').select2({
             theme: 'bootstrap',
             placeholder: 'Todas',

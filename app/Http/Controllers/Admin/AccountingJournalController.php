@@ -6,10 +6,12 @@ use App\Models\AccountingAccount;
 use App\Models\AccountingEntry;
 use App\Models\User;
 use App\Services\AccountingEntryEditor;
+use App\Services\QuotaAccountingService;
 use Backpack\CRUD\app\Http\Controllers\CrudController;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Throwable;
 
 class AccountingJournalController extends CrudController
 {
@@ -50,6 +52,48 @@ class AccountingJournalController extends CrudController
                 'Libro diario' => false,
             ],
         ]);
+    }
+
+    public function refresh(Request $request)
+    {
+        $this->authorizeAccounting();
+
+        $from = $this->dateOrNull($request->input('from'));
+        $to = $this->dateOrNull($request->input('to'));
+        $months = $this->monthsInSelection($from, $to);
+        $back = backpack_url('accounting-journal').'?'.http_build_query($this->returnQuery($request));
+
+        if ($months === null) {
+            \Alert::warning('Elegí un período de hasta 3 meses para actualizar.')->flash();
+
+            return redirect($back);
+        }
+
+        set_time_limit(180);
+
+        try {
+            $service = app(QuotaAccountingService::class);
+            $messages = [];
+            if ($from === null && $to === null) {
+                $messages[] = 'No había fechas elegidas, así que se tomó el mes en curso.';
+                $month = $months[0];
+                $back = backpack_url('accounting-journal').'?'.http_build_query($this->returnQuery($request) + [
+                    'from' => $month->copy()->startOfMonth()->toDateString(),
+                    'to' => $month->copy()->endOfMonth()->toDateString(),
+                ]);
+            }
+            foreach ($months as $month) {
+                $messages[] = $this->refreshSummary($service->postMonth($month));
+            }
+        } catch (Throwable $exception) {
+            \Alert::error($exception->getMessage())->flash();
+
+            return redirect($back);
+        }
+
+        \Alert::success(implode(' ', $messages))->flash();
+
+        return redirect($back);
     }
 
     public function edit(Request $request, AccountingEntry $accountingEntry)
@@ -236,6 +280,91 @@ class AccountingJournalController extends CrudController
             ->get()
             ->mapWithKeys(fn (AccountingAccount $account) => [$account->id => $account->identifying_label])
             ->all();
+    }
+
+    /**
+     * @return list<Carbon>|null
+     */
+    private function monthsInSelection(?string $from, ?string $to): ?array
+    {
+        if ($from === null && $to === null) {
+            return [now()->startOfMonth()];
+        }
+
+        $start = Carbon::parse($from ?? $to)->startOfMonth();
+        $end = Carbon::parse($to ?? $from)->startOfMonth();
+        if ($end->lt($start)) {
+            [$start, $end] = [$end->copy(), $start->copy()];
+        }
+
+        $months = [];
+        $cursor = $start->copy();
+        while ($cursor->lte($end)) {
+            $months[] = $cursor->copy();
+            if (count($months) > 3) {
+                return null;
+            }
+            $cursor->addMonth();
+        }
+
+        return $months;
+    }
+
+    /**
+     * @param  array<string, mixed>  $result
+     */
+    private function refreshSummary(array $result): string
+    {
+        $label = Carbon::createFromFormat('!Y-m', $result['month'])->translatedFormat('F Y');
+        $label = mb_convert_case($label, MB_CASE_TITLE, 'UTF-8');
+        $bits = [];
+
+        $created = count($result['collections']['groups']);
+        $updated = count($result['collections']['updated'] ?? []);
+        if ($created === 1) {
+            $bits[] = '1 cobranza nueva';
+        } elseif ($created > 1) {
+            $bits[] = $created.' cobranzas nuevas';
+        }
+        if ($updated === 1) {
+            $bits[] = '1 cobranza actualizada';
+        } elseif ($updated > 1) {
+            $bits[] = $updated.' cobranzas actualizadas';
+        }
+
+        $settlementCreated = count($result['settlements']['groups']);
+        $settlementUpdated = count($result['settlements']['updated'] ?? []);
+        if ($settlementCreated === 1) {
+            $bits[] = '1 liquidación de Mercado Pago nueva';
+        } elseif ($settlementCreated > 1) {
+            $bits[] = $settlementCreated.' liquidaciones de Mercado Pago nuevas';
+        }
+        if ($settlementUpdated === 1) {
+            $bits[] = '1 liquidación de Mercado Pago actualizada';
+        } elseif ($settlementUpdated > 1) {
+            $bits[] = $settlementUpdated.' liquidaciones de Mercado Pago actualizadas';
+        }
+
+        if (in_array($result['grants']['status'] ?? '', ['posted', 'updated'], true)) {
+            $bits[] = 'becas actualizadas';
+        }
+
+        $adjusted = (int) ($result['collections']['skipped']['adjusted'] ?? 0)
+            + (int) ($result['settlements']['skipped']['adjusted'] ?? 0);
+        if (($result['grants']['status'] ?? '') === 'adjusted') {
+            $adjusted++;
+        }
+        if ($adjusted === 1) {
+            $bits[] = '1 asiento modificado a mano quedó sin reescribir';
+        } elseif ($adjusted > 1) {
+            $bits[] = $adjusted.' asientos modificados a mano quedaron sin reescribir';
+        }
+
+        if ($bits === []) {
+            return $label.': la cobranza ya estaba al día.';
+        }
+
+        return $label.': '.implode(', ', $bits).'.';
     }
 
     private function dateOrNull(mixed $value): ?string
