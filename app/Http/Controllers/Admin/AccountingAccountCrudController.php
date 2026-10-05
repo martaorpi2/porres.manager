@@ -3,7 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Requests\AccountingAccountRequest;
-use App\Models\AccountingAccount;
+use App\Services\AccountingChartReport;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Backpack\CRUD\app\Http\Controllers\CrudController;
 use Backpack\CRUD\app\Library\CrudPanel\CrudPanelFacade as CRUD;
@@ -34,7 +34,7 @@ class AccountingAccountCrudController extends CrudController
             CRUD::removeButton('delete');
         }
 
-        CRUD::addButton('top', 'export_pdf', 'view', 'crud::buttons.export_pdf', 'end');
+        CRUD::addButton('top', 'export_pdf', 'view', 'crud::buttons.accounting_account_export_pdf', 'end');
 
         CRUD::column('code')->label('Código');
         CRUD::column('name')->label('Nombre');
@@ -74,11 +74,18 @@ class AccountingAccountCrudController extends CrudController
         $this->setupCreateOperation();
     }
 
-    public function exportPdf()
+    public function exportPdf(AccountingChartReport $report)
     {
-        $accounts = AccountingAccount::query()->orderBy('code')->get();
+        $rows = $report->rows();
+        $pdf = Pdf::loadView('accounting-account-pdf', compact('rows'))->setPaper('a4', 'portrait');
+        $printedAt = now()->timezone('America/Argentina/Buenos_Aires')->format('d/m/Y H:i:s');
+        $pdf->getDomPDF()->getCanvas()->page_script(function ($pageNumber, $pageCount, $canvas, $fontMetrics) use ($printedAt) {
+            $font = $fontMetrics->getFont('DejaVu Sans');
+            $text = $printedAt.'    Página '.$pageNumber;
+            $width = $fontMetrics->getTextWidth($text, $font, 8);
+            $canvas->text($canvas->get_width() - $width - 22, $canvas->get_height() - 22, $text, $font, 8);
+        });
 
-        return Pdf::loadView('accounting-account-pdf', compact('accounts'))
-            ->download('plan-de-cuentas_'.date('Y-m-d_H-i-s').'.pdf');
+        return $pdf->stream('PLAN DE CUENTAS.pdf');
     }
 }

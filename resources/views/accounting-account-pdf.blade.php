@@ -2,88 +2,94 @@
 <html>
 <head>
     <meta charset="utf-8">
-    <title>Plan de cuentas</title>
+    <title>Catálogo de Cuentas</title>
     <style>
+        @page {
+            margin: 28px 22px 32px 22px;
+        }
         body {
-            font-family: Arial, sans-serif;
-            font-size: 12px;
+            font-family: DejaVu Sans, sans-serif;
+            font-size: 8px;
+            color: #000;
         }
-        .header {
+        .catalog-head {
             text-align: center;
-            margin-bottom: 20px;
+            margin-bottom: 8px;
+            line-height: 1.25;
         }
-        .header h1 {
-            margin: 0;
-            font-size: 18px;
+        .catalog-head .title {
+            font-size: 13px;
+            font-weight: bold;
+        }
+        .catalog-head .institute {
+            font-size: 11px;
+            font-weight: bold;
+            margin-top: 2px;
         }
         table {
             width: 100%;
             border-collapse: collapse;
-            margin-top: 10px;
         }
-        th, td {
-            border: 1px solid #ddd;
-            padding: 8px;
-            text-align: left;
+        thead {
+            display: table-header-group;
         }
         th {
-            background-color: #f2f2f2;
+            font-size: 8px;
             font-weight: bold;
+            text-align: left;
+            border-bottom: 1px solid #000;
+            padding: 2px 3px 3px 3px;
         }
-        .footer {
-            margin-top: 20px;
-            text-align: center;
-            font-size: 10px;
-            color: #666;
+        td {
+            padding: 1px 3px;
+            vertical-align: top;
         }
-        .watermark {
-            position: fixed;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%) rotate(-45deg);
-            font-size: 60px;
-            color: rgba(0, 0, 0, 0.08);
-            font-weight: bold;
-            z-index: -1;
+        .code {
+            display: inline-block;
+            width: 62px;
+        }
+        .sums, .nature, .balance, .receives, .currency {
             white-space: nowrap;
-            pointer-events: none;
         }
+        .sums { width: 68px; }
+        .nature { width: 58px; }
+        .balance { width: 62px; }
+        .receives { width: 40px; }
+        .currency { width: 42px; }
     </style>
 </head>
 <body>
-    <div class="watermark">porresManager - ISMP</div>
-    <div class="header">
-        <h1>Plan de cuentas</h1>
-        <p>Generado el: {{ date('d/m/Y H:i:s') }}</p>
+    <div class="catalog-head">
+        <div class="title">Catálogo de Cuentas</div>
+        <div>30675106947 - CAPITAL</div>
+        <div>C.U.I.T.: 30675106947</div>
+        <div>Teléfono: 6005517 Fax:</div>
+        <div class="institute">INSTITUTO SAN MARTIN DE PORRES</div>
     </div>
 
     <table>
         <thead>
             <tr>
-                <th>Código</th>
-                <th>Nombre</th>
-                <th>Tipo</th>
-                <th>Activa</th>
+                <th>Cuenta</th>
+                <th class="sums">Sumariza</th>
+                <th class="nature">Tipo</th>
+                <th class="balance">Saldo</th>
+                <th class="receives">Recibe</th>
+                <th class="currency">Moneda</th>
             </tr>
         </thead>
         <tbody>
-            @forelse($accounts as $account)
+            @foreach($rows as $row)
                 <tr>
-                    <td>{{ $account->code }}</td>
-                    <td>{{ $account->name }}</td>
-                    <td>{{ $account->type_label }}</td>
-                    <td>{{ $account->is_active ? 'Sí' : 'No' }}</td>
+                    <td><span class="code">{{ $row['code'] }}</span>{{ $row['name'] }}</td>
+                    <td class="sums">{{ $row['sums_to'] }}</td>
+                    <td class="nature">{{ $row['nature'] }}</td>
+                    <td class="balance">{{ $row['balance'] }}</td>
+                    <td class="receives">{{ $row['receives'] }}</td>
+                    <td class="currency">{{ $row['currency'] }}</td>
                 </tr>
-            @empty
-                <tr>
-                    <td colspan="4" style="text-align: center;">No hay cuentas para mostrar</td>
-                </tr>
-            @endforelse
+            @endforeach
         </tbody>
     </table>
-
-    <div class="footer">
-        <p>Total de cuentas: {{ $accounts->count() }}</p>
-    </div>
 </body>
 </html>
