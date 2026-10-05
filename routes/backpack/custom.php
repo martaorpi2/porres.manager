@@ -30,6 +30,17 @@ Route::group([
     Route::put('accounting-journal/{accountingEntry}', 'AccountingJournalController@update')->name('accounting-journal.update');
     Route::get('accounting-journal/{accountingEntry}', 'AccountingJournalController@show')->name('accounting-journal.show');
     Route::get('accounting-ledger', 'AccountingJournalController@ledger')->name('accounting-ledger');
+    Route::get('accounting-delinquency/{anio}/pdf', 'AccountingDelinquencyController@pdf')->whereNumber('anio')->name('accounting-delinquency.pdf');
+    Route::get('accounting-delinquency/{anio}/resumen.xlsx', 'AccountingDelinquencyController@exportResumen')->whereNumber('anio')->name('accounting-delinquency.resumen');
+    Route::get('accounting-delinquency/{anio}/matricula.xlsx', 'AccountingDelinquencyController@exportMatricula')->whereNumber('anio')->name('accounting-delinquency.matricula');
+    Route::get('accounting-delinquency/{anio}/deudores.xlsx', 'AccountingDelinquencyController@exportDeudores')->whereNumber('anio')->name('accounting-delinquency.deudores');
+    Route::get('accounting-delinquency/{anio}/deudores/{cuotas}.xlsx', 'AccountingDelinquencyController@exportDeudoresTramo')->whereNumber('anio')->where('cuotas', '[0-9]+|mas-de-6')->name('accounting-delinquency.deudores-tramo');
+    Route::get('accounting-delinquency/{anio}/egresados.xlsx', 'AccountingDelinquencyController@exportEgresados')->whereNumber('anio')->name('accounting-delinquency.egresados');
+    Route::get('accounting-delinquency/{anio?}', 'AccountingDelinquencyController@index')->whereNumber('anio')->name('accounting-delinquency.index');
+    Route::get('accounting-tariff-reductions/excel', 'AccountingTariffReductionController@excel')->name('accounting-tariff-reductions.excel');
+    Route::get('accounting-tariff-reductions', 'AccountingTariffReductionController@index')->name('accounting-tariff-reductions.index');
+    Route::get('accounting-daily-payments/excel', 'AccountingDailyPaymentsController@excel')->name('accounting-daily-payments.excel');
+    Route::get('accounting-daily-payments', 'AccountingDailyPaymentsController@index')->name('accounting-daily-payments.index');
     Route::get('accounting-mercadopago', 'MercadoPagoSettlementController@index')->name('accounting-mercadopago.index');
     Route::post('accounting-mercadopago/preview', 'MercadoPagoSettlementController@preview')->name('accounting-mercadopago.preview');
     Route::post('accounting-mercadopago', 'MercadoPagoSettlementController@store')->name('accounting-mercadopago.store');
