@@ -20,11 +20,13 @@
         .catalog-head .title {
             font-size: 13px;
             font-weight: bold;
+            color: #c72905;
         }
         .catalog-head .institute {
             font-size: 11px;
             font-weight: bold;
             margin-top: 2px;
+            color: #c72905;
         }
         table {
             width: 100%;
@@ -37,12 +39,21 @@
             font-size: 8px;
             font-weight: bold;
             text-align: left;
-            border-bottom: 1px solid #000;
-            padding: 2px 3px 3px 3px;
+            color: #fff;
+            background: #c72905;
+            border: 1px solid #c72905;
+            padding: 4px 3px;
         }
         td {
-            padding: 1px 3px;
+            padding: 2px 3px;
             vertical-align: top;
+            border: 1px solid #c72905;
+        }
+        tr.shade td {
+            background: #bfbfbf;
+        }
+        tr.tint td {
+            background: #f5f5f5;
         }
         .code {
             display: inline-block;
@@ -80,7 +91,7 @@
         </thead>
         <tbody>
             @foreach($rows as $row)
-                <tr>
+                <tr class="{{ $loop->odd ? 'shade' : 'tint' }}">
                     <td><span class="code">{{ $row['code'] }}</span>{{ $row['name'] }}</td>
                     <td class="sums">{{ $row['sums_to'] }}</td>
                     <td class="nature">{{ $row['nature'] }}</td>
