@@ -36,8 +36,23 @@
     <div class="col-12">
         <div class="card journal-card mb-3">
             <div class="card-body">
-                <p class="mb-3">Subí el Excel de ventas de Mercado Pago. Se usan el número de operación, la fecha de la compra, el estado, el cobro, los cargos e impuestos y el total a recibir.</p>
-                <p class="text-muted mb-3">Cada operación aprobada que coincide con una orden paga de ePorres genera la liquidación: Mercado Pago por el neto, la comisión, y la baja de Mercado Pago a cobrar por el bruto. Si el Excel trae la fecha de la compra, esa es la fecha del asiento. Si no, se usa la fecha de pago de la orden. Las que no están aprobadas o no están en ePorres quedan afuera.</p>
+                <p class="mb-2">Seleccione el archivo de Mercado Pago correspondiente a las operaciones a importar.</p>
+                <p class="mb-2">El archivo debe contener los siguientes campos:</p>
+                <ul class="mb-3">
+                    <li>Número de operación</li>
+                    <li>Fecha de la compra</li>
+                    <li>Estado</li>
+                    <li>Cobro</li>
+                    <li>Cargos e impuestos</li>
+                    <li>Total a recibir</li>
+                </ul>
+                <p class="text-muted mb-2">Cada operación aprobada que coincide con un cupón pagado en ePorres genera la correspondiente liquidación:</p>
+                <ul class="text-muted mb-2">
+                    <li>Mercado Pago: por el importe neto recibido.</li>
+                    <li>Comisión: por los cargos y comisiones correspondientes.</li>
+                    <li>Mercado Pago a cobrar: por el importe bruto de la operación.</li>
+                </ul>
+                <p class="text-muted mb-3">Las operaciones que no se encuentren aprobadas o que no coincidan con un cupón pagado en ePorres no se procesan.</p>
                 <form method="post" action="{{ backpack_url('accounting-mercadopago/preview') }}" enctype="multipart/form-data" class="row g-2 align-items-end">
                     @csrf
                     <div class="col-md-6">
