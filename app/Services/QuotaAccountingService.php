@@ -51,6 +51,83 @@ class QuotaAccountingService
     }
 
     /**
+     * Asienta la liquidación que viene del Excel de ventas de Mercado Pago.
+     * Una fila por orden: el bruto va a Mercado Pago a cobrar, la comisión al gasto
+     * y el neto a la cuenta de Mercado Pago. Se agrupa un asiento por fecha de compra.
+     *
+     * @param  list<array{date: string, eporres_order_id: int, gross_cents: int, commission_cents: int, net_cents: int}>  $rows
+     * @return list<AccountingEntry>
+     */
+    public function postImportedMercadoPagoSettlements(array $rows): array
+    {
+        if ($rows === []) {
+            return [];
+        }
+
+        $accounts = $this->accountsByCode();
+        $description = 'LIQUIDACION COBRANZA MERCADO PAGO';
+
+        return DB::transaction(function () use ($rows, $accounts, $description) {
+            $ids = array_map(fn (array $row) => (int) $row['eporres_order_id'], $rows);
+            $already = QuotaAccountingOrder::query()
+                ->where('role', QuotaAccountingBatch::KIND_MP_SETTLEMENT)
+                ->whereIn('eporres_order_id', $ids)
+                ->lockForUpdate()
+                ->pluck('eporres_order_id')
+                ->map(fn ($id) => (int) $id)
+                ->all();
+            $posted = array_fill_keys($already, true);
+            $groups = [];
+
+            foreach ($rows as $row) {
+                $orderId = (int) $row['eporres_order_id'];
+                if (isset($posted[$orderId])) {
+                    continue;
+                }
+                $posted[$orderId] = true;
+                $date = $row['date'];
+                if (! isset($groups[$date])) {
+                    $groups[$date] = [
+                        'date' => $date,
+                        'orders' => [],
+                        'gross' => 0,
+                        'commission' => 0,
+                        'net' => 0,
+                    ];
+                }
+                $groups[$date]['gross'] += (int) $row['gross_cents'];
+                $groups[$date]['commission'] += (int) $row['commission_cents'];
+                $groups[$date]['net'] += (int) $row['net_cents'];
+                $groups[$date]['orders'][] = [
+                    'eporres_order_id' => $orderId,
+                    'debtors_amount' => $this->money((int) $row['gross_cents']),
+                    'interest_amount' => $this->money((int) $row['commission_cents']),
+                    'bank_amount' => $this->money((int) $row['net_cents']),
+                ];
+            }
+
+            ksort($groups);
+            $entries = [];
+            foreach ($groups as $group) {
+                $entries[] = $this->writeBatch(
+                    kind: QuotaAccountingBatch::KIND_MP_SETTLEMENT,
+                    batchKey: 'mp-settlement:excel:'.$group['date'].':'.$group['orders'][0]['eporres_order_id'].':'.uniqid(),
+                    period: null,
+                    entryDate: $group['date'],
+                    paymentType: 'Mercado Pago',
+                    entryKind: AccountingEntry::KIND_QUOTA_MP_SETTLEMENT,
+                    description: $description,
+                    lines: $this->settlementLines($group, $accounts),
+                    orders: $group['orders'],
+                    role: QuotaAccountingBatch::KIND_MP_SETTLEMENT,
+                );
+            }
+
+            return $entries;
+        });
+    }
+
+    /**
      * @param  array<string, AccountingAccount>  $accounts
      * @return array<string, mixed>
      */

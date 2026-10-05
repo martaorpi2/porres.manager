@@ -29,6 +29,9 @@ Route::group([
     Route::put('accounting-journal/{accountingEntry}', 'AccountingJournalController@update')->name('accounting-journal.update');
     Route::get('accounting-journal/{accountingEntry}', 'AccountingJournalController@show')->name('accounting-journal.show');
     Route::get('accounting-ledger', 'AccountingJournalController@ledger')->name('accounting-ledger');
+    Route::get('accounting-mercadopago', 'MercadoPagoSettlementController@index')->name('accounting-mercadopago.index');
+    Route::post('accounting-mercadopago/preview', 'MercadoPagoSettlementController@preview')->name('accounting-mercadopago.preview');
+    Route::post('accounting-mercadopago', 'MercadoPagoSettlementController@store')->name('accounting-mercadopago.store');
     Route::crud('purchase-order', 'PurchaseOrderCrudController');
     Route::get('purchase-order/{id}/pdf', 'PurchaseOrderCrudController@generatePdf')->name('purchase-order.pdf');
     Route::crud('payment-order', 'PaymentOrderCrudController');
