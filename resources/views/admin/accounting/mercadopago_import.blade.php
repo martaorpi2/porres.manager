@@ -46,17 +46,19 @@
                     <li>Cargos e impuestos</li>
                     <li>Total a recibir</li>
                 </ul>
-                <p class="text-muted mb-2">Cada operación aprobada que coincide con un cupón pagado en ePorres genera la correspondiente liquidación:</p>
-                <ul class="text-muted mb-2">
-                    <li>Mercado Pago: por el importe neto recibido.</li>
-                    <li>Comisión: por los cargos y comisiones correspondientes.</li>
-                    <li>Mercado Pago a cobrar: por el importe bruto de la operación.</li>
-                </ul>
-                <p class="text-muted mb-3">Las operaciones que no se encuentren aprobadas o que no coincidan con un cupón pagado en ePorres no se procesan.</p>
+                <div class="alert alert-info" role="alert">
+                    <p class="mb-2">Cada operación aprobada que coincide con un <strong>cupón pagado en ePorres</strong> genera la correspondiente liquidación:</p>
+                    <ul class="mb-2">
+                        <li><strong>Mercado Pago:</strong> por el importe neto recibido.</li>
+                        <li><strong>Comisión:</strong> por los cargos y comisiones correspondientes.</li>
+                        <li><strong>Mercado Pago a cobrar:</strong> por el importe bruto de la operación.</li>
+                    </ul>
+                    <p class="mb-0">Las operaciones que no se encuentren aprobadas o que no coincidan con un cupón pagado en ePorres <strong>no se procesan</strong>.</p>
+                </div>
                 <form method="post" action="{{ backpack_url('accounting-mercadopago/preview') }}" enctype="multipart/form-data" class="row g-2 align-items-end">
                     @csrf
                     <div class="col-md-6">
-                        <label for="archivo" class="form-label journal-label">Excel de ventas</label>
+                        <label for="archivo" class="form-label journal-label">Archivo de ventas de Mercado Pago</label>
                         <input type="file" name="archivo" id="archivo" class="form-control" accept=".xlsx,.xls" required>
                         @error('archivo')
                             <div class="text-danger small mt-1">{{ $message }}</div>
