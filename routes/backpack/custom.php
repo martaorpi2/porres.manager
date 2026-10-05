@@ -22,6 +22,7 @@ Route::group([
     Route::get('supplier/export/pdf', 'SupplierCrudController@exportPdf')->name('supplier.export.pdf');
     Route::crud('supplier-rating', 'SupplierRatingCrudController');
     Route::crud('suppliers-heading', 'SuppliersHeadingCrudController');
+    Route::get('accounting-account/export/pdf', 'AccountingAccountCrudController@exportPdf')->name('accounting-account.export.pdf');
     Route::crud('accounting-account', 'AccountingAccountCrudController');
     Route::get('accounting-journal', 'AccountingJournalController@index')->name('accounting-journal.index');
     Route::post('accounting-journal/refresh', 'AccountingJournalController@refresh')->name('accounting-journal.refresh');
