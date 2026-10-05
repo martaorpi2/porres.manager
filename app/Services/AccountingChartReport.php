@@ -11,7 +11,7 @@ use App\Models\AccountingAccount;
 final class AccountingChartReport
 {
     /**
-     * @return list<array{code: string, name: string, sums_to: string, nature: string, balance: string, receives: string, currency: string}>
+     * @return list<array{code: string, name: string, sums_to: string, nature: string, balance: string, receives: string, level: int}>
      */
     public function rows(): array
     {
@@ -24,7 +24,6 @@ final class AccountingChartReport
                 'nature' => '',
                 'balance' => '',
                 'receives' => '',
-                'currency' => '',
             ];
         }
 
@@ -37,7 +36,6 @@ final class AccountingChartReport
                 'nature' => $nature,
                 'balance' => $balance,
                 'receives' => 'Si',
-                'currency' => 'PESO',
             ];
         }
 
@@ -49,11 +47,31 @@ final class AccountingChartReport
             $rows[$code]['sums_to'] = $this->parentCode($code, $rows);
         }
 
+        foreach ($rows as $code => $row) {
+            $rows[$code]['level'] = $this->level($code, $rows);
+        }
+
         return array_values($rows);
     }
 
     /**
-     * @param  array<string, array{code: string, name: string, sums_to: string, nature: string, balance: string, receives: string, currency: string}>  $rows
+     * @param  array<string, array{code: string, name: string, sums_to: string, nature: string, balance: string, receives: string}>  $rows
+     */
+    private function level(string $code, array $rows): int
+    {
+        $depth = 0;
+        $guard = 0;
+        while ($guard < 12 && isset($rows[$code]) && $rows[$code]['sums_to'] !== '') {
+            $code = $rows[$code]['sums_to'];
+            $depth++;
+            $guard++;
+        }
+
+        return $depth;
+    }
+
+    /**
+     * @param  array<string, array{code: string, name: string, sums_to: string, nature: string, balance: string, receives: string}>  $rows
      */
     private function parentCode(string $code, array $rows): string
     {

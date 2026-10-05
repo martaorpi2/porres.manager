@@ -55,18 +55,22 @@
         tr.tint td {
             background: #f5f5f5;
         }
+        tr.group td {
+            background: #f6d2c9;
+            color: #c72905;
+            font-weight: bold;
+        }
         .code {
             display: inline-block;
             width: 62px;
         }
-        .sums, .nature, .balance, .receives, .currency {
+        .sums, .nature, .balance, .receives {
             white-space: nowrap;
         }
         .sums { width: 68px; }
         .nature { width: 58px; }
         .balance { width: 62px; }
         .receives { width: 40px; }
-        .currency { width: 42px; }
     </style>
 </head>
 <body>
@@ -86,18 +90,16 @@
                 <th class="nature">Tipo</th>
                 <th class="balance">Saldo</th>
                 <th class="receives">Recibe</th>
-                <th class="currency">Moneda</th>
             </tr>
         </thead>
         <tbody>
             @foreach($rows as $row)
-                <tr class="{{ $loop->odd ? 'shade' : 'tint' }}">
-                    <td><span class="code">{{ $row['code'] }}</span>{{ $row['name'] }}</td>
+                <tr class="{{ $row['receives'] === '' ? 'group' : ($loop->odd ? 'shade' : 'tint') }}">
+                    <td style="padding-left: {{ 3 + ($row['level'] * 10) }}px"><span class="code">{{ $row['code'] }}</span>{{ $row['name'] }}</td>
                     <td class="sums">{{ $row['sums_to'] }}</td>
                     <td class="nature">{{ $row['nature'] }}</td>
                     <td class="balance">{{ $row['balance'] }}</td>
                     <td class="receives">{{ $row['receives'] }}</td>
-                    <td class="currency">{{ $row['currency'] }}</td>
                 </tr>
             @endforeach
         </tbody>
