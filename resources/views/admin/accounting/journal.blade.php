@@ -42,7 +42,6 @@
                         <button type="submit" class="btn btn-primary journal-btn-filter">Filtrar</button>
                         <a href="{{ backpack_url('accounting-journal') }}" class="btn journal-btn-clear">Limpiar</a>
                         <button type="submit" form="journal-refresh" id="journal-refresh-button" class="btn journal-btn-refresh" title="Trae la cobranza de ePorres para las fechas elegidas">Actualizar</button>
-                        <a href="{{ backpack_url('accounting-mercadopago') }}" class="btn journal-btn-clear">Mercado Pago</a>
                     </div>
                 </form>
                 <form method="post" action="{{ backpack_url('accounting-journal/refresh') }}" id="journal-refresh" class="d-none">
