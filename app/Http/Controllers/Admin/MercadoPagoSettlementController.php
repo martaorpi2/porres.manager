@@ -110,12 +110,13 @@ class MercadoPagoSettlementController extends CrudController
     private function pageData(): array
     {
         return [
-            'title' => 'Liquidación Mercado Pago',
+            'title' => 'Acreditaciones',
             'breadcrumbs' => [
                 trans('backpack::crud.admin') => backpack_url('dashboard'),
                 'Libro diario' => backpack_url('accounting-journal'),
-                'Mercado Pago' => false,
+                'Acreditaciones' => false,
             ],
+            'channel' => 'mercadopago',
             'rows' => null,
             'ready' => [],
             'token' => null,

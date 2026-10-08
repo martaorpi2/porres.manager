@@ -24,11 +24,23 @@ class PaymentSettlementTest extends TestCase
     {
         $user = $this->accountingUser();
 
+        $chooser = $this->actingAs($user, 'backpack')->get('/admin/accounting-settlement');
+        $chooser->assertOk();
+        $chooser->assertSee('Acreditaciones');
+        $chooser->assertSee('Forma de pago');
+        $chooser->assertSee('Mercado Pago');
+        $chooser->assertSee('Naranja X');
+        $chooser->assertSee('Sol Pago');
+        $chooser->assertSee('QR');
+        $chooser->assertDontSee('name="archivo"', false);
+
         $naranja = $this->actingAs($user, 'backpack')->get('/admin/accounting-settlement/naranja');
         $naranja->assertOk();
-        $naranja->assertSee('Liquidación Naranja X');
+        $naranja->assertSee('Acreditaciones');
+        $naranja->assertSee('Forma de pago');
         $naranja->assertSee('Tarjeta Naranja a cobrar');
         $naranja->assertSee('accounting-settlement/sol', false);
+        $naranja->assertSee('accounting-mercadopago', false);
 
         $sol = $this->actingAs($user, 'backpack')->get('/admin/accounting-settlement/sol');
         $sol->assertOk();

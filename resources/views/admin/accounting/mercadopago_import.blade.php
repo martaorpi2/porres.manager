@@ -2,7 +2,7 @@
 
 @section('header')
     <section class="header-operation container-fluid animated fadeIn d-flex mb-2 align-items-baseline d-print-none" bp-section="page-header">
-        <h1 class="mb-0 journal-title" bp-section="page-heading">Liquidación Mercado Pago</h1>
+        <h1 class="mb-0 journal-title" bp-section="page-heading">Acreditaciones</h1>
         <a href="{{ backpack_url('accounting-journal') }}" class="btn journal-back ms-3 ml-3">Volver al diario</a>
     </section>
 @endsection
@@ -36,7 +36,8 @@
     <div class="col-12">
         <div class="card journal-card mb-3">
             <div class="card-body">
-                <p class="mb-2">Seleccione el archivo de Mercado Pago correspondiente a las operaciones a importar. Para otros medios usá <a href="{{ backpack_url('accounting-settlement/naranja') }}">Naranja X</a>, <a href="{{ backpack_url('accounting-settlement/sol') }}">Sol Pago</a> o <a href="{{ backpack_url('accounting-settlement/qr') }}">QR</a>.</p>
+                @include('admin.accounting.inc.settlement_method')
+                <p class="mb-2">Seleccione el archivo de Mercado Pago correspondiente a las operaciones a importar.</p>
                 <p class="mb-2">El archivo debe contener los siguientes campos:</p>
                 <ul class="mb-3">
                     <li>Número de operación</li>

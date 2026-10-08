@@ -2,7 +2,7 @@
 
 @section('header')
     <section class="header-operation container-fluid animated fadeIn d-flex mb-2 align-items-baseline d-print-none" bp-section="page-header">
-        <h1 class="mb-0 journal-title" bp-section="page-heading">{{ $definition['title'] }}</h1>
+        <h1 class="mb-0 journal-title" bp-section="page-heading">Acreditaciones</h1>
         <a href="{{ backpack_url('accounting-journal') }}" class="btn journal-back ms-3 ml-3">Volver al diario</a>
     </section>
 @endsection
@@ -33,6 +33,8 @@
     <div class="col-12">
         <div class="card journal-card mb-3">
             <div class="card-body">
+                @include('admin.accounting.inc.settlement_method')
+                @if($definition)
                 @foreach($definition['paragraphs'] as $paragraph)
                     <p class="mb-2">{{ $paragraph }}</p>
                 @endforeach
@@ -44,13 +46,6 @@
                         @endforeach
                     </ul>
                 </div>
-                <p class="mb-3">
-                    Otras liquidaciones:
-                    @if($channel !== 'naranja')<a href="{{ backpack_url('accounting-settlement/naranja') }}">Naranja X</a> · @endif
-                    @if($channel !== 'sol')<a href="{{ backpack_url('accounting-settlement/sol') }}">Sol Pago</a> · @endif
-                    @if($channel !== 'qr')<a href="{{ backpack_url('accounting-settlement/qr') }}">QR</a> · @endif
-                    <a href="{{ backpack_url('accounting-mercadopago') }}">Mercado Pago</a>
-                </p>
                 <form method="post" action="{{ backpack_url('accounting-settlement/'.$channel.'/preview') }}" enctype="multipart/form-data" class="row g-2 align-items-end">
                     @csrf
                     <div class="col-md-6">
@@ -64,6 +59,9 @@
                         <button type="submit" class="btn journal-btn-filter">Ver liquidación</button>
                     </div>
                 </form>
+                @else
+                    <p class="mb-0">Seleccione la forma de pago para subir el archivo de liquidación.</p>
+                @endif
             </div>
         </div>
 

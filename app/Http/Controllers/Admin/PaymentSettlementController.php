@@ -17,6 +17,13 @@ use Throwable;
 
 class PaymentSettlementController extends CrudController
 {
+    public function choose()
+    {
+        $this->authorizeAccounting();
+
+        return view('admin.accounting.payment_settlement_import', $this->pageData(null, null));
+    }
+
     public function index(string $channel)
     {
         $this->authorizeAccounting();
@@ -155,17 +162,17 @@ class PaymentSettlementController extends CrudController
     }
 
     /**
-     * @param  array<string, mixed>  $definition
+     * @param  array<string, mixed>|null  $definition
      * @return array<string, mixed>
      */
-    private function pageData(string $channel, array $definition): array
+    private function pageData(?string $channel, ?array $definition): array
     {
         return [
-            'title' => $definition['title'],
+            'title' => 'Acreditaciones',
             'breadcrumbs' => [
                 trans('backpack::crud.admin') => backpack_url('dashboard'),
                 'Libro diario' => backpack_url('accounting-journal'),
-                $definition['menu'] => false,
+                'Acreditaciones' => false,
             ],
             'channel' => $channel,
             'definition' => $definition,

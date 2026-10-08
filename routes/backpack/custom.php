@@ -47,6 +47,7 @@ Route::group([
     Route::get('accounting-mercadopago', 'MercadoPagoSettlementController@index')->name('accounting-mercadopago.index');
     Route::post('accounting-mercadopago/preview', 'MercadoPagoSettlementController@preview')->name('accounting-mercadopago.preview');
     Route::post('accounting-mercadopago', 'MercadoPagoSettlementController@store')->name('accounting-mercadopago.store');
+    Route::get('accounting-settlement', 'PaymentSettlementController@choose')->name('accounting-settlement.choose');
     Route::get('accounting-settlement/{channel}', 'PaymentSettlementController@index')->whereIn('channel', ['naranja', 'sol', 'qr'])->name('accounting-settlement.index');
     Route::post('accounting-settlement/{channel}/preview', 'PaymentSettlementController@preview')->whereIn('channel', ['naranja', 'sol', 'qr'])->name('accounting-settlement.preview');
     Route::post('accounting-settlement/{channel}', 'PaymentSettlementController@store')->whereIn('channel', ['naranja', 'sol', 'qr'])->name('accounting-settlement.store');
