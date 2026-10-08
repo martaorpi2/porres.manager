@@ -16,6 +16,25 @@
     .btn_bordo { background: #881f1f !important; color: #fff !important; }
     .metric-card { color: #fff; }
     .metric-card h3 { color: #fff; margin-bottom: 0; }
+    .metric-card-paid {
+        background: #d9e2ef;
+        color: #1b2a4e;
+        border: 1px solid #acc0dc;
+    }
+    .metric-card-paid,
+    .metric-card-paid h3,
+    .metric-card-paid .metric-month,
+    .metric-card-paid .metric-pct,
+    .metric-card-paid .metric-interest {
+        color: #1b2a4e;
+    }
+    .metric-card-paid h3 { font-weight: 700; }
+    .metric-card-paid .metric-icon { color: #16d39a; }
+    .metric-card-paid .progress {
+        background-color: #f9fbfd;
+        border-radius: 4px;
+    }
+    .metric-card-paid .progress-bar { background-color: #646466; }
 </style>
 
 <div class="row mb-3">
@@ -39,21 +58,21 @@
             $percentage = $count_quota[$i] != 0 ? ($count_quota_paid[$i] * 100) / $count_quota[$i] : 0;
         @endphp
         <div class="col-xl-4 col-sm-6 col-12">
-            <div class="card bg-secondary metric-card">
+            <div class="card metric-card metric-card-paid">
                 <div class="card-body">
                     <div class="d-flex justify-content-between">
                         <div>
                             <h3>${{ number_format((float) $total_paid[$i]['paid'], 2) }}</h3>
-                            <span>{{ $meses[$i] }}</span>
+                            <span class="metric-month">{{ $meses[$i] }}</span>
                         </div>
-                        <i class="la la-wallet la-2x"></i>
+                        <i class="la la-wallet la-2x metric-icon"></i>
                     </div>
                     <div class="progress mt-2" style="height: 7px;">
-                        <div class="progress-bar bg-success" style="width: {{ number_format($percentage, 2) }}%"></div>
+                        <div class="progress-bar" style="width: {{ number_format($percentage, 2) }}%"></div>
                     </div>
-                    {{ number_format($percentage, 2) }}%
+                    <span class="metric-pct">{{ number_format($percentage, 2) }}%</span>
                     @if(($total_interest_paid[$i] ?? 0) > 0)
-                        <div class="mt-1"><strong>Intereses pagados: ${{ $money($total_interest_paid[$i]) }}</strong></div>
+                        <div class="mt-1 metric-interest"><strong>Intereses pagados: ${{ $money($total_interest_paid[$i]) }}</strong></div>
                     @endif
                 </div>
             </div>

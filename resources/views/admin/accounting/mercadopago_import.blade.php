@@ -37,16 +37,8 @@
         <div class="card journal-card mb-3">
             <div class="card-body">
                 @include('admin.accounting.inc.settlement_method')
-                <p class="mb-2">Seleccione el archivo de Mercado Pago correspondiente a las operaciones a importar.</p>
-                <p class="mb-2">El archivo debe contener los siguientes campos:</p>
-                <ul class="mb-3">
-                    <li>Número de operación</li>
-                    <li>Fecha de la compra</li>
-                    <li>Estado</li>
-                    <li>Cobro</li>
-                    <li>Cargos e impuestos</li>
-                    <li>Total a recibir</li>
-                </ul>
+                @include('admin.accounting.inc.accreditation_format')
+                <p class="mb-2">En Mercado Pago, además, cada fila aprobada tiene que coincidir con un cupón pago en ePorres. La columna Intereses va en 0.</p>
                 <div class="alert alert-info" role="alert">
                     <p class="mb-2">Cada operación aprobada que coincide con un <strong>cupón pagado en ePorres</strong> genera la correspondiente liquidación:</p>
                     <ul class="mb-2">
@@ -87,7 +79,7 @@
                             <thead>
                                 <tr>
                                     <th>Número de operación</th>
-                                    <th>Fecha de la compra</th>
+                                    <th>Fecha de acreditación</th>
                                     <th>Estado</th>
                                     <th class="text-end">Cobro</th>
                                     <th class="text-end">Comisión</th>

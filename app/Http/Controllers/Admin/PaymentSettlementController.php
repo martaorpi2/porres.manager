@@ -5,10 +5,8 @@ namespace App\Http\Controllers\Admin;
 use App\Models\AccountingEntry;
 use App\Models\QuotaAccountingBatch;
 use App\Models\User;
-use App\Services\PaymentSettlement\NaranjaSettlementFile;
 use App\Services\PaymentSettlement\PaymentSettlementChannels;
-use App\Services\PaymentSettlement\QrSettlementFile;
-use App\Services\PaymentSettlement\SolSettlementFile;
+use App\Services\PaymentSettlement\PaymentSettlementExcel;
 use App\Services\QuotaAccountingService;
 use Backpack\CRUD\app\Http\Controllers\CrudController;
 use Illuminate\Http\Request;
@@ -32,13 +30,8 @@ class PaymentSettlementController extends CrudController
         return view('admin.accounting.payment_settlement_import', $this->pageData($channel, $definition));
     }
 
-    public function preview(
-        Request $request,
-        string $channel,
-        NaranjaSettlementFile $naranja,
-        SolSettlementFile $sol,
-        QrSettlementFile $qr,
-    ) {
+    public function preview(Request $request, string $channel, PaymentSettlementExcel $excel)
+    {
         $this->authorizeAccounting();
         $definition = $this->definition($channel);
 
@@ -56,26 +49,24 @@ class PaymentSettlementController extends CrudController
         }
 
         try {
-            $parsed = match ($channel) {
-                PaymentSettlementChannels::NARANJA => $naranja->read($file->getRealPath()),
-                PaymentSettlementChannels::SOL => $sol->read($file->getRealPath()),
-                PaymentSettlementChannels::QR => $qr->read($file->getRealPath()),
-                default => throw new RuntimeException('Medio de pago desconocido.'),
-            };
+            $parsed = $excel->preview($channel, $file->getRealPath());
         } catch (RuntimeException $exception) {
             return back()->withErrors(['archivo' => $exception->getMessage()]);
         } catch (Throwable) {
-            return back()->withErrors(['archivo' => 'No se pudo leer el archivo de '.$definition['menu'].'.']);
+            return back()->withErrors(['archivo' => 'No se pudo leer el Excel de '.$definition['menu'].'.']);
+        }
+
+        if ($parsed['rows'] === []) {
+            return back()->withErrors(['archivo' => 'El Excel no tiene operaciones para registrar.']);
         }
 
         $posted = $this->postedKeys(array_column($parsed['groups'], 'key'));
         $rows = [];
         foreach ($parsed['rows'] as $row) {
-            $already = isset($posted[$row['group_key']]);
-            $row['outcome'] = $already ? 'already_posted' : 'ready';
-            $row['detail'] = $already
-                ? 'Esta liquidación ya tiene asiento.'
-                : 'Se incluye en el asiento del '.$this->displayDate($this->groupDate($parsed['groups'], $row['group_key'])).'.';
+            if ($row['outcome'] === 'ready' && isset($posted[$row['group_key']])) {
+                $row['outcome'] = 'already_posted';
+                $row['detail'] = 'Esta fecha ya tiene asiento.';
+            }
             $rows[] = $row;
         }
         $ready = [];
@@ -96,7 +87,7 @@ class PaymentSettlementController extends CrudController
             'rows' => $rows,
             'ready' => $ready,
             'token' => $token,
-            'document' => $parsed['document'],
+            'document' => $file->getClientOriginalName(),
         ]));
     }
 
@@ -206,20 +197,6 @@ class PaymentSettlementController extends CrudController
     }
 
     /**
-     * @param  list<array<string, mixed>>  $groups
-     */
-    private function groupDate(array $groups, string $key): string
-    {
-        foreach ($groups as $group) {
-            if ($group['key'] === $key) {
-                return (string) $group['date'];
-            }
-        }
-
-        return '';
-    }
-
-    /**
      * @param  array<string, mixed>  $definition
      * @param  array<string, mixed>  $group
      */
@@ -276,13 +253,6 @@ class PaymentSettlementController extends CrudController
         }
 
         return $ready;
-    }
-
-    private function displayDate(string $date): string
-    {
-        $parts = explode('-', $date);
-
-        return count($parts) === 3 ? $parts[2].'/'.$parts[1].'/'.$parts[0] : $date;
     }
 
     private function authorizeAccounting(): void

@@ -34,6 +34,7 @@
         <div class="card journal-card mb-3">
             <div class="card-body">
                 @include('admin.accounting.inc.settlement_method')
+                @include('admin.accounting.inc.accreditation_format')
                 @if($definition)
                 @foreach($definition['paragraphs'] as $paragraph)
                     <p class="mb-2">{{ $paragraph }}</p>
@@ -42,7 +43,7 @@
                     <p class="mb-2">El asiento queda así:</p>
                     <ul class="mb-0">
                         @foreach($definition['entry_lines'] as $line)
-                            <li>{{ $line }}</li>
+                            <li><strong>{{ $line[0] }}:</strong> {{ $line[1] }}</li>
                         @endforeach
                     </ul>
                 </div>
@@ -68,12 +69,8 @@
         @if(is_array($rows))
             <div class="card journal-card journal-book mb-3">
                 <div class="card-body">
-                    <p class="mb-1">Liquidación <strong>{{ $document }}</strong>. <strong>{{ count($ready) }}</strong> {{ count($ready) === 1 ? 'asiento listo' : 'asientos listos' }} para registrar.</p>
-                    @if($channel === 'qr')
-                        <p class="mb-0">Bruto {{ $money($readyGross) }} · Comisión e IVA {{ $money($readyCommission) }} · Neto depositado {{ $money($readyNet) }}</p>
-                    @else
-                        <p class="mb-0">Bruto {{ $money($readyGross) }} · Comisión {{ $money($readyCommission) }} · Intereses {{ $money($readyInterest) }} · Neto {{ $money($readyNet) }}</p>
-                    @endif
+                    <p class="mb-1">Archivo <strong>{{ $document }}</strong>. <strong>{{ count($ready) }}</strong> {{ count($ready) === 1 ? 'asiento listo' : 'asientos listos' }} para registrar.</p>
+                    <p class="mb-0">Bruto {{ $money($readyGross) }} · Comisión {{ $money($readyCommission) }} · Intereses {{ $money($readyInterest) }} · Neto {{ $money($readyNet) }}</p>
                 </div>
             </div>
 
@@ -82,73 +79,38 @@
                     <div class="table-responsive">
                         <table class="table journal-lines mb-0">
                             <thead>
-                                @if($channel === 'naranja')
-                                    <tr>
-                                        <th>Fecha de compra</th>
-                                        <th>Terminal-lote</th>
-                                        <th>Presentación</th>
-                                        <th>Plan</th>
-                                        <th class="text-end">Importe</th>
-                                        <th class="text-end">Arancel</th>
-                                        <th class="text-end">Interés</th>
-                                        <th>Operación</th>
-                                        <th>Resultado</th>
-                                    </tr>
-                                @elseif($channel === 'sol')
-                                    <tr>
-                                        <th>Liquidación</th>
-                                        <th>Fecha de pago</th>
-                                        <th>Fecha de presentación</th>
-                                        <th class="text-end">Presentado</th>
-                                        <th class="text-end">Arancel e IVA</th>
-                                        <th class="text-end">Costo financiero</th>
-                                        <th class="text-end">Neto</th>
-                                        <th>Resultado</th>
-                                    </tr>
-                                @else
-                                    <tr>
-                                        <th>Cupón</th>
-                                        <th>Fecha</th>
-                                        <th>Billetera</th>
-                                        <th class="text-end">Bruto</th>
-                                        <th class="text-end">Arancel</th>
-                                        <th class="text-end">IVA</th>
-                                        <th class="text-end">Neto</th>
-                                        <th>Resultado</th>
-                                    </tr>
-                                @endif
+                                <tr>
+                                    <th>Número de operación</th>
+                                    <th>Fecha de acreditación</th>
+                                    <th>Estado</th>
+                                    <th class="text-end">Cobro</th>
+                                    <th class="text-end">Cargos e impuestos</th>
+                                    <th class="text-end">Intereses</th>
+                                    <th class="text-end">Total a recibir</th>
+                                    <th>Resultado</th>
+                                </tr>
                             </thead>
                             <tbody>
                                 @foreach($rows as $row)
+                                    @php
+                                        $outcomeLabel = [
+                                            'ready' => 'Se registra',
+                                            'already_posted' => 'Ya registrada',
+                                            'not_approved' => 'No aprobada',
+                                            'unbalanced' => 'No cierra',
+                                            'invalid' => 'Fecha inválida',
+                                        ][$row['outcome']] ?? $row['outcome'];
+                                    @endphp
                                     <tr>
-                                        @if($channel === 'naranja')
-                                            <td>{{ $showDate($row['purchase_date']) }}</td>
-                                            <td>{{ $row['terminal'] }}</td>
-                                            <td>{{ $row['coupon'] }} · {{ $row['coupons'] }} {{ $row['coupons'] === 1 ? 'cupón' : 'cupones' }}</td>
-                                            <td>{{ $row['plan'] !== '' ? $row['plan'] : '—' }}</td>
-                                            <td class="text-end text-nowrap">{{ $money($row['gross_cents']) }}</td>
-                                            <td class="text-end text-nowrap">{{ $money($row['arancel_cents']) }}</td>
-                                            <td class="text-end text-nowrap">{{ $money($row['interest_cents']) }}</td>
-                                            <td>{{ $row['operation'] }}</td>
-                                        @elseif($channel === 'sol')
-                                            <td>{{ $row['liquidation'] }}</td>
-                                            <td>{{ $showDate($row['date']) }}</td>
-                                            <td>{{ $showDate($row['presented']) }}</td>
-                                            <td class="text-end text-nowrap">{{ $money($row['gross_cents']) }}</td>
-                                            <td class="text-end text-nowrap">{{ $money($row['commission_cents']) }}</td>
-                                            <td class="text-end text-nowrap">{{ $money($row['interest_cents']) }}</td>
-                                            <td class="text-end text-nowrap">{{ $money($row['net_cents']) }}</td>
-                                        @else
-                                            <td>{{ $row['coupon'] }}</td>
-                                            <td>{{ $showDate($row['date']) }}</td>
-                                            <td>{{ $row['wallet'] }}</td>
-                                            <td class="text-end text-nowrap">{{ $money($row['gross_cents']) }}</td>
-                                            <td class="text-end text-nowrap">{{ $money($row['arancel_cents']) }}</td>
-                                            <td class="text-end text-nowrap">{{ $money($row['tax_cents']) }}</td>
-                                            <td class="text-end text-nowrap">{{ $money($row['net_cents']) }}</td>
-                                        @endif
+                                        <td>{{ $row['operation'] }}</td>
+                                        <td>{{ $showDate($row['date']) }}</td>
+                                        <td>{{ $row['status'] !== '' ? $row['status'] : '—' }}</td>
+                                        <td class="text-end text-nowrap">{{ $money($row['gross_cents']) }}</td>
+                                        <td class="text-end text-nowrap">{{ $money($row['commission_cents']) }}</td>
+                                        <td class="text-end text-nowrap">{{ $money($row['interest_cents']) }}</td>
+                                        <td class="text-end text-nowrap">{{ $money($row['net_cents']) }}</td>
                                         <td>
-                                            <strong>{{ $row['outcome'] === 'ready' ? 'Se registra' : 'Ya registrada' }}</strong>
+                                            <strong>{{ $outcomeLabel }}</strong>
                                             <div class="text-muted small">{{ $row['detail'] }}</div>
                                         </td>
                                     </tr>

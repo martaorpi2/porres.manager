@@ -9,12 +9,12 @@ use RuntimeException;
 
 /**
  * Lee el Excel de ventas de Mercado Pago.
- * Usa número de operación, fecha de compra, estado, cobro, cargos y total a recibir.
+ * Usa número de operación, fecha de acreditación, estado, cobro, cargos y total a recibir.
  */
 final class MercadoPagoSalesSheet
 {
     /**
-     * @return list<array{operation: string, date: ?string, status: string, gross_cents: int, commission_cents: int, net_cents: int}>
+     * @return list<array{operation: string, date: ?string, status: string, gross_cents: int, commission_cents: int, interest_cents: int, net_cents: int}>
      */
     public function read(string $path): array
     {
@@ -31,11 +31,11 @@ final class MercadoPagoSalesSheet
             }
         }
 
-        throw new RuntimeException('El Excel no tiene las columnas de ventas de Mercado Pago: número de operación, estado, cobro, cargos e impuestos y total a recibir.');
+        throw new RuntimeException('El Excel no tiene las columnas de acreditación: número de operación, estado, cobro, cargos e impuestos y total a recibir.');
     }
 
     /**
-     * @return list<array{operation: string, date: ?string, status: string, gross_cents: int, commission_cents: int, net_cents: int}>|null
+     * @return list<array{operation: string, date: ?string, status: string, gross_cents: int, commission_cents: int, interest_cents: int, net_cents: int}>|null
      */
     private function readSheet(\PhpOffice\PhpSpreadsheet\Worksheet\Worksheet $sheet): ?array
     {
@@ -79,6 +79,7 @@ final class MercadoPagoSalesSheet
                 'status' => trim((string) ($cells[$columns['status']] ?? '')),
                 'gross_cents' => $this->cents($cells[$columns['gross']] ?? null),
                 'commission_cents' => abs($this->cents($cells[$columns['commission']] ?? null)),
+                'interest_cents' => isset($columns['interest']) ? abs($this->cents($cells[$columns['interest']] ?? null)) : 0,
                 'net_cents' => $this->cents($cells[$columns['net']] ?? null),
             ];
         }
@@ -92,10 +93,13 @@ final class MercadoPagoSalesSheet
 
         return match ($text) {
             'numero de operacion' => 'operation',
+            'fecha de acreditacion' => 'date',
             'fecha de la compra' => 'date',
             'estado' => 'status',
             'cobro' => 'gross',
             'cargos e impuestos' => 'commission',
+            'intereses' => 'interest',
+            'interes' => 'interest',
             'total a recibir' => 'net',
             default => null,
         };

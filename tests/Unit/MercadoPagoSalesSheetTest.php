@@ -30,6 +30,21 @@ class MercadoPagoSalesSheetTest extends TestCase
         $this->assertSame(1100308, $rows[0]['commission_cents']);
         $this->assertSame(20943692, $rows[0]['net_cents']);
         $this->assertSame('175494092162', $rows[1]['operation']);
+        $this->assertSame(0, $rows[0]['interest_cents']);
+    }
+
+    public function test_reads_an_optional_interest_column(): void
+    {
+        $path = $this->workbook([
+            ['Número de operación', 'Fecha de acreditación', 'Estado', 'Cobro', 'Cargos e impuestos', 'Intereses', 'Total a recibir'],
+            ['12266024', '14/09/2026', 'Aprobado', '1000', '15', '25', '960'],
+        ]);
+
+        $rows = (new MercadoPagoSalesSheet)->read($path);
+
+        $this->assertSame(1500, $rows[0]['commission_cents']);
+        $this->assertSame(2500, $rows[0]['interest_cents']);
+        $this->assertSame(96000, $rows[0]['net_cents']);
     }
 
     public function test_rejects_a_workbook_without_the_sales_columns(): void

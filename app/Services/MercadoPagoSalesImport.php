@@ -65,7 +65,7 @@ final class MercadoPagoSalesImport
     /**
      * @param  list<object>  $orders
      * @param  \Illuminate\Support\Collection<int, QuotaAccountingOrder>  $settled
-     * @param  array{operation: string, date: ?string, status: string, gross_cents: int, commission_cents: int, net_cents: int}  $sale
+     * @param  array{operation: string, date: ?string, status: string, gross_cents: int, commission_cents: int, interest_cents?: int, net_cents: int}  $sale
      * @return array{row: array<string, mixed>, ready: list<array{date: string, eporres_order_id: int, gross_cents: int, commission_cents: int, net_cents: int}>}
      */
     private function classify(array $sale, array $orders, $settled): array
@@ -86,6 +86,13 @@ final class MercadoPagoSalesImport
         if ($this->normalize($sale['status']) !== 'aprobado') {
             $base['outcome'] = 'not_approved';
             $base['detail'] = 'Solo se registran las operaciones aprobadas.';
+
+            return ['row' => $base, 'ready' => []];
+        }
+
+        if (($sale['interest_cents'] ?? 0) !== 0) {
+            $base['outcome'] = 'unbalanced';
+            $base['detail'] = 'Mercado Pago no usa intereses. Dejá esa columna en 0.';
 
             return ['row' => $base, 'ready' => []];
         }
@@ -149,7 +156,7 @@ final class MercadoPagoSalesImport
             if ($date === null) {
                 $base['outcome'] = 'invalid';
                 $base['order_label'] = $this->orderLabel($paid);
-                $base['detail'] = 'Falta la fecha de la compra y la orden no tiene fecha de pago.';
+                $base['detail'] = 'Falta la fecha de acreditación y la orden no tiene fecha de pago.';
 
                 return ['row' => $base, 'ready' => []];
             }

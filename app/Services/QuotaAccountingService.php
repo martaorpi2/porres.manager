@@ -54,7 +54,7 @@ class QuotaAccountingService
     /**
      * Asienta la liquidación que viene del Excel de ventas de Mercado Pago.
      * Una fila por orden: el bruto va a Mercado Pago a cobrar, la comisión al gasto
-     * y el neto a la cuenta de Mercado Pago. Se agrupa un asiento por fecha de compra.
+     * y el neto a la cuenta de Mercado Pago. Se agrupa un asiento por fecha de acreditación.
      *
      * @param  list<array{date: string, eporres_order_id: int, gross_cents: int, commission_cents: int, net_cents: int}>  $rows
      * @return list<AccountingEntry>
