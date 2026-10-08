@@ -12,6 +12,7 @@ use App\Models\Supplier;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
+use RuntimeException;
 
 /**
  * Asientos de egreso/ingreso: se generan al confirmar un movimiento de fondos (Egreso).
@@ -24,6 +25,14 @@ class AccountingOutflowService
         return AccountingAccount::chartIsLoaded();
     }
 
+    private function isPostableAccount(int $id): bool
+    {
+        return AccountingAccount::query()
+            ->whereKey($id)
+            ->where('is_grouping', false)
+            ->exists();
+    }
+
     public function suggestedImputationAccountId(?PurchaseOrder $purchaseOrder, ?int $supplierId = null): ?int
     {
         if ($purchaseOrder) {
@@ -31,7 +40,7 @@ class AccountingOutflowService
                 ->whereNotNull('accounting_account_id')
                 ->orderByDesc('id')
                 ->value('accounting_account_id');
-            if ($fromInvoice) {
+            if ($fromInvoice && $this->isPostableAccount((int) $fromInvoice)) {
                 return (int) $fromInvoice;
             }
             $supplierId = $supplierId ?: ($purchaseOrder->supplier_id ? (int) $purchaseOrder->supplier_id : null);
@@ -41,7 +50,7 @@ class AccountingOutflowService
             $fromSupplier = Supplier::query()
                 ->whereKey($supplierId)
                 ->value('accounting_account_id');
-            if ($fromSupplier) {
+            if ($fromSupplier && $this->isPostableAccount((int) $fromSupplier)) {
                 return (int) $fromSupplier;
             }
         }
@@ -327,6 +336,12 @@ class AccountingOutflowService
 
     protected function postFundMovement(FundMovement $movement, string $date): AccountingEntry
     {
+        $accountIds = $movement->imputations->pluck('accounting_account_id')->push($movement->funds_account_id)->all();
+        $grouping = AccountingAccount::groupingUsedMessage($accountIds);
+        if ($grouping !== null) {
+            throw new RuntimeException($grouping);
+        }
+
         $user = backpack_user();
         $isIngreso = $movement->type === FundMovement::TYPE_INGRESO;
 

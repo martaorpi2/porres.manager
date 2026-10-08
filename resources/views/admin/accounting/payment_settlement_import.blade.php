@@ -2,7 +2,7 @@
 
 @section('header')
     <section class="header-operation container-fluid animated fadeIn d-flex mb-2 align-items-baseline d-print-none" bp-section="page-header">
-        <h1 class="mb-0 journal-title" bp-section="page-heading">Acreditaciones</h1>
+        <h1 class="mb-0 journal-title" bp-section="page-heading">Registración de Cobranzas</h1>
         <a href="{{ backpack_url('accounting-journal') }}" class="btn journal-back ms-3 ml-3">Volver al diario</a>
     </section>
 @endsection
@@ -39,14 +39,6 @@
                 @foreach($definition['paragraphs'] as $paragraph)
                     <p class="mb-2">{{ $paragraph }}</p>
                 @endforeach
-                <div class="alert alert-info" role="alert">
-                    <p class="mb-2">El asiento queda así:</p>
-                    <ul class="mb-0">
-                        @foreach($definition['entry_lines'] as $line)
-                            <li><strong>{{ $line[0] }}:</strong> {{ $line[1] }}</li>
-                        @endforeach
-                    </ul>
-                </div>
                 <form method="post" action="{{ backpack_url('accounting-settlement/'.$channel.'/preview') }}" enctype="multipart/form-data" class="row g-2 align-items-end">
                     @csrf
                     <div class="col-md-6">
@@ -57,7 +49,7 @@
                         @enderror
                     </div>
                     <div class="col-md-3">
-                        <button type="submit" class="btn journal-btn-filter">Ver liquidación</button>
+                        <button type="submit" class="btn journal-btn-filter">Ver acreditación</button>
                     </div>
                 </form>
                 @else
@@ -80,9 +72,8 @@
                         <table class="table journal-lines mb-0">
                             <thead>
                                 <tr>
-                                    <th>Número de operación</th>
+                                    <th>Fecha de cobro</th>
                                     <th>Fecha de acreditación</th>
-                                    <th>Estado</th>
                                     <th class="text-end">Cobro</th>
                                     <th class="text-end">Cargos e impuestos</th>
                                     <th class="text-end">Intereses</th>
@@ -96,15 +87,13 @@
                                         $outcomeLabel = [
                                             'ready' => 'Se registra',
                                             'already_posted' => 'Ya registrada',
-                                            'not_approved' => 'No aprobada',
                                             'unbalanced' => 'No cierra',
                                             'invalid' => 'Fecha inválida',
                                         ][$row['outcome']] ?? $row['outcome'];
                                     @endphp
                                     <tr>
-                                        <td>{{ $row['operation'] }}</td>
+                                        <td>{{ $showDate($row['collected_on'] ?? null) }}</td>
                                         <td>{{ $showDate($row['date']) }}</td>
-                                        <td>{{ $row['status'] !== '' ? $row['status'] : '—' }}</td>
                                         <td class="text-end text-nowrap">{{ $money($row['gross_cents']) }}</td>
                                         <td class="text-end text-nowrap">{{ $money($row['commission_cents']) }}</td>
                                         <td class="text-end text-nowrap">{{ $money($row['interest_cents']) }}</td>

@@ -43,6 +43,8 @@ class AccountingAccountCrudController extends CrudController
                 'code' => old('code'),
                 'name' => old('name'),
                 'account_type' => old('account_type'),
+                'balance_nature' => old('balance_nature'),
+                'is_grouping' => old('is_grouping', '0'),
                 'is_active' => old('is_active', '1'),
                 'parent_code' => old('parent_code'),
             ];
@@ -51,6 +53,8 @@ class AccountingAccountCrudController extends CrudController
         return view('admin.accounting.accounts', [
             'tree' => $report->tree(),
             'types' => AccountingAccount::typeOptions(),
+            'balanceNatures' => AccountingAccount::balanceNatureOptions(),
+            'balanceByType' => AccountingAccount::balanceNatureByType(),
             'canCreate' => true,
             'canUpdate' => $user instanceof User && ! $user->hasAdministradoraInstitucionRole(),
             'selectedCode' => $request->query('code'),
@@ -77,6 +81,12 @@ class AccountingAccountCrudController extends CrudController
             abort(403, 'No tiene permiso para modificar cuentas.');
         }
 
+        $existing = $id ? AccountingAccount::query()->find($id) : null;
+        if ($id && ! $existing) {
+            abort(404);
+        }
+        $isGrouping = $existing ? (bool) $existing->is_grouping : $request->boolean('is_grouping');
+
         $unique = 'unique:accounting_accounts,code';
         if ($id) {
             $unique .= ','.$id;
@@ -85,15 +95,21 @@ class AccountingAccountCrudController extends CrudController
         $validator = Validator::make($request->all(), [
             'code' => ['required', 'string', 'max:30', $unique],
             'name' => ['required', 'string', 'max:255'],
-            'account_type' => ['nullable', 'in:activo,pasivo,patrimonio,ingreso,gasto'],
+            'account_type' => ['nullable', 'in:activo,pasivo,patrimonio,ingreso,gasto,egreso'],
+            'balance_nature' => $isGrouping
+                ? ['nullable', 'in:deudor,acreedor']
+                : ['required', 'in:deudor,acreedor'],
+            'is_grouping' => ['nullable', 'boolean'],
             'is_active' => ['nullable', 'boolean'],
             'parent_code' => ['nullable', 'string', 'max:30'],
         ], [
             'code.unique' => 'Ya existe una cuenta con ese código.',
+            'balance_nature.required' => 'Elegí si el saldo es acreedor o deudor.',
         ], [
             'code' => 'código',
             'name' => 'nombre',
             'account_type' => 'tipo de cuenta',
+            'balance_nature' => 'tipo de saldo',
             'is_active' => 'activa',
         ]);
 
@@ -121,6 +137,7 @@ class AccountingAccountCrudController extends CrudController
             'code' => $code,
             'name' => trim($data['name']),
             'account_type' => $data['account_type'] ?: null,
+            'balance_nature' => $isGrouping ? null : $data['balance_nature'],
             'is_active' => $request->boolean('is_active'),
         ];
 
@@ -135,7 +152,7 @@ class AccountingAccountCrudController extends CrudController
                     ->with('account_form_mode', 'edit')
                     ->withErrors(['code' => $exception->getMessage()]);
             }
-            $message = 'La cuenta se modificó.';
+            $message = $isGrouping ? 'El rubro se modificó.' : 'La cuenta se modificó.';
             if ($moved > 0) {
                 $message .= $moved === 1
                     ? ' Se actualizó el código de la cuenta hija.'
@@ -151,8 +168,8 @@ class AccountingAccountCrudController extends CrudController
                     ->with('account_form_mode', 'create')
                     ->withErrors(['code' => $leafParent->code.' '.$leafParent->name.' es una cuenta de último nivel y no admite cuentas hijas.']);
             }
-            AccountingAccount::query()->create($payload + ['is_grouping' => false]);
-            \Alert::success('La cuenta se agregó.')->flash();
+            AccountingAccount::query()->create($payload + ['is_grouping' => $isGrouping]);
+            \Alert::success($isGrouping ? 'El rubro se agregó.' : 'La cuenta se agregó.')->flash();
         }
 
         return redirect(backpack_url('accounting-account').'?code='.urlencode($code));
@@ -214,6 +231,14 @@ class AccountingAccountCrudController extends CrudController
                 return e($entry->type_label);
             },
         ]);
+        CRUD::addColumn([
+            'name' => 'balance_nature',
+            'label' => 'Tipo de saldo',
+            'type' => 'closure',
+            'function' => function ($entry) {
+                return e($entry->balance_nature_label ?: '—');
+            },
+        ]);
         CRUD::column('is_active')->label('Activa')->type('boolean');
     }
 
@@ -231,6 +256,18 @@ class AccountingAccountCrudController extends CrudController
             'options' => \App\Models\AccountingAccount::typeOptions(),
             'allows_null' => true,
             'hint' => 'Permite distinguir Caja/Banco (activo) de un gasto (útiles, honorarios) o un bien (equipamiento).',
+            'wrapper' => ['class' => 'form-group col-sm-12 col-md-4'],
+        ]);
+        CRUD::field('is_grouping')->label('Rubro de agrupación')->type('boolean')
+            ->hint('Un rubro o subrubro agrupa cuentas y no recibe movimientos.')
+            ->wrapper(['class' => 'form-group col-sm-12 col-md-3']);
+        CRUD::addField([
+            'name' => 'balance_nature',
+            'label' => 'Tipo de saldo',
+            'type' => 'select_from_array',
+            'options' => \App\Models\AccountingAccount::balanceNatureOptions(),
+            'allows_null' => true,
+            'hint' => 'Obligatorio en las cuentas. Los rubros no tienen saldo.',
             'wrapper' => ['class' => 'form-group col-sm-12 col-md-4'],
         ]);
         CRUD::field('is_active')->label('Activa')->type('boolean')->default(true)

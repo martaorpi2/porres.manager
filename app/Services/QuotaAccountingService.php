@@ -52,85 +52,10 @@ class QuotaAccountingService
     }
 
     /**
-     * Asienta la liquidación que viene del Excel de ventas de Mercado Pago.
-     * Una fila por orden: el bruto va a Mercado Pago a cobrar, la comisión al gasto
-     * y el neto a la cuenta de Mercado Pago. Se agrupa un asiento por fecha de acreditación.
-     *
-     * @param  list<array{date: string, eporres_order_id: int, gross_cents: int, commission_cents: int, net_cents: int}>  $rows
-     * @return list<AccountingEntry>
-     */
-    public function postImportedMercadoPagoSettlements(array $rows): array
-    {
-        if ($rows === []) {
-            return [];
-        }
-
-        $accounts = $this->accountsByCode();
-        $description = 'LIQUIDACION COBRANZA MERCADO PAGO';
-
-        return DB::transaction(function () use ($rows, $accounts, $description) {
-            $ids = array_map(fn (array $row) => (int) $row['eporres_order_id'], $rows);
-            $already = QuotaAccountingOrder::query()
-                ->where('role', QuotaAccountingBatch::KIND_MP_SETTLEMENT)
-                ->whereIn('eporres_order_id', $ids)
-                ->lockForUpdate()
-                ->pluck('eporres_order_id')
-                ->map(fn ($id) => (int) $id)
-                ->all();
-            $posted = array_fill_keys($already, true);
-            $groups = [];
-
-            foreach ($rows as $row) {
-                $orderId = (int) $row['eporres_order_id'];
-                if (isset($posted[$orderId])) {
-                    continue;
-                }
-                $posted[$orderId] = true;
-                $date = $row['date'];
-                if (! isset($groups[$date])) {
-                    $groups[$date] = [
-                        'date' => $date,
-                        'orders' => [],
-                        'gross' => 0,
-                        'commission' => 0,
-                        'net' => 0,
-                    ];
-                }
-                $groups[$date]['gross'] += (int) $row['gross_cents'];
-                $groups[$date]['commission'] += (int) $row['commission_cents'];
-                $groups[$date]['net'] += (int) $row['net_cents'];
-                $groups[$date]['orders'][] = [
-                    'eporres_order_id' => $orderId,
-                    'debtors_amount' => $this->money((int) $row['gross_cents']),
-                    'interest_amount' => $this->money((int) $row['commission_cents']),
-                    'bank_amount' => $this->money((int) $row['net_cents']),
-                ];
-            }
-
-            ksort($groups);
-            $entries = [];
-            foreach ($groups as $group) {
-                $entries[] = $this->writeBatch(
-                    kind: QuotaAccountingBatch::KIND_MP_SETTLEMENT,
-                    batchKey: 'mp-settlement:excel:'.$group['date'].':'.$group['orders'][0]['eporres_order_id'].':'.uniqid(),
-                    period: null,
-                    entryDate: $group['date'],
-                    paymentType: 'Mercado Pago',
-                    entryKind: AccountingEntry::KIND_QUOTA_MP_SETTLEMENT,
-                    description: $description,
-                    lines: $this->settlementLines($group, $accounts),
-                    orders: $group['orders'],
-                    role: QuotaAccountingBatch::KIND_MP_SETTLEMENT,
-                );
-            }
-
-            return $entries;
-        });
-    }
-
-    /**
-     * Asienta una liquidación de Naranja X, Sol Pago o QR.
+     * Asienta una liquidación de Mercado Pago, Naranja X, Sol Pago o QR.
+     * El asiento es uno por fecha, con los totales del archivo. No cruza cupones con ePorres.
      * Naranja y Sol acreditan el neto en Banco BSE y cancelan la cuenta a cobrar.
+     * Mercado Pago acredita el neto en Mercado Pago, la comisión al gasto y el bruto en Mercado Pago a cobrar.
      * QR se cobra con este informe: neto en Banco BSE, comisión al gasto y bruto en Deudores por cuotas.
      *
      * @param  list<array{key: string, date: string, gross_cents: int, commission_cents: int, interest_cents: int, net_cents: int, document: string}>  $groups
@@ -227,8 +152,23 @@ class QuotaAccountingService
         if ($missing !== []) {
             throw new RuntimeException('Faltan cuentas en el plan: '.implode(', ', $missing));
         }
+        $this->rejectGroupingAccounts($found->all());
 
         return $found->all();
+    }
+
+    /**
+     * @param  array<string, AccountingAccount>  $accounts
+     */
+    private function rejectGroupingAccounts(array $accounts): void
+    {
+        $message = AccountingAccount::groupingUsedMessage(array_map(
+            fn (AccountingAccount $account) => (int) $account->id,
+            $accounts
+        ));
+        if ($message !== null) {
+            throw new RuntimeException($message);
+        }
     }
 
     /**
@@ -756,12 +696,26 @@ class QuotaAccountingService
         $batchesByDate = [];
         $batches = QuotaAccountingBatch::query()
             ->where('kind', QuotaAccountingBatch::KIND_MP_SETTLEMENT)
+            ->where('batch_key', 'like', 'mp-settlement:%')
             ->whereDate('entry_date', '>=', $from)
             ->whereDate('entry_date', '<=', $to)
             ->whereHas('entry', fn ($query) => $query->where('status', AccountingEntry::STATUS_POSTED))
             ->with(['orders', 'entry'])
             ->orderBy('id')
             ->get();
+
+        $fileDates = array_fill_keys(
+            QuotaAccountingBatch::query()
+                ->where('kind', QuotaAccountingBatch::KIND_MP_SETTLEMENT)
+                ->where('batch_key', 'like', 'mercadopago:%')
+                ->whereDate('entry_date', '>=', $from)
+                ->whereDate('entry_date', '<=', $to)
+                ->whereHas('entry', fn ($query) => $query->where('status', AccountingEntry::STATUS_POSTED))
+                ->pluck('entry_date')
+                ->map(fn ($date) => Carbon::parse($date)->toDateString())
+                ->all(),
+            true
+        );
 
         foreach ($batches as $batch) {
             $batchesByDate[$batch->entry_date->toDateString()][] = $batch;
@@ -774,6 +728,9 @@ class QuotaAccountingService
         $description = 'LIQUIDACION COBRANZA MERCADO PAGO';
 
         foreach ($dates as $date) {
+            if (isset($fileDates[$date])) {
+                continue;
+            }
             $group = $groups[$date] ?? [
                 'date' => $date,
                 'orders' => [],
@@ -1432,6 +1389,7 @@ class QuotaAccountingService
         if ($missing !== []) {
             throw new RuntimeException('Faltan cuentas en el plan: '.implode(', ', $missing));
         }
+        $this->rejectGroupingAccounts($found->all());
 
         return $found->all();
     }

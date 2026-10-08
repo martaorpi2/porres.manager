@@ -9,6 +9,8 @@ use RuntimeException;
 
 final class PaymentSettlementChannels
 {
+    public const MERCADOPAGO = 'mercadopago';
+
     public const NARANJA = 'naranja';
 
     public const SOL = 'sol';
@@ -20,7 +22,7 @@ final class PaymentSettlementChannels
      */
     public static function keys(): array
     {
-        return [self::NARANJA, self::SOL, self::QR];
+        return [self::MERCADOPAGO, self::NARANJA, self::SOL, self::QR];
     }
 
     /**
@@ -42,6 +44,29 @@ final class PaymentSettlementChannels
     private static function definitions(): array
     {
         return [
+            self::MERCADOPAGO => [
+                'title' => 'Liquidación Mercado Pago',
+                'menu' => 'Mercado Pago',
+                'accept' => '.xlsx,.xls',
+                'extensions' => ['xlsx', 'xls'],
+                'file_label' => 'Excel de acreditación',
+                'extension_error' => 'El archivo tiene que ser un Excel (.xlsx).',
+                'empty_error' => 'Elegí el Excel de la acreditación.',
+                'paragraphs' => [],
+                'mode' => 'receivable',
+                'payment_type' => 'Mercado Pago',
+                'batch_kind' => QuotaAccountingBatch::KIND_MP_SETTLEMENT,
+                'entry_kind' => AccountingEntry::KIND_QUOTA_MP_SETTLEMENT,
+                'description' => 'LIQUIDACION COBRANZA MERCADO PAGO',
+                'bank' => QuotaPaymentAccounts::MP_AVAILABLE,
+                'receivable' => QuotaPaymentAccounts::MP_RECEIVABLE,
+                'commission' => QuotaPaymentAccounts::MP_COMMISSION,
+                'interest' => '52312000',
+                'bank_memo' => 'Mercado Pago',
+                'receivable_memo' => 'Mercado Pago a cobrar',
+                'commission_memo' => 'Comisión Mercado Pago',
+                'interest_memo' => 'Intereses Mercado Pago',
+            ],
             self::NARANJA => [
                 'title' => 'Liquidación Naranja X',
                 'menu' => 'Naranja X',
@@ -52,12 +77,6 @@ final class PaymentSettlementChannels
                 'empty_error' => 'Elegí el Excel de la acreditación.',
                 'paragraphs' => [
                     'En Naranja X cada fila es un día, con los totales de ese día.',
-                ],
-                'entry_lines' => [
-                    ['Banco BSE', 'por el neto acreditado.'],
-                    ['Comisiones Tarjeta Naranja', 'por el arancel y el IVA.'],
-                    ['Intereses pagados', 'por el interés de los planes.'],
-                    ['Tarjeta Naranja a cobrar', 'por el importe bruto.'],
                 ],
                 'mode' => 'receivable',
                 'payment_type' => 'Tarjeta Naranja',
@@ -81,15 +100,7 @@ final class PaymentSettlementChannels
                 'file_label' => 'Excel de acreditación',
                 'extension_error' => 'El archivo tiene que ser un Excel (.xlsx).',
                 'empty_error' => 'Elegí el Excel de la acreditación.',
-                'paragraphs' => [
-                    'Cada fila es un cupón. Las filas de la misma fecha forman un asiento.',
-                ],
-                'entry_lines' => [
-                    ['Banco BSE', 'por el neto de la fecha.'],
-                    ['Comisiones Tarjeta Sol', 'por el arancel, el IVA y las otras deducciones.'],
-                    ['Intereses pagados', 'por el costo financiero.'],
-                    ['Tarjeta Sol a cobrar', 'por el monto presentado.'],
-                ],
+                'paragraphs' => [],
                 'mode' => 'receivable',
                 'payment_type' => 'Tarjeta Sol',
                 'batch_kind' => QuotaAccountingBatch::KIND_SOL_SETTLEMENT,
@@ -112,14 +123,7 @@ final class PaymentSettlementChannels
                 'file_label' => 'Excel de acreditación',
                 'extension_error' => 'El archivo tiene que ser un Excel (.xlsx).',
                 'empty_error' => 'Elegí el Excel de la acreditación.',
-                'paragraphs' => [
-                    'Cada fila es un cupón. Las filas de la misma fecha forman un asiento.',
-                ],
-                'entry_lines' => [
-                    ['Banco BSE', 'por el neto depositado.'],
-                    ['Comisiones cobranzas QR', 'por el arancel y el IVA.'],
-                    ['Deudores por cuotas', 'por el importe bruto.'],
-                ],
+                'paragraphs' => [],
                 'mode' => 'receivable',
                 'payment_type' => 'QR',
                 'batch_kind' => QuotaAccountingBatch::KIND_QR_SETTLEMENT,
@@ -128,11 +132,11 @@ final class PaymentSettlementChannels
                 'bank' => '11102002',
                 'receivable' => QuotaPaymentAccounts::DEBTORS,
                 'commission' => '52320000',
-                'interest' => null,
+                'interest' => '52312000',
                 'bank_memo' => 'Banco BSE',
                 'receivable_memo' => 'Deudores por cuotas',
                 'commission_memo' => 'Comisión e IVA QR',
-                'interest_memo' => null,
+                'interest_memo' => 'Intereses QR',
             ],
         ];
     }

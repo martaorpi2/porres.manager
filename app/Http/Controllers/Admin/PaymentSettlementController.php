@@ -159,11 +159,11 @@ class PaymentSettlementController extends CrudController
     private function pageData(?string $channel, ?array $definition): array
     {
         return [
-            'title' => 'Acreditaciones',
+            'title' => 'Registración de Cobranzas',
             'breadcrumbs' => [
                 trans('backpack::crud.admin') => backpack_url('dashboard'),
                 'Libro diario' => backpack_url('accounting-journal'),
-                'Acreditaciones' => false,
+                'Registración de Cobranzas' => false,
             ],
             'channel' => $channel,
             'definition' => $definition,
@@ -208,7 +208,7 @@ class PaymentSettlementController extends CrudController
     /**
      * @param  array<string, mixed>  $definition
      * @param  mixed  $groups
-     * @return list<array{key: string, date: string, gross_cents: int, commission_cents: int, interest_cents: int, net_cents: int, document: string}>
+     * @return list<array{key: string, date: string, collected_on: list<string>, gross_cents: int, commission_cents: int, interest_cents: int, net_cents: int, document: string}>
      */
     private function readyGroups(array $definition, mixed $groups): array
     {
@@ -224,11 +224,12 @@ class PaymentSettlementController extends CrudController
             $key = (string) ($group['key'] ?? '');
             $date = (string) ($group['date'] ?? '');
             $document = (string) ($group['document'] ?? '');
+            $collectedOn = $this->collectedDates($group['collected_on'] ?? null);
             $gross = (int) ($group['gross_cents'] ?? 0);
             $commission = (int) ($group['commission_cents'] ?? 0);
             $interest = (int) ($group['interest_cents'] ?? 0);
             $net = (int) ($group['net_cents'] ?? 0);
-            if (preg_match('/^[A-Za-z0-9:.\-]+$/', $key) !== 1 || preg_match('/^\d{4}-\d{2}-\d{2}$/', $date) !== 1 || $document === '') {
+            if (preg_match('/^[A-Za-z0-9:.\-]+$/', $key) !== 1 || preg_match('/^\d{4}-\d{2}-\d{2}$/', $date) !== 1 || $document === '' || $collectedOn === []) {
                 return [];
             }
             if ($gross < 1 || $commission < 0 || $interest < 0 || $net < 0) {
@@ -244,6 +245,7 @@ class PaymentSettlementController extends CrudController
             $ready[] = [
                 'key' => $key,
                 'date' => $date,
+                'collected_on' => $collectedOn,
                 'gross_cents' => $gross,
                 'commission_cents' => $commission,
                 'interest_cents' => $interest,
@@ -253,6 +255,29 @@ class PaymentSettlementController extends CrudController
         }
 
         return $ready;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function collectedDates(mixed $dates): array
+    {
+        if (! is_array($dates) || $dates === []) {
+            return [];
+        }
+
+        $collected = [];
+        foreach ($dates as $date) {
+            $date = (string) $date;
+            if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $date) !== 1) {
+                return [];
+            }
+            $collected[$date] = $date;
+        }
+        $collected = array_values($collected);
+        sort($collected);
+
+        return $collected;
     }
 
     private function authorizeAccounting(): void

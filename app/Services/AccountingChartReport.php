@@ -66,7 +66,7 @@ final class AccountingChartReport
     }
 
     /**
-     * @return list<array{id: int|null, code: string, name: string, sums_to: string, level: int, nature: string, balance: string, receives: bool, account_type: string|null, is_active: bool, children: list<array>}>
+     * @return list<array{id: int|null, code: string, name: string, sums_to: string, level: int, nature: string, balance: string, receives: bool, balance_nature: string|null, account_type: string|null, is_active: bool, children: list<array>}>
      */
     public function tree(): array
     {
@@ -90,6 +90,7 @@ final class AccountingChartReport
                     'balance' => $row['balance'],
                     'receives' => $row['receives'] === 'Si',
                     'is_grouping' => $account ? (bool) $account->is_grouping : $row['receives'] !== 'Si',
+                    'balance_nature' => $account?->balance_nature,
                     'account_type' => $account?->account_type,
                     'is_active' => $account ? (bool) $account->is_active : true,
                     'children' => $build($row['code']),
@@ -238,14 +239,22 @@ final class AccountingChartReport
      */
     private function natureAndBalance(AccountingAccount $account): array
     {
-        return match ($account->account_type) {
-            'activo' => ['Deudor', 'Activo'],
-            'pasivo' => ['Acreedor', 'Pasivo'],
-            'patrimonio' => ['Acreedor', 'Patrimonio'],
-            'ingreso' => ['Acreedor', 'Ingreso'],
-            'gasto' => ['Deudor', 'Egreso'],
-            default => ['', ''],
+        $balance = match ($account->account_type) {
+            'activo' => 'Activo',
+            'pasivo' => 'Pasivo',
+            'patrimonio' => 'Patrimonio',
+            'ingreso' => 'Ingreso',
+            'gasto' => 'Gasto',
+            'egreso' => 'Egreso',
+            default => '',
         };
+        $nature = match ($account->balance_nature ?: AccountingAccount::defaultBalanceNature($account->account_type)) {
+            'deudor' => 'Deudor',
+            'acreedor' => 'Acreedor',
+            default => '',
+        };
+
+        return [$nature, $balance];
     }
 
     /**

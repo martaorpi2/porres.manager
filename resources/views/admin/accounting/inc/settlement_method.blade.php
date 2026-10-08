@@ -1,6 +1,6 @@
 @php
     $settlementMethods = [
-        'mercadopago' => ['label' => 'Mercado Pago', 'url' => backpack_url('accounting-mercadopago')],
+        'mercadopago' => ['label' => 'Mercado Pago', 'url' => backpack_url('accounting-settlement/mercadopago')],
         'naranja' => ['label' => 'Naranja X', 'url' => backpack_url('accounting-settlement/naranja')],
         'sol' => ['label' => 'Sol Pago', 'url' => backpack_url('accounting-settlement/sol')],
         'qr' => ['label' => 'QR', 'url' => backpack_url('accounting-settlement/qr')],

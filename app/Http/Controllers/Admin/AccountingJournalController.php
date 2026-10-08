@@ -121,6 +121,17 @@ class AccountingJournalController extends CrudController
         $this->authorizeAccounting();
         $this->ensureEditable($accountingEntry);
 
+        $validated = $request->validate([
+            'description' => ['required', 'string', 'max:255'],
+        ], [
+            'description.required' => 'La descripción es obligatoria.',
+            'description.max' => 'La descripción no puede superar los 255 caracteres.',
+        ]);
+        $description = trim($validated['description']);
+        if ($description === '') {
+            return back()->withInput()->withErrors(['description' => 'La descripción es obligatoria.']);
+        }
+
         $prepared = AccountingEntryEditor::prepare($request->input('lines', []));
         if ($prepared['error'] !== null) {
             return back()->withInput()->withErrors(['lines' => $prepared['error']]);
@@ -131,10 +142,14 @@ class AccountingJournalController extends CrudController
         if (count($found) !== count($accountIds)) {
             return back()->withInput()->withErrors(['lines' => 'Hay una cuenta que no existe en el plan.']);
         }
+        $grouping = AccountingAccount::groupingUsedMessage($accountIds);
+        if ($grouping !== null) {
+            return back()->withInput()->withErrors(['lines' => $grouping]);
+        }
 
         $memos = $accountingEntry->lines()->pluck('memo', 'id');
 
-        DB::transaction(function () use ($accountingEntry, $prepared, $memos) {
+        DB::transaction(function () use ($accountingEntry, $prepared, $memos, $description) {
             $accountingEntry->lines()->delete();
             foreach ($prepared['lines'] as $line) {
                 $accountingEntry->lines()->create([
@@ -144,7 +159,10 @@ class AccountingJournalController extends CrudController
                     'memo' => $line['source_id'] !== null ? $memos->get($line['source_id']) : null,
                 ]);
             }
-            $accountingEntry->update(['manually_adjusted' => true]);
+            $accountingEntry->update([
+                'description' => $description,
+                'manually_adjusted' => true,
+            ]);
         });
 
         \Alert::success('El asiento '.$accountingEntry->entry_number.' quedó modificado.')->flash();
@@ -205,8 +223,9 @@ class AccountingJournalController extends CrudController
         $current = $entry->lines->pluck('accounting_account_id')->filter()->all();
 
         return AccountingAccount::query()
+            ->where('is_grouping', false)
             ->where(function ($query) use ($current) {
-                $query->where('is_active', true)->where('is_grouping', false);
+                $query->where('is_active', true);
                 if ($current !== []) {
                     $query->orWhereIn('id', $current);
                 }

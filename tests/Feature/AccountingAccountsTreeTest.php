@@ -18,6 +18,9 @@ class AccountingAccountsTreeTest extends TestCase
         $page = $this->actingAs($user, 'backpack')->get('/admin/accounting-account');
         $page->assertOk();
         $page->assertSee('Plan de cuentas');
+        $page->assertSee('Agregar rubro');
+        $page->assertSee('Agregar subrubro');
+        $page->assertSee('Tipo de saldo');
         $page->assertSee('Quitar');
         $page->assertSee('Mover las cuentas hijas a otro padre');
         $page->assertSee('Eliminar también las cuentas hijas');
@@ -44,6 +47,7 @@ class AccountingAccountsTreeTest extends TestCase
                 'code' => '11101999',
                 'name' => 'CUENTA PRUEBA ARBOL',
                 'account_type' => 'activo',
+                'balance_nature' => 'deudor',
                 'is_active' => '1',
                 'parent_code' => '11101000',
             ]);
@@ -55,22 +59,27 @@ class AccountingAccountsTreeTest extends TestCase
 
             $createdAccount = AccountingAccount::query()->where('code', '11101999')->first();
             $this->assertNotNull($createdAccount);
+            $this->assertSame('deudor', $createdAccount->balance_nature);
+            $this->assertFalse((bool) $createdAccount->is_grouping);
 
             $updated = $this->actingAs($user, 'backpack')->post('/admin/accounting-account/guardar', [
                 'id' => $createdAccount->id,
                 'code' => '11101999',
                 'name' => 'CUENTA PRUEBA MODIFICADA',
                 'account_type' => 'activo',
+                'balance_nature' => 'acreedor',
                 'is_active' => '1',
                 'parent_code' => '11101000',
             ]);
             $updated->assertRedirect('/admin/accounting-account?code=11101999');
             $this->assertSame('CUENTA PRUEBA MODIFICADA', $createdAccount->fresh()->name);
+            $this->assertSame('acreedor', $createdAccount->fresh()->balance_nature);
 
             $grouped = $this->actingAs($user, 'backpack')->from('/admin/accounting-account')->post('/admin/accounting-account/guardar', [
                 'code' => '10000000',
                 'name' => 'NO DEBERIA GUARDARSE',
                 'account_type' => 'activo',
+                'balance_nature' => 'deudor',
                 'is_active' => '1',
             ]);
             $grouped->assertRedirect('/admin/accounting-account');
@@ -195,6 +204,7 @@ class AccountingAccountsTreeTest extends TestCase
                 'code' => '70100001',
                 'name' => 'NO DEBE COLGAR',
                 'account_type' => 'activo',
+                'balance_nature' => 'deudor',
                 'is_active' => '1',
                 'parent_code' => '70100000',
             ]);
@@ -203,6 +213,81 @@ class AccountingAccountsTreeTest extends TestCase
             $this->assertNull(AccountingAccount::query()->where('code', '70100001')->first());
         } finally {
             AccountingAccount::query()->whereIn('code', ['70000000', '70100000', '70100001'])->delete();
+        }
+    }
+
+    public function test_can_create_a_rubro_a_subrubro_and_requires_balance_nature_on_accounts(): void
+    {
+        $user = User::query()->get()->first(fn (User $candidate) => $candidate->canViewAccounting() && ! $candidate->hasAdministradoraInstitucionRole());
+        $this->assertNotNull($user);
+        $this->withoutMiddleware(\Illuminate\Foundation\Http\Middleware\ValidateCsrfToken::class);
+
+        $codes = ['61000000', '61100000', '61100001'];
+        AccountingAccount::query()->whereIn('code', $codes)->delete();
+
+        try {
+            $rubro = $this->actingAs($user, 'backpack')->post('/admin/accounting-account/guardar', [
+                'code' => '61000000',
+                'name' => 'RUBRO NUEVO PRUEBA',
+                'account_type' => 'activo',
+                'is_grouping' => '1',
+                'is_active' => '1',
+            ]);
+            $rubro->assertRedirect('/admin/accounting-account?code=61000000');
+            $storedRubro = AccountingAccount::query()->where('code', '61000000')->first();
+            $this->assertNotNull($storedRubro);
+            $this->assertTrue((bool) $storedRubro->is_grouping);
+            $this->assertNull($storedRubro->balance_nature);
+
+            $subrubro = $this->actingAs($user, 'backpack')->post('/admin/accounting-account/guardar', [
+                'code' => '61100000',
+                'name' => 'SUBRUBRO NUEVO PRUEBA',
+                'account_type' => 'activo',
+                'is_grouping' => '1',
+                'is_active' => '1',
+                'parent_code' => '61000000',
+            ]);
+            $subrubro->assertRedirect('/admin/accounting-account?code=61100000');
+            $this->assertTrue(
+                (bool) AccountingAccount::query()->where('code', '61100000')->value('is_grouping')
+            );
+
+            $missingNature = $this->actingAs($user, 'backpack')->from('/admin/accounting-account')->post('/admin/accounting-account/guardar', [
+                'code' => '61100001',
+                'name' => 'CUENTA SIN SALDO',
+                'account_type' => 'activo',
+                'is_active' => '1',
+                'parent_code' => '61100000',
+            ]);
+            $missingNature->assertRedirect('/admin/accounting-account');
+            $missingNature->assertSessionHasErrors('balance_nature');
+            $this->assertNull(AccountingAccount::query()->where('code', '61100001')->first());
+
+            $cuenta = $this->actingAs($user, 'backpack')->post('/admin/accounting-account/guardar', [
+                'code' => '61100001',
+                'name' => 'CUENTA CON SALDO',
+                'account_type' => 'activo',
+                'balance_nature' => 'acreedor',
+                'is_active' => '1',
+                'parent_code' => '61100000',
+            ]);
+            $cuenta->assertRedirect('/admin/accounting-account?code=61100001');
+            $stored = AccountingAccount::query()->where('code', '61100001')->first();
+            $this->assertNotNull($stored);
+            $this->assertFalse((bool) $stored->is_grouping);
+            $this->assertSame('acreedor', $stored->balance_nature);
+
+            $page = $this->actingAs($user, 'backpack')->get('/admin/accounting-account?code=61100001');
+            $page->assertOk();
+            $page->assertSee('CUENTA CON SALDO');
+            $page->assertSee('data-balance-nature="acreedor"', false);
+        } finally {
+            AccountingAccount::query()->whereIn('code', $codes)->orWhereIn('name', [
+                'RUBRO NUEVO PRUEBA',
+                'SUBRUBRO NUEVO PRUEBA',
+                'CUENTA SIN SALDO',
+                'CUENTA CON SALDO',
+            ])->delete();
         }
     }
 }

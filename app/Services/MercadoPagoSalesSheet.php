@@ -8,15 +8,15 @@ use PhpOffice\PhpSpreadsheet\Shared\Date;
 use RuntimeException;
 
 /**
- * Lee el Excel de ventas de Mercado Pago.
- * Usa número de operación, fecha de acreditación, estado, cobro, cargos y total a recibir.
+ * Lee el Excel de acreditaciones.
+ * Usa fecha de cobro, fecha de acreditación, cobro, cargos y total a recibir.
  */
 final class MercadoPagoSalesSheet
 {
     /**
-     * @return list<array{operation: string, date: ?string, status: string, gross_cents: int, commission_cents: int, interest_cents: int, net_cents: int}>
+     * @return list<array{date: string, collected_on: string|null, gross_cents: int, commission_cents: int, interest_cents: int, net_cents: int}>
      */
-    public function read(string $path): array
+    public function read(string $path, bool $requireCollectedOn = false): array
     {
         try {
             $workbook = IOFactory::load($path);
@@ -25,19 +25,24 @@ final class MercadoPagoSalesSheet
         }
 
         foreach ($workbook->getAllSheets() as $sheet) {
-            $parsed = $this->readSheet($sheet);
+            $parsed = $this->readSheet($sheet, $requireCollectedOn);
             if ($parsed !== null) {
                 return $parsed;
             }
         }
 
-        throw new RuntimeException('El Excel no tiene las columnas de acreditación: número de operación, estado, cobro, cargos e impuestos y total a recibir.');
+        $columns = 'fecha de acreditación, cobro, cargos e impuestos y total a recibir';
+        if ($requireCollectedOn) {
+            $columns = 'fecha de cobro, '.$columns;
+        }
+
+        throw new RuntimeException('El Excel no tiene las columnas de acreditación: '.$columns.'.');
     }
 
     /**
-     * @return list<array{operation: string, date: ?string, status: string, gross_cents: int, commission_cents: int, interest_cents: int, net_cents: int}>|null
+     * @return list<array{date: string, collected_on: string|null, gross_cents: int, commission_cents: int, interest_cents: int, net_cents: int}>|null
      */
-    private function readSheet(\PhpOffice\PhpSpreadsheet\Worksheet\Worksheet $sheet): ?array
+    private function readSheet(\PhpOffice\PhpSpreadsheet\Worksheet\Worksheet $sheet, bool $requireCollectedOn): ?array
     {
         $headerRow = null;
         $columns = [];
@@ -53,7 +58,8 @@ final class MercadoPagoSalesSheet
                     $found[$key] = $index;
                 }
             }
-            if (isset($found['operation'], $found['status'], $found['gross'], $found['commission'], $found['net'])) {
+            if (isset($found['date'], $found['gross'], $found['commission'], $found['net'])
+                && (! $requireCollectedOn || isset($found['collected_on']))) {
                 $headerRow = $row;
                 $columns = $found;
                 break;
@@ -65,22 +71,24 @@ final class MercadoPagoSalesSheet
         }
 
         $rows = [];
-        $seen = [];
         for ($row = $headerRow + 1; $row <= $highestRow; $row++) {
             $cells = $sheet->rangeToArray('A'.$row.':'.$highestColumn.$row, null, true, false)[0];
-            $operation = $this->operation($cells[$columns['operation']] ?? null);
-            if ($operation === null || isset($seen[$operation])) {
+            $date = $this->date($cells[$columns['date']] ?? null);
+            $collectedOn = isset($columns['collected_on']) ? $this->date($cells[$columns['collected_on']] ?? null) : null;
+            $gross = $this->cents($cells[$columns['gross']] ?? null);
+            $commission = abs($this->cents($cells[$columns['commission']] ?? null));
+            $interest = isset($columns['interest']) ? abs($this->cents($cells[$columns['interest']] ?? null)) : 0;
+            $net = $this->cents($cells[$columns['net']] ?? null);
+            if ($date === null || ($gross === 0 && $commission === 0 && $interest === 0 && $net === 0)) {
                 continue;
             }
-            $seen[$operation] = true;
             $rows[] = [
-                'operation' => $operation,
-                'date' => isset($columns['date']) ? $this->date($cells[$columns['date']] ?? null) : null,
-                'status' => trim((string) ($cells[$columns['status']] ?? '')),
-                'gross_cents' => $this->cents($cells[$columns['gross']] ?? null),
-                'commission_cents' => abs($this->cents($cells[$columns['commission']] ?? null)),
-                'interest_cents' => isset($columns['interest']) ? abs($this->cents($cells[$columns['interest']] ?? null)) : 0,
-                'net_cents' => $this->cents($cells[$columns['net']] ?? null),
+                'date' => $date,
+                'collected_on' => $collectedOn,
+                'gross_cents' => $gross,
+                'commission_cents' => $commission,
+                'interest_cents' => $interest,
+                'net_cents' => $net,
             ];
         }
 
@@ -92,10 +100,9 @@ final class MercadoPagoSalesSheet
         $text = $this->normalize((string) $value);
 
         return match ($text) {
-            'numero de operacion' => 'operation',
             'fecha de acreditacion' => 'date',
             'fecha de la compra' => 'date',
-            'estado' => 'status',
+            'fecha de cobro' => 'collected_on',
             'cobro' => 'gross',
             'cargos e impuestos' => 'commission',
             'intereses' => 'interest',
@@ -103,22 +110,6 @@ final class MercadoPagoSalesSheet
             'total a recibir' => 'net',
             default => null,
         };
-    }
-
-    private function operation(mixed $value): ?string
-    {
-        if (is_int($value)) {
-            return $value > 0 ? (string) $value : null;
-        }
-        if (is_float($value)) {
-            $whole = sprintf('%.0f', $value);
-
-            return ctype_digit($whole) ? $whole : null;
-        }
-
-        $digits = preg_replace('/\D+/', '', trim((string) $value)) ?? '';
-
-        return $digits !== '' ? $digits : null;
     }
 
     private function date(mixed $value): ?string

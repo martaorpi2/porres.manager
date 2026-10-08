@@ -16,12 +16,11 @@ final class PaymentSettlementExcel
      */
     public function preview(string $channel, string $path): array
     {
-        $definition = PaymentSettlementChannels::get($channel);
         $rows = [];
         $buckets = [];
 
-        foreach ($this->sheet->read($path) as $sale) {
-            $row = $this->classify($definition, $sale);
+        foreach ($this->sheet->read($path, true) as $sale) {
+            $row = $this->classify($sale);
             $date = (string) ($row['date'] ?? '');
             $row['group_key'] = $row['outcome'] === 'ready' && $date !== '' ? $channel.':'.$date : '';
             if ($row['outcome'] === 'ready') {
@@ -32,9 +31,15 @@ final class PaymentSettlementExcel
 
         $groups = [];
         foreach ($buckets as $key => $items) {
+            $collectedOn = array_values(array_unique(array_map(
+                fn (array $item) => (string) $item['collected_on'],
+                $items,
+            )));
+            sort($collectedOn);
             $groups[] = [
                 'key' => $key,
                 'date' => $items[0]['date'],
+                'collected_on' => $collectedOn,
                 'gross_cents' => array_sum(array_column($items, 'gross_cents')),
                 'commission_cents' => array_sum(array_column($items, 'commission_cents')),
                 'interest_cents' => array_sum(array_column($items, 'interest_cents')),
@@ -47,16 +52,14 @@ final class PaymentSettlementExcel
     }
 
     /**
-     * @param  array<string, mixed>  $definition
-     * @param  array{operation: string, date: ?string, status: string, gross_cents: int, commission_cents: int, interest_cents: int, net_cents: int}  $sale
+     * @param  array{date: string, collected_on: string|null, gross_cents: int, commission_cents: int, interest_cents: int, net_cents: int}  $sale
      * @return array<string, mixed>
      */
-    private function classify(array $definition, array $sale): array
+    private function classify(array $sale): array
     {
         $row = [
-            'operation' => $sale['operation'],
             'date' => $sale['date'],
-            'status' => $sale['status'],
+            'collected_on' => $sale['collected_on'],
             'gross_cents' => $sale['gross_cents'],
             'commission_cents' => $sale['commission_cents'],
             'interest_cents' => $sale['interest_cents'],
@@ -65,13 +68,6 @@ final class PaymentSettlementExcel
             'detail' => '',
         ];
 
-        if ($this->normalize($sale['status']) !== 'aprobado') {
-            $row['outcome'] = 'not_approved';
-            $row['detail'] = 'Solo se registran las filas aprobadas.';
-
-            return $row;
-        }
-
         if ($sale['date'] === null) {
             $row['outcome'] = 'invalid';
             $row['detail'] = 'Falta la fecha de acreditación.';
@@ -79,9 +75,9 @@ final class PaymentSettlementExcel
             return $row;
         }
 
-        if ($definition['interest'] === null && $sale['interest_cents'] !== 0) {
-            $row['outcome'] = 'unbalanced';
-            $row['detail'] = $definition['menu'].' no usa intereses. Dejá esa columna en 0.';
+        if ($sale['collected_on'] === null) {
+            $row['outcome'] = 'invalid';
+            $row['detail'] = 'Falta la fecha de cobro.';
 
             return $row;
         }
@@ -94,7 +90,7 @@ final class PaymentSettlementExcel
             return $row;
         }
 
-        $row['detail'] = 'Se incluye en el asiento del '.$this->displayDate($sale['date']).'.';
+        $row['detail'] = 'Se incluye en el asiento del '.$this->displayDate($sale['date']).'. Cobro del '.$this->displayDate((string) $sale['collected_on']).'.';
 
         return $row;
     }
@@ -104,14 +100,5 @@ final class PaymentSettlementExcel
         $parts = explode('-', $date);
 
         return count($parts) === 3 ? $parts[2].'/'.$parts[1].'/'.$parts[0] : $date;
-    }
-
-    private function normalize(string $value): string
-    {
-        $value = mb_strtolower(trim($value));
-
-        return strtr($value, [
-            'á' => 'a', 'é' => 'e', 'í' => 'i', 'ó' => 'o', 'ú' => 'u',
-        ]);
     }
 }

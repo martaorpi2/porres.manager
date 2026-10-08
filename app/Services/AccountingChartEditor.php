@@ -15,7 +15,7 @@ final class AccountingChartEditor
     }
 
     /**
-     * @param  array{code: string, name: string, account_type: string|null, is_active: bool}  $payload
+     * @param  array{code: string, name: string, account_type: string|null, is_active: bool, balance_nature: string|null}  $payload
      */
     public function save(AccountingAccount $account, array $payload): int
     {

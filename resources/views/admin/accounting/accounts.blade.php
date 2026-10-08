@@ -12,7 +12,12 @@
     <div class="col-lg-6 mb-3">
         <div class="card accounts-card">
             <div class="card-body">
-                <label for="account-search" class="journal-label">Plan de cuentas</label>
+                <div class="accounts-tree-head">
+                    <label for="account-search" class="journal-label mb-0">Plan de cuentas</label>
+                    @if($canCreate)
+                        <button type="button" class="accounts-text-action" id="account-add-rubro">Agregar rubro</button>
+                    @endif
+                </div>
                 <input type="search" id="account-search" class="form-control mb-3" placeholder="Buscar por código o nombre" autocomplete="off">
                 <div class="accounts-tree-scroll" id="account-tree">
                     @include('admin.accounting.partials.account_tree', ['nodes' => $tree])
@@ -28,7 +33,8 @@
                 <p class="accounts-hint" id="account-hint">Hacé clic en un rubro o una cuenta del árbol para agregar o modificar.</p>
                 <p class="accounts-context" id="account-context" hidden></p>
                 <p class="accounts-actions" id="account-actions" hidden>
-                    <button type="button" class="accounts-text-action" id="account-add-child">Agregar cuenta en este rubro</button>
+                    <button type="button" class="accounts-text-action" id="account-add-subrubro">Agregar subrubro</button>
+                    <button type="button" class="accounts-text-action" id="account-add-child">Agregar cuenta</button>
                     <button type="button" class="accounts-text-action" id="account-remove-open">Quitar</button>
                 </p>
 
@@ -46,6 +52,7 @@
                     @csrf
                     <input type="hidden" name="id" id="account-id" value="{{ old('id') }}">
                     <input type="hidden" name="parent_code" id="account-parent" value="{{ old('parent_code') }}">
+                    <input type="hidden" name="is_grouping" id="account-grouping" value="{{ old('is_grouping', '0') }}">
 
                     <div class="mb-3">
                         <label for="account-code" class="journal-label">Código</label>
@@ -62,6 +69,15 @@
                             <option value="">Sin tipo</option>
                             @foreach($types as $value => $label)
                                 <option value="{{ $value }}" @selected(old('account_type') === $value)>{{ $label }}</option>
+                            @endforeach
+                        </select>
+                    </div>
+                    <div class="mb-3" id="account-balance-wrap">
+                        <label for="account-balance" class="journal-label">Tipo de saldo</label>
+                        <select name="balance_nature" id="account-balance" class="form-control" required>
+                            <option value="">Elegir</option>
+                            @foreach($balanceNatures as $value => $label)
+                                <option value="{{ $value }}" @selected(old('balance_nature') === $value)>{{ $label }}</option>
                             @endforeach
                         </select>
                     </div>
@@ -119,6 +135,35 @@
         border-radius: 6px;
         box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
     }
+    .accounts-tree-head {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 1rem;
+        margin-bottom: 0.65rem;
+    }
+    #account-search {
+        display: block;
+        width: 100%;
+        background-color: #f4f6f8;
+        color: #1e2a4a;
+        border: 1px solid #98a2b3;
+        border-radius: 6px;
+        box-shadow: inset 0 1px 2px rgba(16, 24, 40, 0.06);
+        -webkit-appearance: none;
+        appearance: none;
+    }
+    #account-search::placeholder {
+        color: #667085;
+        opacity: 1;
+    }
+    #account-search:focus {
+        background-color: #fff;
+        color: #1e2a4a;
+        border-color: #871f1f;
+        box-shadow: 0 0 0 0.2rem rgba(135, 31, 31, 0.15);
+        outline: none;
+    }
     .journal-label {
         font-weight: 700;
         color: #1e2a4a;
@@ -174,6 +219,11 @@
         border-radius: 999px;
         padding: 0 0.4rem;
     }
+    .account-badge-nature {
+        color: #475467;
+        border-color: #d0d5dd;
+        font-weight: 600;
+    }
     .account-node.is-filter-hidden { display: none; }
     .accounts-action-title {
         color: #1e2a4a;
@@ -181,7 +231,7 @@
         font-weight: 600;
         margin: 0 0 0.35rem;
     }
-    .accounts-actions { display: flex; gap: 1rem; margin: 0 0 0.85rem; }
+    .accounts-actions { display: flex; flex-wrap: wrap; gap: 0.75rem 1rem; margin: 0 0 0.85rem; }
     .accounts-text-action {
         background: none;
         border: 0;
@@ -213,6 +263,7 @@
     var actionTitle = document.getElementById('account-action');
     var canCreate = @json($canCreate);
     var canUpdate = @json($canUpdate);
+    var balanceByType = @json($balanceByType);
     var selectedCode = @json($selectedCode);
     var oldForm = @json($oldForm);
     var selected = null;
@@ -225,8 +276,34 @@
             parent: li.getAttribute('data-parent') || '',
             type: li.getAttribute('data-type') || '',
             active: li.getAttribute('data-active') === '1',
-            receives: li.getAttribute('data-receives') === '1'
+            receives: li.getAttribute('data-receives') === '1',
+            grouping: li.getAttribute('data-grouping') === '1',
+            balanceNature: li.getAttribute('data-balance-nature') || ''
         };
+    }
+
+    function balanceFromType(type) {
+        return balanceByType[type] || '';
+    }
+
+    function suggestRootCode() {
+        var roots = tree.querySelectorAll(':scope > .account-tree > .account-node');
+        var max = 0;
+        var width = 8;
+        Array.prototype.forEach.call(roots, function (node) {
+            var code = node.getAttribute('data-code') || '';
+            if (!/^\d+$/.test(code)) return;
+            var value = parseInt(code, 10);
+            if (value > max) {
+                max = value;
+                width = code.length;
+            }
+        });
+        if (!max) return '';
+        var step = Math.pow(10, Math.max(width - 1, 1));
+        var next = String((Math.floor(max / step) + 1) * step);
+        while (next.length < width) next = '0' + next;
+        return next;
     }
 
     function setOpen(li, open) {
@@ -304,14 +381,25 @@
     }
 
     function setActionTitle(mode) {
+        var grouping = document.getElementById('account-grouping').value === '1';
+        if (mode === 'create-rubro') {
+            actionTitle.hidden = false;
+            actionTitle.textContent = 'Agregar rubro';
+            return;
+        }
+        if (mode === 'create-subrubro') {
+            actionTitle.hidden = false;
+            actionTitle.textContent = 'Agregar subrubro';
+            return;
+        }
         if (mode === 'create') {
             actionTitle.hidden = false;
-            actionTitle.textContent = 'Agregar';
+            actionTitle.textContent = 'Agregar cuenta';
             return;
         }
         if (mode === 'edit') {
             actionTitle.hidden = false;
-            actionTitle.textContent = 'Modificar';
+            actionTitle.textContent = grouping ? 'Modificar rubro' : 'Modificar';
             return;
         }
         if (mode === 'remove') {
@@ -330,15 +418,24 @@
     function syncParentActions(li, mode) {
         var actions = document.getElementById('account-actions');
         var add = document.getElementById('account-add-child');
+        var sub = document.getElementById('account-add-subrubro');
         var remove = document.getElementById('account-remove-open');
         var note = document.getElementById('account-code-note');
+        if (!li) {
+            actions.hidden = true;
+            note.hidden = true;
+            document.getElementById('account-remove').hidden = true;
+            return;
+        }
         var descendants = descendantCount(li);
         var grouping = li.getAttribute('data-grouping') === '1';
         var leaf = !grouping && descendants === 0;
-        var showRemove = mode === 'edit' && canUpdate && (grouping || descendants > 0);
-        add.hidden = mode !== 'edit' || !canCreate || leaf;
+        var canAdd = (mode === 'edit' || mode === 'view') && canCreate && !leaf;
+        var showRemove = mode === 'edit' && canUpdate && !!li.getAttribute('data-id');
+        add.hidden = !canAdd;
+        sub.hidden = !canAdd;
         remove.hidden = !showRemove;
-        actions.hidden = add.hidden && remove.hidden;
+        actions.hidden = add.hidden && sub.hidden && remove.hidden;
         note.hidden = mode !== 'edit' || descendants === 0;
         document.getElementById('account-remove').hidden = true;
     }
@@ -349,8 +446,15 @@
         document.getElementById('account-code').value = values.code || '';
         document.getElementById('account-name').value = values.name || '';
         document.getElementById('account-type').value = values.type || '';
+        document.getElementById('account-grouping').value = values.grouping ? '1' : '0';
+        var balance = document.getElementById('account-balance');
+        balance.value = values.balance || '';
+        balance.dataset.touched = mode === 'edit' ? '1' : '0';
+        document.getElementById('account-balance-wrap').hidden = !!values.grouping;
+        balance.required = !values.grouping;
         document.getElementById('account-active').checked = values.active !== false && values.active !== '0';
         var locked = mode === 'edit' && !canUpdate;
+        balance.disabled = !!values.grouping || locked;
         ['account-code', 'account-name', 'account-type', 'account-active'].forEach(function (id) {
             document.getElementById(id).disabled = locked;
         });
@@ -360,21 +464,47 @@
         setActionTitle(mode);
     }
 
-    function showCreate(li) {
+    function showCreate(li, kind) {
         var data = nodeData(li);
+        var grouping = kind === 'subrubro';
+        var parentType = data.receives ? data.type : typeFromCode(data.code);
         var parentLabel = data.code + ' ' + data.name;
         hint.hidden = true;
         context.hidden = false;
-        context.textContent = 'Dentro de ' + parentLabel;
+        context.textContent = (grouping ? 'Subrubro dentro de ' : 'Dentro de ') + parentLabel;
         fillForm({
             id: '',
             parent: data.code,
             code: suggestCode(data.code, childCodes(li)),
             name: '',
-            type: data.receives ? data.type : typeFromCode(data.code),
-            active: true
-        }, 'create');
-        syncParentActions(li, 'create');
+            type: parentType,
+            active: true,
+            grouping: grouping,
+            balance: grouping ? '' : (data.balanceNature || balanceFromType(parentType))
+        }, grouping ? 'create-subrubro' : 'create');
+        syncParentActions(li, grouping ? 'create-subrubro' : 'create');
+        document.getElementById('account-name').focus();
+    }
+
+    function showCreateRubro() {
+        tree.querySelectorAll('.account-node.is-selected').forEach(function (node) {
+            node.classList.remove('is-selected');
+        });
+        selected = null;
+        hint.hidden = true;
+        context.hidden = false;
+        context.textContent = 'Rubro de primer nivel.';
+        fillForm({
+            id: '',
+            parent: '',
+            code: suggestRootCode(),
+            name: '',
+            type: '',
+            active: true,
+            grouping: true,
+            balance: ''
+        }, 'create-rubro');
+        syncParentActions(null, 'create-rubro');
         document.getElementById('account-name').focus();
     }
 
@@ -383,10 +513,10 @@
         hint.hidden = true;
         context.hidden = false;
         if (!data.id) {
-            context.textContent = data.code + ' ' + data.name + ' es un rubro de agrupación. Agregá una cuenta debajo.';
+            context.textContent = data.code + ' ' + data.name + ' es un rubro de agrupación. Agregá un subrubro o una cuenta debajo.';
             form.hidden = true;
             setActionTitle('');
-            syncParentActions(li, '');
+            syncParentActions(li, canCreate ? 'view' : '');
             return;
         }
         context.textContent = data.code + ' ' + data.name;
@@ -396,7 +526,9 @@
             code: data.code,
             name: data.name,
             type: data.type,
-            active: data.active
+            active: data.active,
+            grouping: data.grouping,
+            balance: data.grouping ? '' : (data.balanceNature || balanceFromType(data.type))
         }, 'edit');
         syncParentActions(li, 'edit');
     }
@@ -489,7 +621,27 @@
 
     document.getElementById('account-add-child').addEventListener('click', function () {
         if (!selected || !canCreate || this.hidden) return;
-        showCreate(selected);
+        showCreate(selected, 'cuenta');
+    });
+    document.getElementById('account-add-subrubro').addEventListener('click', function () {
+        if (!selected || !canCreate || this.hidden) return;
+        showCreate(selected, 'subrubro');
+    });
+    var addRubro = document.getElementById('account-add-rubro');
+    if (addRubro) {
+        addRubro.addEventListener('click', function () {
+            if (!canCreate) return;
+            showCreateRubro();
+        });
+    }
+    document.getElementById('account-type').addEventListener('change', function () {
+        if (document.getElementById('account-grouping').value === '1') return;
+        var next = balanceFromType(this.value);
+        if (!next) return;
+        document.getElementById('account-balance').value = next;
+    });
+    document.getElementById('account-balance').addEventListener('change', function () {
+        this.dataset.touched = '1';
     });
     document.getElementById('account-remove-open').addEventListener('click', openRemove);
     document.getElementById('remove-cancel').addEventListener('click', function () {
@@ -525,14 +677,20 @@
         hint.hidden = true;
         context.hidden = false;
         form.hidden = false;
+        var restoredGrouping = String(oldForm.is_grouping) === '1';
+        var restoredMode = oldForm.mode === 'edit'
+            ? 'edit'
+            : (restoredGrouping ? (oldForm.parent_code ? 'create-subrubro' : 'create-rubro') : 'create');
         fillForm({
             id: oldForm.mode === 'edit' ? oldForm.id : '',
             parent: oldForm.parent_code,
             code: oldForm.code,
             name: oldForm.name,
             type: oldForm.account_type,
-            active: oldForm.is_active
-        }, oldForm.mode === 'edit' ? 'edit' : 'create');
+            active: oldForm.is_active,
+            grouping: restoredGrouping,
+            balance: oldForm.balance_nature || ''
+        }, restoredMode);
     } else if (selectedCode) {
         var current = findByCode(selectedCode);
         if (current) selectNode(current, 'edit');

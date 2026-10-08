@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use RuntimeException;
 
 class AccountingEntryLine extends Model
 {
@@ -15,6 +16,21 @@ class AccountingEntryLine extends Model
         'debit' => 'decimal:2',
         'credit' => 'decimal:2',
     ];
+
+    protected static function booted(): void
+    {
+        static::creating(function (self $line): void {
+            $entry = AccountingEntry::query()->find($line->accounting_entry_id);
+            if ($entry && $entry->kind === AccountingEntry::KIND_REVERSAL) {
+                return;
+            }
+
+            $message = AccountingAccount::groupingUsedMessage([(int) $line->accounting_account_id]);
+            if ($message !== null) {
+                throw new RuntimeException($message);
+            }
+        });
+    }
 
     public function entry(): BelongsTo
     {

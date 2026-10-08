@@ -24,7 +24,6 @@
         <div class="card journal-edit-card">
             <div class="card-body">
                 <p class="mb-1"><strong>Fecha:</strong> {{ $entry->date?->format('d/m/Y') }}</p>
-                <p class="mb-1"><strong>Descripción:</strong> {{ $entry->description }}</p>
                 <p class="mb-3"><strong>Tipo:</strong> {{ $entry->kind_label }}</p>
 
                 @if($errors->has('lines'))
@@ -38,6 +37,14 @@
                     @foreach($returnQuery as $key => $value)
                         <input type="hidden" name="{{ $key }}" value="{{ $value }}">
                     @endforeach
+
+                    <div class="mb-3">
+                        <label for="entry-description" class="journal-label">Descripción</label>
+                        <input type="text" name="description" id="entry-description" class="form-control @error('description') is-invalid @enderror" maxlength="255" required value="{{ old('description', $entry->description) }}">
+                        @error('description')
+                            <div class="invalid-feedback">{{ $message }}</div>
+                        @enderror
+                    </div>
 
                     <div class="table-responsive">
                         <table class="table journal-edit-lines mb-2" id="lines-table">
@@ -102,6 +109,12 @@
         border-radius: 6px;
     }
     .journal-edit-card .card-body { color: #1e2a4a; }
+    .journal-label {
+        font-weight: 700;
+        color: #1e2a4a;
+        font-size: 0.95rem;
+        margin-bottom: 0.35rem;
+    }
     .journal-edit-lines thead th {
         background: #871f1f !important;
         color: #fff !important;

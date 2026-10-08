@@ -50,7 +50,10 @@ class ReverseMercadoPagoExcelEntries extends Command
             $locked = QuotaAccountingBatch::query()
                 ->whereIn('id', $batches->pluck('id'))
                 ->where('kind', QuotaAccountingBatch::KIND_MP_SETTLEMENT)
-                ->where('batch_key', 'like', 'mp-settlement:excel:%')
+                ->where(function ($query) {
+                    $query->where('batch_key', 'like', 'mp-settlement:excel:%')
+                        ->orWhere('batch_key', 'like', 'mercadopago:%');
+                })
                 ->lockForUpdate()
                 ->with('entry')
                 ->get();
@@ -86,7 +89,10 @@ class ReverseMercadoPagoExcelEntries extends Command
     {
         return QuotaAccountingBatch::query()
             ->where('kind', QuotaAccountingBatch::KIND_MP_SETTLEMENT)
-            ->where('batch_key', 'like', 'mp-settlement:excel:%')
+            ->where(function ($query) {
+                $query->where('batch_key', 'like', 'mp-settlement:excel:%')
+                    ->orWhere('batch_key', 'like', 'mercadopago:%');
+            })
             ->whereHas('entry', fn ($query) => $query->whereIn('status', [
                 AccountingEntry::STATUS_POSTED,
                 AccountingEntry::STATUS_REVERSED,

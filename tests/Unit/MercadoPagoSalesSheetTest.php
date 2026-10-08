@@ -23,21 +23,20 @@ class MercadoPagoSalesSheetTest extends TestCase
         $rows = (new MercadoPagoSalesSheet)->read($path);
 
         $this->assertCount(2, $rows);
-        $this->assertSame('175714227356', $rows[0]['operation']);
         $this->assertSame('2026-08-26', $rows[0]['date']);
-        $this->assertSame('Aprobado', $rows[0]['status']);
         $this->assertSame(22044000, $rows[0]['gross_cents']);
         $this->assertSame(1100308, $rows[0]['commission_cents']);
         $this->assertSame(20943692, $rows[0]['net_cents']);
-        $this->assertSame('175494092162', $rows[1]['operation']);
+        $this->assertSame('2026-08-24', $rows[1]['date']);
+        $this->assertSame(30862525, $rows[1]['gross_cents']);
         $this->assertSame(0, $rows[0]['interest_cents']);
     }
 
     public function test_reads_an_optional_interest_column(): void
     {
         $path = $this->workbook([
-            ['Número de operación', 'Fecha de acreditación', 'Estado', 'Cobro', 'Cargos e impuestos', 'Intereses', 'Total a recibir'],
-            ['12266024', '14/09/2026', 'Aprobado', '1000', '15', '25', '960'],
+            ['Fecha de acreditación', 'Cobro', 'Cargos e impuestos', 'Intereses', 'Total a recibir'],
+            ['14/09/2026', '1000', '15', '25', '960'],
         ]);
 
         $rows = (new MercadoPagoSalesSheet)->read($path);
@@ -45,6 +44,32 @@ class MercadoPagoSalesSheetTest extends TestCase
         $this->assertSame(1500, $rows[0]['commission_cents']);
         $this->assertSame(2500, $rows[0]['interest_cents']);
         $this->assertSame(96000, $rows[0]['net_cents']);
+    }
+
+    public function test_reads_the_collection_date_separately_from_the_accreditation_date(): void
+    {
+        $path = $this->workbook([
+            ['Fecha de cobro', 'Fecha de acreditación', 'Cobro', 'Cargos e impuestos', 'Total a recibir'],
+            ['01/10/2026', '02/10/2026', '1000', '8', '992'],
+        ]);
+
+        $rows = (new MercadoPagoSalesSheet)->read($path, true);
+
+        $this->assertSame('2026-10-01', $rows[0]['collected_on']);
+        $this->assertSame('2026-10-02', $rows[0]['date']);
+    }
+
+    public function test_settlement_read_requires_the_collection_date_column(): void
+    {
+        $path = $this->workbook([
+            ['Fecha de acreditación', 'Cobro', 'Cargos e impuestos', 'Total a recibir'],
+            ['02/10/2026', '1000', '8', '992'],
+        ]);
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('fecha de cobro');
+
+        (new MercadoPagoSalesSheet)->read($path, true);
     }
 
     public function test_rejects_a_workbook_without_the_sales_columns(): void

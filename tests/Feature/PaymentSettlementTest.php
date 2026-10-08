@@ -28,31 +28,46 @@ class PaymentSettlementTest extends TestCase
 
         $chooser = $this->actingAs($user, 'backpack')->get('/admin/accounting-settlement');
         $chooser->assertOk();
-        $chooser->assertSee('Acreditaciones');
+        $chooser->assertSee('Registración de Cobranzas');
         $chooser->assertSee('Forma de pago');
         $chooser->assertSee('Mercado Pago');
         $chooser->assertSee('Naranja X');
         $chooser->assertSee('Sol Pago');
         $chooser->assertSee('QR');
+        $chooser->assertSee('El nombre es estricto');
+        $chooser->assertSee('Fecha de cobro');
+        $chooser->assertSee('Fecha de acreditación');
+        $chooser->assertDontSee('Fecha de la compra');
+        $chooser->assertDontSee('tiene que quedar en 0');
+        $chooser->assertSee('alert alert-info', false);
         $chooser->assertDontSee('name="archivo"', false);
 
         $naranja = $this->actingAs($user, 'backpack')->get('/admin/accounting-settlement/naranja');
         $naranja->assertOk();
-        $naranja->assertSee('Acreditaciones');
+        $naranja->assertSee('Registración de Cobranzas');
         $naranja->assertSee('Forma de pago');
-        $naranja->assertSee('Tarjeta Naranja a cobrar');
+        $naranja->assertSee('Ver acreditación');
+        $naranja->assertDontSee('El asiento queda así');
         $naranja->assertSee('accounting-settlement/sol', false);
-        $naranja->assertSee('accounting-mercadopago', false);
+        $naranja->assertSee('accounting-settlement/mercadopago', false);
+
+        $mp = $this->actingAs($user, 'backpack')->get('/admin/accounting-settlement/mercadopago');
+        $mp->assertOk();
+        $mp->assertSee('Ver acreditación');
+        $mp->assertDontSee('El asiento queda así');
+        $mp->assertDontSee('cupón pagado en ePorres', false);
 
         $sol = $this->actingAs($user, 'backpack')->get('/admin/accounting-settlement/sol');
         $sol->assertOk();
-        $sol->assertSee('Tarjeta Sol a cobrar');
+        $sol->assertSee('Ver acreditación');
+        $sol->assertDontSee('El asiento queda así');
+        $sol->assertDontSee('Tarjeta Sol a cobrar');
 
         $qr = $this->actingAs($user, 'backpack')->get('/admin/accounting-settlement/qr');
         $qr->assertOk();
-        $qr->assertSee('Deudores por cuotas');
-        $qr->assertSee('Comisiones cobranzas QR');
-        $qr->assertSee('una fila por día', false);
+        $qr->assertSee('Ver acreditación');
+        $qr->assertDontSee('El asiento queda así');
+        $qr->assertDontSee('Una fila por cupón', false);
         $qr->assertSee('accept=".xlsx,.xls"', false);
 
         $this->actingAs($user, 'backpack')->get('/admin/accounting-settlement/otro')->assertNotFound();
@@ -61,19 +76,20 @@ class PaymentSettlementTest extends TestCase
     public function test_qr_preview_lists_coupons_without_posting(): void
     {
         $user = $this->accountingUser();
-        $headers = ['Número de operación', 'Fecha de acreditación', 'Estado', 'Cobro', 'Cargos e impuestos', 'Intereses', 'Total a recibir'];
+        $headers = ['Fecha de cobro', 'Fecha de acreditación', 'Cobro', 'Cargos e impuestos', 'Intereses', 'Total a recibir'];
 
         $preview = $this->actingAs($user, 'backpack')->post('/admin/accounting-settlement/qr/preview', [
             'archivo' => $this->excel('qr.xlsx', [
                 $headers,
-                ['1760', '02/10/2026', 'Aprobado', '1000', '8', '0', '992'],
-                ['1761', '02/10/2026', 'Aprobado', '500', '4', '0', '496'],
+                ['01/10/2026', '02/10/2026', '1000', '8', '0', '992'],
+                ['01/10/2026', '02/10/2026', '500', '4', '0', '496'],
             ]),
         ]);
 
         $preview->assertOk();
-        $preview->assertSee('1760');
-        $preview->assertSee('1761');
+        $preview->assertSee('01/10/2026');
+        $preview->assertSee('02/10/2026');
+        $preview->assertSee('Cobro del 01/10/2026');
         $preview->assertSee('1.000,00');
         $preview->assertSee('Registrar asientos');
         $preview->assertSee('asiento listo');
@@ -84,12 +100,12 @@ class PaymentSettlementTest extends TestCase
         $naranjaPreview = $this->actingAs($user, 'backpack')->post('/admin/accounting-settlement/naranja/preview', [
             'archivo' => $this->excel('naranja.xlsx', [
                 $headers,
-                ['12266024', '14/09/2026', 'Aprobado', '1000', '15', '25', '960'],
-                ['12266025', '15/09/2026', 'Aprobado', '200', '3', '5', '192'],
+                ['12/09/2026', '14/09/2026', '1000', '15', '25', '960'],
+                ['13/09/2026', '15/09/2026', '200', '3', '5', '192'],
             ]),
         ]);
         $naranjaPreview->assertOk();
-        $naranjaPreview->assertSee('12266024');
+        $naranjaPreview->assertSee('14/09/2026');
         $naranjaPreview->assertSee('25,00');
         $naranjaPreview->assertSee('960,00');
         $naranjaPreview->assertSee('asientos listos');
@@ -97,14 +113,28 @@ class PaymentSettlementTest extends TestCase
         $solPreview = $this->actingAs($user, 'backpack')->post('/admin/accounting-settlement/sol/preview', [
             'archivo' => $this->excel('sol.xlsx', [
                 $headers,
-                ['97885', '01/09/2026', 'Aprobado', '400', '20', '8', '372'],
-                ['97886', '01/09/2026', 'Rechazado', '100', '0', '0', '100'],
+                ['30/08/2026', '01/09/2026', '400', '20', '8', '372'],
+                ['30/08/2026', '01/09/2026', '100', '0', '0', '100'],
             ]),
         ]);
         $solPreview->assertOk();
-        $solPreview->assertSee('97885');
-        $solPreview->assertSee('No aprobada');
+        $solPreview->assertSee('01/09/2026');
+        $solPreview->assertSee('400,00');
+        $solPreview->assertDontSee('No aprobada');
         $solPreview->assertSee('asiento listo');
+
+        $mpPreview = $this->actingAs($user, 'backpack')->post('/admin/accounting-settlement/mercadopago/preview', [
+            'archivo' => $this->excel('mp.xlsx', [
+                $headers,
+                ['01/10/2026', '02/10/2026', '1000', '30', '0', '970'],
+                ['01/10/2026', '02/10/2026', '500', '15', '0', '485'],
+            ]),
+        ]);
+        $mpPreview->assertOk();
+        $mpPreview->assertSee('02/10/2026');
+        $mpPreview->assertSee('Se registra');
+        $mpPreview->assertSee('asiento listo');
+        $mpPreview->assertDontSee('ePorres', false);
     }
 
     public function test_qr_settlement_posts_the_fee_against_banco_bse(): void
@@ -141,6 +171,44 @@ class PaymentSettlementTest extends TestCase
         }
 
         $this->assertFalse(QuotaAccountingBatch::query()->where('batch_key', 'qr:testprobe:2099-01-01')->exists());
+    }
+
+    public function test_mercadopago_settlement_credits_the_receivable(): void
+    {
+        $entryId = null;
+        DB::beginTransaction();
+        try {
+            $entries = app(QuotaAccountingService::class)->postImportedPaymentSettlements('mercadopago', [[
+                'key' => 'mercadopago:2099-01-03',
+                'date' => '2099-01-03',
+                'gross_cents' => 100000,
+                'commission_cents' => 3000,
+                'interest_cents' => 2000,
+                'net_cents' => 95000,
+                'document' => '03/01/2099',
+            ]]);
+            $this->assertCount(1, $entries);
+            $entryId = $entries[0]->id;
+            $lines = $entries[0]->lines()->with('account')->orderBy('id')->get();
+            $this->assertSame(
+                ['11104000', '52309000', '52312000', '11204000'],
+                $lines->map(fn ($line) => $line->account->code)->all()
+            );
+            $this->assertSame('950.00', $lines[0]->debit);
+            $this->assertSame('30.00', $lines[1]->debit);
+            $this->assertSame('20.00', $lines[2]->debit);
+            $this->assertSame('1000.00', $lines[3]->credit);
+            $this->assertSame('LIQUIDACION COBRANZA MERCADO PAGO 03/01/2099', $entries[0]->description);
+            $batch = QuotaAccountingBatch::query()->where('batch_key', 'mercadopago:2099-01-03')->first();
+            $this->assertNotNull($batch);
+            $this->assertSame(0, $batch->orders()->count());
+            DB::rollBack();
+        } finally {
+            if ($entryId !== null && AccountingEntry::query()->whereKey($entryId)->exists()) {
+                AccountingEntry::query()->whereKey($entryId)->delete();
+            }
+            QuotaAccountingBatch::query()->where('batch_key', 'mercadopago:2099-01-03')->delete();
+        }
     }
 
     public function test_naranja_settlement_credits_the_receivable(): void
