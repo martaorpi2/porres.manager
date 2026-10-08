@@ -4,7 +4,7 @@ namespace App\Services;
 
 /**
  * Medio de pago de ePorres → cuenta del plan.
- * QR acredita en Banco BSE el mismo día.
+ * QR no entra en la cobranza: se cobra al registrar el informe de First Data.
  * Mercado Pago queda en Mercado Pago a cobrar hasta que MP libera el dinero.
  * Tarjeta de crédito no tiene cuenta imputable en el plan cargado.
  */

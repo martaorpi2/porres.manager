@@ -24,6 +24,12 @@ class AccountingEntry extends Model
 
     public const KIND_QUOTA_MP_SETTLEMENT = 'quota_mp_settlement';
 
+    public const KIND_QUOTA_NX_SETTLEMENT = 'quota_nx_settlement';
+
+    public const KIND_QUOTA_SOL_SETTLEMENT = 'quota_sol_settlement';
+
+    public const KIND_QUOTA_QR_SETTLEMENT = 'quota_qr_settlement';
+
     public const STATUS_POSTED = 'posted';
 
     public const STATUS_REVERSED = 'reversed';
@@ -64,6 +70,9 @@ class AccountingEntry extends Model
             self::KIND_QUOTA_GRANT => 'Becas otorgadas',
             self::KIND_QUOTA_COLLECTION => 'Cobranza de cuotas',
             self::KIND_QUOTA_MP_SETTLEMENT => 'Liquidación Mercado Pago',
+            self::KIND_QUOTA_NX_SETTLEMENT => 'Liquidación Naranja X',
+            self::KIND_QUOTA_SOL_SETTLEMENT => 'Liquidación Sol Pago',
+            self::KIND_QUOTA_QR_SETTLEMENT => 'Liquidación QR',
             self::KIND_OUTFLOW => 'Egreso',
             self::KIND_REVERSAL => 'Reverso',
             default => (string) $this->kind,

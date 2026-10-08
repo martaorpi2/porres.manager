@@ -16,6 +16,12 @@ class QuotaAccountingBatch extends Model
 
     public const KIND_MP_SETTLEMENT = 'mp_settlement';
 
+    public const KIND_NX_SETTLEMENT = 'nx_settlement';
+
+    public const KIND_SOL_SETTLEMENT = 'sol_settlement';
+
+    public const KIND_QR_SETTLEMENT = 'qr_settlement';
+
     protected $table = 'quota_accounting_batches';
 
     protected $guarded = ['id'];

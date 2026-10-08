@@ -3,10 +3,16 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Requests\AccountingAccountRequest;
+use App\Models\AccountingAccount;
+use App\Models\User;
+use App\Services\AccountingChartEditor;
+use App\Services\AccountingChartException;
 use App\Services\AccountingChartReport;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Backpack\CRUD\app\Http\Controllers\CrudController;
 use Backpack\CRUD\app\Library\CrudPanel\CrudPanelFacade as CRUD;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Validator;
 
 class AccountingAccountCrudController extends CrudController
 {
@@ -21,6 +27,168 @@ class AccountingAccountCrudController extends CrudController
         CRUD::setModel(\App\Models\AccountingAccount::class);
         CRUD::setRoute(config('backpack.base.route_prefix') . '/accounting-account');
         CRUD::setEntityNameStrings('cuenta contable', 'cuentas contables');
+    }
+
+    public function index(Request $request, AccountingChartReport $report)
+    {
+        $this->authorizeAccounting();
+
+        $user = backpack_user();
+
+        $oldForm = null;
+        if (session()->hasOldInput()) {
+            $oldForm = [
+                'mode' => session('account_form_mode', old('id') ? 'edit' : 'create'),
+                'id' => old('id'),
+                'code' => old('code'),
+                'name' => old('name'),
+                'account_type' => old('account_type'),
+                'is_active' => old('is_active', '1'),
+                'parent_code' => old('parent_code'),
+            ];
+        }
+
+        return view('admin.accounting.accounts', [
+            'tree' => $report->tree(),
+            'types' => AccountingAccount::typeOptions(),
+            'canCreate' => true,
+            'canUpdate' => $user instanceof User && ! $user->hasAdministradoraInstitucionRole(),
+            'selectedCode' => $request->query('code'),
+            'oldForm' => $oldForm,
+            'pdfUrl' => backpack_url('accounting-account/export/pdf'),
+            'saveUrl' => backpack_url('accounting-account/guardar'),
+            'removeUrl' => backpack_url('accounting-account/quitar'),
+            'title' => 'Cuentas',
+            'breadcrumbs' => [
+                trans('backpack::crud.admin') => backpack_url('dashboard'),
+                'Cuentas' => false,
+            ],
+        ]);
+    }
+
+    public function saveAccount(Request $request, AccountingChartReport $report, AccountingChartEditor $editor)
+    {
+        $this->authorizeAccounting();
+
+        $user = backpack_user();
+        $id = $request->integer('id') ?: null;
+        $canUpdate = $user instanceof User && ! $user->hasAdministradoraInstitucionRole();
+        if ($id && ! $canUpdate) {
+            abort(403, 'No tiene permiso para modificar cuentas.');
+        }
+
+        $unique = 'unique:accounting_accounts,code';
+        if ($id) {
+            $unique .= ','.$id;
+        }
+
+        $validator = Validator::make($request->all(), [
+            'code' => ['required', 'string', 'max:30', $unique],
+            'name' => ['required', 'string', 'max:255'],
+            'account_type' => ['nullable', 'in:activo,pasivo,patrimonio,ingreso,gasto'],
+            'is_active' => ['nullable', 'boolean'],
+            'parent_code' => ['nullable', 'string', 'max:30'],
+        ], [
+            'code.unique' => 'Ya existe una cuenta con ese código.',
+        ], [
+            'code' => 'código',
+            'name' => 'nombre',
+            'account_type' => 'tipo de cuenta',
+            'is_active' => 'activa',
+        ]);
+
+        if ($validator->fails()) {
+            return redirect()
+                ->back()
+                ->withInput()
+                ->withErrors($validator)
+                ->with('account_form_mode', $id ? 'edit' : 'create');
+        }
+
+        $data = $validator->validated();
+
+        $code = trim($data['code']);
+        $existingWithCode = AccountingAccount::query()->where('code', $code)->first();
+        if ($report->isGroupingCode($code) && (! $existingWithCode || (int) $existingWithCode->id !== (int) $id)) {
+            return redirect()
+                ->back()
+                ->withInput()
+                ->with('account_form_mode', $id ? 'edit' : 'create')
+                ->withErrors(['code' => 'Ese código es un rubro de agrupación. Usá un código de cuenta imputable debajo de ese rubro.']);
+        }
+
+        $payload = [
+            'code' => $code,
+            'name' => trim($data['name']),
+            'account_type' => $data['account_type'] ?: null,
+            'is_active' => $request->boolean('is_active'),
+        ];
+
+        if ($id) {
+            $account = AccountingAccount::query()->findOrFail($id);
+            try {
+                $moved = $editor->save($account, $payload);
+            } catch (AccountingChartException $exception) {
+                return redirect()
+                    ->back()
+                    ->withInput()
+                    ->with('account_form_mode', 'edit')
+                    ->withErrors(['code' => $exception->getMessage()]);
+            }
+            $message = 'La cuenta se modificó.';
+            if ($moved > 0) {
+                $message .= $moved === 1
+                    ? ' Se actualizó el código de la cuenta hija.'
+                    : ' Se actualizó el código de '.$moved.' cuentas hijas.';
+            }
+            \Alert::success($message)->flash();
+        } else {
+            $leafParent = $report->leafParentOf($code);
+            if ($leafParent) {
+                return redirect()
+                    ->back()
+                    ->withInput()
+                    ->with('account_form_mode', 'create')
+                    ->withErrors(['code' => $leafParent->code.' '.$leafParent->name.' es una cuenta de último nivel y no admite cuentas hijas.']);
+            }
+            AccountingAccount::query()->create($payload + ['is_grouping' => false]);
+            \Alert::success('La cuenta se agregó.')->flash();
+        }
+
+        return redirect(backpack_url('accounting-account').'?code='.urlencode($code));
+    }
+
+    public function removeAccount(Request $request, AccountingChartEditor $editor)
+    {
+        $this->authorizeAccounting();
+
+        $user = backpack_user();
+        if (! $user instanceof User || $user->hasAdministradoraInstitucionRole()) {
+            abort(403, 'No tiene permiso para quitar cuentas.');
+        }
+
+        $account = AccountingAccount::query()->findOrFail($request->integer('id'));
+
+        try {
+            $back = $editor->remove(
+                $account,
+                (string) $request->input('children_action', 'none'),
+                $request->input('target_parent_code')
+            );
+        } catch (AccountingChartException $exception) {
+            return redirect()
+                ->back()
+                ->withErrors(['code' => $exception->getMessage()]);
+        }
+
+        \Alert::success('La cuenta se quitó.')->flash();
+
+        $url = backpack_url('accounting-account');
+        if ($back !== '') {
+            $url .= '?code='.urlencode($back);
+        }
+
+        return redirect($url);
     }
 
     protected function setupListOperation()
@@ -87,5 +255,13 @@ class AccountingAccountCrudController extends CrudController
         });
 
         return $pdf->stream('PLAN DE CUENTAS.pdf');
+    }
+
+    private function authorizeAccounting(): void
+    {
+        $user = backpack_user();
+        if (! $user instanceof User || ! $user->canViewAccounting()) {
+            abort(403, 'No tiene permiso para ver la contabilidad.');
+        }
     }
 }

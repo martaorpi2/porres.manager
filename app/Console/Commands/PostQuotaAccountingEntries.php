@@ -155,6 +155,9 @@ class PostQuotaAccountingEntries extends Command
         if ($skipped['plan'] > 0) {
             $this->line('Omitidos por plan de pago: '.$skipped['plan']);
         }
+        if (($skipped['deferred'] ?? 0) > 0) {
+            $this->line('QR diferidos al informe de liquidación: '.$skipped['deferred']);
+        }
         if ($skipped['no_payment_type'] > 0) {
             $this->line('Omitidos sin medio de pago: '.$skipped['no_payment_type']);
         }

@@ -22,6 +22,9 @@ Route::group([
     Route::get('supplier/export/pdf', 'SupplierCrudController@exportPdf')->name('supplier.export.pdf');
     Route::crud('supplier-rating', 'SupplierRatingCrudController');
     Route::crud('suppliers-heading', 'SuppliersHeadingCrudController');
+    Route::crud('accounting-period', 'AccountingPeriodCrudController');
+    Route::post('accounting-account/guardar', 'AccountingAccountCrudController@saveAccount')->name('accounting-account.save');
+    Route::post('accounting-account/quitar', 'AccountingAccountCrudController@removeAccount')->name('accounting-account.remove');
     Route::get('accounting-account/export/pdf', 'AccountingAccountCrudController@exportPdf')->name('accounting-account.export.pdf');
     Route::crud('accounting-account', 'AccountingAccountCrudController');
     Route::get('accounting-journal', 'AccountingJournalController@index')->name('accounting-journal.index');
@@ -44,6 +47,9 @@ Route::group([
     Route::get('accounting-mercadopago', 'MercadoPagoSettlementController@index')->name('accounting-mercadopago.index');
     Route::post('accounting-mercadopago/preview', 'MercadoPagoSettlementController@preview')->name('accounting-mercadopago.preview');
     Route::post('accounting-mercadopago', 'MercadoPagoSettlementController@store')->name('accounting-mercadopago.store');
+    Route::get('accounting-settlement/{channel}', 'PaymentSettlementController@index')->whereIn('channel', ['naranja', 'sol', 'qr'])->name('accounting-settlement.index');
+    Route::post('accounting-settlement/{channel}/preview', 'PaymentSettlementController@preview')->whereIn('channel', ['naranja', 'sol', 'qr'])->name('accounting-settlement.preview');
+    Route::post('accounting-settlement/{channel}', 'PaymentSettlementController@store')->whereIn('channel', ['naranja', 'sol', 'qr'])->name('accounting-settlement.store');
     Route::crud('purchase-order', 'PurchaseOrderCrudController');
     Route::get('purchase-order/{id}/pdf', 'PurchaseOrderCrudController@generatePdf')->name('purchase-order.pdf');
     Route::crud('payment-order', 'PaymentOrderCrudController');

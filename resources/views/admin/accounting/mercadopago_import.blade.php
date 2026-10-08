@@ -36,7 +36,7 @@
     <div class="col-12">
         <div class="card journal-card mb-3">
             <div class="card-body">
-                <p class="mb-2">Seleccione el archivo de Mercado Pago correspondiente a las operaciones a importar.</p>
+                <p class="mb-2">Seleccione el archivo de Mercado Pago correspondiente a las operaciones a importar. Para otros medios usá <a href="{{ backpack_url('accounting-settlement/naranja') }}">Naranja X</a>, <a href="{{ backpack_url('accounting-settlement/sol') }}">Sol Pago</a> o <a href="{{ backpack_url('accounting-settlement/qr') }}">QR</a>.</p>
                 <p class="mb-2">El archivo debe contener los siguientes campos:</p>
                 <ul class="mb-3">
                     <li>Número de operación</li>

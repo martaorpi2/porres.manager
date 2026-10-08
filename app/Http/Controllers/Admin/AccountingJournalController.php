@@ -205,7 +205,7 @@ class AccountingJournalController extends CrudController
 
         return AccountingAccount::query()
             ->where(function ($query) use ($current) {
-                $query->where('is_active', true);
+                $query->where('is_active', true)->where('is_grouping', false);
                 if ($current !== []) {
                     $query->orWhereIn('id', $current);
                 }
@@ -257,6 +257,9 @@ class AccountingJournalController extends CrudController
             AccountingEntry::KIND_QUOTA_GRANT => 'Becas otorgadas',
             AccountingEntry::KIND_QUOTA_COLLECTION => 'Cobranza de cuotas',
             AccountingEntry::KIND_QUOTA_MP_SETTLEMENT => 'Liquidación Mercado Pago',
+            AccountingEntry::KIND_QUOTA_NX_SETTLEMENT => 'Liquidación Naranja X',
+            AccountingEntry::KIND_QUOTA_SOL_SETTLEMENT => 'Liquidación Sol Pago',
+            AccountingEntry::KIND_QUOTA_QR_SETTLEMENT => 'Liquidación QR',
             AccountingEntry::KIND_OUTFLOW => 'Egreso',
             AccountingEntry::KIND_REVERSAL => 'Reverso',
         ];
@@ -276,6 +279,7 @@ class AccountingJournalController extends CrudController
     private function accounts(): array
     {
         return AccountingAccount::query()
+            ->where('is_grouping', false)
             ->orderBy('code')
             ->get()
             ->mapWithKeys(fn (AccountingAccount $account) => [$account->id => $account->identifying_label])

@@ -17,6 +17,7 @@ class AccountingAccount extends Model
 
     protected $casts = [
         'is_active' => 'boolean',
+        'is_grouping' => 'boolean',
     ];
 
     public function suppliers()
@@ -67,7 +68,7 @@ class AccountingAccount extends Model
 
     public static function chartIsLoaded(): bool
     {
-        return static::query()->where('is_active', true)->exists();
+        return static::query()->where('is_active', true)->where('is_grouping', false)->exists();
     }
 
     /**
@@ -77,7 +78,7 @@ class AccountingAccount extends Model
     {
         return static::query()
             ->where(function ($query) use ($includeId) {
-                $query->where('is_active', true);
+                $query->where('is_active', true)->where('is_grouping', false);
                 if ($includeId) {
                     $query->orWhere('id', $includeId);
                 }

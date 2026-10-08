@@ -6,7 +6,7 @@ use App\Models\AccountingAccount;
 
 /**
  * Arma el catálogo de cuentas con el formato del plan del instituto.
- * Los rubros de agrupación no están en la base: se muestran solo en este listado.
+ * Los rubros de agrupación viven en la base y se pueden modificar.
  */
 final class AccountingChartReport
 {
@@ -16,18 +16,32 @@ final class AccountingChartReport
     public function rows(): array
     {
         $rows = [];
-        foreach ($this->groups() as $code => $group) {
-            $rows[$code] = [
-                'code' => $code,
-                'name' => $group['name'],
-                'sums_to' => $group['sums_to'],
-                'nature' => '',
-                'balance' => '',
-                'receives' => '',
-            ];
+        $storedGroups = AccountingAccount::query()->where('is_grouping', true)->orderBy('code')->get();
+        if ($storedGroups->isEmpty()) {
+            foreach ($this->groups() as $code => $group) {
+                $rows[$code] = [
+                    'code' => $code,
+                    'name' => $group['name'],
+                    'sums_to' => '',
+                    'nature' => '',
+                    'balance' => '',
+                    'receives' => '',
+                ];
+            }
+        } else {
+            foreach ($storedGroups as $account) {
+                $rows[$account->code] = [
+                    'code' => $account->code,
+                    'name' => $account->name,
+                    'sums_to' => '',
+                    'nature' => '',
+                    'balance' => '',
+                    'receives' => '',
+                ];
+            }
         }
 
-        foreach (AccountingAccount::query()->orderBy('code')->get() as $account) {
+        foreach (AccountingAccount::query()->where('is_grouping', false)->orderBy('code')->get() as $account) {
             [$nature, $balance] = $this->natureAndBalance($account);
             $rows[$account->code] = [
                 'code' => $account->code,
@@ -41,9 +55,6 @@ final class AccountingChartReport
 
         ksort($rows);
         foreach ($rows as $code => $row) {
-            if ($row['receives'] === '') {
-                continue;
-            }
             $rows[$code]['sums_to'] = $this->parentCode($code, $rows);
         }
 
@@ -52,6 +63,142 @@ final class AccountingChartReport
         }
 
         return array_values($rows);
+    }
+
+    /**
+     * @return list<array{id: int|null, code: string, name: string, sums_to: string, level: int, nature: string, balance: string, receives: bool, account_type: string|null, is_active: bool, children: list<array>}>
+     */
+    public function tree(): array
+    {
+        $accounts = AccountingAccount::query()->get()->keyBy(fn (AccountingAccount $account) => (string) $account->code);
+        $byParent = [];
+        foreach ($this->rows() as $row) {
+            $byParent[$row['sums_to']][] = $row;
+        }
+
+        $build = function (string $parentCode) use (&$build, $byParent, $accounts): array {
+            $nodes = [];
+            foreach ($byParent[$parentCode] ?? [] as $row) {
+                $account = $accounts->get($row['code']);
+                $nodes[] = [
+                    'id' => $account?->id,
+                    'code' => $row['code'],
+                    'name' => $row['name'],
+                    'sums_to' => $row['sums_to'],
+                    'level' => $row['level'],
+                    'nature' => $row['nature'],
+                    'balance' => $row['balance'],
+                    'receives' => $row['receives'] === 'Si',
+                    'is_grouping' => $account ? (bool) $account->is_grouping : $row['receives'] !== 'Si',
+                    'account_type' => $account?->account_type,
+                    'is_active' => $account ? (bool) $account->is_active : true,
+                    'children' => $build($row['code']),
+                ];
+            }
+
+            return $nodes;
+        };
+
+        return $build('');
+    }
+
+    public function isGroupingCode(string $code): bool
+    {
+        if (AccountingAccount::query()->where('is_grouping', true)->exists()) {
+            return AccountingAccount::query()->where('code', $code)->where('is_grouping', true)->exists();
+        }
+
+        return array_key_exists($code, $this->groups());
+    }
+
+    /**
+     * @return array<string, array{name: string, sums_to: string}>
+     */
+    public function defaultGroups(): array
+    {
+        return $this->groups();
+    }
+
+    public function leafParentOf(string $code): ?AccountingAccount
+    {
+        $rows = [];
+        foreach ($this->rows() as $row) {
+            $rows[$row['code']] = $row;
+        }
+
+        $parentCode = $this->parentCode($code, $rows);
+        if ($parentCode === '') {
+            return null;
+        }
+
+        $parent = AccountingAccount::query()->where('code', $parentCode)->first();
+        if (! $parent || $parent->is_grouping || $this->descendantAccounts($parentCode)->isNotEmpty()) {
+            return null;
+        }
+
+        return $parent;
+    }
+
+    public function parentOf(string $code): string
+    {
+        foreach ($this->rows() as $row) {
+            if ($row['code'] === $code) {
+                return $row['sums_to'];
+            }
+        }
+
+        return '';
+    }
+
+    /**
+     * @return \Illuminate\Support\Collection<int, AccountingAccount>
+     */
+    public function descendantAccounts(string $code): \Illuminate\Support\Collection
+    {
+        $node = $this->findNode($this->tree(), $code);
+        $ids = [];
+        if ($node) {
+            $this->collectIds($node['children'], $ids);
+        }
+
+        if ($ids === []) {
+            return collect();
+        }
+
+        return AccountingAccount::query()->whereIn('id', $ids)->get();
+    }
+
+    /**
+     * @param  list<array{code: string, children: list<array>}>  $nodes
+     * @return array<string, mixed>|null
+     */
+    private function findNode(array $nodes, string $code): ?array
+    {
+        foreach ($nodes as $node) {
+            if ($node['code'] === $code) {
+                return $node;
+            }
+            $found = $this->findNode($node['children'], $code);
+            if ($found) {
+                return $found;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  list<array{id: int|null, children: list<array>}>  $nodes
+     * @param  list<int>  $ids
+     */
+    private function collectIds(array $nodes, array &$ids): void
+    {
+        foreach ($nodes as $node) {
+            if ($node['id']) {
+                $ids[] = $node['id'];
+            }
+            $this->collectIds($node['children'], $ids);
+        }
     }
 
     /**

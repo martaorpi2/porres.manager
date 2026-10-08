@@ -6,6 +6,7 @@ use App\Models\AccountingAccount;
 use App\Models\AccountingEntry;
 use App\Models\QuotaAccountingBatch;
 use App\Models\QuotaAccountingOrder;
+use App\Services\PaymentSettlement\PaymentSettlementChannels;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
@@ -125,6 +126,109 @@ class QuotaAccountingService
 
             return $entries;
         });
+    }
+
+    /**
+     * Asienta una liquidación de Naranja X, Sol Pago o QR.
+     * Naranja y Sol acreditan el neto en Banco BSE y cancelan la cuenta a cobrar.
+     * QR se cobra con este informe: neto en Banco BSE, comisión al gasto y bruto en Deudores por cuotas.
+     *
+     * @param  list<array{key: string, date: string, gross_cents: int, commission_cents: int, interest_cents: int, net_cents: int, document: string}>  $groups
+     * @return list<AccountingEntry>
+     */
+    public function postImportedPaymentSettlements(string $channel, array $groups): array
+    {
+        if ($groups === []) {
+            return [];
+        }
+
+        $definition = PaymentSettlementChannels::get($channel);
+        $codes = array_values(array_filter([
+            $definition['bank'],
+            $definition['receivable'],
+            $definition['commission'],
+            $definition['interest'],
+        ]));
+        $accounts = $this->accountsForCodes($codes);
+
+        return DB::transaction(function () use ($groups, $definition, $accounts) {
+            $entries = [];
+            foreach ($groups as $group) {
+                $exists = QuotaAccountingBatch::query()
+                    ->where('batch_key', $group['key'])
+                    ->lockForUpdate()
+                    ->exists();
+                if ($exists) {
+                    continue;
+                }
+                $entries[] = $this->writeBatch(
+                    kind: $definition['batch_kind'],
+                    batchKey: $group['key'],
+                    period: null,
+                    entryDate: $group['date'],
+                    paymentType: $definition['payment_type'],
+                    entryKind: $definition['entry_kind'],
+                    description: $definition['description'].' '.$group['document'],
+                    lines: $this->channelSettlementLines($definition, $group, $accounts),
+                    orders: [],
+                    role: $definition['batch_kind'],
+                );
+            }
+
+            return $entries;
+        });
+    }
+
+    /**
+     * @param  array<string, mixed>  $definition
+     * @param  array{gross_cents: int, commission_cents: int, interest_cents: int, net_cents: int}  $group
+     * @param  array<string, AccountingAccount>  $accounts
+     * @return list<array{accounting_account_id: int, debit: string, credit: string, memo: string}>
+     */
+    private function channelSettlementLines(array $definition, array $group, array $accounts): array
+    {
+        if ($definition['mode'] === 'fee') {
+            $fee = (int) $group['commission_cents'];
+            if ($fee < 1) {
+                throw new RuntimeException('La liquidación no tiene comisión para asentar.');
+            }
+            $lines = [
+                $this->line($accounts[$definition['commission']], $fee, 0, (string) $definition['commission_memo']),
+                $this->line($accounts[$definition['bank']], 0, $fee, (string) $definition['bank_memo']),
+            ];
+            $this->assertBalanced($lines);
+
+            return $lines;
+        }
+
+        $lines = [
+            $this->line($accounts[$definition['bank']], (int) $group['net_cents'], 0, (string) $definition['bank_memo']),
+        ];
+        if ((int) $group['commission_cents'] > 0) {
+            $lines[] = $this->line($accounts[$definition['commission']], (int) $group['commission_cents'], 0, (string) $definition['commission_memo']);
+        }
+        if ((int) $group['interest_cents'] > 0 && $definition['interest'] !== null) {
+            $lines[] = $this->line($accounts[$definition['interest']], (int) $group['interest_cents'], 0, (string) $definition['interest_memo']);
+        }
+        $lines[] = $this->line($accounts[$definition['receivable']], 0, (int) $group['gross_cents'], (string) $definition['receivable_memo']);
+        $this->assertBalanced($lines);
+
+        return $lines;
+    }
+
+    /**
+     * @param  list<string>  $codes
+     * @return array<string, AccountingAccount>
+     */
+    private function accountsForCodes(array $codes): array
+    {
+        $found = AccountingAccount::query()->whereIn('code', $codes)->get()->keyBy('code');
+        $missing = array_values(array_diff($codes, $found->keys()->all()));
+        if ($missing !== []) {
+            throw new RuntimeException('Faltan cuentas en el plan: '.implode(', ', $missing));
+        }
+
+        return $found->all();
     }
 
     /**
@@ -408,6 +512,7 @@ class QuotaAccountingService
         $skipped = [
             'split' => 0,
             'plan' => 0,
+            'deferred' => 0,
             'no_payment_type' => 0,
             'unmapped' => [],
             'zero' => 0,
@@ -460,6 +565,9 @@ class QuotaAccountingService
         $batchesByGroup = [];
         $batches = QuotaAccountingBatch::query()
             ->where('kind', QuotaAccountingBatch::KIND_COLLECTION)
+            ->where(function ($query) {
+                $query->whereNull('payment_type')->orWhere('payment_type', '!=', 'QR');
+            })
             ->whereDate('entry_date', '>=', $month->copy()->startOfMonth()->toDateString())
             ->whereDate('entry_date', '<=', $month->copy()->endOfMonth()->toDateString())
             ->whereHas('entry', fn ($query) => $query->where('status', AccountingEntry::STATUS_POSTED))
@@ -920,6 +1028,9 @@ class QuotaAccountingService
         }
         if ($paymentType === 'Plan de Pago' || isset($settledByPlan[$orderId])) {
             return 'plan';
+        }
+        if ($paymentType === 'QR') {
+            return 'deferred';
         }
         if (QuotaPaymentAccounts::bankCode($paymentType) === null) {
             return 'unmapped';

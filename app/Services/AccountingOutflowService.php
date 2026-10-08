@@ -21,7 +21,7 @@ class AccountingOutflowService
 {
     public function chartIsLoaded(): bool
     {
-        return AccountingAccount::query()->where('is_active', true)->exists();
+        return AccountingAccount::chartIsLoaded();
     }
 
     public function suggestedImputationAccountId(?PurchaseOrder $purchaseOrder, ?int $supplierId = null): ?int
