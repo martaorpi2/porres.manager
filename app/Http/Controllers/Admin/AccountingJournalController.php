@@ -26,6 +26,7 @@ class AccountingJournalController extends CrudController
 
         $entries = AccountingEntry::query()
             ->with(['lines.account'])
+            ->where('status', AccountingEntry::STATUS_POSTED)
             ->when($from, fn ($query) => $query->whereDate('date', '>=', $from))
             ->when($to, fn ($query) => $query->whereDate('date', '<=', $to))
             ->when(in_array($kind, $this->kinds(), true), fn ($query) => $query->where('kind', $kind))
