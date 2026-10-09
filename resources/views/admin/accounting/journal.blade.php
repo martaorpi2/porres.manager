@@ -62,7 +62,13 @@
         <div class="card journal-card journal-book">
             <div class="card-body p-0">
                 @if($filters['collected'])
-                    <p class="mb-0 px-3 py-2">Cobranza del {{ \Carbon\Carbon::parse($filters['collected'])->format('d/m/Y') }} y la acreditación que la cierra.</p>
+                    <p class="mb-0 px-3 py-2">
+                        @if(is_string($filters['kind']) && isset($kinds[$filters['kind']]) && str_starts_with($kinds[$filters['kind']], 'Acreditación '))
+                            Cobranza de {{ substr($kinds[$filters['kind']], strlen('Acreditación ')) }} del {{ \Carbon\Carbon::parse($filters['collected'])->format('d/m/Y') }} y su acreditación.
+                        @else
+                            Cobranza del {{ \Carbon\Carbon::parse($filters['collected'])->format('d/m/Y') }} y la acreditación que la cierra.
+                        @endif
+                    </p>
                 @endif
                 @php
                     $accountQuery = array_filter([

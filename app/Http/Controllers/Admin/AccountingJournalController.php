@@ -8,6 +8,7 @@ use App\Models\QuotaAccountingBatch;
 use App\Models\QuotaAccountingCollectionDate;
 use App\Models\User;
 use App\Services\AccountingEntryEditor;
+use App\Services\PaymentSettlement\PaymentSettlementChannels;
 use App\Services\QuotaAccountingService;
 use Backpack\CRUD\app\Http\Controllers\CrudController;
 use Carbon\Carbon;
@@ -28,7 +29,7 @@ class AccountingJournalController extends CrudController
         $accountId = $request->integer('account_id') ?: null;
 
         $entries = $collected !== null
-            ? $this->entriesForCollectionDate($collected, $accountId)
+            ? $this->entriesForCollectionDate($collected, is_string($kind) ? $kind : null, $accountId)
             : AccountingEntry::query()
                 ->with(['lines.account'])
                 ->where('status', AccountingEntry::STATUS_POSTED)
@@ -341,36 +342,42 @@ class AccountingJournalController extends CrudController
     }
 
     /**
-     * Cobranza de ese día y las acreditaciones que la cierran.
+     * Cobranza de ese día y la acreditación que la cierra.
+     * Si hay un tipo elegido, solo ese medio de pago.
      *
      * @return \Illuminate\Support\Collection<int, AccountingEntry>
      */
-    private function entriesForCollectionDate(string $collected, ?int $accountId)
+    private function entriesForCollectionDate(string $collected, ?string $kind, ?int $accountId)
     {
+        $kind = in_array($kind, $this->kinds(), true) ? $kind : null;
+        $paymentType = $this->paymentTypeForKind($kind);
+        $accreditationKinds = in_array($kind, AccountingEntry::accreditationKinds(), true)
+            ? [$kind]
+            : AccountingEntry::accreditationKinds();
+
         $linked = QuotaAccountingCollectionDate::query()
             ->whereDate('collected_on', $collected)
-            ->whereHas('batch.entry', function ($query) {
+            ->whereHas('batch.entry', function ($query) use ($accreditationKinds) {
                 $query->where('status', AccountingEntry::STATUS_POSTED)
-                    ->whereIn('kind', AccountingEntry::accreditationKinds());
+                    ->whereIn('kind', $accreditationKinds);
             })
             ->with('batch')
             ->get();
 
-        $paymentTypes = $linked->map(fn (QuotaAccountingCollectionDate $date) => (string) $date->batch?->payment_type)
-            ->filter()
-            ->unique()
-            ->values();
-        $accreditationIds = $linked->map(fn (QuotaAccountingCollectionDate $date) => $date->batch?->accounting_entry_id)
+        $accreditationIds = $linked
+            ->map(fn (QuotaAccountingCollectionDate $date) => $date->batch?->accounting_entry_id)
             ->filter()
             ->unique()
             ->values();
 
-        $collectionIds = QuotaAccountingBatch::query()
-            ->where('kind', QuotaAccountingBatch::KIND_COLLECTION)
-            ->whereDate('entry_date', $collected)
-            ->when($paymentTypes->isNotEmpty(), fn ($query) => $query->whereIn('payment_type', $paymentTypes))
-            ->whereNotNull('accounting_entry_id')
-            ->pluck('accounting_entry_id');
+        $collectionIds = $kind !== null && $paymentType === null && $kind !== AccountingEntry::KIND_QUOTA_COLLECTION
+            ? collect()
+            : QuotaAccountingBatch::query()
+                ->where('kind', QuotaAccountingBatch::KIND_COLLECTION)
+                ->whereDate('entry_date', $collected)
+                ->when($paymentType !== null, fn ($query) => $query->where('payment_type', $paymentType))
+                ->whereNotNull('accounting_entry_id')
+                ->pluck('accounting_entry_id');
 
         $ids = $collectionIds->merge($accreditationIds)->unique()->values();
         if ($ids->isEmpty()) {
@@ -387,6 +394,22 @@ class AccountingJournalController extends CrudController
             ->orderBy('date')
             ->orderBy('id')
             ->get();
+    }
+
+    private function paymentTypeForKind(?string $kind): ?string
+    {
+        if ($kind === null) {
+            return null;
+        }
+
+        foreach (PaymentSettlementChannels::keys() as $channel) {
+            $definition = PaymentSettlementChannels::get($channel);
+            if ($definition['entry_kind'] === $kind) {
+                return (string) $definition['payment_type'];
+            }
+        }
+
+        return null;
     }
 
     /**
