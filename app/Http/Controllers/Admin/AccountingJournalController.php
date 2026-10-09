@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Models\AccountingAccount;
 use App\Models\AccountingEntry;
+use App\Models\AccountingEntryLine;
 use App\Models\QuotaAccountingBatch;
 use App\Models\QuotaAccountingCollectionDate;
 use App\Models\User;
@@ -379,6 +380,10 @@ class AccountingJournalController extends CrudController
                 ->whereNotNull('accounting_entry_id')
                 ->pluck('accounting_entry_id');
 
+        if ($accreditationIds->isEmpty() && $paymentType !== null) {
+            $accreditationIds = $this->accreditationIdsByAmount($kind, $collected, $collectionIds);
+        }
+
         $ids = $collectionIds->merge($accreditationIds)->unique()->values();
         if ($ids->isEmpty()) {
             return collect();
@@ -406,6 +411,85 @@ class AccountingJournalController extends CrudController
             $definition = PaymentSettlementChannels::get($channel);
             if ($definition['entry_kind'] === $kind) {
                 return (string) $definition['payment_type'];
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Acreditaciones de archivo subidas antes de guardar la fecha de cobro.
+     * Si el haber de la cuenta a cobrar coincide con el debe de la cobranza, es el contrasiento.
+     *
+     * @param  \Illuminate\Support\Collection<int, int>  $collectionIds
+     * @return \Illuminate\Support\Collection<int, int>
+     */
+    private function accreditationIdsByAmount(?string $kind, string $collected, $collectionIds)
+    {
+        $channel = $this->channelForKind($kind);
+        if ($channel === null || $collectionIds->isEmpty()) {
+            return collect();
+        }
+
+        $definition = PaymentSettlementChannels::get($channel);
+        $accountId = AccountingAccount::query()->where('code', $definition['receivable'])->value('id');
+        if ($accountId === null) {
+            return collect();
+        }
+
+        $debitCents = (int) AccountingEntryLine::query()
+            ->whereIn('accounting_entry_id', $collectionIds)
+            ->where('accounting_account_id', $accountId)
+            ->get()
+            ->sum(fn (AccountingEntryLine $line) => (int) round(((float) $line->debit) * 100));
+        if ($debitCents < 1) {
+            return collect();
+        }
+
+        $matches = QuotaAccountingBatch::query()
+            ->where('kind', $definition['batch_kind'])
+            ->where(function ($query) use ($channel) {
+                $query->where('batch_key', 'like', $channel.':%');
+                if ($channel === PaymentSettlementChannels::MERCADOPAGO) {
+                    $query->orWhere('batch_key', 'like', 'mp-settlement:excel:%');
+                }
+            })
+            ->whereDoesntHave('collectionDates')
+            ->whereNotNull('accounting_entry_id')
+            ->whereHas('entry', function ($query) use ($definition) {
+                $query->where('status', AccountingEntry::STATUS_POSTED)
+                    ->where('kind', $definition['entry_kind']);
+            })
+            ->with('entry.lines')
+            ->get()
+            ->filter(function (QuotaAccountingBatch $batch) use ($accountId, $debitCents) {
+                $creditCents = (int) $batch->entry->lines
+                    ->where('accounting_account_id', (int) $accountId)
+                    ->sum(fn (AccountingEntryLine $line) => (int) round(((float) $line->credit) * 100));
+
+                return abs($creditCents - $debitCents) <= 2;
+            })
+            ->values();
+
+        if ($matches->count() === 1) {
+            QuotaAccountingCollectionDate::query()->firstOrCreate([
+                'quota_accounting_batch_id' => $matches[0]->id,
+                'collected_on' => $collected,
+            ]);
+        }
+
+        return $matches->pluck('accounting_entry_id')->map(fn ($id) => (int) $id)->values();
+    }
+
+    private function channelForKind(?string $kind): ?string
+    {
+        if ($kind === null) {
+            return null;
+        }
+
+        foreach (PaymentSettlementChannels::keys() as $channel) {
+            if (PaymentSettlementChannels::get($channel)['entry_kind'] === $kind) {
+                return $channel;
             }
         }
 
