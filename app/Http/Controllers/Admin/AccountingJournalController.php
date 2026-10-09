@@ -476,6 +476,8 @@ class AccountingJournalController extends CrudController
                 'quota_accounting_batch_id' => $matches[0]->id,
                 'collected_on' => $collected,
             ]);
+            $matches[0]->unsetRelation('collectionDates');
+            app(QuotaAccountingService::class)->syncAccreditationDescription($matches[0]);
         }
 
         return $matches->pluck('accounting_entry_id')->map(fn ($id) => (int) $id)->values();

@@ -39,6 +39,20 @@ final class PaymentSettlementChannels
     }
 
     /**
+     * @return array<string, mixed>|null
+     */
+    public static function forBatchKind(string $kind): ?array
+    {
+        foreach (self::definitions() as $definition) {
+            if ($definition['batch_kind'] === $kind) {
+                return $definition;
+            }
+        }
+
+        return null;
+    }
+
+    /**
      * @return array<string, array<string, mixed>>
      */
     private static function definitions(): array

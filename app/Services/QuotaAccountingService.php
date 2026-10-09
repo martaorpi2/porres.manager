@@ -94,7 +94,7 @@ class QuotaAccountingService
                     entryDate: $group['date'],
                     paymentType: $definition['payment_type'],
                     entryKind: $definition['entry_kind'],
-                    description: $definition['description'].' '.$group['document'],
+                    description: $this->importedSettlementDescription($definition, $group),
                     lines: $this->channelSettlementLines($definition, $group, $accounts),
                     orders: [],
                     role: $definition['batch_kind'],
@@ -134,7 +134,93 @@ class QuotaAccountingService
                     'collected_on' => $date,
                 ]);
             }
+            $batch->unsetRelation('collectionDates');
+            $this->syncAccreditationDescription($batch);
         }
+    }
+
+    /**
+     * La fecha del asiento es la acreditación. La descripción lleva la fecha de cobro.
+     */
+    public function syncAccreditationDescription(QuotaAccountingBatch $batch): void
+    {
+        $batch->loadMissing(['entry', 'collectionDates']);
+        $entry = $batch->entry;
+        if ($entry === null || $entry->manually_adjusted) {
+            return;
+        }
+
+        $definition = PaymentSettlementChannels::forBatchKind((string) $batch->kind);
+        if ($definition === null) {
+            return;
+        }
+
+        $dates = $batch->collectionDates
+            ->map(fn (QuotaAccountingCollectionDate $row) => $row->collected_on?->toDateString())
+            ->filter()
+            ->all();
+        $label = $this->collectionDatesLabel($dates);
+        if ($label === '') {
+            return;
+        }
+
+        $description = mb_substr(trim($definition['description'].' '.$label), 0, 255);
+        if ($description === $entry->description) {
+            return;
+        }
+
+        $entry->description = $description;
+        $entry->save();
+    }
+
+    public function syncAccreditationDescriptions(): void
+    {
+        QuotaAccountingBatch::query()
+            ->whereIn('kind', [
+                QuotaAccountingBatch::KIND_MP_SETTLEMENT,
+                QuotaAccountingBatch::KIND_NX_SETTLEMENT,
+                QuotaAccountingBatch::KIND_SOL_SETTLEMENT,
+                QuotaAccountingBatch::KIND_QR_SETTLEMENT,
+            ])
+            ->whereHas('collectionDates')
+            ->with(['entry', 'collectionDates'])
+            ->orderBy('id')
+            ->each(function (QuotaAccountingBatch $batch) {
+                $this->syncAccreditationDescription($batch);
+            });
+    }
+
+    /**
+     * @param  array<string, mixed>  $definition
+     * @param  array<string, mixed>  $group
+     */
+    private function importedSettlementDescription(array $definition, array $group): string
+    {
+        $label = $this->collectionDatesLabel($group['collected_on'] ?? null);
+        if ($label === '') {
+            $label = trim((string) ($group['document'] ?? ''));
+        }
+
+        return mb_substr(trim($definition['description'].' '.$label), 0, 255);
+    }
+
+    private function collectionDatesLabel(mixed $dates): string
+    {
+        if (! is_array($dates)) {
+            return '';
+        }
+
+        $labels = [];
+        foreach ($dates as $date) {
+            $date = (string) $date;
+            if (preg_match('/^(\d{4})-(\d{2})-(\d{2})$/', $date, $match) !== 1) {
+                continue;
+            }
+            $labels[$date] = $match[3].'/'.$match[2].'/'.$match[1];
+        }
+        ksort($labels);
+
+        return implode(', ', $labels);
     }
 
     /**

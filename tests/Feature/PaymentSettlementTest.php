@@ -199,7 +199,7 @@ class PaymentSettlementTest extends TestCase
             $this->assertSame('30.00', $lines[1]->debit);
             $this->assertSame('20.00', $lines[2]->debit);
             $this->assertSame('1000.00', $lines[3]->credit);
-            $this->assertSame('ACREDITACION COBRANZA MERCADO PAGO 03/01/2099', $entries[0]->description);
+            $this->assertSame('ACREDITACION COBRANZA MERCADO PAGO 01/01/2099, 02/01/2099', $entries[0]->description);
             $batch = QuotaAccountingBatch::query()->where('batch_key', 'mercadopago:2099-01-03')->first();
             $this->assertNotNull($batch);
             $this->assertSame(0, $batch->orders()->count());

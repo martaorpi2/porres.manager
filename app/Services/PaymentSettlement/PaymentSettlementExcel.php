@@ -44,7 +44,10 @@ final class PaymentSettlementExcel
                 'commission_cents' => array_sum(array_column($items, 'commission_cents')),
                 'interest_cents' => array_sum(array_column($items, 'interest_cents')),
                 'net_cents' => array_sum(array_column($items, 'net_cents')),
-                'document' => $this->displayDate((string) $items[0]['date']),
+                'document' => implode(', ', array_map(
+                    fn (string $date) => $this->displayDate($date),
+                    $collectedOn,
+                )),
             ];
         }
 
