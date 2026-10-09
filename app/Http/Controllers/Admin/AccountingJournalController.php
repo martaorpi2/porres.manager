@@ -535,9 +535,9 @@ class AccountingJournalController extends CrudController
         }
         $removed = (int) ($result['settlements']['removed'] ?? 0);
         if ($removed === 1) {
-            $bits[] = '1 acreditación duplicada de Mercado Pago dada de baja';
+            $bits[] = '1 acreditación dada de baja porque no salió de un archivo';
         } elseif ($removed > 1) {
-            $bits[] = $removed.' acreditaciones duplicadas de Mercado Pago dadas de baja';
+            $bits[] = $removed.' acreditaciones dadas de baja porque no salieron de un archivo';
         }
 
         if (in_array($result['grants']['status'] ?? '', ['posted', 'updated'], true)) {

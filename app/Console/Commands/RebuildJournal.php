@@ -106,7 +106,8 @@ class RebuildJournal extends Command
         $grants = $result['grants']['status'] ?? '';
         $collections = count($result['collections']['groups'] ?? []) + count($result['collections']['updated'] ?? []);
         $settlements = count($result['settlements']['groups'] ?? []) + count($result['settlements']['updated'] ?? []);
-        $this->line('  Devengamiento: '.$accrual.'. Becas: '.$grants.'. Cobranzas: '.$collections.'. Liberaciones de Mercado Pago: '.$settlements.'.');
+        $removed = (int) ($result['settlements']['removed'] ?? 0);
+        $this->line('  Devengamiento: '.$accrual.'. Becas: '.$grants.'. Cobranzas: '.$collections.'. Acreditaciones fuera de archivo sacadas: '.$removed.'.');
     }
 
     private function date(string $value): ?Carbon

@@ -223,7 +223,7 @@ class PostQuotaAccountingEntries extends Command
         }
         $removed = (int) ($settlements['removed'] ?? 0);
         if ($removed > 0) {
-            $this->line('Acreditaciones de ePorres dadas de baja porque ese día ya tiene el archivo: '.$removed);
+            $this->line('Acreditaciones dadas de baja porque no salieron de un archivo: '.$removed);
         }
     }
 

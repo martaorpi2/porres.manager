@@ -6,6 +6,7 @@ use App\Models\AccountingEntry;
 use App\Models\QuotaAccountingBatch;
 use App\Models\User;
 use App\Services\QuotaAccountingService;
+use Carbon\Carbon;
 use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
@@ -304,6 +305,72 @@ class PaymentSettlementTest extends TestCase
                 'mercadopago:2099-01-03',
             ])->delete();
         }
+    }
+
+    public function test_refresh_removes_accreditations_that_did_not_come_from_a_file(): void
+    {
+        $automaticIds = [];
+        $fileEntryId = null;
+        DB::beginTransaction();
+        try {
+            foreach ([
+                [QuotaAccountingBatch::KIND_QR_SETTLEMENT, AccountingEntry::KIND_QUOTA_QR_SETTLEMENT, 'qr-from-eporres:2099-04-02', 'AS-2099-902'],
+                [QuotaAccountingBatch::KIND_NX_SETTLEMENT, AccountingEntry::KIND_QUOTA_NX_SETTLEMENT, 'naranja-from-eporres:2099-04-02', 'AS-2099-903'],
+                [QuotaAccountingBatch::KIND_SOL_SETTLEMENT, AccountingEntry::KIND_QUOTA_SOL_SETTLEMENT, 'sol-from-eporres:2099-04-02', 'AS-2099-904'],
+                [QuotaAccountingBatch::KIND_MP_SETTLEMENT, AccountingEntry::KIND_QUOTA_MP_SETTLEMENT, 'mp-settlement:2099-04-02:1:auto', 'AS-2099-905'],
+            ] as [$batchKind, $entryKind, $key, $number]) {
+                $automaticIds[] = $this->postedAccreditation($batchKind, $entryKind, $key, $number, '2099-04-02');
+            }
+            $fileEntryId = $this->postedAccreditation(
+                QuotaAccountingBatch::KIND_QR_SETTLEMENT,
+                AccountingEntry::KIND_QUOTA_QR_SETTLEMENT,
+                'qr:2099-04-03',
+                'AS-2099-906',
+                '2099-04-03',
+            );
+
+            app(QuotaAccountingService::class)->postMonth(Carbon::parse('2099-04-01'));
+
+            foreach ($automaticIds as $id) {
+                $this->assertFalse(AccountingEntry::query()->whereKey($id)->exists());
+            }
+            $this->assertTrue(AccountingEntry::query()->whereKey($fileEntryId)->exists());
+            $this->assertTrue(QuotaAccountingBatch::query()->where('batch_key', 'qr:2099-04-03')->exists());
+            DB::rollBack();
+        } finally {
+            AccountingEntry::query()->whereIn('entry_number', [
+                'AS-2099-902', 'AS-2099-903', 'AS-2099-904', 'AS-2099-905', 'AS-2099-906',
+            ])->delete();
+            QuotaAccountingBatch::query()->whereIn('batch_key', [
+                'qr-from-eporres:2099-04-02',
+                'naranja-from-eporres:2099-04-02',
+                'sol-from-eporres:2099-04-02',
+                'mp-settlement:2099-04-02:1:auto',
+                'qr:2099-04-03',
+            ])->delete();
+        }
+    }
+
+    private function postedAccreditation(string $batchKind, string $entryKind, string $key, string $number, string $date): int
+    {
+        $batch = QuotaAccountingBatch::query()->create([
+            'kind' => $batchKind,
+            'batch_key' => $key,
+            'entry_date' => $date,
+            'payment_type' => 'Mercado Pago',
+        ]);
+        $entry = AccountingEntry::query()->create([
+            'entry_number' => $number,
+            'date' => $date,
+            'kind' => $entryKind,
+            'status' => AccountingEntry::STATUS_POSTED,
+            'source_type' => $batch->getMorphClass(),
+            'source_id' => $batch->id,
+            'description' => 'ACREDITACION DE PRUEBA',
+        ]);
+        $batch->update(['accounting_entry_id' => $entry->id]);
+
+        return (int) $entry->id;
     }
 
     /**
