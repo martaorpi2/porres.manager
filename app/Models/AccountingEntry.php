@@ -34,6 +34,25 @@ class AccountingEntry extends Model
 
     public const STATUS_REVERSED = 'reversed';
 
+    /**
+     * Asientos que arma el libro a partir de ePorres.
+     * Egresos de compras y órdenes de pago quedan fuera hasta que se incorporen.
+     *
+     * @return list<string>
+     */
+    public static function quotaKinds(): array
+    {
+        return [
+            self::KIND_QUOTA_ACCRUAL,
+            self::KIND_QUOTA_GRANT,
+            self::KIND_QUOTA_COLLECTION,
+            self::KIND_QUOTA_MP_SETTLEMENT,
+            self::KIND_QUOTA_NX_SETTLEMENT,
+            self::KIND_QUOTA_SOL_SETTLEMENT,
+            self::KIND_QUOTA_QR_SETTLEMENT,
+        ];
+    }
+
     protected $table = 'accounting_entries';
 
     protected $guarded = ['id'];

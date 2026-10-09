@@ -191,7 +191,7 @@ class PaymentSettlementTest extends TestCase
             $entryId = $entries[0]->id;
             $lines = $entries[0]->lines()->with('account')->orderBy('id')->get();
             $this->assertSame(
-                ['11104000', '52309000', '52312000', '11204000'],
+                ['11104000', '52309000', '52312000', '11202005'],
                 $lines->map(fn ($line) => $line->account->code)->all()
             );
             $this->assertSame('950.00', $lines[0]->debit);

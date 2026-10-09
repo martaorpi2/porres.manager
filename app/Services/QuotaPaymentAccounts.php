@@ -18,7 +18,7 @@ final class QuotaPaymentAccounts
 
     public const LATE_INTEREST = '41201000';
 
-    public const MP_RECEIVABLE = '11204000';
+    public const MP_RECEIVABLE = '11202005';
 
     public const MP_AVAILABLE = '11104000';
 

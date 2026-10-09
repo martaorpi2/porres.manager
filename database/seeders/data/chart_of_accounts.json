@@ -110,13 +110,13 @@
         "account_type": "activo"
     },
     {
-        "code": "11203000",
-        "name": "PRESTAMOS A ESTUDIANTES",
+        "code": "11202005",
+        "name": "MERCADO PAGO A COBRAR",
         "account_type": "activo"
     },
     {
-        "code": "11204000",
-        "name": "MERCADO PAGO A COBRAR",
+        "code": "11203000",
+        "name": "PRESTAMOS A ESTUDIANTES",
         "account_type": "activo"
     },
     {

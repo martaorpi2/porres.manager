@@ -27,6 +27,7 @@ class AccountingJournalController extends CrudController
         $entries = AccountingEntry::query()
             ->with(['lines.account'])
             ->where('status', AccountingEntry::STATUS_POSTED)
+            ->whereIn('kind', AccountingEntry::quotaKinds())
             ->when($from, fn ($query) => $query->whereDate('date', '>=', $from))
             ->when($to, fn ($query) => $query->whereDate('date', '<=', $to))
             ->when(in_array($kind, $this->kinds(), true), fn ($query) => $query->where('kind', $kind))
@@ -197,6 +198,7 @@ class AccountingJournalController extends CrudController
             ->join('accounting_entries as e', 'e.id', '=', 'l.accounting_entry_id')
             ->join('accounting_accounts as a', 'a.id', '=', 'l.accounting_account_id')
             ->where('e.status', AccountingEntry::STATUS_POSTED)
+            ->whereIn('e.kind', AccountingEntry::quotaKinds())
             ->when($from, fn ($query) => $query->whereDate('e.date', '>=', $from))
             ->when($to, fn ($query) => $query->whereDate('e.date', '<=', $to))
             ->groupBy('a.id', 'a.code', 'a.name', 'a.account_type')
@@ -280,8 +282,6 @@ class AccountingJournalController extends CrudController
             AccountingEntry::KIND_QUOTA_NX_SETTLEMENT => 'Liquidación Naranja X',
             AccountingEntry::KIND_QUOTA_SOL_SETTLEMENT => 'Liquidación Sol Pago',
             AccountingEntry::KIND_QUOTA_QR_SETTLEMENT => 'Liquidación QR',
-            AccountingEntry::KIND_OUTFLOW => 'Egreso',
-            AccountingEntry::KIND_REVERSAL => 'Reverso',
         ];
     }
 

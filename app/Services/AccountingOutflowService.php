@@ -93,6 +93,9 @@ class AccountingOutflowService
 
     public function syncForFundMovement(FundMovement $movement): void
     {
+        // Compras, órdenes de pago y gastos no generan asiento por ahora.
+        return;
+
         $movement->refresh();
         $movement->loadMissing(['imputations.account', 'fundsAccount']);
 
