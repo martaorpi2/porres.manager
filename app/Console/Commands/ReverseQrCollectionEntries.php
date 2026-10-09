@@ -13,7 +13,7 @@ class ReverseQrCollectionEntries extends Command
         {--dry-run : Muestra las cobranzas de QR sin revertirlas}
         {--force : Revierte sin pedir confirmación}';
 
-    protected $description = 'Revierte las cobranzas de QR. Esos cobros se registran al subir el informe de First Data';
+    protected $description = 'Revierte asientos de cobranza de QR ya registrados';
 
     public function handle(): int
     {

@@ -115,6 +115,11 @@
         "account_type": "activo"
     },
     {
+        "code": "11202006",
+        "name": "QR A COBRAR",
+        "account_type": "activo"
+    },
+    {
         "code": "11203000",
         "name": "PRESTAMOS A ESTUDIANTES",
         "account_type": "activo"

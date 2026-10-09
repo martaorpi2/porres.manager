@@ -55,9 +55,8 @@ class QuotaAccountingService
     /**
      * Asienta una liquidación de Mercado Pago, Naranja X, Sol Pago o QR.
      * El asiento es uno por fecha, con los totales del archivo. No cruza cupones con ePorres.
-     * Naranja y Sol acreditan el neto en Banco BSE y cancelan la cuenta a cobrar.
-     * Mercado Pago acredita el neto en Mercado Pago, la comisión al gasto y el bruto en Mercado Pago a cobrar.
-     * QR se cobra con este informe: neto en Banco BSE, comisión al gasto y bruto en Deudores por cuotas.
+     * El archivo acredita el neto en el banco, la comisión al gasto y cancela la cuenta a cobrar.
+     * La cobranza de ese medio ya quedó registrada el día del cobro.
      *
      * @param  list<array{key: string, date: string, gross_cents: int, commission_cents: int, interest_cents: int, net_cents: int, document: string}>  $groups
      * @return list<AccountingEntry>
@@ -571,7 +570,6 @@ class QuotaAccountingService
         $skipped = [
             'split' => 0,
             'plan' => 0,
-            'deferred' => 0,
             'no_payment_type' => 0,
             'unmapped' => [],
             'zero' => 0,
@@ -624,9 +622,6 @@ class QuotaAccountingService
         $batchesByGroup = [];
         $batches = QuotaAccountingBatch::query()
             ->where('kind', QuotaAccountingBatch::KIND_COLLECTION)
-            ->where(function ($query) {
-                $query->whereNull('payment_type')->orWhere('payment_type', '!=', 'QR');
-            })
             ->whereDate('entry_date', '>=', $month->copy()->startOfMonth()->toDateString())
             ->whereDate('entry_date', '<=', $month->copy()->endOfMonth()->toDateString())
             ->whereHas('entry', fn ($query) => $query->where('status', AccountingEntry::STATUS_POSTED))
@@ -663,7 +658,7 @@ class QuotaAccountingService
 
             $description = $group['payment_type'] === 'Mercado Pago'
                 ? 'COBRANZA CUOTAS MERCADO PAGO A COBRAR'
-                : 'ACREDITACION COBRANZA CUOTAS '.mb_strtoupper($group['payment_type']);
+                : 'COBRANZA CUOTAS '.mb_strtoupper($group['payment_type']);
             $stored = $this->storedCollectionCents($groupBatches);
             $desired = $this->desiredCollectionCents($group['orders']);
 
@@ -1104,9 +1099,6 @@ class QuotaAccountingService
         }
         if ($paymentType === 'Plan de Pago' || isset($settledByPlan[$orderId])) {
             return 'plan';
-        }
-        if ($paymentType === 'QR') {
-            return 'deferred';
         }
         if (QuotaPaymentAccounts::bankCode($paymentType) === null) {
             return 'unmapped';

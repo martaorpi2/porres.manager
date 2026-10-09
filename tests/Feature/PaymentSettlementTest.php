@@ -159,7 +159,7 @@ class PaymentSettlementTest extends TestCase
             $this->assertSame('992.00', $lines[0]->debit);
             $this->assertSame('52320000', $lines[1]->account->code);
             $this->assertSame('8.00', $lines[1]->debit);
-            $this->assertSame('11201000', $lines[2]->account->code);
+            $this->assertSame('11202006', $lines[2]->account->code);
             $this->assertSame('1000.00', $lines[2]->credit);
             $this->assertSame('ACREDITACION COBRANZA QR TESTPROBE', $entries[0]->description);
             DB::rollBack();
