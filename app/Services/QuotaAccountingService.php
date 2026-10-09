@@ -258,11 +258,11 @@ class QuotaAccountingService
     private function importedSettlementDescription(array $definition, array $group): string
     {
         $label = $this->collectionDatesLabel($group['collected_on'] ?? null);
-        if ($label === '') {
-            $label = trim((string) ($group['document'] ?? ''));
+        if ($label !== '') {
+            return mb_substr(trim($definition['description'].' cobro '.$label), 0, 255);
         }
 
-        return mb_substr(trim($definition['description'].' cobro '.$label), 0, 255);
+        return mb_substr(trim($definition['description'].' '.trim((string) ($group['document'] ?? ''))), 0, 255);
     }
 
     private function collectionDatesLabel(mixed $dates): string
