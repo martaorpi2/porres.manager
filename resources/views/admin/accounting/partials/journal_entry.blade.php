@@ -73,7 +73,7 @@
         <div class="card-body">
             <p class="mb-1"><strong>Fecha:</strong> {{ $entry->date?->format('d/m/Y') }}</p>
             <p class="mb-1"><strong>Descripción:</strong> {{ $entry->description }}</p>
-            <p class="mb-3"><strong>Tipo:</strong> {{ $entry->kind_label }} <span class="text-muted">({{ $entry->status_label }})</span></p>
+            <p class="mb-3"><strong>Tipo:</strong> {{ $entry->kind_label }}</p>
 
             <div class="table-responsive">
                 <table class="table journal-lines mb-0">
