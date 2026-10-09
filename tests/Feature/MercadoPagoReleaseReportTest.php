@@ -23,7 +23,8 @@ class MercadoPagoReleaseReportTest extends TestCase
         $response->assertSee('Pendientes:');
         $response->assertSee('Liberados:');
         $response->assertSee('Fecha de liberación');
-        $response->assertSee('Payment ID');
+        $response->assertSee('Nro de transacción');
+        $response->assertDontSee('Payment ID');
         $response->assertSee('accounting-mercadopago-releases', false);
     }
 

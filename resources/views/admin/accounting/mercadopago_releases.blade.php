@@ -61,7 +61,7 @@
                 <input type="number" min="1" name="order_id" id="order_id" class="form-control" value="{{ $orderId }}">
             </div>
             <div class="col-md-2">
-                <label for="payment_id" class="form-label">Payment ID</label>
+                <label for="payment_id" class="form-label">Nro de transacción</label>
                 <input type="text" name="payment_id" id="payment_id" class="form-control" value="{{ $paymentId }}">
             </div>
             <div class="col-12">
@@ -84,7 +84,7 @@
                         <th>Aprobado</th>
                         <th>Orden</th>
                         <th>Estudiante</th>
-                        <th>Payment ID</th>
+                        <th>Nro de transacción</th>
                         <th>Estado MP</th>
                         <th class="text-end">Monto</th>
                     </tr>
