@@ -21,6 +21,10 @@
                         <input type="date" name="to" id="to" class="form-control" value="{{ $filters['to'] }}">
                     </div>
                     <div class="col-sm-6 col-md-2">
+                        <label for="collected" class="form-label journal-label">Fecha de cobro</label>
+                        <input type="date" name="collected" id="collected" class="form-control" value="{{ $filters['collected'] }}" title="Muestra la cobranza de ese día y la acreditación que la cierra">
+                    </div>
+                    <div class="col-sm-6 col-md-2">
                         <label for="kind" class="form-label journal-label">Tipo</label>
                         <select name="kind" id="kind" class="form-control">
                             <option value="">Todos</option>
@@ -48,6 +52,7 @@
                     @csrf
                     <input type="hidden" name="from" value="{{ $filters['from'] }}">
                     <input type="hidden" name="to" value="{{ $filters['to'] }}">
+                    <input type="hidden" name="collected" value="{{ $filters['collected'] }}">
                     <input type="hidden" name="kind" value="{{ $filters['kind'] }}">
                     <input type="hidden" name="account_id" value="{{ $filters['account_id'] }}">
                 </form>
@@ -56,11 +61,22 @@
 
         <div class="card journal-card journal-book">
             <div class="card-body p-0">
+                @if($filters['collected'])
+                    <p class="mb-0 px-3 py-2">Cobranza del {{ \Carbon\Carbon::parse($filters['collected'])->format('d/m/Y') }} y la acreditación que la cierra.</p>
+                @endif
                 @php
                     $accountQuery = array_filter([
                         'from' => request('from'),
                         'to' => request('to'),
+                        'collected' => request('collected'),
                         'kind' => request('kind'),
+                    ], fn ($value) => $value !== null && $value !== '');
+                    $returnQuery = array_filter([
+                        'from' => $filters['from'],
+                        'to' => $filters['to'],
+                        'collected' => $filters['collected'],
+                        'kind' => $filters['kind'],
+                        'account_id' => $filters['account_id'],
                     ], fn ($value) => $value !== null && $value !== '');
                 @endphp
                 <div class="table-responsive">
@@ -86,7 +102,7 @@
                                     </td>
                                     <td class="text-end">
                                         @if($entry->status === \App\Models\AccountingEntry::STATUS_POSTED)
-                                            <a href="{{ backpack_url('accounting-journal/'.$entry->id.'/edit') }}?{{ http_build_query(array_filter(['from' => $filters['from'], 'to' => $filters['to'], 'kind' => $filters['kind'], 'account_id' => $filters['account_id']])) }}" class="btn btn-sm journal-btn-edit">Modificar</a>
+                                            <a href="{{ backpack_url('accounting-journal/'.$entry->id.'/edit') }}?{{ http_build_query($returnQuery) }}" class="btn btn-sm journal-btn-edit">Modificar</a>
                                         @endif
                                     </td>
                                 </tr>
@@ -115,7 +131,7 @@
                                 </tr>
                             @empty
                                 <tr>
-                                    <td colspan="4" class="text-muted">No hay asientos para ese filtro.</td>
+                                    <td colspan="4" class="text-muted">{{ $filters['collected'] ? 'No hay cobranza ni acreditación para esa fecha de cobro.' : 'No hay asientos para ese filtro.' }}</td>
                                 </tr>
                             @endforelse
                         </tbody>

@@ -53,6 +53,21 @@ class AccountingEntry extends Model
         ];
     }
 
+    /**
+     * Contrapartida de la cobranza, tomada de la fecha de acreditación del archivo.
+     *
+     * @return list<string>
+     */
+    public static function accreditationKinds(): array
+    {
+        return [
+            self::KIND_QUOTA_MP_SETTLEMENT,
+            self::KIND_QUOTA_NX_SETTLEMENT,
+            self::KIND_QUOTA_SOL_SETTLEMENT,
+            self::KIND_QUOTA_QR_SETTLEMENT,
+        ];
+    }
+
     protected $table = 'accounting_entries';
 
     protected $guarded = ['id'];
@@ -88,10 +103,10 @@ class AccountingEntry extends Model
             self::KIND_QUOTA_ACCRUAL => 'Devengamiento de cuotas',
             self::KIND_QUOTA_GRANT => 'Becas otorgadas',
             self::KIND_QUOTA_COLLECTION => 'Cobranza de cuotas',
-            self::KIND_QUOTA_MP_SETTLEMENT => 'Liquidación Mercado Pago',
-            self::KIND_QUOTA_NX_SETTLEMENT => 'Liquidación Naranja X',
-            self::KIND_QUOTA_SOL_SETTLEMENT => 'Liquidación Sol Pago',
-            self::KIND_QUOTA_QR_SETTLEMENT => 'Liquidación QR',
+            self::KIND_QUOTA_MP_SETTLEMENT => 'Acreditación Mercado Pago',
+            self::KIND_QUOTA_NX_SETTLEMENT => 'Acreditación Naranja X',
+            self::KIND_QUOTA_SOL_SETTLEMENT => 'Acreditación Sol Pago',
+            self::KIND_QUOTA_QR_SETTLEMENT => 'Acreditación QR',
             self::KIND_OUTFLOW => 'Egreso',
             self::KIND_REVERSAL => 'Reverso',
             default => (string) $this->kind,

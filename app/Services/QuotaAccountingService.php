@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\AccountingAccount;
 use App\Models\AccountingEntry;
 use App\Models\QuotaAccountingBatch;
+use App\Models\QuotaAccountingCollectionDate;
 use App\Models\QuotaAccountingOrder;
 use App\Services\PaymentSettlement\PaymentSettlementChannels;
 use Carbon\Carbon;
@@ -100,8 +101,40 @@ class QuotaAccountingService
                 );
             }
 
+            $this->linkImportedCollectionDates($groups);
+
             return $entries;
         });
+    }
+
+    /**
+     * Guarda qué fechas de cobro cierra cada acreditación, para verlas juntas en el libro.
+     *
+     * @param  list<array{key?: string, collected_on?: mixed}>  $groups
+     */
+    public function linkImportedCollectionDates(array $groups): void
+    {
+        foreach ($groups as $group) {
+            $key = (string) ($group['key'] ?? '');
+            $dates = $group['collected_on'] ?? [];
+            if ($key === '' || ! is_array($dates) || $dates === []) {
+                continue;
+            }
+            $batch = QuotaAccountingBatch::query()->where('batch_key', $key)->first();
+            if ($batch === null) {
+                continue;
+            }
+            foreach ($dates as $date) {
+                $date = (string) $date;
+                if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $date) !== 1) {
+                    continue;
+                }
+                QuotaAccountingCollectionDate::query()->firstOrCreate([
+                    'quota_accounting_batch_id' => $batch->id,
+                    'collected_on' => $date,
+                ]);
+            }
+        }
     }
 
     /**
@@ -725,7 +758,7 @@ class QuotaAccountingService
         $updatedGroups = [];
         $dates = array_unique(array_merge(array_keys($groups), array_keys($batchesByDate)));
         sort($dates);
-        $description = 'LIQUIDACION COBRANZA MERCADO PAGO';
+        $description = 'ACREDITACION COBRANZA MERCADO PAGO';
 
         foreach ($dates as $date) {
             if (isset($fileDates[$date])) {

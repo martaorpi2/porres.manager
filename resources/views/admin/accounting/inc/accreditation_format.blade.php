@@ -10,5 +10,5 @@
         <li><strong>Intereses.</strong> Esta columna no es obligatoria. Si no está, se toma como 0.</li>
     </ul>
     <p class="mb-2">No importan mayúsculas, acentos ni espacios de más.</p>
-    <p class="mb-0">El cobro es lo que pagó el alumno. De ese importe se restan la comisión y los intereses, y lo que queda es el total que se acredita. Las filas de la misma fecha de acreditación se suman en un asiento. La fecha de cobro indica qué asiento de la tesorera cierra esa liquidación.</p>
+    <p class="mb-0">El cobro es lo que pagó el alumno. De ese importe se restan la comisión y los intereses, y lo que queda es el total que se acredita. Las filas de la misma fecha de acreditación se suman en un asiento. La fecha de cobro indica qué asiento de cobranza cierra esa acreditación.</p>
 </div>

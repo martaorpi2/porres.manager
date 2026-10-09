@@ -45,7 +45,7 @@ final class PaymentSettlementChannels
     {
         return [
             self::MERCADOPAGO => [
-                'title' => 'Liquidación Mercado Pago',
+                'title' => 'Acreditación Mercado Pago',
                 'menu' => 'Mercado Pago',
                 'accept' => '.xlsx,.xls',
                 'extensions' => ['xlsx', 'xls'],
@@ -57,7 +57,7 @@ final class PaymentSettlementChannels
                 'payment_type' => 'Mercado Pago',
                 'batch_kind' => QuotaAccountingBatch::KIND_MP_SETTLEMENT,
                 'entry_kind' => AccountingEntry::KIND_QUOTA_MP_SETTLEMENT,
-                'description' => 'LIQUIDACION COBRANZA MERCADO PAGO',
+                'description' => 'ACREDITACION COBRANZA MERCADO PAGO',
                 'bank' => QuotaPaymentAccounts::MP_AVAILABLE,
                 'receivable' => QuotaPaymentAccounts::MP_RECEIVABLE,
                 'commission' => QuotaPaymentAccounts::MP_COMMISSION,
@@ -68,7 +68,7 @@ final class PaymentSettlementChannels
                 'interest_memo' => 'Intereses Mercado Pago',
             ],
             self::NARANJA => [
-                'title' => 'Liquidación Naranja X',
+                'title' => 'Acreditación Naranja X',
                 'menu' => 'Naranja X',
                 'accept' => '.xlsx,.xls',
                 'extensions' => ['xlsx', 'xls'],
@@ -82,7 +82,7 @@ final class PaymentSettlementChannels
                 'payment_type' => 'Tarjeta Naranja',
                 'batch_kind' => QuotaAccountingBatch::KIND_NX_SETTLEMENT,
                 'entry_kind' => AccountingEntry::KIND_QUOTA_NX_SETTLEMENT,
-                'description' => 'LIQUIDACION COBRANZA NARANJA X',
+                'description' => 'ACREDITACION COBRANZA NARANJA X',
                 'bank' => '11102002',
                 'receivable' => '11202003',
                 'commission' => '52306000',
@@ -93,7 +93,7 @@ final class PaymentSettlementChannels
                 'interest_memo' => 'Intereses plan Naranja X',
             ],
             self::SOL => [
-                'title' => 'Liquidación Sol Pago',
+                'title' => 'Acreditación Sol Pago',
                 'menu' => 'Sol Pago',
                 'accept' => '.xlsx,.xls',
                 'extensions' => ['xlsx', 'xls'],
@@ -105,7 +105,7 @@ final class PaymentSettlementChannels
                 'payment_type' => 'Tarjeta Sol',
                 'batch_kind' => QuotaAccountingBatch::KIND_SOL_SETTLEMENT,
                 'entry_kind' => AccountingEntry::KIND_QUOTA_SOL_SETTLEMENT,
-                'description' => 'LIQUIDACION COBRANZA SOL PAGO',
+                'description' => 'ACREDITACION COBRANZA SOL PAGO',
                 'bank' => '11102002',
                 'receivable' => '11202001',
                 'commission' => '52307000',
@@ -116,7 +116,7 @@ final class PaymentSettlementChannels
                 'interest_memo' => 'Costo financiero Sol Pago',
             ],
             self::QR => [
-                'title' => 'Liquidación QR',
+                'title' => 'Acreditación QR',
                 'menu' => 'QR',
                 'accept' => '.xlsx,.xls',
                 'extensions' => ['xlsx', 'xls'],
@@ -128,7 +128,7 @@ final class PaymentSettlementChannels
                 'payment_type' => 'QR',
                 'batch_kind' => QuotaAccountingBatch::KIND_QR_SETTLEMENT,
                 'entry_kind' => AccountingEntry::KIND_QUOTA_QR_SETTLEMENT,
-                'description' => 'LIQUIDACION COBRANZA QR',
+                'description' => 'ACREDITACION COBRANZA QR',
                 'bank' => '11102002',
                 'receivable' => QuotaPaymentAccounts::DEBTORS,
                 'commission' => '52320000',

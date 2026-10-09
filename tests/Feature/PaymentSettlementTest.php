@@ -161,7 +161,7 @@ class PaymentSettlementTest extends TestCase
             $this->assertSame('8.00', $lines[1]->debit);
             $this->assertSame('11201000', $lines[2]->account->code);
             $this->assertSame('1000.00', $lines[2]->credit);
-            $this->assertSame('LIQUIDACION COBRANZA QR TESTPROBE', $entries[0]->description);
+            $this->assertSame('ACREDITACION COBRANZA QR TESTPROBE', $entries[0]->description);
             DB::rollBack();
         } finally {
             if ($entryId !== null && AccountingEntry::query()->whereKey($entryId)->exists()) {
@@ -186,6 +186,7 @@ class PaymentSettlementTest extends TestCase
                 'interest_cents' => 2000,
                 'net_cents' => 95000,
                 'document' => '03/01/2099',
+                'collected_on' => ['2099-01-01', '2099-01-02'],
             ]]);
             $this->assertCount(1, $entries);
             $entryId = $entries[0]->id;
@@ -198,10 +199,14 @@ class PaymentSettlementTest extends TestCase
             $this->assertSame('30.00', $lines[1]->debit);
             $this->assertSame('20.00', $lines[2]->debit);
             $this->assertSame('1000.00', $lines[3]->credit);
-            $this->assertSame('LIQUIDACION COBRANZA MERCADO PAGO 03/01/2099', $entries[0]->description);
+            $this->assertSame('ACREDITACION COBRANZA MERCADO PAGO 03/01/2099', $entries[0]->description);
             $batch = QuotaAccountingBatch::query()->where('batch_key', 'mercadopago:2099-01-03')->first();
             $this->assertNotNull($batch);
             $this->assertSame(0, $batch->orders()->count());
+            $this->assertSame(
+                ['2099-01-01', '2099-01-02'],
+                $batch->collectionDates()->orderBy('collected_on')->pluck('collected_on')->map(fn ($date) => $date->toDateString())->all()
+            );
             DB::rollBack();
         } finally {
             if ($entryId !== null && AccountingEntry::query()->whereKey($entryId)->exists()) {

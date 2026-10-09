@@ -4,6 +4,8 @@ namespace App\Http\Controllers\Admin;
 
 use App\Models\AccountingAccount;
 use App\Models\AccountingEntry;
+use App\Models\QuotaAccountingBatch;
+use App\Models\QuotaAccountingCollectionDate;
 use App\Models\User;
 use App\Services\AccountingEntryEditor;
 use App\Services\QuotaAccountingService;
@@ -21,22 +23,25 @@ class AccountingJournalController extends CrudController
 
         $from = $this->dateOrNull($request->input('from'));
         $to = $this->dateOrNull($request->input('to'));
+        $collected = $this->dateOrNull($request->input('collected'));
         $kind = $request->input('kind');
         $accountId = $request->integer('account_id') ?: null;
 
-        $entries = AccountingEntry::query()
-            ->with(['lines.account'])
-            ->where('status', AccountingEntry::STATUS_POSTED)
-            ->whereIn('kind', AccountingEntry::quotaKinds())
-            ->when($from, fn ($query) => $query->whereDate('date', '>=', $from))
-            ->when($to, fn ($query) => $query->whereDate('date', '<=', $to))
-            ->when(in_array($kind, $this->kinds(), true), fn ($query) => $query->where('kind', $kind))
-            ->when($accountId, function ($query) use ($accountId) {
-                $query->whereHas('lines', fn ($lines) => $lines->where('accounting_account_id', $accountId));
-            })
-            ->orderBy('date')
-            ->orderBy('id')
-            ->get();
+        $entries = $collected !== null
+            ? $this->entriesForCollectionDate($collected, $accountId)
+            : AccountingEntry::query()
+                ->with(['lines.account'])
+                ->where('status', AccountingEntry::STATUS_POSTED)
+                ->whereIn('kind', AccountingEntry::quotaKinds())
+                ->when($from, fn ($query) => $query->whereDate('date', '>=', $from))
+                ->when($to, fn ($query) => $query->whereDate('date', '<=', $to))
+                ->when(in_array($kind, $this->kinds(), true), fn ($query) => $query->where('kind', $kind))
+                ->when($accountId, function ($query) use ($accountId) {
+                    $query->whereHas('lines', fn ($lines) => $lines->where('accounting_account_id', $accountId));
+                })
+                ->orderBy('date')
+                ->orderBy('id')
+                ->get();
 
         return view('admin.accounting.journal', [
             'entries' => $entries,
@@ -45,6 +50,7 @@ class AccountingJournalController extends CrudController
             'filters' => [
                 'from' => $from,
                 'to' => $to,
+                'collected' => $collected,
                 'kind' => $kind,
                 'account_id' => $accountId,
             ],
@@ -251,7 +257,7 @@ class AccountingJournalController extends CrudController
     private function returnQuery(Request $request): array
     {
         $query = [];
-        foreach (['from', 'to', 'kind', 'account_id'] as $key) {
+        foreach (['from', 'to', 'collected', 'kind', 'account_id'] as $key) {
             $value = $request->input($key);
             if (is_string($value) && $value !== '') {
                 $query[$key] = $value;
@@ -278,10 +284,10 @@ class AccountingJournalController extends CrudController
             AccountingEntry::KIND_QUOTA_ACCRUAL => 'Devengamiento de cuotas',
             AccountingEntry::KIND_QUOTA_GRANT => 'Becas otorgadas',
             AccountingEntry::KIND_QUOTA_COLLECTION => 'Cobranza de cuotas',
-            AccountingEntry::KIND_QUOTA_MP_SETTLEMENT => 'Liquidación Mercado Pago',
-            AccountingEntry::KIND_QUOTA_NX_SETTLEMENT => 'Liquidación Naranja X',
-            AccountingEntry::KIND_QUOTA_SOL_SETTLEMENT => 'Liquidación Sol Pago',
-            AccountingEntry::KIND_QUOTA_QR_SETTLEMENT => 'Liquidación QR',
+            AccountingEntry::KIND_QUOTA_MP_SETTLEMENT => 'Acreditación Mercado Pago',
+            AccountingEntry::KIND_QUOTA_NX_SETTLEMENT => 'Acreditación Naranja X',
+            AccountingEntry::KIND_QUOTA_SOL_SETTLEMENT => 'Acreditación Sol Pago',
+            AccountingEntry::KIND_QUOTA_QR_SETTLEMENT => 'Acreditación QR',
         ];
     }
 
@@ -335,6 +341,55 @@ class AccountingJournalController extends CrudController
     }
 
     /**
+     * Cobranza de ese día y las acreditaciones que la cierran.
+     *
+     * @return \Illuminate\Support\Collection<int, AccountingEntry>
+     */
+    private function entriesForCollectionDate(string $collected, ?int $accountId)
+    {
+        $linked = QuotaAccountingCollectionDate::query()
+            ->whereDate('collected_on', $collected)
+            ->whereHas('batch.entry', function ($query) {
+                $query->where('status', AccountingEntry::STATUS_POSTED)
+                    ->whereIn('kind', AccountingEntry::accreditationKinds());
+            })
+            ->with('batch')
+            ->get();
+
+        $paymentTypes = $linked->map(fn (QuotaAccountingCollectionDate $date) => (string) $date->batch?->payment_type)
+            ->filter()
+            ->unique()
+            ->values();
+        $accreditationIds = $linked->map(fn (QuotaAccountingCollectionDate $date) => $date->batch?->accounting_entry_id)
+            ->filter()
+            ->unique()
+            ->values();
+
+        $collectionIds = QuotaAccountingBatch::query()
+            ->where('kind', QuotaAccountingBatch::KIND_COLLECTION)
+            ->whereDate('entry_date', $collected)
+            ->when($paymentTypes->isNotEmpty(), fn ($query) => $query->whereIn('payment_type', $paymentTypes))
+            ->whereNotNull('accounting_entry_id')
+            ->pluck('accounting_entry_id');
+
+        $ids = $collectionIds->merge($accreditationIds)->unique()->values();
+        if ($ids->isEmpty()) {
+            return collect();
+        }
+
+        return AccountingEntry::query()
+            ->with(['lines.account'])
+            ->where('status', AccountingEntry::STATUS_POSTED)
+            ->whereIn('id', $ids)
+            ->when($accountId, function ($query) use ($accountId) {
+                $query->whereHas('lines', fn ($lines) => $lines->where('accounting_account_id', $accountId));
+            })
+            ->orderBy('date')
+            ->orderBy('id')
+            ->get();
+    }
+
+    /**
      * @param  array<string, mixed>  $result
      */
     private function refreshSummary(array $result): string
@@ -359,14 +414,14 @@ class AccountingJournalController extends CrudController
         $settlementCreated = count($result['settlements']['groups']);
         $settlementUpdated = count($result['settlements']['updated'] ?? []);
         if ($settlementCreated === 1) {
-            $bits[] = '1 liquidación de Mercado Pago nueva';
+            $bits[] = '1 acreditación de Mercado Pago nueva';
         } elseif ($settlementCreated > 1) {
-            $bits[] = $settlementCreated.' liquidaciones de Mercado Pago nuevas';
+            $bits[] = $settlementCreated.' acreditaciones de Mercado Pago nuevas';
         }
         if ($settlementUpdated === 1) {
-            $bits[] = '1 liquidación de Mercado Pago actualizada';
+            $bits[] = '1 acreditación de Mercado Pago actualizada';
         } elseif ($settlementUpdated > 1) {
-            $bits[] = $settlementUpdated.' liquidaciones de Mercado Pago actualizadas';
+            $bits[] = $settlementUpdated.' acreditaciones de Mercado Pago actualizadas';
         }
 
         if (in_array($result['grants']['status'] ?? '', ['posted', 'updated'], true)) {

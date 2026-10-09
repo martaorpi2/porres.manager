@@ -181,7 +181,7 @@ class PostQuotaAccountingEntries extends Command
     private function reportSettlements(array $settlements): void
     {
         $this->newLine();
-        $this->info('Liquidación Mercado Pago');
+        $this->info('Acreditación Mercado Pago');
 
         if ($settlements['groups'] === [] && ($settlements['updated'] ?? []) === []) {
             $this->line('No hay liberaciones nuevas de Mercado Pago para asentar.');
@@ -222,7 +222,7 @@ class PostQuotaAccountingEntries extends Command
             $this->line('Liberados con importe distinto al cobro: '.$skipped['amount_mismatch']);
         }
         if (($skipped['adjusted'] ?? 0) > 0) {
-            $this->line('Liquidaciones modificadas a mano, sin reescribir: '.$skipped['adjusted']);
+            $this->line('Acreditaciones modificadas a mano, sin reescribir: '.$skipped['adjusted']);
         }
     }
 

@@ -30,7 +30,7 @@ class PaymentSettlementController extends CrudController
         return view('admin.accounting.payment_settlement_import', $this->pageData($channel, $definition));
     }
 
-    public function preview(Request $request, string $channel, PaymentSettlementExcel $excel)
+    public function preview(Request $request, string $channel, PaymentSettlementExcel $excel, QuotaAccountingService $accounting)
     {
         $this->authorizeAccounting();
         $definition = $this->definition($channel);
@@ -59,6 +59,15 @@ class PaymentSettlementController extends CrudController
         if ($parsed['rows'] === []) {
             return back()->withErrors(['archivo' => 'El Excel no tiene operaciones para registrar.']);
         }
+
+        $postable = [];
+        foreach ($parsed['groups'] as $group) {
+            $normalized = $this->readyGroups($definition, [$group]);
+            if ($normalized !== []) {
+                $postable[] = $normalized[0];
+            }
+        }
+        $accounting->linkImportedCollectionDates($postable);
 
         $posted = $this->postedKeys(array_column($parsed['groups'], 'key'));
         $rows = [];
@@ -106,7 +115,7 @@ class PaymentSettlementController extends CrudController
 
         $ready = $this->readyGroups($definition, $saved['ready'] ?? []);
         if ($ready === []) {
-            \Alert::warning('No hay liquidaciones para registrar.')->flash();
+            \Alert::warning('No hay acreditaciones para registrar.')->flash();
 
             return redirect(backpack_url('accounting-settlement/'.$channel));
         }
