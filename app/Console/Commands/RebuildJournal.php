@@ -19,7 +19,7 @@ class RebuildJournal extends Command
         {--dry-run : Muestra qué borraría sin grabar nada}
         {--force : Borra y regenera sin pedir confirmación}';
 
-    protected $description = 'Borra las cuotas del libro diario en un período y las vuelve a generar desde ePorres';
+    protected $description = 'Borra las cuotas del libro diario en un período y las vuelve a generar desde ePorres. Conserva las acreditaciones subidas por archivo';
 
     public function handle(QuotaAccountingService $quotas): int
     {
@@ -42,7 +42,7 @@ class RebuildJournal extends Command
         $this->line('Período '.$from->toDateString().' a '.$to->toDateString());
         $this->line('Asientos de cuotas a borrar: '.$plan['delete_ids']->count());
         $this->line('Lotes a borrar: '.$plan['batch_ids']->count());
-        $this->line('De esos, liquidaciones de archivo: '.$plan['file_imports']);
+        $this->line('Acreditaciones de archivo que se conservan: '.$plan['file_imports']);
         $this->line('Los egresos de ese período no se modifican.');
 
         if ($this->option('dry-run')) {
@@ -51,7 +51,7 @@ class RebuildJournal extends Command
             return self::SUCCESS;
         }
 
-        if (! $this->option('force') && ! $this->confirm('¿Borrar esas cuotas y volver a generarlas desde ePorres?')) {
+        if (! $this->option('force') && ! $this->confirm('¿Borrar esas cuotas y volver a generarlas desde ePorres? Las acreditaciones subidas por archivo se conservan.')) {
             $this->line('No se modificó nada.');
 
             return self::SUCCESS;
@@ -68,7 +68,7 @@ class RebuildJournal extends Command
         DB::transaction(function () use ($plan): void {
             $this->deletePlan($plan);
         });
-        $this->info('Cuotas del período borradas. Las liquidaciones de archivo hay que volver a subirlas.');
+        $this->info('Cuotas del período borradas. Las acreditaciones subidas por archivo se conservaron.');
 
         $cursor = $from->copy()->startOfMonth();
         $lastMonth = $to->copy()->startOfMonth();
@@ -164,7 +164,7 @@ class RebuildJournal extends Command
             })
             ->pluck('id');
 
-        $fileImports = QuotaAccountingBatch::query()
+        $fileBatches = QuotaAccountingBatch::query()
             ->whereIn('id', $batchIds->isEmpty() ? [0] : $batchIds)
             ->where(function ($query): void {
                 $query->where('batch_key', 'like', 'mercadopago:%')
@@ -173,12 +173,28 @@ class RebuildJournal extends Command
                     ->orWhere('batch_key', 'like', 'qr:%')
                     ->orWhere('batch_key', 'like', 'mp-settlement:excel:%');
             })
-            ->count();
+            ->get(['id', 'accounting_entry_id']);
+
+        $fileBatchIds = $fileBatches->pluck('id')->map(fn ($id) => (int) $id);
+        $fileEntryIds = $fileBatches->pluck('accounting_entry_id')->filter()->map(fn ($id) => (int) $id);
+        $fileReversalIds = $fileEntryIds->isEmpty()
+            ? collect()
+            : AccountingEntry::query()
+                ->where('kind', AccountingEntry::KIND_REVERSAL)
+                ->whereIn('reversed_entry_id', $fileEntryIds)
+                ->pluck('id')
+                ->map(fn ($id) => (int) $id);
+        $deleteIds = $deleteIds
+            ->reject(fn ($id) => $fileEntryIds->contains((int) $id) || $fileReversalIds->contains((int) $id))
+            ->values();
+        $batchIds = $batchIds
+            ->reject(fn ($id) => $fileBatchIds->contains((int) $id))
+            ->values();
 
         return [
             'delete_ids' => $deleteIds->map(fn ($id) => (int) $id)->values(),
             'batch_ids' => $batchIds->map(fn ($id) => (int) $id)->values(),
-            'file_imports' => $fileImports,
+            'file_imports' => $fileBatches->count(),
         ];
     }
 

@@ -533,6 +533,12 @@ class AccountingJournalController extends CrudController
         } elseif ($settlementUpdated > 1) {
             $bits[] = $settlementUpdated.' acreditaciones de Mercado Pago actualizadas';
         }
+        $removed = (int) ($result['settlements']['removed'] ?? 0);
+        if ($removed === 1) {
+            $bits[] = '1 acreditación duplicada de Mercado Pago dada de baja';
+        } elseif ($removed > 1) {
+            $bits[] = $removed.' acreditaciones duplicadas de Mercado Pago dadas de baja';
+        }
 
         if (in_array($result['grants']['status'] ?? '', ['posted', 'updated'], true)) {
             $bits[] = 'becas actualizadas';

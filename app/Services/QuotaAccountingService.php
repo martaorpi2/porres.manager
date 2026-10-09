@@ -76,7 +76,11 @@ class QuotaAccountingService
         ]));
         $accounts = $this->accountsForCodes($codes);
 
-        return DB::transaction(function () use ($groups, $definition, $accounts) {
+        return DB::transaction(function () use ($groups, $definition, $accounts, $channel) {
+            if ($channel === PaymentSettlementChannels::MERCADOPAGO) {
+                $this->dropWebhookMpSettlements(array_column($groups, 'date'));
+            }
+
             $entries = [];
             foreach ($groups as $group) {
                 $exists = QuotaAccountingBatch::query()
@@ -811,6 +815,7 @@ class QuotaAccountingService
         $batches = QuotaAccountingBatch::query()
             ->where('kind', QuotaAccountingBatch::KIND_MP_SETTLEMENT)
             ->where('batch_key', 'like', 'mp-settlement:%')
+            ->where('batch_key', 'not like', 'mp-settlement:excel:%')
             ->whereDate('entry_date', '>=', $from)
             ->whereDate('entry_date', '<=', $to)
             ->whereHas('entry', fn ($query) => $query->where('status', AccountingEntry::STATUS_POSTED))
@@ -821,7 +826,10 @@ class QuotaAccountingService
         $fileDates = array_fill_keys(
             QuotaAccountingBatch::query()
                 ->where('kind', QuotaAccountingBatch::KIND_MP_SETTLEMENT)
-                ->where('batch_key', 'like', 'mercadopago:%')
+                ->where(function ($query) {
+                    $query->where('batch_key', 'like', 'mercadopago:%')
+                        ->orWhere('batch_key', 'like', 'mp-settlement:excel:%');
+                })
                 ->whereDate('entry_date', '>=', $from)
                 ->whereDate('entry_date', '<=', $to)
                 ->whereHas('entry', fn ($query) => $query->where('status', AccountingEntry::STATUS_POSTED))
@@ -830,6 +838,10 @@ class QuotaAccountingService
                 ->all(),
             true
         );
+
+        $removed = ! $dryRun && $fileDates !== []
+            ? $this->dropWebhookMpSettlements(array_keys($fileDates))
+            : 0;
 
         foreach ($batches as $batch) {
             $batchesByDate[$batch->entry_date->toDateString()][] = $batch;
@@ -920,7 +932,50 @@ class QuotaAccountingService
             'groups' => $postedGroups,
             'updated' => $updatedGroups,
             'skipped' => $skipped,
+            'removed' => $removed,
         ];
+    }
+
+    /**
+     * La acreditación del Excel manda. Si ePorres ya había generado la del mismo día, se saca.
+     *
+     * @param  list<string>  $dates
+     */
+    private function dropWebhookMpSettlements(array $dates): int
+    {
+        $dates = array_values(array_unique(array_filter(
+            $dates,
+            fn ($date) => is_string($date) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $date) === 1
+        )));
+        if ($dates === []) {
+            return 0;
+        }
+
+        return DB::transaction(function () use ($dates) {
+            $batches = QuotaAccountingBatch::query()
+                ->where('kind', QuotaAccountingBatch::KIND_MP_SETTLEMENT)
+                ->where('batch_key', 'like', 'mp-settlement:%')
+                ->where('batch_key', 'not like', 'mp-settlement:excel:%')
+                ->whereIn('entry_date', $dates)
+                ->whereHas('entry', fn ($query) => $query->where('status', AccountingEntry::STATUS_POSTED))
+                ->with('entry')
+                ->lockForUpdate()
+                ->get();
+
+            $count = 0;
+            foreach ($batches as $batch) {
+                $entry = $batch->entry;
+                $batch->orders()->delete();
+                $batch->delete();
+                if ($entry !== null) {
+                    $entry->lines()->delete();
+                    $entry->delete();
+                }
+                $count++;
+            }
+
+            return $count;
+        });
     }
 
     /**

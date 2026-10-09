@@ -250,6 +250,62 @@ class PaymentSettlementTest extends TestCase
         }
     }
 
+    public function test_mercadopago_file_replaces_the_webhook_settlement_of_the_same_day(): void
+    {
+        $webhookEntryId = null;
+        $fileEntryId = null;
+        DB::beginTransaction();
+        try {
+            $batch = QuotaAccountingBatch::query()->create([
+                'kind' => QuotaAccountingBatch::KIND_MP_SETTLEMENT,
+                'batch_key' => 'mp-settlement:2099-01-03:1:testdup',
+                'entry_date' => '2099-01-03',
+                'payment_type' => 'Mercado Pago',
+            ]);
+            $webhook = AccountingEntry::query()->create([
+                'entry_number' => 'AS-2099-901',
+                'date' => '2099-01-03',
+                'kind' => AccountingEntry::KIND_QUOTA_MP_SETTLEMENT,
+                'status' => AccountingEntry::STATUS_POSTED,
+                'source_type' => $batch->getMorphClass(),
+                'source_id' => $batch->id,
+                'description' => 'ACREDITACION COBRANZA MERCADO PAGO',
+            ]);
+            $batch->update(['accounting_entry_id' => $webhook->id]);
+            $webhookEntryId = $webhook->id;
+
+            $entries = app(QuotaAccountingService::class)->postImportedPaymentSettlements('mercadopago', [[
+                'key' => 'mercadopago:2099-01-03',
+                'date' => '2099-01-03',
+                'gross_cents' => 13718306,
+                'commission_cents' => 684738,
+                'interest_cents' => 0,
+                'net_cents' => 13033568,
+                'document' => '01/01/2099',
+                'collected_on' => ['2099-01-01'],
+            ]]);
+
+            $this->assertCount(1, $entries);
+            $fileEntryId = $entries[0]->id;
+            $this->assertSame(AccountingEntry::STATUS_POSTED, $entries[0]->fresh()->status);
+            $this->assertFalse(AccountingEntry::query()->whereKey($webhookEntryId)->exists());
+            $this->assertFalse(QuotaAccountingBatch::query()->where('batch_key', 'mp-settlement:2099-01-03:1:testdup')->exists());
+            $this->assertTrue(QuotaAccountingBatch::query()->where('batch_key', 'mercadopago:2099-01-03')->exists());
+            DB::rollBack();
+        } finally {
+            if ($webhookEntryId !== null && AccountingEntry::query()->whereKey($webhookEntryId)->exists()) {
+                AccountingEntry::query()->whereKey($webhookEntryId)->delete();
+            }
+            if ($fileEntryId !== null && AccountingEntry::query()->whereKey($fileEntryId)->exists()) {
+                AccountingEntry::query()->whereKey($fileEntryId)->delete();
+            }
+            QuotaAccountingBatch::query()->whereIn('batch_key', [
+                'mp-settlement:2099-01-03:1:testdup',
+                'mercadopago:2099-01-03',
+            ])->delete();
+        }
+    }
+
     /**
      * @param  list<list<string>>  $grid
      */

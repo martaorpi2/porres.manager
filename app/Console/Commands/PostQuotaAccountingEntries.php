@@ -221,6 +221,10 @@ class PostQuotaAccountingEntries extends Command
         if (($skipped['adjusted'] ?? 0) > 0) {
             $this->line('Acreditaciones modificadas a mano, sin reescribir: '.$skipped['adjusted']);
         }
+        $removed = (int) ($settlements['removed'] ?? 0);
+        if ($removed > 0) {
+            $this->line('Acreditaciones de ePorres dadas de baja porque ese día ya tiene el archivo: '.$removed);
+        }
     }
 
     private function money(float $amount): string
