@@ -351,16 +351,24 @@ class AccountingJournalController extends CrudController
     {
         $kind = in_array($kind, $this->kinds(), true) ? $kind : null;
         $paymentType = $this->paymentTypeForKind($kind);
-        $pairWithAccreditation = $accountId === null
-            && in_array($kind, AccountingEntry::accreditationKinds(), true);
+        $accreditationKind = in_array($kind, AccountingEntry::accreditationKinds(), true) ? $kind : null;
+        $pairWithAccreditation = $accountId === null && (
+            $accreditationKind !== null
+            || $kind === null
+            || $kind === AccountingEntry::KIND_QUOTA_COLLECTION
+        );
 
         $accreditationIds = collect();
         if ($pairWithAccreditation) {
             $accreditationIds = QuotaAccountingCollectionDate::query()
                 ->whereDate('collected_on', $collected)
-                ->whereHas('batch.entry', function ($query) use ($kind) {
-                    $query->where('status', AccountingEntry::STATUS_POSTED)
-                        ->where('kind', $kind);
+                ->whereHas('batch.entry', function ($query) use ($accreditationKind) {
+                    $query->where('status', AccountingEntry::STATUS_POSTED);
+                    if ($accreditationKind !== null) {
+                        $query->where('kind', $accreditationKind);
+                    } else {
+                        $query->whereIn('kind', AccountingEntry::accreditationKinds());
+                    }
                 })
                 ->with('batch')
                 ->get()

@@ -200,7 +200,7 @@ class PaymentSettlementTest extends TestCase
             $this->assertSame('30.00', $lines[1]->debit);
             $this->assertSame('20.00', $lines[2]->debit);
             $this->assertSame('1000.00', $lines[3]->credit);
-            $this->assertSame('ACREDITACION COBRANZA MERCADO PAGO 01/01/2099, 02/01/2099', $entries[0]->description);
+            $this->assertSame('ACREDITACION COBRANZA MERCADO PAGO cobro 01/01/2099, 02/01/2099', $entries[0]->description);
             $batch = QuotaAccountingBatch::query()->where('batch_key', 'mercadopago:2099-01-03')->first();
             $this->assertNotNull($batch);
             $this->assertSame(0, $batch->orders()->count());
@@ -248,6 +248,52 @@ class PaymentSettlementTest extends TestCase
                 AccountingEntry::query()->whereKey($entryId)->delete();
             }
             QuotaAccountingBatch::query()->where('batch_key', 'naranja:TEST-PROBE')->delete();
+        }
+    }
+
+    public function test_uploading_the_same_mercadopago_day_again_updates_the_entry(): void
+    {
+        $entryId = null;
+        DB::beginTransaction();
+        try {
+            $group = [
+                'key' => 'mercadopago:2099-09-05',
+                'date' => '2099-09-05',
+                'collected_on' => ['2099-08-26'],
+                'gross_cents' => 22000000,
+                'commission_cents' => 1098111,
+                'interest_cents' => 0,
+                'net_cents' => 20901889,
+                'document' => '26/08/2099',
+            ];
+            $first = app(QuotaAccountingService::class)->postImportedPaymentSettlements('mercadopago', [$group]);
+            $this->assertCount(1, $first);
+            $entryId = $first[0]->id;
+
+            $group['gross_cents'] = 22044000;
+            $group['commission_cents'] = 1100308;
+            $group['net_cents'] = 20943692;
+            $second = app(QuotaAccountingService::class)->postImportedPaymentSettlements('mercadopago', [$group]);
+
+            $this->assertCount(1, $second);
+            $this->assertSame($entryId, $second[0]->id);
+            $lines = $second[0]->lines()->with('account')->orderBy('id')->get();
+            $this->assertSame('209436.92', $lines[0]->debit);
+            $this->assertSame('11003.08', $lines[1]->debit);
+            $this->assertSame('220440.00', $lines[2]->credit);
+            $this->assertSame(1, QuotaAccountingBatch::query()->where('batch_key', 'mercadopago:2099-09-05')->count());
+
+            $user = $this->accountingUser();
+            $journal = $this->actingAs($user, 'backpack')->get('/admin/accounting-journal?collected=2099-08-26');
+            $journal->assertOk();
+            $journal->assertSee($second[0]->entry_number);
+            $journal->assertSee('220.440,00');
+            DB::rollBack();
+        } finally {
+            if ($entryId !== null && AccountingEntry::query()->whereKey($entryId)->exists()) {
+                AccountingEntry::query()->whereKey($entryId)->delete();
+            }
+            QuotaAccountingBatch::query()->where('batch_key', 'mercadopago:2099-09-05')->delete();
         }
     }
 

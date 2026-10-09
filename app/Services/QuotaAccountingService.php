@@ -81,11 +81,16 @@ class QuotaAccountingService
 
             $entries = [];
             foreach ($groups as $group) {
-                $exists = QuotaAccountingBatch::query()
+                $batch = QuotaAccountingBatch::query()
                     ->where('batch_key', $group['key'])
                     ->lockForUpdate()
-                    ->exists();
-                if ($exists) {
+                    ->first();
+                if ($batch !== null) {
+                    $updated = $this->replaceImportedSettlement($batch, $definition, $group, $accounts);
+                    if ($updated !== null) {
+                        $entries[] = $updated;
+                    }
+
                     continue;
                 }
                 $entries[] = $this->writeBatch(
@@ -109,6 +114,54 @@ class QuotaAccountingService
     }
 
     /**
+     * @param  array<string, mixed>  $definition
+     * @param  array<string, mixed>  $group
+     * @param  array<string, AccountingAccount>  $accounts
+     */
+    private function replaceImportedSettlement(QuotaAccountingBatch $batch, array $definition, array $group, array $accounts): ?AccountingEntry
+    {
+        $entry = $batch->entry;
+        if ($entry !== null && $entry->manually_adjusted) {
+            return null;
+        }
+
+        if ($entry === null || $entry->status !== AccountingEntry::STATUS_POSTED) {
+            $batch->orders()->delete();
+            $batch->collectionDates()->delete();
+            if ($entry !== null) {
+                $entry->lines()->delete();
+                $entry->delete();
+            }
+            $batch->delete();
+
+            return $this->writeBatch(
+                kind: $definition['batch_kind'],
+                batchKey: (string) $group['key'],
+                period: null,
+                entryDate: (string) $group['date'],
+                paymentType: $definition['payment_type'],
+                entryKind: $definition['entry_kind'],
+                description: $this->importedSettlementDescription($definition, $group),
+                lines: $this->channelSettlementLines($definition, $group, $accounts),
+                orders: [],
+                role: $definition['batch_kind'],
+            );
+        }
+
+        $entry->lines()->delete();
+        foreach ($this->channelSettlementLines($definition, $group, $accounts) as $line) {
+            $entry->lines()->create($line);
+        }
+        $entry->update([
+            'date' => $group['date'],
+            'description' => $this->importedSettlementDescription($definition, $group),
+            'status' => AccountingEntry::STATUS_POSTED,
+        ]);
+
+        return $entry->fresh();
+    }
+
+    /**
      * Guarda qué fechas de cobro cierra cada acreditación, para verlas juntas en el libro.
      *
      * @param  list<array{key?: string, collected_on?: mixed}>  $groups
@@ -125,11 +178,18 @@ class QuotaAccountingService
             if ($batch === null) {
                 continue;
             }
+            $valid = [];
             foreach ($dates as $date) {
                 $date = (string) $date;
-                if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $date) !== 1) {
-                    continue;
+                if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $date) === 1) {
+                    $valid[$date] = $date;
                 }
+            }
+            if ($valid === []) {
+                continue;
+            }
+            $batch->collectionDates()->whereNotIn('collected_on', array_values($valid))->delete();
+            foreach ($valid as $date) {
                 QuotaAccountingCollectionDate::query()->firstOrCreate([
                     'quota_accounting_batch_id' => $batch->id,
                     'collected_on' => $date,
@@ -165,7 +225,7 @@ class QuotaAccountingService
             return;
         }
 
-        $description = mb_substr(trim($definition['description'].' '.$label), 0, 255);
+        $description = mb_substr(trim($definition['description'].' cobro '.$label), 0, 255);
         if ($description === $entry->description) {
             return;
         }
@@ -202,7 +262,7 @@ class QuotaAccountingService
             $label = trim((string) ($group['document'] ?? ''));
         }
 
-        return mb_substr(trim($definition['description'].' '.$label), 0, 255);
+        return mb_substr(trim($definition['description'].' cobro '.$label), 0, 255);
     }
 
     private function collectionDatesLabel(mixed $dates): string

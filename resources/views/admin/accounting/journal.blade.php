@@ -22,7 +22,7 @@
                     </div>
                     <div class="col-sm-6 col-md-2">
                         <label for="collected" class="form-label journal-label">Fecha de cobro</label>
-                        <input type="date" name="collected" id="collected" class="form-control" value="{{ $filters['collected'] }}" title="Cobranza de ese día. El contrasiento aparece solo si elegís el tipo de acreditación.">
+                        <input type="date" name="collected" id="collected" class="form-control" value="{{ $filters['collected'] }}" title="Muestra la cobranza de ese día y la acreditación del archivo que la cierra.">
                     </div>
                     <div class="col-sm-6 col-md-2">
                         <label for="kind" class="form-label journal-label">Tipo</label>
@@ -106,7 +106,7 @@
                                 <tr class="journal-asiento-label">
                                     <td colspan="3">
                                         <strong>Asiento {{ $entry->entry_number }}</strong>
-                                        <span class="journal-asiento-meta">{{ $entry->date?->format('d/m/Y') }} · {{ $entry->description }} · {{ $entry->kind_label }}</span>
+                                        <span class="journal-asiento-meta">@if(str_starts_with((string) $entry->kind_label, 'Acreditación '))Acreditación {{ $entry->date?->format('d/m/Y') }} · {{ $entry->description }}@else{{ $entry->date?->format('d/m/Y') }} · {{ $entry->description }} · {{ $entry->kind_label }}@endif</span>
                                     </td>
                                     <td class="text-end">
                                         @if($entry->status === \App\Models\AccountingEntry::STATUS_POSTED)

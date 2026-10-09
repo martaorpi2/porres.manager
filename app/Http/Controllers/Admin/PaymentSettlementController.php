@@ -70,17 +70,21 @@ class PaymentSettlementController extends CrudController
         $accounting->linkImportedCollectionDates($postable);
 
         $posted = $this->postedKeys(array_column($parsed['groups'], 'key'));
+        $adjusted = $this->adjustedKeys(array_column($parsed['groups'], 'key'));
         $rows = [];
         foreach ($parsed['rows'] as $row) {
-            if ($row['outcome'] === 'ready' && isset($posted[$row['group_key']])) {
-                $row['outcome'] = 'already_posted';
-                $row['detail'] = 'Esta fecha ya tiene asiento.';
+            if ($row['outcome'] === 'ready' && isset($adjusted[$row['group_key']])) {
+                $row['outcome'] = 'adjusted';
+                $row['detail'] = 'El asiento de esa fecha fue modificado a mano.';
+            } elseif ($row['outcome'] === 'ready' && isset($posted[$row['group_key']])) {
+                $row['outcome'] = 'update';
+                $row['detail'] = 'Se actualiza el asiento de esta fecha con el archivo.';
             }
             $rows[] = $row;
         }
         $ready = [];
         foreach ($parsed['groups'] as $group) {
-            if (! isset($posted[$group['key']]) && $this->groupIsPostable($definition, $group)) {
+            if (! isset($adjusted[$group['key']]) && $this->groupIsPostable($definition, $group)) {
                 $ready[] = $group;
             }
         }
@@ -203,6 +207,31 @@ class PaymentSettlementController extends CrudController
         }
 
         return $posted;
+    }
+
+    /**
+     * @param  list<string>  $keys
+     * @return array<string, true>
+     */
+    private function adjustedKeys(array $keys): array
+    {
+        if ($keys === []) {
+            return [];
+        }
+
+        $adjusted = [];
+        $found = QuotaAccountingBatch::query()
+            ->whereIn('batch_key', $keys)
+            ->whereHas('entry', function ($query) {
+                $query->where('status', AccountingEntry::STATUS_POSTED)
+                    ->where('manually_adjusted', true);
+            })
+            ->pluck('batch_key');
+        foreach ($found as $key) {
+            $adjusted[(string) $key] = true;
+        }
+
+        return $adjusted;
     }
 
     /**

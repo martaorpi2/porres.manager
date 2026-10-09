@@ -86,7 +86,9 @@
                                     @php
                                         $outcomeLabel = [
                                             'ready' => 'Se registra',
+                                            'update' => 'Se actualiza',
                                             'already_posted' => 'Ya registrada',
+                                            'adjusted' => 'Modificado a mano',
                                             'unbalanced' => 'No cierra',
                                             'invalid' => 'Fecha inválida',
                                         ][$row['outcome']] ?? $row['outcome'];
