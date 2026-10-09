@@ -22,7 +22,7 @@
                     </div>
                     <div class="col-sm-6 col-md-2">
                         <label for="collected" class="form-label journal-label">Fecha de cobro</label>
-                        <input type="date" name="collected" id="collected" class="form-control" value="{{ $filters['collected'] }}" title="Muestra la cobranza de ese día y la acreditación que la cierra">
+                        <input type="date" name="collected" id="collected" class="form-control" value="{{ $filters['collected'] }}" title="Cobranza de ese día. El contrasiento aparece solo si elegís el tipo de acreditación.">
                     </div>
                     <div class="col-sm-6 col-md-2">
                         <label for="kind" class="form-label journal-label">Tipo</label>
@@ -61,13 +61,15 @@
 
         <div class="card journal-card journal-book">
             <div class="card-body p-0">
-                @if($filters['collected'])
+                @php
+                    $pairsAccreditation = empty($filters['account_id'])
+                        && is_string($filters['kind'])
+                        && isset($kinds[$filters['kind']])
+                        && str_starts_with($kinds[$filters['kind']], 'Acreditación ');
+                @endphp
+                @if($filters['collected'] && $pairsAccreditation)
                     <p class="mb-0 px-3 py-2">
-                        @if(is_string($filters['kind']) && isset($kinds[$filters['kind']]) && str_starts_with($kinds[$filters['kind']], 'Acreditación '))
-                            Cobranza de {{ substr($kinds[$filters['kind']], strlen('Acreditación ')) }} del {{ \Carbon\Carbon::parse($filters['collected'])->format('d/m/Y') }} y su acreditación.
-                        @else
-                            Cobranza del {{ \Carbon\Carbon::parse($filters['collected'])->format('d/m/Y') }} y la acreditación que la cierra.
-                        @endif
+                        Cobranza de {{ substr($kinds[$filters['kind']], strlen('Acreditación ')) }} del {{ \Carbon\Carbon::parse($filters['collected'])->format('d/m/Y') }} y su acreditación.
                     </p>
                 @endif
                 @php
@@ -137,7 +139,7 @@
                                 </tr>
                             @empty
                                 <tr>
-                                    <td colspan="4" class="text-muted">{{ $filters['collected'] ? 'No hay cobranza ni acreditación para esa fecha de cobro.' : 'No hay asientos para ese filtro.' }}</td>
+                                    <td colspan="4" class="text-muted">{{ $filters['collected'] && $pairsAccreditation ? 'No hay cobranza ni acreditación para esa fecha de cobro.' : 'No hay asientos para ese filtro.' }}</td>
                                 </tr>
                             @endforelse
                         </tbody>

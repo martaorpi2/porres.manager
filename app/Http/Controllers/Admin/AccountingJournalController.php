@@ -343,8 +343,7 @@ class AccountingJournalController extends CrudController
     }
 
     /**
-     * Cobranza de ese día y la acreditación que la cierra.
-     * Si hay un tipo elegido, solo ese medio de pago.
+     * Cobranza de ese día. El contrasiento entra solo si el tipo es una acreditación y no hay cuenta.
      *
      * @return \Illuminate\Support\Collection<int, AccountingEntry>
      */
@@ -352,24 +351,24 @@ class AccountingJournalController extends CrudController
     {
         $kind = in_array($kind, $this->kinds(), true) ? $kind : null;
         $paymentType = $this->paymentTypeForKind($kind);
-        $accreditationKinds = in_array($kind, AccountingEntry::accreditationKinds(), true)
-            ? [$kind]
-            : AccountingEntry::accreditationKinds();
+        $pairWithAccreditation = $accountId === null
+            && in_array($kind, AccountingEntry::accreditationKinds(), true);
 
-        $linked = QuotaAccountingCollectionDate::query()
-            ->whereDate('collected_on', $collected)
-            ->whereHas('batch.entry', function ($query) use ($accreditationKinds) {
-                $query->where('status', AccountingEntry::STATUS_POSTED)
-                    ->whereIn('kind', $accreditationKinds);
-            })
-            ->with('batch')
-            ->get();
-
-        $accreditationIds = $linked
-            ->map(fn (QuotaAccountingCollectionDate $date) => $date->batch?->accounting_entry_id)
-            ->filter()
-            ->unique()
-            ->values();
+        $accreditationIds = collect();
+        if ($pairWithAccreditation) {
+            $accreditationIds = QuotaAccountingCollectionDate::query()
+                ->whereDate('collected_on', $collected)
+                ->whereHas('batch.entry', function ($query) use ($kind) {
+                    $query->where('status', AccountingEntry::STATUS_POSTED)
+                        ->where('kind', $kind);
+                })
+                ->with('batch')
+                ->get()
+                ->map(fn (QuotaAccountingCollectionDate $date) => $date->batch?->accounting_entry_id)
+                ->filter()
+                ->unique()
+                ->values();
+        }
 
         $collectionIds = $kind !== null && $paymentType === null && $kind !== AccountingEntry::KIND_QUOTA_COLLECTION
             ? collect()
@@ -380,11 +379,13 @@ class AccountingJournalController extends CrudController
                 ->whereNotNull('accounting_entry_id')
                 ->pluck('accounting_entry_id');
 
-        if ($accreditationIds->isEmpty() && $paymentType !== null) {
+        if ($pairWithAccreditation && $accreditationIds->isEmpty()) {
             $accreditationIds = $this->accreditationIdsByAmount($kind, $collected, $collectionIds);
         }
 
-        $ids = $collectionIds->merge($accreditationIds)->unique()->values();
+        $ids = $pairWithAccreditation
+            ? $collectionIds->merge($accreditationIds)->unique()->values()
+            : $collectionIds;
         if ($ids->isEmpty()) {
             return collect();
         }
