@@ -30,6 +30,12 @@ class AccountingEntry extends Model
 
     public const KIND_QUOTA_QR_SETTLEMENT = 'quota_qr_settlement';
 
+    public const KIND_PAYROLL_ACCRUAL = 'payroll_accrual';
+
+    public const KIND_PAYROLL_PAYMENT = 'payroll_payment';
+
+    public const KIND_BANK_EXPENSE = 'bank_expense';
+
     public const STATUS_POSTED = 'posted';
 
     public const STATUS_REVERSED = 'reversed';
@@ -73,6 +79,9 @@ class AccountingEntry extends Model
             self::KIND_QUOTA_NX_SETTLEMENT => 'Liquidación Naranja X',
             self::KIND_QUOTA_SOL_SETTLEMENT => 'Liquidación Sol Pago',
             self::KIND_QUOTA_QR_SETTLEMENT => 'Liquidación QR',
+            self::KIND_PAYROLL_ACCRUAL => 'Devengamiento de Sueldos',
+            self::KIND_PAYROLL_PAYMENT => 'Pago de Sueldos',
+            self::KIND_BANK_EXPENSE => 'Gastos Bancarios',
             self::KIND_OUTFLOW => 'Egreso',
             self::KIND_REVERSAL => 'Reverso',
             default => (string) $this->kind,

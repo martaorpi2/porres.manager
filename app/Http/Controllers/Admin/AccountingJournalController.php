@@ -280,6 +280,9 @@ class AccountingJournalController extends CrudController
             AccountingEntry::KIND_QUOTA_NX_SETTLEMENT => 'Liquidación Naranja X',
             AccountingEntry::KIND_QUOTA_SOL_SETTLEMENT => 'Liquidación Sol Pago',
             AccountingEntry::KIND_QUOTA_QR_SETTLEMENT => 'Liquidación QR',
+            AccountingEntry::KIND_PAYROLL_ACCRUAL => 'Devengamiento de Sueldos',
+            AccountingEntry::KIND_PAYROLL_PAYMENT => 'Pago de Sueldos',
+            AccountingEntry::KIND_BANK_EXPENSE => 'Gastos Bancarios',
             AccountingEntry::KIND_OUTFLOW => 'Egreso',
             AccountingEntry::KIND_REVERSAL => 'Reverso',
         ];
