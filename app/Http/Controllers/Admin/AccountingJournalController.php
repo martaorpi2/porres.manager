@@ -283,16 +283,16 @@ class AccountingJournalController extends CrudController
     private function kindOptions(): array
     {
         return [
-            AccountingEntry::KIND_QUOTA_ACCRUAL => 'Devengamiento de cuotas',
-            AccountingEntry::KIND_QUOTA_GRANT => 'Becas otorgadas',
-            AccountingEntry::KIND_QUOTA_COLLECTION => 'Cobranza de cuotas',
             AccountingEntry::KIND_QUOTA_MP_SETTLEMENT => 'Acreditación Mercado Pago',
             AccountingEntry::KIND_QUOTA_NX_SETTLEMENT => 'Acreditación Naranja X',
-            AccountingEntry::KIND_QUOTA_SOL_SETTLEMENT => 'Acreditación Sol Pago',
             AccountingEntry::KIND_QUOTA_QR_SETTLEMENT => 'Acreditación QR',
+            AccountingEntry::KIND_QUOTA_SOL_SETTLEMENT => 'Acreditación Sol Pago',
+            AccountingEntry::KIND_QUOTA_GRANT => 'Becas otorgadas',
+            AccountingEntry::KIND_QUOTA_COLLECTION => 'Cobranza de cuotas',
+            AccountingEntry::KIND_QUOTA_ACCRUAL => 'Devengamiento de cuotas',
             AccountingEntry::KIND_PAYROLL_ACCRUAL => 'Devengamiento de Sueldos',
-            AccountingEntry::KIND_PAYROLL_PAYMENT => 'Pago de Sueldos',
             AccountingEntry::KIND_BANK_EXPENSE => 'Gastos Bancarios',
+            AccountingEntry::KIND_PAYROLL_PAYMENT => 'Pago de Sueldos',
         ];
     }
 

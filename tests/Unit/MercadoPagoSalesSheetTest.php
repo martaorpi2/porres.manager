@@ -46,6 +46,19 @@ class MercadoPagoSalesSheetTest extends TestCase
         $this->assertSame(96000, $rows[0]['net_cents']);
     }
 
+    public function test_reads_dotted_day_month_year_dates(): void
+    {
+        $path = $this->workbook([
+            ['Fecha de cobro', 'Fecha de acreditación', 'Cobro', 'Cargos e impuestos', 'Total a recibir'],
+            ['01.10.2026', '02.10.2026', '1000', '8', '992'],
+        ]);
+
+        $rows = (new MercadoPagoSalesSheet)->read($path, true);
+
+        $this->assertSame('2026-10-01', $rows[0]['collected_on']);
+        $this->assertSame('2026-10-02', $rows[0]['date']);
+    }
+
     public function test_reads_the_collection_date_separately_from_the_accreditation_date(): void
     {
         $path = $this->workbook([

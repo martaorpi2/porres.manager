@@ -129,7 +129,7 @@ final class MercadoPagoSalesSheet
         if (preg_match('/^(\d{4})-(\d{2})-(\d{2})/', $text, $match) === 1) {
             return $match[1].'-'.$match[2].'-'.$match[3];
         }
-        if (preg_match('/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/', $text, $match) !== 1) {
+        if (preg_match('/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})/', $text, $match) !== 1) {
             return null;
         }
 
