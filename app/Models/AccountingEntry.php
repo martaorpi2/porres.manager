@@ -36,6 +36,8 @@ class AccountingEntry extends Model
 
     public const KIND_BANK_EXPENSE = 'bank_expense';
 
+    public const KIND_MANUAL = 'manual';
+
     public const STATUS_POSTED = 'posted';
 
     public const STATUS_REVERSED = 'reversed';
@@ -57,6 +59,16 @@ class AccountingEntry extends Model
             self::KIND_QUOTA_SOL_SETTLEMENT,
             self::KIND_QUOTA_QR_SETTLEMENT,
         ];
+    }
+
+    /**
+     * Asientos que se listan en el libro diario y entran en sumas y saldos.
+     *
+     * @return list<string>
+     */
+    public static function bookKinds(): array
+    {
+        return array_merge(self::quotaKinds(), [self::KIND_MANUAL]);
     }
 
     /**
@@ -116,6 +128,7 @@ class AccountingEntry extends Model
             self::KIND_PAYROLL_ACCRUAL => 'Devengamiento de Sueldos',
             self::KIND_PAYROLL_PAYMENT => 'Pago de Sueldos',
             self::KIND_BANK_EXPENSE => 'Gastos Bancarios',
+            self::KIND_MANUAL => 'Asiento manual',
             self::KIND_OUTFLOW => 'Egreso',
             self::KIND_REVERSAL => 'Reverso',
             default => (string) $this->kind,

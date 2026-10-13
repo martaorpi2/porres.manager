@@ -28,6 +28,8 @@ Route::group([
     Route::get('accounting-account/export/pdf', 'AccountingAccountCrudController@exportPdf')->name('accounting-account.export.pdf');
     Route::crud('accounting-account', 'AccountingAccountCrudController');
     Route::get('accounting-journal', 'AccountingJournalController@index')->name('accounting-journal.index');
+    Route::get('accounting-journal/create', 'AccountingJournalController@create')->name('accounting-journal.create');
+    Route::post('accounting-journal', 'AccountingJournalController@store')->name('accounting-journal.store');
     Route::post('accounting-journal/refresh', 'AccountingJournalController@refresh')->name('accounting-journal.refresh');
     Route::get('accounting-journal/{accountingEntry}/edit', 'AccountingJournalController@edit')->name('accounting-journal.edit');
     Route::put('accounting-journal/{accountingEntry}', 'AccountingJournalController@update')->name('accounting-journal.update');

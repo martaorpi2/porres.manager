@@ -1,12 +1,14 @@
+@php($accountSides = $accountSides ?? [])
 <tr>
     <td>
         <input type="hidden" name="lines[{{ $index }}][id]" value="{{ $line['id'] ?? '' }}">
         <select name="lines[{{ $index }}][accounting_account_id]" class="form-control" required>
             <option value="">Elegir cuenta</option>
             @foreach($accounts as $id => $label)
-                <option value="{{ $id }}" @selected((int) ($line['accounting_account_id'] ?? 0) === (int) $id)>{{ $label }}</option>
+                <option value="{{ $id }}" data-side="{{ $accountSides[$id] ?? '' }}" @selected((int) ($line['accounting_account_id'] ?? 0) === (int) $id)>{{ $label }}</option>
             @endforeach
         </select>
+        <small class="line-side-hint"></small>
     </td>
     <td>
         <input type="text" name="lines[{{ $index }}][debit]" class="form-control text-end line-debit" inputmode="decimal" value="{{ $line['debit'] ?? '0,00' }}">

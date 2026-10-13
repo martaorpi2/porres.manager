@@ -47,6 +47,7 @@ class AccountingJournalEditTest extends TestCase
         try {
             $page = $this->actingAs($user, 'backpack')->get('/admin/accounting-journal/'.$entry->id.'/edit');
             $page->assertOk();
+            $page->assertSeeInOrder(['Agregar cuenta', 'Totales', 'Guardar']);
             $page->assertSee('id="entry-description"', false);
             $page->assertSee('value="DESCRIPCION ORIGINAL"', false);
 

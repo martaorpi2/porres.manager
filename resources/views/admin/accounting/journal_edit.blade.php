@@ -23,7 +23,9 @@
     <div class="col-12">
         <div class="card journal-edit-card">
             <div class="card-body">
-                <p class="mb-1"><strong>Fecha:</strong> {{ $entry->date?->format('d/m/Y') }}</p>
+                @if($entry->kind !== \App\Models\AccountingEntry::KIND_MANUAL)
+                    <p class="mb-1"><strong>Fecha:</strong> {{ $entry->date?->format('d/m/Y') }}</p>
+                @endif
                 <p class="mb-3"><strong>Tipo:</strong> {{ $entry->kind_label }}</p>
 
                 @if($errors->has('lines'))
@@ -37,6 +39,16 @@
                     @foreach($returnQuery as $key => $value)
                         <input type="hidden" name="{{ $key }}" value="{{ $value }}">
                     @endforeach
+
+                    @if($entry->kind === \App\Models\AccountingEntry::KIND_MANUAL)
+                        <div class="mb-3">
+                            <label for="entry-date" class="journal-label">Fecha</label>
+                            <input type="date" name="date" id="entry-date" class="form-control @error('date') is-invalid @enderror" required value="{{ old('date', $entry->date?->toDateString()) }}">
+                            @error('date')
+                                <div class="invalid-feedback">{{ $message }}</div>
+                            @enderror
+                        </div>
+                    @endif
 
                     <div class="mb-3">
                         <label for="entry-description" class="journal-label">Descripción</label>
@@ -62,6 +74,11 @@
                                 @endforeach
                             </tbody>
                             <tfoot>
+                                <tr class="journal-add-row">
+                                    <td colspan="4">
+                                        <button type="button" class="btn journal-btn-add" id="add-line">Agregar cuenta</button>
+                                    </td>
+                                </tr>
                                 <tr>
                                     <td>Totales</td>
                                     <td class="text-end" id="total-debit">0,00</td>
@@ -76,7 +93,6 @@
                     </div>
 
                     <div class="d-flex gap-2 journal-edit-actions">
-                        <button type="button" class="btn journal-btn-add" id="add-line">Agregar cuenta</button>
                         <button type="submit" class="btn journal-btn-save">Guardar</button>
                     </div>
                 </form>
@@ -124,6 +140,12 @@
     }
     .journal-edit-lines td { vertical-align: middle; }
     .journal-edit-lines tfoot td { font-weight: 700; }
+    .journal-add-row td {
+        font-weight: 400;
+        background: #fff;
+        padding-top: 0.65rem;
+        padding-bottom: 0.65rem;
+    }
     .journal-amount { width: 9rem; }
     .journal-edit-lines select,
     .journal-edit-lines input {
@@ -149,6 +171,18 @@
     }
     .journal-balance.is-ok { color: #1e2a4a; font-weight: 600; }
     .journal-balance.is-diff { color: #871f1f; font-weight: 700; }
+    .line-side-hint {
+        display: block;
+        margin-top: 0.3rem;
+        color: #871f1f;
+        font-size: 0.78rem;
+        font-weight: 600;
+    }
+    .line-side-hint:empty { display: none; }
+    .journal-edit-lines input.is-expected {
+        border-color: #871f1f;
+        background: #fff8f8;
+    }
 </style>
 @endsection
 
@@ -232,6 +266,39 @@
 
         body.addEventListener('input', function () {
             document.getElementById('save-warning').hidden = true;
+        });
+
+        function applySide(row, shouldFocus) {
+            var select = row.querySelector('select');
+            var debit = row.querySelector('.line-debit');
+            var credit = row.querySelector('.line-credit');
+            var hint = row.querySelector('.line-side-hint');
+            if (!select || !debit || !credit || !hint) return;
+            var option = select.options[select.selectedIndex];
+            var side = option ? (option.getAttribute('data-side') || '') : '';
+            debit.classList.remove('is-expected');
+            credit.classList.remove('is-expected');
+            if (side === 'debit') {
+                debit.classList.add('is-expected');
+                hint.textContent = 'Saldo deudor: cargá el importe en el debe.';
+                if (shouldFocus) debit.focus();
+            } else if (side === 'credit') {
+                credit.classList.add('is-expected');
+                hint.textContent = 'Saldo acreedor: cargá el importe en el haber.';
+                if (shouldFocus) credit.focus();
+            } else {
+                hint.textContent = '';
+            }
+        }
+
+        body.addEventListener('change', function (event) {
+            var select = event.target.closest('select');
+            if (!select || !body.contains(select)) return;
+            applySide(select.closest('tr'), true);
+        });
+
+        body.querySelectorAll('tr').forEach(function (row) {
+            applySide(row, false);
         });
 
         refreshTotals();

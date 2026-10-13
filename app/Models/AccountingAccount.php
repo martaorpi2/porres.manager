@@ -63,8 +63,22 @@ class AccountingAccount extends Model
     public static function defaultBalanceNature(?string $accountType): ?string
     {
         return match ($accountType) {
-            'activo', 'egreso' => 'deudor',
-            'pasivo', 'patrimonio', 'ingreso', 'gasto' => 'acreedor',
+            'activo', 'gasto', 'egreso' => 'deudor',
+            'pasivo', 'patrimonio', 'ingreso' => 'acreedor',
+            default => null,
+        };
+    }
+
+    /**
+     * Lado en el que se carga la cuenta por defecto: el de su saldo.
+     */
+    public function entrySide(): ?string
+    {
+        $nature = $this->balance_nature ?: self::defaultBalanceNature($this->account_type);
+
+        return match ($nature) {
+            'deudor' => 'debit',
+            'acreedor' => 'credit',
             default => null,
         };
     }

@@ -1,8 +1,9 @@
 @extends(backpack_view('blank'))
 
 @section('header')
-    <section class="header-operation container-fluid animated fadeIn d-flex mb-2 align-items-baseline d-print-none" bp-section="page-header">
+    <section class="header-operation container-fluid animated fadeIn d-flex mb-2 align-items-center d-print-none" bp-section="page-header">
         <h1 class="mb-0 journal-title" bp-section="page-heading">Libro diario</h1>
+        <a href="{{ backpack_url('accounting-journal/create') }}" class="btn journal-btn-new ms-3 ml-3">Nuevo asiento</a>
     </section>
 @endsection
 
@@ -175,12 +176,22 @@
     .journal-actions {
         gap: 0.5rem;
     }
-    .journal-btn-filter {
+    .journal-btn-filter,
+    .journal-btn-new {
         background-color: #871f1f;
         border-color: #871f1f;
-        color: #fff;
+        color: #fff !important;
         font-weight: 600;
         padding: 0.45rem 1.1rem;
+    }
+    .journal-btn-new {
+        padding: 0.2rem 0.75rem;
+        font-size: 0.85rem;
+    }
+    .journal-btn-new:hover {
+        background-color: #6e1919;
+        border-color: #6e1919;
+        color: #fff !important;
     }
     .journal-btn-clear {
         background: #fff;

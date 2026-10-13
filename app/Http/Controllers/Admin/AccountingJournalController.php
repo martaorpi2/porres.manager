@@ -15,6 +15,7 @@ use Backpack\CRUD\app\Http\Controllers\CrudController;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use RuntimeException;
 use Throwable;
 
 class AccountingJournalController extends CrudController
@@ -34,7 +35,7 @@ class AccountingJournalController extends CrudController
             : AccountingEntry::query()
                 ->with(['lines.account'])
                 ->where('status', AccountingEntry::STATUS_POSTED)
-                ->whereIn('kind', AccountingEntry::quotaKinds())
+                ->whereIn('kind', AccountingEntry::bookKinds())
                 ->when($from, fn ($query) => $query->whereDate('date', '>=', $from))
                 ->when($to, fn ($query) => $query->whereDate('date', '<=', $to))
                 ->when(in_array($kind, $this->kinds(), true), fn ($query) => $query->where('kind', $kind))
@@ -106,15 +107,103 @@ class AccountingJournalController extends CrudController
         return redirect($back);
     }
 
+    public function create()
+    {
+        $this->authorizeAccounting();
+
+        $accounts = AccountingAccount::optionsForSelect();
+
+        return view('admin.accounting.journal_create', [
+            'accounts' => $accounts,
+            'accountSides' => $this->accountSides($accounts),
+            'title' => 'Nuevo asiento',
+            'breadcrumbs' => [
+                trans('backpack::crud.admin') => backpack_url('dashboard'),
+                'Libro diario' => backpack_url('accounting-journal'),
+                'Nuevo asiento' => false,
+            ],
+        ]);
+    }
+
+    public function store(Request $request)
+    {
+        $this->authorizeAccounting();
+
+        $validated = $request->validate([
+            'date' => ['required', 'date'],
+            'description' => ['required', 'string', 'max:255'],
+        ], [
+            'date.required' => 'La fecha es obligatoria.',
+            'date.date' => 'La fecha no es válida.',
+            'description.required' => 'La descripción es obligatoria.',
+            'description.max' => 'La descripción no puede superar los 255 caracteres.',
+        ]);
+        $description = trim($validated['description']);
+        if ($description === '') {
+            return back()->withInput()->withErrors(['description' => 'La descripción es obligatoria.']);
+        }
+
+        $prepared = AccountingEntryEditor::prepare($request->input('lines', []));
+        if ($prepared['error'] !== null) {
+            return back()->withInput()->withErrors(['lines' => $prepared['error']]);
+        }
+
+        $accountError = $this->accountLineError(array_column($prepared['lines'], 'accounting_account_id'), true);
+        if ($accountError !== null) {
+            return back()->withInput()->withErrors(['lines' => $accountError]);
+        }
+
+        $user = backpack_user();
+        $date = Carbon::parse($validated['date'])->toDateString();
+
+        try {
+            $entry = DB::transaction(function () use ($prepared, $description, $user, $date) {
+                $entry = AccountingEntry::query()->create([
+                    'entry_number' => AccountingEntry::nextEntryNumber(),
+                    'date' => $date,
+                    'kind' => AccountingEntry::KIND_MANUAL,
+                    'status' => AccountingEntry::STATUS_POSTED,
+                    'source_type' => null,
+                    'source_id' => null,
+                    'description' => $description,
+                    'manually_adjusted' => true,
+                    'created_by_id' => $user instanceof User ? $user->id : null,
+                ]);
+                foreach ($prepared['lines'] as $line) {
+                    $entry->lines()->create([
+                        'accounting_account_id' => $line['accounting_account_id'],
+                        'debit' => $line['debit'],
+                        'credit' => $line['credit'],
+                    ]);
+                }
+
+                return $entry;
+            });
+        } catch (RuntimeException $exception) {
+            return back()->withInput()->withErrors(['lines' => $exception->getMessage()]);
+        }
+
+        \Alert::success('El asiento '.$entry->entry_number.' quedó registrado.')->flash();
+
+        return redirect(backpack_url('accounting-journal').'?'.http_build_query([
+            'from' => $date,
+            'to' => $date,
+            'kind' => AccountingEntry::KIND_MANUAL,
+        ]));
+    }
+
     public function edit(Request $request, AccountingEntry $accountingEntry)
     {
         $this->authorizeAccounting();
         $this->ensureEditable($accountingEntry);
         $accountingEntry->load(['lines.account']);
 
+        $accounts = $this->editableAccounts($accountingEntry);
+
         return view('admin.accounting.journal_edit', [
             'entry' => $accountingEntry,
-            'accounts' => $this->editableAccounts($accountingEntry),
+            'accounts' => $accounts,
+            'accountSides' => $this->accountSides($accounts),
             'returnQuery' => $this->returnQuery($request),
             'title' => 'Modificar '.$accountingEntry->entry_number,
             'breadcrumbs' => [
@@ -130,12 +219,19 @@ class AccountingJournalController extends CrudController
         $this->authorizeAccounting();
         $this->ensureEditable($accountingEntry);
 
-        $validated = $request->validate([
+        $rules = [
             'description' => ['required', 'string', 'max:255'],
-        ], [
+        ];
+        $messages = [
             'description.required' => 'La descripción es obligatoria.',
             'description.max' => 'La descripción no puede superar los 255 caracteres.',
-        ]);
+        ];
+        if ($accountingEntry->kind === AccountingEntry::KIND_MANUAL) {
+            $rules['date'] = ['required', 'date'];
+            $messages['date.required'] = 'La fecha es obligatoria.';
+            $messages['date.date'] = 'La fecha no es válida.';
+        }
+        $validated = $request->validate($rules, $messages);
         $description = trim($validated['description']);
         if ($description === '') {
             return back()->withInput()->withErrors(['description' => 'La descripción es obligatoria.']);
@@ -146,19 +242,14 @@ class AccountingJournalController extends CrudController
             return back()->withInput()->withErrors(['lines' => $prepared['error']]);
         }
 
-        $accountIds = array_values(array_unique(array_column($prepared['lines'], 'accounting_account_id')));
-        $found = AccountingAccount::query()->whereIn('id', $accountIds)->pluck('id')->map(fn ($id) => (int) $id)->all();
-        if (count($found) !== count($accountIds)) {
-            return back()->withInput()->withErrors(['lines' => 'Hay una cuenta que no existe en el plan.']);
-        }
-        $grouping = AccountingAccount::groupingUsedMessage($accountIds);
-        if ($grouping !== null) {
-            return back()->withInput()->withErrors(['lines' => $grouping]);
+        $accountError = $this->accountLineError(array_column($prepared['lines'], 'accounting_account_id'));
+        if ($accountError !== null) {
+            return back()->withInput()->withErrors(['lines' => $accountError]);
         }
 
         $memos = $accountingEntry->lines()->pluck('memo', 'id');
 
-        DB::transaction(function () use ($accountingEntry, $prepared, $memos, $description) {
+        DB::transaction(function () use ($accountingEntry, $prepared, $memos, $description, $validated) {
             $accountingEntry->lines()->delete();
             foreach ($prepared['lines'] as $line) {
                 $accountingEntry->lines()->create([
@@ -168,10 +259,14 @@ class AccountingJournalController extends CrudController
                     'memo' => $line['source_id'] !== null ? $memos->get($line['source_id']) : null,
                 ]);
             }
-            $accountingEntry->update([
+            $changes = [
                 'description' => $description,
                 'manually_adjusted' => true,
-            ]);
+            ];
+            if ($accountingEntry->kind === AccountingEntry::KIND_MANUAL) {
+                $changes['date'] = Carbon::parse($validated['date'])->toDateString();
+            }
+            $accountingEntry->update($changes);
         });
 
         \Alert::success('El asiento '.$accountingEntry->entry_number.' quedó modificado.')->flash();
@@ -206,7 +301,7 @@ class AccountingJournalController extends CrudController
             ->join('accounting_entries as e', 'e.id', '=', 'l.accounting_entry_id')
             ->join('accounting_accounts as a', 'a.id', '=', 'l.accounting_account_id')
             ->where('e.status', AccountingEntry::STATUS_POSTED)
-            ->whereIn('e.kind', AccountingEntry::quotaKinds())
+            ->whereIn('e.kind', AccountingEntry::bookKinds())
             ->when($from, fn ($query) => $query->whereDate('e.date', '>=', $from))
             ->when($to, fn ($query) => $query->whereDate('e.date', '<=', $to))
             ->groupBy('a.id', 'a.code', 'a.name', 'a.account_type')
@@ -244,6 +339,40 @@ class AccountingJournalController extends CrudController
             ->get()
             ->mapWithKeys(fn (AccountingAccount $account) => [$account->id => $account->identifying_label])
             ->all();
+    }
+
+    /**
+     * @param  array<int, string>  $accounts
+     * @return array<int, string>
+     */
+    private function accountSides(array $accounts): array
+    {
+        if ($accounts === []) {
+            return [];
+        }
+
+        return AccountingAccount::query()
+            ->whereIn('id', array_keys($accounts))
+            ->get()
+            ->mapWithKeys(fn (AccountingAccount $account) => [$account->id => $account->entrySide() ?? ''])
+            ->all();
+    }
+
+    /**
+     * @param  list<int|string>  $accountIds
+     */
+    private function accountLineError(array $accountIds, bool $requireActive = false): ?string
+    {
+        $accountIds = array_values(array_unique(array_map('intval', $accountIds)));
+        $found = AccountingAccount::query()->whereIn('id', $accountIds)->get();
+        if ($found->count() !== count($accountIds)) {
+            return 'Hay una cuenta que no existe en el plan.';
+        }
+        if ($requireActive && $found->contains(fn (AccountingAccount $account) => ! $account->is_active)) {
+            return 'Hay una cuenta que no está activa.';
+        }
+
+        return AccountingAccount::groupingUsedMessage($accountIds);
     }
 
     private function ensureEditable(AccountingEntry $entry): void
@@ -287,6 +416,7 @@ class AccountingJournalController extends CrudController
             AccountingEntry::KIND_QUOTA_NX_SETTLEMENT => 'Acreditación Naranja X',
             AccountingEntry::KIND_QUOTA_QR_SETTLEMENT => 'Acreditación QR',
             AccountingEntry::KIND_QUOTA_SOL_SETTLEMENT => 'Acreditación Sol Pago',
+            AccountingEntry::KIND_MANUAL => 'Asiento manual',
             AccountingEntry::KIND_QUOTA_GRANT => 'Becas otorgadas',
             AccountingEntry::KIND_QUOTA_COLLECTION => 'Cobranza de cuotas',
             AccountingEntry::KIND_QUOTA_ACCRUAL => 'Devengamiento de cuotas',
