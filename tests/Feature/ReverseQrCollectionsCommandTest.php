@@ -11,7 +11,7 @@ class ReverseQrCollectionsCommandTest extends TestCase
     {
         $postedBefore = AccountingEntry::query()
             ->where('status', AccountingEntry::STATUS_POSTED)
-            ->where('description', 'ACREDITACION COBRANZA CUOTAS QR')
+            ->where('description', 'COBRANZA CUOTAS QR')
             ->count();
 
         $this->artisan('accounting:reverse-qr-collections', ['--dry-run' => true])
@@ -19,7 +19,7 @@ class ReverseQrCollectionsCommandTest extends TestCase
 
         $postedAfter = AccountingEntry::query()
             ->where('status', AccountingEntry::STATUS_POSTED)
-            ->where('description', 'ACREDITACION COBRANZA CUOTAS QR')
+            ->where('description', 'COBRANZA CUOTAS QR')
             ->count();
 
         $this->assertSame($postedBefore, $postedAfter);

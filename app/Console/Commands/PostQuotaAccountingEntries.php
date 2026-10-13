@@ -155,9 +155,6 @@ class PostQuotaAccountingEntries extends Command
         if ($skipped['plan'] > 0) {
             $this->line('Omitidos por plan de pago: '.$skipped['plan']);
         }
-        if (($skipped['deferred'] ?? 0) > 0) {
-            $this->line('QR diferidos al informe de liquidación: '.$skipped['deferred']);
-        }
         if ($skipped['no_payment_type'] > 0) {
             $this->line('Omitidos sin medio de pago: '.$skipped['no_payment_type']);
         }
@@ -181,7 +178,7 @@ class PostQuotaAccountingEntries extends Command
     private function reportSettlements(array $settlements): void
     {
         $this->newLine();
-        $this->info('Liquidación Mercado Pago');
+        $this->info('Acreditación Mercado Pago');
 
         if ($settlements['groups'] === [] && ($settlements['updated'] ?? []) === []) {
             $this->line('No hay liberaciones nuevas de Mercado Pago para asentar.');
@@ -222,7 +219,11 @@ class PostQuotaAccountingEntries extends Command
             $this->line('Liberados con importe distinto al cobro: '.$skipped['amount_mismatch']);
         }
         if (($skipped['adjusted'] ?? 0) > 0) {
-            $this->line('Liquidaciones modificadas a mano, sin reescribir: '.$skipped['adjusted']);
+            $this->line('Acreditaciones modificadas a mano, sin reescribir: '.$skipped['adjusted']);
+        }
+        $removed = (int) ($settlements['removed'] ?? 0);
+        if ($removed > 0) {
+            $this->line('Acreditaciones dadas de baja porque no salieron de un archivo: '.$removed);
         }
     }
 

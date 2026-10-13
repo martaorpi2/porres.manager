@@ -4,8 +4,8 @@ namespace App\Services;
 
 /**
  * Medio de pago de ePorres → cuenta del plan.
- * QR no entra en la cobranza: se cobra al registrar el informe de First Data.
- * Mercado Pago queda en Mercado Pago a cobrar hasta que MP libera el dinero.
+ * Cada medio genera la cobranza el día del cobro, en su cuenta a cobrar.
+ * La acreditación del archivo cancela esa cuenta cuando se sube.
  * Tarjeta de crédito no tiene cuenta imputable en el plan cargado.
  */
 final class QuotaPaymentAccounts
@@ -18,7 +18,9 @@ final class QuotaPaymentAccounts
 
     public const LATE_INTEREST = '41201000';
 
-    public const MP_RECEIVABLE = '11204000';
+    public const MP_RECEIVABLE = '11202005';
+
+    public const QR_RECEIVABLE = '11202006';
 
     public const MP_AVAILABLE = '11104000';
 
@@ -29,7 +31,7 @@ final class QuotaPaymentAccounts
     /** @var array<string, string> */
     public const BY_PAYMENT_TYPE = [
         'BSE' => '11102002',
-        'QR' => '11102002',
+        'QR' => self::QR_RECEIVABLE,
         'Mercado Pago' => self::MP_RECEIVABLE,
         'Tarjeta de Débito' => '11202004',
         'Tarjeta Naranja Débito' => '11202004',

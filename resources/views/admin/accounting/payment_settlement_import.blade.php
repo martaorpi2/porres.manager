@@ -53,7 +53,7 @@
                     </div>
                 </form>
                 @else
-                    <p class="mb-0">Seleccione la forma de pago para subir el archivo de liquidación.</p>
+                    <p class="mb-0">Seleccione la forma de pago para subir el archivo de acreditación.</p>
                 @endif
             </div>
         </div>
@@ -86,7 +86,9 @@
                                     @php
                                         $outcomeLabel = [
                                             'ready' => 'Se registra',
+                                            'update' => 'Se actualiza',
                                             'already_posted' => 'Ya registrada',
+                                            'adjusted' => 'Modificado a mano',
                                             'unbalanced' => 'No cierra',
                                             'invalid' => 'Fecha inválida',
                                         ][$row['outcome']] ?? $row['outcome'];

@@ -40,6 +40,40 @@ class AccountingEntry extends Model
 
     public const STATUS_REVERSED = 'reversed';
 
+    /**
+     * Asientos que arma el libro a partir de ePorres.
+     * Egresos de compras y órdenes de pago quedan fuera hasta que se incorporen.
+     *
+     * @return list<string>
+     */
+    public static function quotaKinds(): array
+    {
+        return [
+            self::KIND_QUOTA_ACCRUAL,
+            self::KIND_QUOTA_GRANT,
+            self::KIND_QUOTA_COLLECTION,
+            self::KIND_QUOTA_MP_SETTLEMENT,
+            self::KIND_QUOTA_NX_SETTLEMENT,
+            self::KIND_QUOTA_SOL_SETTLEMENT,
+            self::KIND_QUOTA_QR_SETTLEMENT,
+        ];
+    }
+
+    /**
+     * Contrapartida de la cobranza, tomada de la fecha de acreditación del archivo.
+     *
+     * @return list<string>
+     */
+    public static function accreditationKinds(): array
+    {
+        return [
+            self::KIND_QUOTA_MP_SETTLEMENT,
+            self::KIND_QUOTA_NX_SETTLEMENT,
+            self::KIND_QUOTA_SOL_SETTLEMENT,
+            self::KIND_QUOTA_QR_SETTLEMENT,
+        ];
+    }
+
     protected $table = 'accounting_entries';
 
     protected $guarded = ['id'];
@@ -75,10 +109,10 @@ class AccountingEntry extends Model
             self::KIND_QUOTA_ACCRUAL => 'Devengamiento de cuotas',
             self::KIND_QUOTA_GRANT => 'Becas otorgadas',
             self::KIND_QUOTA_COLLECTION => 'Cobranza de cuotas',
-            self::KIND_QUOTA_MP_SETTLEMENT => 'Liquidación Mercado Pago',
-            self::KIND_QUOTA_NX_SETTLEMENT => 'Liquidación Naranja X',
-            self::KIND_QUOTA_SOL_SETTLEMENT => 'Liquidación Sol Pago',
-            self::KIND_QUOTA_QR_SETTLEMENT => 'Liquidación QR',
+            self::KIND_QUOTA_MP_SETTLEMENT => 'Acreditación Mercado Pago',
+            self::KIND_QUOTA_NX_SETTLEMENT => 'Acreditación Naranja X',
+            self::KIND_QUOTA_SOL_SETTLEMENT => 'Acreditación Sol Pago',
+            self::KIND_QUOTA_QR_SETTLEMENT => 'Acreditación QR',
             self::KIND_PAYROLL_ACCRUAL => 'Devengamiento de Sueldos',
             self::KIND_PAYROLL_PAYMENT => 'Pago de Sueldos',
             self::KIND_BANK_EXPENSE => 'Gastos Bancarios',

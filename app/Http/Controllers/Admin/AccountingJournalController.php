@@ -4,8 +4,12 @@ namespace App\Http\Controllers\Admin;
 
 use App\Models\AccountingAccount;
 use App\Models\AccountingEntry;
+use App\Models\AccountingEntryLine;
+use App\Models\QuotaAccountingBatch;
+use App\Models\QuotaAccountingCollectionDate;
 use App\Models\User;
 use App\Services\AccountingEntryEditor;
+use App\Services\PaymentSettlement\PaymentSettlementChannels;
 use App\Services\QuotaAccountingService;
 use Backpack\CRUD\app\Http\Controllers\CrudController;
 use Carbon\Carbon;
@@ -21,21 +25,25 @@ class AccountingJournalController extends CrudController
 
         $from = $this->dateOrNull($request->input('from'));
         $to = $this->dateOrNull($request->input('to'));
+        $collected = $this->dateOrNull($request->input('collected'));
         $kind = $request->input('kind');
         $accountId = $request->integer('account_id') ?: null;
 
-        $entries = AccountingEntry::query()
-            ->with(['lines.account'])
-            ->where('status', AccountingEntry::STATUS_POSTED)
-            ->when($from, fn ($query) => $query->whereDate('date', '>=', $from))
-            ->when($to, fn ($query) => $query->whereDate('date', '<=', $to))
-            ->when(in_array($kind, $this->kinds(), true), fn ($query) => $query->where('kind', $kind))
-            ->when($accountId, function ($query) use ($accountId) {
-                $query->whereHas('lines', fn ($lines) => $lines->where('accounting_account_id', $accountId));
-            })
-            ->orderBy('date')
-            ->orderBy('id')
-            ->get();
+        $entries = $collected !== null
+            ? $this->entriesForCollectionDate($collected, is_string($kind) ? $kind : null, $accountId)
+            : AccountingEntry::query()
+                ->with(['lines.account'])
+                ->where('status', AccountingEntry::STATUS_POSTED)
+                ->whereIn('kind', AccountingEntry::quotaKinds())
+                ->when($from, fn ($query) => $query->whereDate('date', '>=', $from))
+                ->when($to, fn ($query) => $query->whereDate('date', '<=', $to))
+                ->when(in_array($kind, $this->kinds(), true), fn ($query) => $query->where('kind', $kind))
+                ->when($accountId, function ($query) use ($accountId) {
+                    $query->whereHas('lines', fn ($lines) => $lines->where('accounting_account_id', $accountId));
+                })
+                ->orderBy('date')
+                ->orderBy('id')
+                ->get();
 
         return view('admin.accounting.journal', [
             'entries' => $entries,
@@ -44,6 +52,7 @@ class AccountingJournalController extends CrudController
             'filters' => [
                 'from' => $from,
                 'to' => $to,
+                'collected' => $collected,
                 'kind' => $kind,
                 'account_id' => $accountId,
             ],
@@ -197,6 +206,7 @@ class AccountingJournalController extends CrudController
             ->join('accounting_entries as e', 'e.id', '=', 'l.accounting_entry_id')
             ->join('accounting_accounts as a', 'a.id', '=', 'l.accounting_account_id')
             ->where('e.status', AccountingEntry::STATUS_POSTED)
+            ->whereIn('e.kind', AccountingEntry::quotaKinds())
             ->when($from, fn ($query) => $query->whereDate('e.date', '>=', $from))
             ->when($to, fn ($query) => $query->whereDate('e.date', '<=', $to))
             ->groupBy('a.id', 'a.code', 'a.name', 'a.account_type')
@@ -249,7 +259,7 @@ class AccountingJournalController extends CrudController
     private function returnQuery(Request $request): array
     {
         $query = [];
-        foreach (['from', 'to', 'kind', 'account_id'] as $key) {
+        foreach (['from', 'to', 'collected', 'kind', 'account_id'] as $key) {
             $value = $request->input($key);
             if (is_string($value) && $value !== '') {
                 $query[$key] = $value;
@@ -276,15 +286,13 @@ class AccountingJournalController extends CrudController
             AccountingEntry::KIND_QUOTA_ACCRUAL => 'Devengamiento de cuotas',
             AccountingEntry::KIND_QUOTA_GRANT => 'Becas otorgadas',
             AccountingEntry::KIND_QUOTA_COLLECTION => 'Cobranza de cuotas',
-            AccountingEntry::KIND_QUOTA_MP_SETTLEMENT => 'Liquidación Mercado Pago',
-            AccountingEntry::KIND_QUOTA_NX_SETTLEMENT => 'Liquidación Naranja X',
-            AccountingEntry::KIND_QUOTA_SOL_SETTLEMENT => 'Liquidación Sol Pago',
-            AccountingEntry::KIND_QUOTA_QR_SETTLEMENT => 'Liquidación QR',
+            AccountingEntry::KIND_QUOTA_MP_SETTLEMENT => 'Acreditación Mercado Pago',
+            AccountingEntry::KIND_QUOTA_NX_SETTLEMENT => 'Acreditación Naranja X',
+            AccountingEntry::KIND_QUOTA_SOL_SETTLEMENT => 'Acreditación Sol Pago',
+            AccountingEntry::KIND_QUOTA_QR_SETTLEMENT => 'Acreditación QR',
             AccountingEntry::KIND_PAYROLL_ACCRUAL => 'Devengamiento de Sueldos',
             AccountingEntry::KIND_PAYROLL_PAYMENT => 'Pago de Sueldos',
             AccountingEntry::KIND_BANK_EXPENSE => 'Gastos Bancarios',
-            AccountingEntry::KIND_OUTFLOW => 'Egreso',
-            AccountingEntry::KIND_REVERSAL => 'Reverso',
         ];
     }
 
@@ -338,6 +346,171 @@ class AccountingJournalController extends CrudController
     }
 
     /**
+     * Cobranza de ese día. El contrasiento entra solo si el tipo es una acreditación y no hay cuenta.
+     *
+     * @return \Illuminate\Support\Collection<int, AccountingEntry>
+     */
+    private function entriesForCollectionDate(string $collected, ?string $kind, ?int $accountId)
+    {
+        $kind = in_array($kind, $this->kinds(), true) ? $kind : null;
+        $paymentType = $this->paymentTypeForKind($kind);
+        $accreditationKind = in_array($kind, AccountingEntry::accreditationKinds(), true) ? $kind : null;
+        $pairWithAccreditation = $accountId === null && (
+            $accreditationKind !== null
+            || $kind === null
+            || $kind === AccountingEntry::KIND_QUOTA_COLLECTION
+        );
+
+        $accreditationIds = collect();
+        if ($pairWithAccreditation) {
+            $accreditationIds = QuotaAccountingCollectionDate::query()
+                ->whereDate('collected_on', $collected)
+                ->whereHas('batch.entry', function ($query) use ($accreditationKind) {
+                    $query->where('status', AccountingEntry::STATUS_POSTED);
+                    if ($accreditationKind !== null) {
+                        $query->where('kind', $accreditationKind);
+                    } else {
+                        $query->whereIn('kind', AccountingEntry::accreditationKinds());
+                    }
+                })
+                ->with('batch')
+                ->get()
+                ->map(fn (QuotaAccountingCollectionDate $date) => $date->batch?->accounting_entry_id)
+                ->filter()
+                ->unique()
+                ->values();
+        }
+
+        $collectionIds = $kind !== null && $paymentType === null && $kind !== AccountingEntry::KIND_QUOTA_COLLECTION
+            ? collect()
+            : QuotaAccountingBatch::query()
+                ->where('kind', QuotaAccountingBatch::KIND_COLLECTION)
+                ->whereDate('entry_date', $collected)
+                ->when($paymentType !== null, fn ($query) => $query->where('payment_type', $paymentType))
+                ->whereNotNull('accounting_entry_id')
+                ->pluck('accounting_entry_id');
+
+        if ($pairWithAccreditation && $accreditationIds->isEmpty()) {
+            $accreditationIds = $this->accreditationIdsByAmount($kind, $collected, $collectionIds);
+        }
+
+        $ids = $pairWithAccreditation
+            ? $collectionIds->merge($accreditationIds)->unique()->values()
+            : $collectionIds;
+        if ($ids->isEmpty()) {
+            return collect();
+        }
+
+        return AccountingEntry::query()
+            ->with(['lines.account'])
+            ->where('status', AccountingEntry::STATUS_POSTED)
+            ->whereIn('id', $ids)
+            ->when($accountId, function ($query) use ($accountId) {
+                $query->whereHas('lines', fn ($lines) => $lines->where('accounting_account_id', $accountId));
+            })
+            ->orderBy('date')
+            ->orderBy('id')
+            ->get();
+    }
+
+    private function paymentTypeForKind(?string $kind): ?string
+    {
+        if ($kind === null) {
+            return null;
+        }
+
+        foreach (PaymentSettlementChannels::keys() as $channel) {
+            $definition = PaymentSettlementChannels::get($channel);
+            if ($definition['entry_kind'] === $kind) {
+                return (string) $definition['payment_type'];
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Acreditaciones de archivo subidas antes de guardar la fecha de cobro.
+     * Si el haber de la cuenta a cobrar coincide con el debe de la cobranza, es el contrasiento.
+     *
+     * @param  \Illuminate\Support\Collection<int, int>  $collectionIds
+     * @return \Illuminate\Support\Collection<int, int>
+     */
+    private function accreditationIdsByAmount(?string $kind, string $collected, $collectionIds)
+    {
+        $channel = $this->channelForKind($kind);
+        if ($channel === null || $collectionIds->isEmpty()) {
+            return collect();
+        }
+
+        $definition = PaymentSettlementChannels::get($channel);
+        $accountId = AccountingAccount::query()->where('code', $definition['receivable'])->value('id');
+        if ($accountId === null) {
+            return collect();
+        }
+
+        $debitCents = (int) AccountingEntryLine::query()
+            ->whereIn('accounting_entry_id', $collectionIds)
+            ->where('accounting_account_id', $accountId)
+            ->get()
+            ->sum(fn (AccountingEntryLine $line) => (int) round(((float) $line->debit) * 100));
+        if ($debitCents < 1) {
+            return collect();
+        }
+
+        $matches = QuotaAccountingBatch::query()
+            ->where('kind', $definition['batch_kind'])
+            ->where(function ($query) use ($channel) {
+                $query->where('batch_key', 'like', $channel.':%');
+                if ($channel === PaymentSettlementChannels::MERCADOPAGO) {
+                    $query->orWhere('batch_key', 'like', 'mp-settlement:excel:%');
+                }
+            })
+            ->whereDoesntHave('collectionDates')
+            ->whereNotNull('accounting_entry_id')
+            ->whereHas('entry', function ($query) use ($definition) {
+                $query->where('status', AccountingEntry::STATUS_POSTED)
+                    ->where('kind', $definition['entry_kind']);
+            })
+            ->with('entry.lines')
+            ->get()
+            ->filter(function (QuotaAccountingBatch $batch) use ($accountId, $debitCents) {
+                $creditCents = (int) $batch->entry->lines
+                    ->where('accounting_account_id', (int) $accountId)
+                    ->sum(fn (AccountingEntryLine $line) => (int) round(((float) $line->credit) * 100));
+
+                return abs($creditCents - $debitCents) <= 2;
+            })
+            ->values();
+
+        if ($matches->count() === 1) {
+            QuotaAccountingCollectionDate::query()->firstOrCreate([
+                'quota_accounting_batch_id' => $matches[0]->id,
+                'collected_on' => $collected,
+            ]);
+            $matches[0]->unsetRelation('collectionDates');
+            app(QuotaAccountingService::class)->syncAccreditationDescription($matches[0]);
+        }
+
+        return $matches->pluck('accounting_entry_id')->map(fn ($id) => (int) $id)->values();
+    }
+
+    private function channelForKind(?string $kind): ?string
+    {
+        if ($kind === null) {
+            return null;
+        }
+
+        foreach (PaymentSettlementChannels::keys() as $channel) {
+            if (PaymentSettlementChannels::get($channel)['entry_kind'] === $kind) {
+                return $channel;
+            }
+        }
+
+        return null;
+    }
+
+    /**
      * @param  array<string, mixed>  $result
      */
     private function refreshSummary(array $result): string
@@ -362,14 +535,20 @@ class AccountingJournalController extends CrudController
         $settlementCreated = count($result['settlements']['groups']);
         $settlementUpdated = count($result['settlements']['updated'] ?? []);
         if ($settlementCreated === 1) {
-            $bits[] = '1 liquidación de Mercado Pago nueva';
+            $bits[] = '1 acreditación de Mercado Pago nueva';
         } elseif ($settlementCreated > 1) {
-            $bits[] = $settlementCreated.' liquidaciones de Mercado Pago nuevas';
+            $bits[] = $settlementCreated.' acreditaciones de Mercado Pago nuevas';
         }
         if ($settlementUpdated === 1) {
-            $bits[] = '1 liquidación de Mercado Pago actualizada';
+            $bits[] = '1 acreditación de Mercado Pago actualizada';
         } elseif ($settlementUpdated > 1) {
-            $bits[] = $settlementUpdated.' liquidaciones de Mercado Pago actualizadas';
+            $bits[] = $settlementUpdated.' acreditaciones de Mercado Pago actualizadas';
+        }
+        $removed = (int) ($result['settlements']['removed'] ?? 0);
+        if ($removed === 1) {
+            $bits[] = '1 acreditación dada de baja porque no salió de un archivo';
+        } elseif ($removed > 1) {
+            $bits[] = $removed.' acreditaciones dadas de baja porque no salieron de un archivo';
         }
 
         if (in_array($result['grants']['status'] ?? '', ['posted', 'updated'], true)) {

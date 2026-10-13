@@ -44,6 +44,7 @@ Route::group([
     Route::get('accounting-tariff-reductions', 'AccountingTariffReductionController@index')->name('accounting-tariff-reductions.index');
     Route::get('accounting-daily-payments/excel', 'AccountingDailyPaymentsController@excel')->name('accounting-daily-payments.excel');
     Route::get('accounting-daily-payments', 'AccountingDailyPaymentsController@index')->name('accounting-daily-payments.index');
+    Route::get('accounting-mercadopago-releases', 'AccountingMercadoPagoReleaseController@index')->name('accounting-mercadopago-releases.index');
     Route::get('accounting-mercadopago', function () {
         return redirect(backpack_url('accounting-settlement/mercadopago'));
     })->name('accounting-mercadopago.index');

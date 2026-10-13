@@ -6,6 +6,7 @@ use App\Models\AccountingEntry;
 use App\Models\QuotaAccountingBatch;
 use App\Models\User;
 use App\Services\QuotaAccountingService;
+use Carbon\Carbon;
 use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
@@ -159,9 +160,9 @@ class PaymentSettlementTest extends TestCase
             $this->assertSame('992.00', $lines[0]->debit);
             $this->assertSame('52320000', $lines[1]->account->code);
             $this->assertSame('8.00', $lines[1]->debit);
-            $this->assertSame('11201000', $lines[2]->account->code);
+            $this->assertSame('11202006', $lines[2]->account->code);
             $this->assertSame('1000.00', $lines[2]->credit);
-            $this->assertSame('LIQUIDACION COBRANZA QR TESTPROBE', $entries[0]->description);
+            $this->assertSame('ACREDITACION COBRANZA QR TESTPROBE', $entries[0]->description);
             DB::rollBack();
         } finally {
             if ($entryId !== null && AccountingEntry::query()->whereKey($entryId)->exists()) {
@@ -186,22 +187,27 @@ class PaymentSettlementTest extends TestCase
                 'interest_cents' => 2000,
                 'net_cents' => 95000,
                 'document' => '03/01/2099',
+                'collected_on' => ['2099-01-01', '2099-01-02'],
             ]]);
             $this->assertCount(1, $entries);
             $entryId = $entries[0]->id;
             $lines = $entries[0]->lines()->with('account')->orderBy('id')->get();
             $this->assertSame(
-                ['11104000', '52309000', '52312000', '11204000'],
+                ['11104000', '52309000', '52312000', '11202005'],
                 $lines->map(fn ($line) => $line->account->code)->all()
             );
             $this->assertSame('950.00', $lines[0]->debit);
             $this->assertSame('30.00', $lines[1]->debit);
             $this->assertSame('20.00', $lines[2]->debit);
             $this->assertSame('1000.00', $lines[3]->credit);
-            $this->assertSame('LIQUIDACION COBRANZA MERCADO PAGO 03/01/2099', $entries[0]->description);
+            $this->assertSame('ACREDITACION COBRANZA MERCADO PAGO cobro 01/01/2099, 02/01/2099', $entries[0]->description);
             $batch = QuotaAccountingBatch::query()->where('batch_key', 'mercadopago:2099-01-03')->first();
             $this->assertNotNull($batch);
             $this->assertSame(0, $batch->orders()->count());
+            $this->assertSame(
+                ['2099-01-01', '2099-01-02'],
+                $batch->collectionDates()->orderBy('collected_on')->pluck('collected_on')->map(fn ($date) => $date->toDateString())->all()
+            );
             DB::rollBack();
         } finally {
             if ($entryId !== null && AccountingEntry::query()->whereKey($entryId)->exists()) {
@@ -243,6 +249,174 @@ class PaymentSettlementTest extends TestCase
             }
             QuotaAccountingBatch::query()->where('batch_key', 'naranja:TEST-PROBE')->delete();
         }
+    }
+
+    public function test_uploading_the_same_mercadopago_day_again_updates_the_entry(): void
+    {
+        $entryId = null;
+        DB::beginTransaction();
+        try {
+            $group = [
+                'key' => 'mercadopago:2099-09-05',
+                'date' => '2099-09-05',
+                'collected_on' => ['2099-08-26'],
+                'gross_cents' => 22000000,
+                'commission_cents' => 1098111,
+                'interest_cents' => 0,
+                'net_cents' => 20901889,
+                'document' => '26/08/2099',
+            ];
+            $first = app(QuotaAccountingService::class)->postImportedPaymentSettlements('mercadopago', [$group]);
+            $this->assertCount(1, $first);
+            $entryId = $first[0]->id;
+
+            $group['gross_cents'] = 22044000;
+            $group['commission_cents'] = 1100308;
+            $group['net_cents'] = 20943692;
+            $second = app(QuotaAccountingService::class)->postImportedPaymentSettlements('mercadopago', [$group]);
+
+            $this->assertCount(1, $second);
+            $this->assertSame($entryId, $second[0]->id);
+            $lines = $second[0]->lines()->with('account')->orderBy('id')->get();
+            $this->assertSame('209436.92', $lines[0]->debit);
+            $this->assertSame('11003.08', $lines[1]->debit);
+            $this->assertSame('220440.00', $lines[2]->credit);
+            $this->assertSame(1, QuotaAccountingBatch::query()->where('batch_key', 'mercadopago:2099-09-05')->count());
+
+            $user = $this->accountingUser();
+            $journal = $this->actingAs($user, 'backpack')->get('/admin/accounting-journal?collected=2099-08-26');
+            $journal->assertOk();
+            $journal->assertSee($second[0]->entry_number);
+            $journal->assertSee('220.440,00');
+            DB::rollBack();
+        } finally {
+            if ($entryId !== null && AccountingEntry::query()->whereKey($entryId)->exists()) {
+                AccountingEntry::query()->whereKey($entryId)->delete();
+            }
+            QuotaAccountingBatch::query()->where('batch_key', 'mercadopago:2099-09-05')->delete();
+        }
+    }
+
+    public function test_mercadopago_file_replaces_the_webhook_settlement_of_the_same_day(): void
+    {
+        $webhookEntryId = null;
+        $fileEntryId = null;
+        DB::beginTransaction();
+        try {
+            $batch = QuotaAccountingBatch::query()->create([
+                'kind' => QuotaAccountingBatch::KIND_MP_SETTLEMENT,
+                'batch_key' => 'mp-settlement:2099-01-03:1:testdup',
+                'entry_date' => '2099-01-03',
+                'payment_type' => 'Mercado Pago',
+            ]);
+            $webhook = AccountingEntry::query()->create([
+                'entry_number' => 'AS-2099-901',
+                'date' => '2099-01-03',
+                'kind' => AccountingEntry::KIND_QUOTA_MP_SETTLEMENT,
+                'status' => AccountingEntry::STATUS_POSTED,
+                'source_type' => $batch->getMorphClass(),
+                'source_id' => $batch->id,
+                'description' => 'ACREDITACION COBRANZA MERCADO PAGO',
+            ]);
+            $batch->update(['accounting_entry_id' => $webhook->id]);
+            $webhookEntryId = $webhook->id;
+
+            $entries = app(QuotaAccountingService::class)->postImportedPaymentSettlements('mercadopago', [[
+                'key' => 'mercadopago:2099-01-03',
+                'date' => '2099-01-03',
+                'gross_cents' => 13718306,
+                'commission_cents' => 684738,
+                'interest_cents' => 0,
+                'net_cents' => 13033568,
+                'document' => '01/01/2099',
+                'collected_on' => ['2099-01-01'],
+            ]]);
+
+            $this->assertCount(1, $entries);
+            $fileEntryId = $entries[0]->id;
+            $this->assertSame(AccountingEntry::STATUS_POSTED, $entries[0]->fresh()->status);
+            $this->assertFalse(AccountingEntry::query()->whereKey($webhookEntryId)->exists());
+            $this->assertFalse(QuotaAccountingBatch::query()->where('batch_key', 'mp-settlement:2099-01-03:1:testdup')->exists());
+            $this->assertTrue(QuotaAccountingBatch::query()->where('batch_key', 'mercadopago:2099-01-03')->exists());
+            DB::rollBack();
+        } finally {
+            if ($webhookEntryId !== null && AccountingEntry::query()->whereKey($webhookEntryId)->exists()) {
+                AccountingEntry::query()->whereKey($webhookEntryId)->delete();
+            }
+            if ($fileEntryId !== null && AccountingEntry::query()->whereKey($fileEntryId)->exists()) {
+                AccountingEntry::query()->whereKey($fileEntryId)->delete();
+            }
+            QuotaAccountingBatch::query()->whereIn('batch_key', [
+                'mp-settlement:2099-01-03:1:testdup',
+                'mercadopago:2099-01-03',
+            ])->delete();
+        }
+    }
+
+    public function test_refresh_removes_accreditations_that_did_not_come_from_a_file(): void
+    {
+        $automaticIds = [];
+        $fileEntryId = null;
+        DB::beginTransaction();
+        try {
+            foreach ([
+                [QuotaAccountingBatch::KIND_QR_SETTLEMENT, AccountingEntry::KIND_QUOTA_QR_SETTLEMENT, 'qr-from-eporres:2099-04-02', 'AS-2099-902'],
+                [QuotaAccountingBatch::KIND_NX_SETTLEMENT, AccountingEntry::KIND_QUOTA_NX_SETTLEMENT, 'naranja-from-eporres:2099-04-02', 'AS-2099-903'],
+                [QuotaAccountingBatch::KIND_SOL_SETTLEMENT, AccountingEntry::KIND_QUOTA_SOL_SETTLEMENT, 'sol-from-eporres:2099-04-02', 'AS-2099-904'],
+                [QuotaAccountingBatch::KIND_MP_SETTLEMENT, AccountingEntry::KIND_QUOTA_MP_SETTLEMENT, 'mp-settlement:2099-04-02:1:auto', 'AS-2099-905'],
+            ] as [$batchKind, $entryKind, $key, $number]) {
+                $automaticIds[] = $this->postedAccreditation($batchKind, $entryKind, $key, $number, '2099-04-02');
+            }
+            $fileEntryId = $this->postedAccreditation(
+                QuotaAccountingBatch::KIND_QR_SETTLEMENT,
+                AccountingEntry::KIND_QUOTA_QR_SETTLEMENT,
+                'qr:2099-04-03',
+                'AS-2099-906',
+                '2099-04-03',
+            );
+
+            app(QuotaAccountingService::class)->postMonth(Carbon::parse('2099-04-01'));
+
+            foreach ($automaticIds as $id) {
+                $this->assertFalse(AccountingEntry::query()->whereKey($id)->exists());
+            }
+            $this->assertTrue(AccountingEntry::query()->whereKey($fileEntryId)->exists());
+            $this->assertTrue(QuotaAccountingBatch::query()->where('batch_key', 'qr:2099-04-03')->exists());
+            DB::rollBack();
+        } finally {
+            AccountingEntry::query()->whereIn('entry_number', [
+                'AS-2099-902', 'AS-2099-903', 'AS-2099-904', 'AS-2099-905', 'AS-2099-906',
+            ])->delete();
+            QuotaAccountingBatch::query()->whereIn('batch_key', [
+                'qr-from-eporres:2099-04-02',
+                'naranja-from-eporres:2099-04-02',
+                'sol-from-eporres:2099-04-02',
+                'mp-settlement:2099-04-02:1:auto',
+                'qr:2099-04-03',
+            ])->delete();
+        }
+    }
+
+    private function postedAccreditation(string $batchKind, string $entryKind, string $key, string $number, string $date): int
+    {
+        $batch = QuotaAccountingBatch::query()->create([
+            'kind' => $batchKind,
+            'batch_key' => $key,
+            'entry_date' => $date,
+            'payment_type' => 'Mercado Pago',
+        ]);
+        $entry = AccountingEntry::query()->create([
+            'entry_number' => $number,
+            'date' => $date,
+            'kind' => $entryKind,
+            'status' => AccountingEntry::STATUS_POSTED,
+            'source_type' => $batch->getMorphClass(),
+            'source_id' => $batch->id,
+            'description' => 'ACREDITACION DE PRUEBA',
+        ]);
+        $batch->update(['accounting_entry_id' => $entry->id]);
+
+        return (int) $entry->id;
     }
 
     /**

@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\AccountingAccount;
 use App\Models\AccountingEntry;
 use App\Models\QuotaAccountingBatch;
+use App\Models\QuotaAccountingCollectionDate;
 use App\Models\QuotaAccountingOrder;
 use App\Services\PaymentSettlement\PaymentSettlementChannels;
 use Carbon\Carbon;
@@ -54,9 +55,8 @@ class QuotaAccountingService
     /**
      * Asienta una liquidación de Mercado Pago, Naranja X, Sol Pago o QR.
      * El asiento es uno por fecha, con los totales del archivo. No cruza cupones con ePorres.
-     * Naranja y Sol acreditan el neto en Banco BSE y cancelan la cuenta a cobrar.
-     * Mercado Pago acredita el neto en Mercado Pago, la comisión al gasto y el bruto en Mercado Pago a cobrar.
-     * QR se cobra con este informe: neto en Banco BSE, comisión al gasto y bruto en Deudores por cuotas.
+     * El archivo acredita el neto en el banco, la comisión al gasto y cancela la cuenta a cobrar.
+     * La cobranza de ese medio ya quedó registrada el día del cobro.
      *
      * @param  list<array{key: string, date: string, gross_cents: int, commission_cents: int, interest_cents: int, net_cents: int, document: string}>  $groups
      * @return list<AccountingEntry>
@@ -76,14 +76,21 @@ class QuotaAccountingService
         ]));
         $accounts = $this->accountsForCodes($codes);
 
-        return DB::transaction(function () use ($groups, $definition, $accounts) {
+        return DB::transaction(function () use ($groups, $definition, $accounts, $channel) {
+            $this->deleteNonFileAccreditations((string) $definition['batch_kind'], array_column($groups, 'date'));
+
             $entries = [];
             foreach ($groups as $group) {
-                $exists = QuotaAccountingBatch::query()
+                $batch = QuotaAccountingBatch::query()
                     ->where('batch_key', $group['key'])
                     ->lockForUpdate()
-                    ->exists();
-                if ($exists) {
+                    ->first();
+                if ($batch !== null) {
+                    $updated = $this->replaceImportedSettlement($batch, $definition, $group, $accounts);
+                    if ($updated !== null) {
+                        $entries[] = $updated;
+                    }
+
                     continue;
                 }
                 $entries[] = $this->writeBatch(
@@ -93,15 +100,188 @@ class QuotaAccountingService
                     entryDate: $group['date'],
                     paymentType: $definition['payment_type'],
                     entryKind: $definition['entry_kind'],
-                    description: $definition['description'].' '.$group['document'],
+                    description: $this->importedSettlementDescription($definition, $group),
                     lines: $this->channelSettlementLines($definition, $group, $accounts),
                     orders: [],
                     role: $definition['batch_kind'],
                 );
             }
 
+            $this->linkImportedCollectionDates($groups);
+
             return $entries;
         });
+    }
+
+    /**
+     * @param  array<string, mixed>  $definition
+     * @param  array<string, mixed>  $group
+     * @param  array<string, AccountingAccount>  $accounts
+     */
+    private function replaceImportedSettlement(QuotaAccountingBatch $batch, array $definition, array $group, array $accounts): ?AccountingEntry
+    {
+        $entry = $batch->entry;
+        if ($entry !== null && $entry->manually_adjusted) {
+            return null;
+        }
+
+        if ($entry === null || $entry->status !== AccountingEntry::STATUS_POSTED) {
+            $batch->orders()->delete();
+            $batch->collectionDates()->delete();
+            if ($entry !== null) {
+                $entry->lines()->delete();
+                $entry->delete();
+            }
+            $batch->delete();
+
+            return $this->writeBatch(
+                kind: $definition['batch_kind'],
+                batchKey: (string) $group['key'],
+                period: null,
+                entryDate: (string) $group['date'],
+                paymentType: $definition['payment_type'],
+                entryKind: $definition['entry_kind'],
+                description: $this->importedSettlementDescription($definition, $group),
+                lines: $this->channelSettlementLines($definition, $group, $accounts),
+                orders: [],
+                role: $definition['batch_kind'],
+            );
+        }
+
+        $entry->lines()->delete();
+        foreach ($this->channelSettlementLines($definition, $group, $accounts) as $line) {
+            $entry->lines()->create($line);
+        }
+        $entry->update([
+            'date' => $group['date'],
+            'description' => $this->importedSettlementDescription($definition, $group),
+            'status' => AccountingEntry::STATUS_POSTED,
+        ]);
+
+        return $entry->fresh();
+    }
+
+    /**
+     * Guarda qué fechas de cobro cierra cada acreditación, para verlas juntas en el libro.
+     *
+     * @param  list<array{key?: string, collected_on?: mixed}>  $groups
+     */
+    public function linkImportedCollectionDates(array $groups): void
+    {
+        foreach ($groups as $group) {
+            $key = (string) ($group['key'] ?? '');
+            $dates = $group['collected_on'] ?? [];
+            if ($key === '' || ! is_array($dates) || $dates === []) {
+                continue;
+            }
+            $batch = QuotaAccountingBatch::query()->where('batch_key', $key)->first();
+            if ($batch === null) {
+                continue;
+            }
+            $valid = [];
+            foreach ($dates as $date) {
+                $date = (string) $date;
+                if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $date) === 1) {
+                    $valid[$date] = $date;
+                }
+            }
+            if ($valid === []) {
+                continue;
+            }
+            $batch->collectionDates()->whereNotIn('collected_on', array_values($valid))->delete();
+            foreach ($valid as $date) {
+                QuotaAccountingCollectionDate::query()->firstOrCreate([
+                    'quota_accounting_batch_id' => $batch->id,
+                    'collected_on' => $date,
+                ]);
+            }
+            $batch->unsetRelation('collectionDates');
+            $this->syncAccreditationDescription($batch);
+        }
+    }
+
+    /**
+     * La fecha del asiento es la acreditación. La descripción lleva la fecha de cobro.
+     */
+    public function syncAccreditationDescription(QuotaAccountingBatch $batch): void
+    {
+        $batch->loadMissing(['entry', 'collectionDates']);
+        $entry = $batch->entry;
+        if ($entry === null || $entry->manually_adjusted) {
+            return;
+        }
+
+        $definition = PaymentSettlementChannels::forBatchKind((string) $batch->kind);
+        if ($definition === null) {
+            return;
+        }
+
+        $dates = $batch->collectionDates
+            ->map(fn (QuotaAccountingCollectionDate $row) => $row->collected_on?->toDateString())
+            ->filter()
+            ->all();
+        $label = $this->collectionDatesLabel($dates);
+        if ($label === '') {
+            return;
+        }
+
+        $description = mb_substr(trim($definition['description'].' cobro '.$label), 0, 255);
+        if ($description === $entry->description) {
+            return;
+        }
+
+        $entry->description = $description;
+        $entry->save();
+    }
+
+    public function syncAccreditationDescriptions(): void
+    {
+        QuotaAccountingBatch::query()
+            ->whereIn('kind', [
+                QuotaAccountingBatch::KIND_MP_SETTLEMENT,
+                QuotaAccountingBatch::KIND_NX_SETTLEMENT,
+                QuotaAccountingBatch::KIND_SOL_SETTLEMENT,
+                QuotaAccountingBatch::KIND_QR_SETTLEMENT,
+            ])
+            ->whereHas('collectionDates')
+            ->with(['entry', 'collectionDates'])
+            ->orderBy('id')
+            ->each(function (QuotaAccountingBatch $batch) {
+                $this->syncAccreditationDescription($batch);
+            });
+    }
+
+    /**
+     * @param  array<string, mixed>  $definition
+     * @param  array<string, mixed>  $group
+     */
+    private function importedSettlementDescription(array $definition, array $group): string
+    {
+        $label = $this->collectionDatesLabel($group['collected_on'] ?? null);
+        if ($label !== '') {
+            return mb_substr(trim($definition['description'].' cobro '.$label), 0, 255);
+        }
+
+        return mb_substr(trim($definition['description'].' '.trim((string) ($group['document'] ?? ''))), 0, 255);
+    }
+
+    private function collectionDatesLabel(mixed $dates): string
+    {
+        if (! is_array($dates)) {
+            return '';
+        }
+
+        $labels = [];
+        foreach ($dates as $date) {
+            $date = (string) $date;
+            if (preg_match('/^(\d{4})-(\d{2})-(\d{2})$/', $date, $match) !== 1) {
+                continue;
+            }
+            $labels[$date] = $match[3].'/'.$match[2].'/'.$match[1];
+        }
+        ksort($labels);
+
+        return implode(', ', $labels);
     }
 
     /**
@@ -452,7 +632,6 @@ class QuotaAccountingService
         $skipped = [
             'split' => 0,
             'plan' => 0,
-            'deferred' => 0,
             'no_payment_type' => 0,
             'unmapped' => [],
             'zero' => 0,
@@ -505,9 +684,6 @@ class QuotaAccountingService
         $batchesByGroup = [];
         $batches = QuotaAccountingBatch::query()
             ->where('kind', QuotaAccountingBatch::KIND_COLLECTION)
-            ->where(function ($query) {
-                $query->whereNull('payment_type')->orWhere('payment_type', '!=', 'QR');
-            })
             ->whereDate('entry_date', '>=', $month->copy()->startOfMonth()->toDateString())
             ->whereDate('entry_date', '<=', $month->copy()->endOfMonth()->toDateString())
             ->whereHas('entry', fn ($query) => $query->where('status', AccountingEntry::STATUS_POSTED))
@@ -544,7 +720,7 @@ class QuotaAccountingService
 
             $description = $group['payment_type'] === 'Mercado Pago'
                 ? 'COBRANZA CUOTAS MERCADO PAGO A COBRAR'
-                : 'ACREDITACION COBRANZA CUOTAS '.mb_strtoupper($group['payment_type']);
+                : 'COBRANZA CUOTAS '.mb_strtoupper($group['payment_type']);
             $stored = $this->storedCollectionCents($groupBatches);
             $desired = $this->desiredCollectionCents($group['orders']);
 
@@ -625,8 +801,8 @@ class QuotaAccountingService
     }
 
     /**
-     * Cuando Mercado Pago libera el dinero, baja Mercado Pago a cobrar
-     * y registra la comisión del informe.
+     * QR, Mercado Pago, Sol y Naranja se acreditan solo con el archivo.
+     * Actualizar saca las que se armaron por otro camino y no las vuelve a crear.
      *
      * @param  array<string, AccountingAccount>  $accounts
      * @param  array<int, true>  $collectedThisMonth
@@ -634,307 +810,96 @@ class QuotaAccountingService
      */
     private function postMercadoPagoSettlements(Carbon $month, array $accounts, bool $dryRun, array $collectedThisMonth): array
     {
-        $collected = $this->postedOrderIdSet(QuotaAccountingBatch::KIND_COLLECTION) + $collectedThisMonth;
-        $splitIds = $this->idSet(
-            DB::connection('eporres')->table('order_split_payments')->pluck('order_id')
-        );
-        $settledByPlan = $this->settledByPlanIds();
+        unset($accounts, $collectedThisMonth);
+
         $from = $month->copy()->startOfMonth()->toDateString();
         $to = $month->copy()->endOfMonth()->toDateString();
-
-        $skipped = [
-            'pending_collection' => 0,
-            'not_collected' => 0,
-            'amount_mismatch' => 0,
-            'adjusted' => 0,
-        ];
-        $groups = [];
-
-        foreach ($this->mercadoPagoSettlementRows($from, $to) as $row) {
-            if ($this->collectionSkipReason($row, $splitIds, $settledByPlan) !== null) {
-                $skipped['not_collected']++;
-                continue;
-            }
-            if (! isset($collected[(int) $row->id])) {
-                $skipped['pending_collection']++;
-                continue;
-            }
-
-            $split = QuotaCollectionSplit::fromRow($row);
-            $collectedGross = $this->cents($split['bank']) + $this->cents($split['unposted']);
-            $gross = $this->cents($row->mp_gross);
-            if (abs($collectedGross - $gross) > 2) {
-                $skipped['amount_mismatch']++;
-                continue;
-            }
-
-            $date = (string) $row->mp_release_date;
-            if (! isset($groups[$date])) {
-                $groups[$date] = [
-                    'date' => $date,
-                    'orders' => [],
-                    'gross' => 0,
-                    'commission' => 0,
-                    'net' => 0,
-                ];
-            }
-            $commission = $this->cents($row->mp_commission);
-            $net = $this->cents($row->mp_net);
-            $groups[$date]['gross'] += $gross;
-            $groups[$date]['commission'] += $commission;
-            $groups[$date]['net'] += $net;
-            $groups[$date]['orders'][] = [
-                'eporres_order_id' => (int) $row->id,
-                'debtors_amount' => $this->money($gross),
-                'interest_amount' => $this->money($commission),
-                'bank_amount' => $this->money($net),
-            ];
-        }
-
-        ksort($groups);
-
-        $batchesByDate = [];
-        $batches = QuotaAccountingBatch::query()
-            ->where('kind', QuotaAccountingBatch::KIND_MP_SETTLEMENT)
-            ->where('batch_key', 'like', 'mp-settlement:%')
-            ->whereDate('entry_date', '>=', $from)
-            ->whereDate('entry_date', '<=', $to)
-            ->whereHas('entry', fn ($query) => $query->where('status', AccountingEntry::STATUS_POSTED))
-            ->with(['orders', 'entry'])
-            ->orderBy('id')
-            ->get();
-
-        $fileDates = array_fill_keys(
-            QuotaAccountingBatch::query()
-                ->where('kind', QuotaAccountingBatch::KIND_MP_SETTLEMENT)
-                ->where('batch_key', 'like', 'mercadopago:%')
-                ->whereDate('entry_date', '>=', $from)
-                ->whereDate('entry_date', '<=', $to)
-                ->whereHas('entry', fn ($query) => $query->where('status', AccountingEntry::STATUS_POSTED))
-                ->pluck('entry_date')
-                ->map(fn ($date) => Carbon::parse($date)->toDateString())
-                ->all(),
-            true
-        );
-
-        foreach ($batches as $batch) {
-            $batchesByDate[$batch->entry_date->toDateString()][] = $batch;
-        }
-
-        $postedGroups = [];
-        $updatedGroups = [];
-        $dates = array_unique(array_merge(array_keys($groups), array_keys($batchesByDate)));
-        sort($dates);
-        $description = 'LIQUIDACION COBRANZA MERCADO PAGO';
-
-        foreach ($dates as $date) {
-            if (isset($fileDates[$date])) {
-                continue;
-            }
-            $group = $groups[$date] ?? [
-                'date' => $date,
-                'orders' => [],
-                'gross' => 0,
-                'commission' => 0,
-                'net' => 0,
-            ];
-            $groupBatches = $batchesByDate[$date] ?? [];
-            $stored = $this->storedCollectionCents($groupBatches);
-            $desired = $this->desiredCollectionCents($group['orders']);
-            if ($groupBatches !== [] && $this->groupIsAdjusted($groupBatches)) {
-                if (QuotaCollectionReconcile::differs($stored, $desired)) {
-                    $skipped['adjusted']++;
-                }
-                continue;
-            }
-            if ($groupBatches !== [] && ! QuotaCollectionReconcile::differs($stored, $desired)) {
-                continue;
-            }
-
-            $item = [
-                'date' => $date,
-                'orders' => count($group['orders']),
-                'gross' => $this->amount($group['gross']),
-                'commission' => $this->amount($group['commission']),
-                'net' => $this->amount($group['net']),
-                'description' => $description,
-                'entry_number' => isset($groupBatches[0]) ? $groupBatches[0]->entry?->entry_number : null,
-            ];
-
-            if (! $dryRun && ($group['orders'] !== [] || $groupBatches !== [])) {
-                if ($groupBatches === []) {
-                    $entry = DB::transaction(function () use ($group, $accounts, $description) {
-                        $this->releaseCollectionOrders(
-                            array_column($group['orders'], 'eporres_order_id'),
-                            null,
-                            $accounts,
-                            QuotaAccountingBatch::KIND_MP_SETTLEMENT,
-                        );
-
-                        return $this->writeBatch(
-                            kind: QuotaAccountingBatch::KIND_MP_SETTLEMENT,
-                            batchKey: 'mp-settlement:'.$group['date'].':'.$group['orders'][0]['eporres_order_id'].':'.now()->format('YmdHis'),
-                            period: null,
-                            entryDate: $group['date'],
-                            paymentType: 'Mercado Pago',
-                            entryKind: AccountingEntry::KIND_QUOTA_MP_SETTLEMENT,
-                            description: $description,
-                            lines: $this->settlementLines($group, $accounts),
-                            orders: $group['orders'],
-                            role: QuotaAccountingBatch::KIND_MP_SETTLEMENT,
-                        );
-                    });
-                    $item['entry_number'] = $entry->entry_number;
-                } else {
-                    $entry = $this->rewriteSettlementGroup($group, $groupBatches, $accounts, $description);
-                    $item['entry_number'] = $entry?->entry_number;
-                }
-            }
-
-            if ($groupBatches === [] && $group['orders'] === []) {
-                continue;
-            }
-
-            if ($groupBatches === []) {
-                $postedGroups[] = $item;
-            } else {
-                $updatedGroups[] = $item;
-            }
+        $dates = [];
+        $cursor = $month->copy()->startOfMonth();
+        $end = $month->copy()->endOfMonth();
+        while ($cursor->lte($end)) {
+            $dates[] = $cursor->toDateString();
+            $cursor->addDay();
         }
 
         return [
-            'groups' => $postedGroups,
-            'updated' => $updatedGroups,
-            'skipped' => $skipped,
+            'groups' => [],
+            'updated' => [],
+            'skipped' => [
+                'pending_collection' => 0,
+                'not_collected' => 0,
+                'amount_mismatch' => 0,
+                'adjusted' => 0,
+            ],
+            'removed' => $dryRun ? 0 : $this->deleteNonFileAccreditations(null, $dates),
         ];
     }
 
     /**
-     * @return list<object>
+     * @param  list<mixed>  $dates
      */
-    private function mercadoPagoSettlementRows(string $from, string $to): array
+    private function deleteNonFileAccreditations(?string $kind, array $dates): int
     {
-        $releases = [];
-        $asOf = (new \DateTimeImmutable('now', new \DateTimeZone('America/Argentina/Buenos_Aires')))->format('Y-m-d');
-        $events = DB::connection('eporres')->table('mercadopago_webhook_events')
-            ->orderBy('id')
-            ->get(['payment_id', 'payload_snapshot']);
-
-        foreach ($events as $event) {
-            $decoded = json_decode((string) $event->payload_snapshot, true);
-            if (! is_array($decoded)) {
-                continue;
-            }
-            $payment = isset($decoded['payment']) && is_array($decoded['payment'])
-                ? $decoded['payment']
-                : $decoded;
-            $release = MercadoPagoRelease::fromPayment($payment, $asOf);
-            if ($release === null || $release['release_date'] < $from || $release['release_date'] > $to) {
-                continue;
-            }
-            $releases[(string) $event->payment_id] = $release;
+        $dates = array_values(array_unique(array_filter(
+            $dates,
+            fn ($date) => is_string($date) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $date) === 1
+        )));
+        if ($dates === []) {
+            return 0;
         }
 
-        if ($releases === []) {
-            return [];
-        }
+        return DB::transaction(function () use ($kind, $dates) {
+            $batches = QuotaAccountingBatch::query()
+                ->whereIn('kind', $kind === null ? $this->accreditationKinds() : [$kind])
+                ->whereIn('entry_date', $dates)
+                ->whereHas('entry', function ($query) {
+                    $query->where('status', AccountingEntry::STATUS_POSTED)
+                        ->where('manually_adjusted', false);
+                })
+                ->with('entry')
+                ->lockForUpdate()
+                ->get()
+                ->filter(fn (QuotaAccountingBatch $batch) => ! $this->isUploadedAccreditation((string) $batch->batch_key))
+                ->values();
 
-        $rows = DB::connection('eporres')->table('orders')
-            ->where('payment_type', 'Mercado Pago')
-            ->whereIn('payment_id', array_keys($releases))
-            ->whereBetween('quota_number', [1, 10])
-            ->whereIn('type', self::MONTHLY_TYPES)
-            ->where('state', self::PAID_STATE)
-            ->where(function ($query) {
-                $query->whereNull('estado')->orWhere('estado', 1);
-            })
-            ->get([
-                'id',
-                'quota_amount',
-                'amount_paid',
-                'surcharge_amount',
-                'surcharge_amountMP',
-                'surcharge_amountCard',
-                'payment_type',
-                'paid_at',
-                'payment_id',
-            ]);
-
-        $matched = [];
-        foreach ($rows as $row) {
-            $release = $releases[(string) $row->payment_id] ?? null;
-            if ($release === null) {
-                continue;
+            $count = 0;
+            foreach ($batches as $batch) {
+                $entry = $batch->entry;
+                $batch->orders()->delete();
+                $batch->delete();
+                if ($entry !== null) {
+                    $entry->lines()->delete();
+                    $entry->delete();
+                }
+                $count++;
             }
-            $row->mp_gross = $release['gross'];
-            $row->mp_net = $release['net'];
-            $row->mp_commission = $release['commission'];
-            $row->mp_release_date = $release['release_date'];
-            $matched[] = $row;
-        }
 
-        return $matched;
+            return $count;
+        });
     }
 
     /**
-     * @param  array{date: string, orders: list<array{eporres_order_id: int, debtors_amount: string, interest_amount: string, bank_amount: string}>, gross: int, commission: int, net: int}  $group
-     * @param  list<QuotaAccountingBatch>  $batches
-     * @param  array<string, AccountingAccount>  $accounts
+     * @return list<string>
      */
-    private function rewriteSettlementGroup(array $group, array $batches, array $accounts, string $description): ?AccountingEntry
+    private function accreditationKinds(): array
     {
-        return DB::transaction(function () use ($group, $batches, $accounts, $description) {
-            $primary = $batches[0];
-            $this->releaseCollectionOrders(
-                array_column($group['orders'], 'eporres_order_id'),
-                $primary->id,
-                $accounts,
-                QuotaAccountingBatch::KIND_MP_SETTLEMENT,
-            );
+        return [
+            QuotaAccountingBatch::KIND_MP_SETTLEMENT,
+            QuotaAccountingBatch::KIND_NX_SETTLEMENT,
+            QuotaAccountingBatch::KIND_SOL_SETTLEMENT,
+            QuotaAccountingBatch::KIND_QR_SETTLEMENT,
+        ];
+    }
 
-            foreach (array_slice($batches, 1) as $extra) {
-                $extra->orders()->delete();
-                $this->clearEntry($extra->entry);
+    private function isUploadedAccreditation(string $batchKey): bool
+    {
+        foreach (['mercadopago:', 'naranja:', 'sol:', 'qr:', 'mp-settlement:excel:'] as $prefix) {
+            if (str_starts_with($batchKey, $prefix)) {
+                return true;
             }
+        }
 
-            $primary->orders()->delete();
-            if ($group['orders'] === []) {
-                $this->clearEntry($primary->entry);
-
-                return $primary->entry;
-            }
-
-            $now = now();
-            foreach (array_chunk($group['orders'], 500) as $chunk) {
-                $rows = [];
-                foreach ($chunk as $order) {
-                    $rows[] = [
-                        'quota_accounting_batch_id' => $primary->id,
-                        'role' => QuotaAccountingBatch::KIND_MP_SETTLEMENT,
-                        'eporres_order_id' => $order['eporres_order_id'],
-                        'debtors_amount' => $order['debtors_amount'],
-                        'interest_amount' => $order['interest_amount'],
-                        'bank_amount' => $order['bank_amount'],
-                        'created_at' => $now,
-                        'updated_at' => $now,
-                    ];
-                }
-                QuotaAccountingOrder::query()->insert($rows);
-            }
-
-            $entry = $primary->entry;
-            $entry->lines()->delete();
-            foreach ($this->settlementLines($group, $accounts) as $line) {
-                $entry->lines()->create($line);
-            }
-            $entry->update([
-                'status' => AccountingEntry::STATUS_POSTED,
-                'description' => $description,
-                'date' => $group['date'],
-            ]);
-
-            return $entry->fresh();
-        });
+        return false;
     }
 
     /**
@@ -985,9 +950,6 @@ class QuotaAccountingService
         }
         if ($paymentType === 'Plan de Pago' || isset($settledByPlan[$orderId])) {
             return 'plan';
-        }
-        if ($paymentType === 'QR') {
-            return 'deferred';
         }
         if (QuotaPaymentAccounts::bankCode($paymentType) === null) {
             return 'unmapped';
@@ -1147,8 +1109,10 @@ class QuotaAccountingService
     private function rewriteBatchFromRemainingOrders(QuotaAccountingBatch $batch, array $accounts): void
     {
         $batch->load('orders', 'entry');
-        if ($batch->kind === QuotaAccountingBatch::KIND_MP_SETTLEMENT) {
-            $this->rewriteSettlementBatch($batch, $accounts);
+        if (in_array($batch->kind, $this->accreditationKinds(), true)) {
+            if (! $this->isUploadedAccreditation((string) $batch->batch_key)) {
+                $this->deleteNonFileAccreditations((string) $batch->kind, [$batch->entry_date->toDateString()]);
+            }
 
             return;
         }
@@ -1182,56 +1146,6 @@ class QuotaAccountingService
         foreach ($this->collectionLines($group, $accounts) as $line) {
             $batch->entry->lines()->create($line);
         }
-    }
-
-    /**
-     * @param  array<string, AccountingAccount>  $accounts
-     */
-    private function rewriteSettlementBatch(QuotaAccountingBatch $batch, array $accounts): void
-    {
-        $batch->load('orders', 'entry');
-        if ($batch->orders->isEmpty() || $batch->entry === null) {
-            $this->clearEntry($batch->entry);
-
-            return;
-        }
-
-        $gross = 0;
-        $commission = 0;
-        $net = 0;
-        foreach ($batch->orders as $order) {
-            $gross += $this->cents($order->debtors_amount);
-            $commission += $this->cents($order->interest_amount);
-            $net += $this->cents($order->bank_amount);
-        }
-
-        $batch->entry->lines()->delete();
-        foreach ($this->settlementLines([
-            'gross' => $gross,
-            'commission' => $commission,
-            'net' => $net,
-        ], $accounts) as $line) {
-            $batch->entry->lines()->create($line);
-        }
-    }
-
-    /**
-     * @param  array{gross: int, commission: int, net: int}  $group
-     * @param  array<string, AccountingAccount>  $accounts
-     * @return list<array{accounting_account_id: int, debit: string, credit: string, memo: string}>
-     */
-    private function settlementLines(array $group, array $accounts): array
-    {
-        $lines = [
-            $this->line($accounts[QuotaPaymentAccounts::MP_AVAILABLE], $group['net'], 0, 'Mercado Pago'),
-        ];
-        if ($group['commission'] > 0) {
-            $lines[] = $this->line($accounts[QuotaPaymentAccounts::MP_COMMISSION], $group['commission'], 0, 'Comisión Mercado Pago');
-        }
-        $lines[] = $this->line($accounts[QuotaPaymentAccounts::MP_RECEIVABLE], 0, $group['gross'], 'Mercado Pago a cobrar');
-        $this->assertBalanced($lines);
-
-        return $lines;
     }
 
     /**

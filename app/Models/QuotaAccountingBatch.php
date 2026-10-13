@@ -39,4 +39,9 @@ class QuotaAccountingBatch extends Model
     {
         return $this->hasMany(QuotaAccountingOrder::class);
     }
+
+    public function collectionDates(): HasMany
+    {
+        return $this->hasMany(QuotaAccountingCollectionDate::class);
+    }
 }
