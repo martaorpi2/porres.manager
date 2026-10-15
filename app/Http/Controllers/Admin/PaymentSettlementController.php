@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Models\AccountingEntry;
 use App\Models\QuotaAccountingBatch;
 use App\Models\User;
+use App\Services\PaymentSettlement\AccreditationCollectionAlert;
 use App\Services\PaymentSettlement\PaymentSettlementChannels;
 use App\Services\PaymentSettlement\PaymentSettlementExcel;
 use App\Services\QuotaAccountingService;
@@ -30,7 +31,7 @@ class PaymentSettlementController extends CrudController
         return view('admin.accounting.payment_settlement_import', $this->pageData($channel, $definition));
     }
 
-    public function preview(Request $request, string $channel, PaymentSettlementExcel $excel, QuotaAccountingService $accounting)
+    public function preview(Request $request, string $channel, PaymentSettlementExcel $excel, QuotaAccountingService $accounting, AccreditationCollectionAlert $alerts)
     {
         $this->authorizeAccounting();
         $definition = $this->definition($channel);
@@ -89,11 +90,13 @@ class PaymentSettlementController extends CrudController
             }
         }
 
+        $cases = $alerts->forRows($definition, $rows);
         $token = (string) str()->uuid();
         $request->session()->put('payment_settlement_import', [
             'token' => $token,
             'channel' => $channel,
             'ready' => $ready,
+            'alerts' => $cases,
         ]);
 
         return view('admin.accounting.payment_settlement_import', array_merge($this->pageData($channel, $definition), [
@@ -101,6 +104,7 @@ class PaymentSettlementController extends CrudController
             'ready' => $ready,
             'token' => $token,
             'document' => $file->getClientOriginalName(),
+            'alerts' => array_map(fn (array $case) => $alerts->sentence($case), $cases),
         ]));
     }
 
@@ -113,6 +117,13 @@ class PaymentSettlementController extends CrudController
         $token = (string) $request->input('token');
         if (! is_array($saved) || ($saved['channel'] ?? '') !== $channel || $token === '' || ! hash_equals((string) ($saved['token'] ?? ''), $token)) {
             \Alert::warning('La vista previa venció. Volvé a subir el archivo.')->flash();
+
+            return redirect(backpack_url('accounting-settlement/'.$channel));
+        }
+
+        $warnings = is_array($saved['alerts'] ?? null) ? array_values(array_filter($saved['alerts'], 'is_array')) : [];
+        if ($warnings !== [] && (string) $request->input('confirm_mismatch') !== '1') {
+            \Alert::warning('Confirmá la diferencia entre el debe y el haber para registrar los asientos.')->flash();
 
             return redirect(backpack_url('accounting-settlement/'.$channel));
         }
@@ -184,6 +195,7 @@ class PaymentSettlementController extends CrudController
             'ready' => [],
             'token' => null,
             'document' => null,
+            'alerts' => [],
         ];
     }
 
@@ -284,6 +296,7 @@ class PaymentSettlementController extends CrudController
                 'key' => $key,
                 'date' => $date,
                 'collected_on' => $collectedOn,
+                'collected_amounts' => $this->collectedAmounts($group['collected_amounts'] ?? null, $collectedOn, $gross),
                 'gross_cents' => $gross,
                 'commission_cents' => $commission,
                 'interest_cents' => $interest,
@@ -316,6 +329,33 @@ class PaymentSettlementController extends CrudController
         sort($collected);
 
         return $collected;
+    }
+
+    /**
+     * @param  list<string>  $collectedOn
+     * @return array<string, int>|null
+     */
+    private function collectedAmounts(mixed $amounts, array $collectedOn, int $gross): ?array
+    {
+        if (! is_array($amounts)) {
+            return null;
+        }
+
+        $clean = [];
+        $sum = 0;
+        foreach ($collectedOn as $date) {
+            if (! array_key_exists($date, $amounts)) {
+                return null;
+            }
+            $cents = (int) $amounts[$date];
+            if ($cents < 0) {
+                return null;
+            }
+            $clean[$date] = $cents;
+            $sum += $cents;
+        }
+
+        return $sum === $gross ? $clean : null;
     }
 
     private function authorizeAccounting(): void

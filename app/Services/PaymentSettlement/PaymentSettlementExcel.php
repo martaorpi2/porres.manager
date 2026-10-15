@@ -36,10 +36,16 @@ final class PaymentSettlementExcel
                 $items,
             )));
             sort($collectedOn);
+            $collectedAmounts = [];
+            foreach ($items as $item) {
+                $collected = (string) $item['collected_on'];
+                $collectedAmounts[$collected] = ($collectedAmounts[$collected] ?? 0) + (int) $item['gross_cents'];
+            }
             $groups[] = [
                 'key' => $key,
                 'date' => $items[0]['date'],
                 'collected_on' => $collectedOn,
+                'collected_amounts' => $collectedAmounts,
                 'gross_cents' => array_sum(array_column($items, 'gross_cents')),
                 'commission_cents' => array_sum(array_column($items, 'commission_cents')),
                 'interest_cents' => array_sum(array_column($items, 'interest_cents')),

@@ -188,12 +188,17 @@ class QuotaAccountingService
             if ($valid === []) {
                 continue;
             }
+            $amounts = is_array($group['collected_amounts'] ?? null) ? $group['collected_amounts'] : null;
             $batch->collectionDates()->whereNotIn('collected_on', array_values($valid))->delete();
             foreach ($valid as $date) {
-                QuotaAccountingCollectionDate::query()->firstOrCreate([
+                $link = QuotaAccountingCollectionDate::query()->firstOrCreate([
                     'quota_accounting_batch_id' => $batch->id,
                     'collected_on' => $date,
                 ]);
+                if ($amounts !== null && array_key_exists($date, $amounts)) {
+                    $link->haber_cents = (int) $amounts[$date];
+                    $link->save();
+                }
             }
             $batch->unsetRelation('collectionDates');
             $this->syncAccreditationDescription($batch);

@@ -66,6 +66,25 @@
                 </div>
             </div>
 
+            @if($alerts !== [])
+                <div id="settlement-mismatch-modal" class="settlement-modal" hidden>
+                    <div class="settlement-modal-card" role="dialog" aria-modal="true" aria-labelledby="settlement-mismatch-title">
+                        <h2 id="settlement-mismatch-title">Inconsistencias en la conciliación de cobranzas y acreditaciones</h2>
+                        <p>Se detectaron diferencias entre los asientos de cobranza y las acreditaciones registradas por medio de pago. Revise los siguientes casos.</p>
+                        <ul>
+                            @foreach($alerts as $alert)
+                                <li>{{ $alert }}</li>
+                            @endforeach
+                        </ul>
+                        <p>Si aceptás, el asiento se guarda y el aviso queda en el inicio de Contabilidad hasta que los montos coincidan.</p>
+                        <div class="settlement-modal-actions">
+                            <button type="button" class="btn journal-back" id="settlement-mismatch-back">Volver</button>
+                            <button type="button" class="btn journal-btn-filter" id="settlement-mismatch-accept">Aceptar</button>
+                        </div>
+                    </div>
+                </div>
+            @endif
+
             <div class="card journal-card journal-book mb-3">
                 <div class="card-body p-0">
                     <div class="table-responsive">
@@ -116,6 +135,9 @@
                 <form method="post" action="{{ backpack_url('accounting-settlement/'.$channel) }}" id="settlement-register">
                     @csrf
                     <input type="hidden" name="token" value="{{ $token }}">
+                    @if($alerts !== [])
+                        <input type="hidden" name="confirm_mismatch" id="confirm-mismatch" value="0">
+                    @endif
                     <button type="submit" class="btn journal-btn-filter" id="settlement-register-button">Registrar asientos</button>
                 </form>
             @endif
@@ -163,17 +185,80 @@
         vertical-align: middle;
         color: #1e2a4a;
     }
+    .settlement-modal {
+        position: fixed;
+        inset: 0;
+        z-index: 2000;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 1.5rem;
+        background: rgba(16, 24, 40, 0.45);
+    }
+    .settlement-modal[hidden] {
+        display: none;
+    }
+    .settlement-modal-card {
+        width: min(36rem, 100%);
+        background: #fff;
+        border-radius: 8px;
+        padding: 1.25rem 1.4rem;
+        box-shadow: 0 12px 40px rgba(16, 24, 40, 0.2);
+        color: #1e2a4a;
+    }
+    .settlement-modal-card h2 {
+        font-size: 1.15rem;
+        font-weight: 700;
+        margin-bottom: 0.75rem;
+    }
+    .settlement-modal-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 0.5rem;
+    }
 </style>
 @endsection
 
 @section('after_scripts')
 <script>
     var form = document.getElementById('settlement-register');
+    var modal = document.getElementById('settlement-mismatch-modal');
+    var confirmInput = document.getElementById('confirm-mismatch');
     if (form) {
-        form.addEventListener('submit', function () {
+        form.addEventListener('submit', function (event) {
+            if (modal && confirmInput && confirmInput.value !== '1') {
+                event.preventDefault();
+                modal.hidden = false;
+                return;
+            }
             var button = document.getElementById('settlement-register-button');
-            button.disabled = true;
-            button.textContent = 'Registrando…';
+            if (button) {
+                button.disabled = true;
+                button.textContent = 'Registrando…';
+            }
+        });
+    }
+    if (modal && confirmInput && form) {
+        document.getElementById('settlement-mismatch-accept').addEventListener('click', function () {
+            confirmInput.value = '1';
+            if (form.requestSubmit) {
+                form.requestSubmit();
+            } else {
+                form.submit();
+            }
+        });
+        document.getElementById('settlement-mismatch-back').addEventListener('click', function () {
+            modal.hidden = true;
+        });
+        modal.addEventListener('click', function (event) {
+            if (event.target === modal) {
+                modal.hidden = true;
+            }
+        });
+        document.addEventListener('keydown', function (event) {
+            if (event.key === 'Escape' && !modal.hidden) {
+                modal.hidden = true;
+            }
         });
     }
 </script>

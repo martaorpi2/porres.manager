@@ -16,6 +16,7 @@ use App\Models\Reception;
 use App\Models\Supplier;
 use App\Models\SupplierInvoice;
 use App\Models\User;
+use App\Services\PaymentSettlement\AccreditationCollectionAlert;
 use App\Services\PurchaseRequestNotificationService;
 use App\Services\SupplierPaymentOverdueAlertService;
 use Illuminate\Support\Collection;
@@ -33,6 +34,15 @@ class DashboardController extends Controller
         // Validar que el usuario esté autenticado
         if (! $user) {
             abort(403, 'Usuario no autenticado');
+        }
+
+        if ($user instanceof User && $user->hasContabilidadRole() && $user->seesRestrictedRoleMenu()) {
+            $accreditationAlerts = app(AccreditationCollectionAlert::class);
+
+            return view('vendor.backpack.ui.dashboard', [
+                'accountingHomeOnly' => true,
+                'accreditationAmountAlerts' => $accreditationAlerts->homeGroups($accreditationAlerts->pending()),
+            ]);
         }
 
         $isPersonal = $user->hasRole('role_personal');
@@ -554,6 +564,12 @@ class DashboardController extends Controller
             );
         }
 
+        $accreditationAlerts = app(AccreditationCollectionAlert::class);
+        $accreditationAmountAlerts = $user instanceof User && $user->canViewAccounting()
+            ? $accreditationAlerts->homeGroups($accreditationAlerts->pending())
+            : [];
+        $accountingHomeOnly = false;
+
         return view('vendor.backpack.ui.dashboard', compact(
             'stats',
             'generalRequests',
@@ -588,6 +604,8 @@ class DashboardController extends Controller
             'overdueSupplierInvoices',
             'overduePurchaseOrdersWithoutPayment',
             'overdueSupplierPaymentDays',
+            'accreditationAmountAlerts',
+            'accountingHomeOnly',
         ));
     }
 

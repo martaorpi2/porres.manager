@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\AccountingAccount;
 use App\Models\AccountingEntry;
 use App\Models\QuotaAccountingBatch;
 use App\Models\User;
@@ -136,6 +137,157 @@ class PaymentSettlementTest extends TestCase
         $mpPreview->assertSee('Se registra');
         $mpPreview->assertSee('asiento listo');
         $mpPreview->assertDontSee('ePorres', false);
+    }
+
+    public function test_preview_alerts_when_collection_debit_does_not_match_accreditation_credit(): void
+    {
+        $user = $this->accountingUser();
+        $headers = ['Fecha de cobro', 'Fecha de acreditación', 'Cobro', 'Cargos e impuestos', 'Intereses', 'Total a recibir'];
+        $entry = null;
+        $batch = null;
+        DB::beginTransaction();
+        try {
+            [$entry, $batch] = $this->collectionEntry('QR', '2099-07-15', '1000.00');
+
+            $mismatch = $this->actingAs($user, 'backpack')->post('/admin/accounting-settlement/qr/preview', [
+                'archivo' => $this->excel('qr-alerta.xlsx', [
+                    $headers,
+                    ['15/07/2099', '16/07/2099', '1500', '12', '0', '1488'],
+                ]),
+            ]);
+            $mismatch->assertOk();
+            $mismatch->assertSee('Diferencia de importes entre la cobranza y la acreditación de QR. Cobranza del 15/07/2099: $1.000,00. Acreditación del 16/07/2099: $1.500,00. Diferencia: $500,00.');
+            $mismatch->assertSee('Inconsistencias en la conciliación de cobranzas y acreditaciones');
+            $mismatch->assertSee('id="settlement-mismatch-accept"', false);
+            $mismatch->assertSee('id="settlement-mismatch-back"', false);
+
+            $sameDay = $this->actingAs($user, 'backpack')->post('/admin/accounting-settlement/qr/preview', [
+                'archivo' => $this->excel('qr-mismo-dia.xlsx', [
+                    $headers,
+                    ['15/07/2099', '15/07/2099', '1500', '12', '0', '1488'],
+                ]),
+            ]);
+            $sameDay->assertOk();
+            $sameDay->assertSee('Los importes de cobranza y acreditación de QR no coinciden para el 15/07/2099. Cobranza: $1.000,00. Acreditación: $1.500,00. Diferencia: $500,00.');
+
+            $match = $this->actingAs($user, 'backpack')->post('/admin/accounting-settlement/qr/preview', [
+                'archivo' => $this->excel('qr-ok.xlsx', [
+                    $headers,
+                    ['15/07/2099', '16/07/2099', '600', '4', '0', '596'],
+                    ['15/07/2099', '16/07/2099', '400', '3', '0', '397'],
+                ]),
+            ]);
+            $match->assertOk();
+            $match->assertDontSee('Diferencia de importes');
+            $match->assertDontSee('No se encontró el asiento de cobranza de QR del 15/07/2099');
+            $match->assertDontSee('id="settlement-mismatch-modal"', false);
+
+            DB::rollBack();
+        } finally {
+            if ($entry !== null && AccountingEntry::query()->whereKey($entry->id)->exists()) {
+                $entry->lines()->delete();
+                $entry->delete();
+            }
+            if ($batch !== null && QuotaAccountingBatch::query()->whereKey($batch->id)->exists()) {
+                $batch->delete();
+            }
+        }
+
+        $missing = $this->actingAs($user, 'backpack')->post('/admin/accounting-settlement/qr/preview', [
+            'archivo' => $this->excel('qr-sin-cobranza.xlsx', [
+                $headers,
+                ['15/07/2099', '16/07/2099', '1500', '12', '0', '1488'],
+            ]),
+        ]);
+        $missing->assertOk();
+        $missing->assertSee('No se encontró el asiento de cobranza de QR del 15/07/2099, correspondiente a la acreditación del 16/07/2099. No es posible verificar la coincidencia de los importes.');
+    }
+
+    public function test_accepting_the_mismatch_keeps_the_alert_on_the_accounting_home(): void
+    {
+        $user = $this->accountingUser();
+        $headers = ['Fecha de cobro', 'Fecha de acreditación', 'Cobro', 'Cargos e impuestos', 'Intereses', 'Total a recibir'];
+        $entry = null;
+        $batch = null;
+        $posted = null;
+        DB::beginTransaction();
+        try {
+            [$entry, $batch] = $this->collectionEntry('QR', '2099-11-20', '1000.00');
+            $preview = $this->actingAs($user, 'backpack')->post('/admin/accounting-settlement/qr/preview', [
+                'archivo' => $this->excel('qr-guardar.xlsx', [
+                    $headers,
+                    ['20/11/2099', '21/11/2099', '1500', '12', '0', '1488'],
+                ]),
+            ]);
+            $preview->assertOk();
+            $token = (string) session('payment_settlement_import.token');
+            $this->assertNotSame('', $token);
+
+            $blocked = $this->actingAs($user, 'backpack')->post('/admin/accounting-settlement/qr', [
+                'token' => $token,
+            ]);
+            $blocked->assertRedirect();
+            $this->assertFalse(QuotaAccountingBatch::query()->where('batch_key', 'qr:2099-11-21')->exists());
+
+            $saved = $this->actingAs($user, 'backpack')->post('/admin/accounting-settlement/qr', [
+                'token' => $token,
+                'confirm_mismatch' => '1',
+            ]);
+            $saved->assertRedirect();
+            $posted = QuotaAccountingBatch::query()->where('batch_key', 'qr:2099-11-21')->first();
+            $this->assertNotNull($posted);
+            $this->assertSame(150000, (int) $posted->collectionDates()->value('haber_cents'));
+
+            $home = $this->actingAs($user, 'backpack')->get('/admin/dashboard');
+            $home->assertOk();
+            $home->assertSee('Inconsistencias en la conciliación de cobranzas y acreditaciones');
+            $home->assertSee('20/11 → 21/11/2099');
+            $home->assertSee('Cobranza: $1.000,00');
+            $home->assertSee('Acreditación: $1.500,00');
+            $home->assertSee('+$500,00', false);
+
+            $entry->lines()->update(['debit' => '1500.00']);
+            $cleared = $this->actingAs($user, 'backpack')->get('/admin/dashboard');
+            $cleared->assertOk();
+            $cleared->assertDontSee('20/11 → 21/11/2099');
+
+            DB::rollBack();
+        } finally {
+            if ($entry !== null && AccountingEntry::query()->whereKey($entry->id)->exists()) {
+                $entry->lines()->delete();
+                $entry->delete();
+            }
+            if ($batch !== null && QuotaAccountingBatch::query()->whereKey($batch->id)->exists()) {
+                $batch->delete();
+            }
+            if ($posted !== null) {
+                $posted = $posted->fresh();
+            }
+            $posted = $posted ?? QuotaAccountingBatch::query()->where('batch_key', 'qr:2099-11-21')->first();
+            if ($posted !== null) {
+                $posted->entry?->lines()->delete();
+                $posted->entry?->delete();
+                $posted->collectionDates()->delete();
+                $posted->delete();
+            }
+        }
+    }
+
+    public function test_accounting_home_shows_only_reconciliation_inconsistencies(): void
+    {
+        $user = User::query()
+            ->whereHas('roles', fn ($query) => $query->where('name', 'role_contabilidad'))
+            ->get()
+            ->first(fn (User $candidate) => $candidate->hasContabilidadRole() && $candidate->seesRestrictedRoleMenu());
+        $this->assertNotNull($user);
+
+        $home = $this->actingAs($user, 'backpack')->get('/admin/dashboard');
+        $home->assertOk();
+        $home->assertDontSee('Flujo del Proceso Completo');
+        $home->assertDontSee('Solicitudes de Compra');
+        $home->assertDontSee('Órdenes de Compra');
+        $home->assertDontSee('Órdenes de Pago');
+        $home->assertDontSee('Su bandeja de trabajo');
     }
 
     public function test_qr_settlement_posts_the_fee_against_banco_bse(): void
@@ -395,6 +547,43 @@ class PaymentSettlementTest extends TestCase
                 'qr:2099-04-03',
             ])->delete();
         }
+    }
+
+    /**
+     * @return array{0: AccountingEntry, 1: QuotaAccountingBatch}
+     */
+    private function collectionEntry(string $paymentType, string $date, string $debit): array
+    {
+        $account = AccountingAccount::query()
+            ->where('is_grouping', false)
+            ->where('is_active', true)
+            ->orderBy('id')
+            ->first();
+        $this->assertNotNull($account);
+
+        $batch = QuotaAccountingBatch::query()->create([
+            'kind' => QuotaAccountingBatch::KIND_COLLECTION,
+            'batch_key' => 'collection:'.$date.':'.$paymentType.':alert-test',
+            'entry_date' => $date,
+            'payment_type' => $paymentType,
+        ]);
+        $entry = AccountingEntry::query()->create([
+            'entry_number' => 'AS-2099-'.substr(uniqid(), -6),
+            'date' => $date,
+            'kind' => AccountingEntry::KIND_QUOTA_COLLECTION,
+            'status' => AccountingEntry::STATUS_POSTED,
+            'source_type' => $batch->getMorphClass(),
+            'source_id' => $batch->id,
+            'description' => 'COBRANZA DE PRUEBA',
+        ]);
+        $entry->lines()->create([
+            'accounting_account_id' => $account->id,
+            'debit' => $debit,
+            'credit' => '0.00',
+        ]);
+        $batch->update(['accounting_entry_id' => $entry->id]);
+
+        return [$entry, $batch];
     }
 
     private function postedAccreditation(string $batchKind, string $entryKind, string $key, string $number, string $date): int

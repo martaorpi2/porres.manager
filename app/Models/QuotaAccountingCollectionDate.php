@@ -13,6 +13,7 @@ class QuotaAccountingCollectionDate extends Model
 
     protected $casts = [
         'collected_on' => 'date',
+        'haber_cents' => 'integer',
     ];
 
     public function batch(): BelongsTo

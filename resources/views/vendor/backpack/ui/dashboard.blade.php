@@ -1230,10 +1230,21 @@
 
 @section('content')
 <div class="container-fluid">
+@if(!empty($accountingHomeOnly))
+    @if(!empty($accreditationAmountAlerts))
+        @include('admin.dashboard.inc.accreditation_reconciliation')
+    @else
+        <h3 class="section-title mb-0" style="color:#000 !important; border-bottom-color:#000;">No hay inconsistencias en la conciliación de cobranzas y acreditaciones.</h3>
+    @endif
+@else
     @php
         $pendingLegalApprovalsCount = isset($pendingApprovalRequests) ? $pendingApprovalRequests->count() : 0;
         $dashboardPanel = backpack_url('dashboard');
     @endphp
+
+    @if(!empty($accreditationAmountAlerts))
+        @include('admin.dashboard.inc.accreditation_reconciliation')
+    @endif
 
     @if((isset($isAdminInstitucion) && $isAdminInstitucion || ($isAdminSistema ?? false)) && isset($adminInstitucionInbox))
         @include('admin.dashboard.inc.admin_institucion_inbox')
@@ -2280,5 +2291,6 @@
     <!-- Contenedor oculto para el HTML de alertas (usado por SweetAlert) -->
     <div id="stockAlertsHtmlContent" style="display: none !important; visibility: hidden; position: absolute; left: -9999px;">{!! $stockAlertsHtml !!}</div>
     @endif
+@endif
 </div>
 @endsection
