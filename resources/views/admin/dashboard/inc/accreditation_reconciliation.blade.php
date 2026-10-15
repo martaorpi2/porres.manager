@@ -50,6 +50,32 @@
                     </div>
                 </div>
             @endforeach
+            @foreach($group['excluded'] ?? [] as $excluded)
+                <div class="process-item-card" style="border-left: 3px solid #ffc107; cursor: default;">
+                    <div class="process-item-title">{{ $group['menu'] }}</div>
+                    <div class="process-item-meta">
+                        <span style="color: #856404; font-weight: bold;">
+                            <i class="la la-exclamation-triangle"></i> No entra al asiento
+                        </span>
+                    </div>
+                    <div class="process-item-meta">
+                        <span>{{ $excluded }}</span>
+                    </div>
+                </div>
+            @endforeach
+            @foreach($group['mixed'] ?? [] as $mixed)
+                <div class="process-item-card" style="border-left: 3px solid #871f1f; cursor: default;">
+                    <div class="process-item-title">{{ $group['menu'] }}</div>
+                    <div class="process-item-meta">
+                        <span style="color: #721c24; font-weight: bold;">
+                            <i class="la la-calendar"></i> Varias fechas de cobro
+                        </span>
+                    </div>
+                    <div class="process-item-meta">
+                        <span>{{ $mixed }}</span>
+                    </div>
+                </div>
+            @endforeach
         @endforeach
     </div>
 </div>

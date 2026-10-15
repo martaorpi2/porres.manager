@@ -216,7 +216,10 @@ class PostQuotaAccountingEntries extends Command
             $this->line('Liberados que no entran en la cobranza de cuotas: '.$skipped['not_collected']);
         }
         if ($skipped['amount_mismatch'] > 0) {
-            $this->line('Liberados con importe distinto al cobro: '.$skipped['amount_mismatch']);
+            $this->line('Pagos que no entran al asiento porque el neto más la comisión no cierran con el cobro: '.$skipped['amount_mismatch']);
+        }
+        if (($skipped['missing_paid_at'] ?? 0) > 0) {
+            $this->line('Pagos que no entran al asiento porque el cupón no tiene fecha de cobro: '.$skipped['missing_paid_at']);
         }
         if (($skipped['adjusted'] ?? 0) > 0) {
             $this->line('Acreditaciones modificadas a mano, sin reescribir: '.$skipped['adjusted']);

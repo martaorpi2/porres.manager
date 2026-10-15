@@ -684,6 +684,13 @@ class AccountingJournalController extends CrudController
         } elseif ($removed > 1) {
             $bits[] = $removed.' acreditaciones dadas de baja porque no salieron de un archivo';
         }
+        $leftOut = (int) ($result['settlements']['skipped']['amount_mismatch'] ?? 0)
+            + (int) ($result['settlements']['skipped']['missing_paid_at'] ?? 0);
+        if ($leftOut === 1) {
+            $bits[] = '1 pago de Mercado Pago no entró al asiento';
+        } elseif ($leftOut > 1) {
+            $bits[] = $leftOut.' pagos de Mercado Pago no entraron al asiento';
+        }
 
         if (in_array($result['grants']['status'] ?? '', ['posted', 'updated'], true)) {
             $bits[] = 'becas actualizadas';

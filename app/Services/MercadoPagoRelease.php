@@ -18,33 +18,48 @@ final class MercadoPagoRelease
      */
     public static function fromPayment(array $payment, ?string $asOf = null): ?array
     {
-        $gross = round((float) ($payment['transaction_amount'] ?? 0), 2);
-        $net = round((float) ($payment['transaction_details']['net_received_amount'] ?? 0), 2);
-        $commission = self::collectorFee($payment);
-
-        if ($gross < 0.01 || $net < 0.01 || $commission < 0) {
-            return null;
-        }
-        if (abs(($net + $commission) - $gross) > 0.02) {
-            return null;
-        }
-
-        $releaseDate = self::releaseDate($payment['money_release_date'] ?? null);
-        if ($releaseDate === null) {
-            return null;
-        }
-
-        $released = ($payment['money_release_status'] ?? '') === 'released';
-        $due = is_string($asOf) && $asOf !== '' && $releaseDate <= $asOf;
-        if (! $released && ! $due) {
+        $inspected = self::inspect($payment, $asOf);
+        if (! $inspected['ready'] || $inspected['release_date'] === null) {
             return null;
         }
 
         return [
+            'gross' => $inspected['gross'],
+            'net' => $inspected['net'],
+            'commission' => $inspected['commission'],
+            'release_date' => $inspected['release_date'],
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $payment
+     * @return array{ready: bool, gross: float, net: float, commission: float, release_date: ?string, reasons: list<string>}
+     */
+    public static function inspect(array $payment, ?string $asOf = null): array
+    {
+        $gross = round((float) ($payment['transaction_amount'] ?? 0), 2);
+        $net = round((float) ($payment['transaction_details']['net_received_amount'] ?? 0), 2);
+        $commission = self::collectorFee($payment);
+        $releaseDate = self::releaseDate($payment['money_release_date'] ?? null);
+        $released = ($payment['money_release_status'] ?? '') === 'released';
+        $due = $releaseDate !== null && is_string($asOf) && $asOf !== '' && $releaseDate <= $asOf;
+        $applies = $released || $due;
+        $amountOk = $gross >= 0.01 && $net >= 0.01 && $commission >= 0 && abs(($net + $commission) - $gross) <= 0.02;
+        $reasons = [];
+        if ($applies && ! $amountOk) {
+            $reasons[] = 'unbalanced';
+        }
+        if ($applies && $releaseDate === null) {
+            $reasons[] = 'missing_release';
+        }
+
+        return [
+            'ready' => $applies && $reasons === [],
             'gross' => $gross,
             'net' => $net,
             'commission' => $commission,
             'release_date' => $releaseDate,
+            'reasons' => $reasons,
         ];
     }
 

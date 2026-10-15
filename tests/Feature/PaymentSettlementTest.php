@@ -6,6 +6,7 @@ use App\Models\AccountingAccount;
 use App\Models\AccountingEntry;
 use App\Models\QuotaAccountingBatch;
 use App\Models\User;
+use App\Services\MercadoPagoReleaseSettlement;
 use App\Services\QuotaAccountingService;
 use Carbon\Carbon;
 use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
@@ -32,7 +33,7 @@ class PaymentSettlementTest extends TestCase
         $chooser->assertOk();
         $chooser->assertSee('Registración de Cobranzas');
         $chooser->assertSee('Forma de pago');
-        $chooser->assertSee('Mercado Pago');
+        $chooser->assertDontSee('accounting-settlement/mercadopago', false);
         $chooser->assertSee('Naranja X');
         $chooser->assertSee('Sol Pago');
         $chooser->assertSee('QR');
@@ -51,7 +52,7 @@ class PaymentSettlementTest extends TestCase
         $naranja->assertSee('Ver acreditación');
         $naranja->assertDontSee('El asiento queda así');
         $naranja->assertSee('accounting-settlement/sol', false);
-        $naranja->assertSee('accounting-settlement/mercadopago', false);
+        $naranja->assertDontSee('accounting-settlement/mercadopago', false);
 
         $mp = $this->actingAs($user, 'backpack')->get('/admin/accounting-settlement/mercadopago');
         $mp->assertOk();
@@ -546,6 +547,111 @@ class PaymentSettlementTest extends TestCase
                 'mp-settlement:2099-04-02:1:auto',
                 'qr:2099-04-03',
             ])->delete();
+        }
+    }
+
+    public function test_a_release_with_several_collection_dates_is_one_entry_and_an_alert(): void
+    {
+        $excelEntryId = null;
+        DB::beginTransaction();
+        try {
+            $excelEntryId = $this->postedAccreditation(
+                QuotaAccountingBatch::KIND_MP_SETTLEMENT,
+                AccountingEntry::KIND_QUOTA_MP_SETTLEMENT,
+                'mercadopago:2099-08-20',
+                'AS-2099-820',
+                '2099-08-20',
+            );
+            $this->app->instance(MercadoPagoReleaseSettlement::class, new class extends MercadoPagoReleaseSettlement
+            {
+                public function forMonth(\Carbon\Carbon $month): array
+                {
+                    return [
+                        'groups' => [[
+                            'key' => 'mp-release:2099-08-20',
+                            'date' => '2099-08-20',
+                            'gross_cents' => 30000,
+                            'commission_cents' => 3000,
+                            'interest_cents' => 0,
+                            'net_cents' => 27000,
+                            'document' => '2099-08-20',
+                            'collected_on' => ['2099-08-10', '2099-08-11'],
+                            'collected_amounts' => [
+                                '2099-08-10' => 10000,
+                                '2099-08-11' => 20000,
+                            ],
+                            'orders' => 2,
+                        ], [
+                            'key' => 'mp-release:2099-08-21',
+                            'date' => '2099-08-21',
+                            'gross_cents' => 30000,
+                            'commission_cents' => 3000,
+                            'interest_cents' => 0,
+                            'net_cents' => 27000,
+                            'document' => '2099-08-21',
+                            'collected_on' => ['2099-08-10', '2099-08-11'],
+                            'collected_amounts' => [
+                                '2099-08-10' => 10000,
+                                '2099-08-11' => 20000,
+                            ],
+                            'orders' => 2,
+                        ]],
+                        'exclusions' => [],
+                        'skipped' => [
+                            'pending_collection' => 0,
+                            'not_collected' => 0,
+                            'amount_mismatch' => 1,
+                            'adjusted' => 0,
+                            'missing_paid_at' => 0,
+                        ],
+                    ];
+                }
+            });
+
+            $result = app(QuotaAccountingService::class)->postMonth(\Carbon\Carbon::parse('2099-08-01'));
+
+            $this->assertFalse(QuotaAccountingBatch::query()->where('batch_key', 'mp-release:2099-08-20')->exists());
+            $this->assertTrue(AccountingEntry::query()->whereKey($excelEntryId)->exists());
+            $this->assertSame('ACREDITACION DE PRUEBA', AccountingEntry::query()->find($excelEntryId)->description);
+            $batch = QuotaAccountingBatch::query()->where('batch_key', 'mp-release:2099-08-21')->first();
+            $this->assertNotNull($batch);
+            $this->assertSame(0, $result['settlements']['replaced']);
+            $this->assertSame(1, $result['settlements']['skipped']['amount_mismatch']);
+            $entry = AccountingEntry::query()->find($batch->accounting_entry_id);
+            $this->assertNotNull($entry);
+            $this->assertSame('ACREDITACION COBRANZA MERCADO PAGO cobro 10/08/2099, 11/08/2099', $entry->description);
+            $lines = $entry->lines()->with('account')->orderBy('id')->get();
+            $this->assertSame(
+                ['11104000', '52309000', '11202005'],
+                $lines->map(fn ($line) => $line->account->code)->all()
+            );
+            $this->assertSame('270.00', $lines[0]->debit);
+            $this->assertSame('30.00', $lines[1]->debit);
+            $this->assertSame('300.00', $lines[2]->credit);
+            $amounts = $batch->collectionDates()->orderBy('collected_on')->get();
+            $this->assertSame(['2099-08-10', '2099-08-11'], $amounts->map(fn ($link) => $link->collected_on->toDateString())->all());
+            $this->assertSame([10000, 20000], $amounts->map(fn ($link) => (int) $link->haber_cents)->all());
+
+            $home = $this->actingAs($this->accountingUser(), 'backpack')->get('/admin/dashboard');
+            $home->assertOk();
+            $home->assertSee('Varias fechas de cobro');
+            $home->assertSee('La acreditación de Mercado Pago del 21/08/2099 incluye cupones cobrados el 10/08/2099 y el 11/08/2099.');
+        } finally {
+            if (DB::transactionLevel() > 0) {
+                DB::rollBack();
+            }
+            if ($excelEntryId !== null && AccountingEntry::query()->whereKey($excelEntryId)->exists()) {
+                AccountingEntry::query()->whereKey($excelEntryId)->delete();
+            }
+            $release = QuotaAccountingBatch::query()->where('batch_key', 'mp-release:2099-08-21')->first();
+            if ($release !== null) {
+                $releaseEntryId = $release->accounting_entry_id;
+                $release->delete();
+                if ($releaseEntryId !== null) {
+                    AccountingEntry::query()->whereKey($releaseEntryId)->delete();
+                }
+            }
+            QuotaAccountingBatch::query()->where('batch_key', 'mercadopago:2099-08-20')->delete();
         }
     }
 

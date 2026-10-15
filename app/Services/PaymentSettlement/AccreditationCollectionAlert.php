@@ -5,6 +5,7 @@ namespace App\Services\PaymentSettlement;
 use App\Models\AccountingEntry;
 use App\Models\QuotaAccountingBatch;
 use App\Models\QuotaAccountingCollectionDate;
+use App\Services\MercadoPagoReleaseSettlement;
 
 /**
  * Compara el debe de la cobranza de la fecha de cobro del archivo
@@ -92,6 +93,16 @@ final class AccreditationCollectionAlert
             $paymentType = (string) ($batch->payment_type ?: $definition['payment_type']);
             $menu = (string) $definition['menu'];
             $accredited = $entry->date?->toDateString() ?? '';
+            $dates = $batchLinks
+                ->map(fn (QuotaAccountingCollectionDate $link) => $link->collected_on?->toDateString())
+                ->filter()
+                ->unique()
+                ->sort()
+                ->values()
+                ->all();
+            if ($batch->kind === QuotaAccountingBatch::KIND_MP_SETTLEMENT && count($dates) > 1 && $accredited !== '') {
+                $alerts[] = $this->notice('mixed', $menu, $dates, [$accredited]);
+            }
             $known = $batchLinks->every(fn (QuotaAccountingCollectionDate $link) => $link->haber_cents !== null);
             if ($known) {
                 foreach ($batchLinks as $link) {
@@ -105,13 +116,6 @@ final class AccreditationCollectionAlert
                 continue;
             }
 
-            $dates = $batchLinks
-                ->map(fn (QuotaAccountingCollectionDate $link) => $link->collected_on?->toDateString())
-                ->filter()
-                ->unique()
-                ->sort()
-                ->values()
-                ->all();
             if ($dates === []) {
                 continue;
             }
@@ -146,11 +150,35 @@ final class AccreditationCollectionAlert
             }
         }
 
+        foreach (app(MercadoPagoReleaseSettlement::class)->exclusions() as $row) {
+            $alerts[] = $this->notice(
+                'excluded',
+                'Mercado Pago',
+                [],
+                isset($row['release_on']) && is_string($row['release_on']) && $row['release_on'] !== '' ? [$row['release_on']] : [],
+                $row,
+            );
+        }
+
         return $alerts;
     }
 
     public function sentence(array $case): string
     {
+        if (($case['kind'] ?? '') === 'excluded') {
+            return $this->exclusionSentence($case);
+        }
+        if (($case['kind'] ?? '') === 'mixed') {
+            $collected = $case['collected_on'];
+            sort($collected);
+            $collectedLabel = implode(' y ', array_map(
+                fn (string $date) => 'el '.$this->dateLabel($date),
+                $collected
+            ));
+
+            return 'La acreditación de Mercado Pago del '.$this->datesLabel($case['accredited_on']).' incluye cupones cobrados '.$collectedLabel.'.';
+        }
+
         $menu = (string) $case['menu'];
         $collected = $this->datesLabel($case['collected_on']);
         $accredited = $this->datesLabel($case['accredited_on']);
@@ -196,9 +224,21 @@ final class AccreditationCollectionAlert
         foreach ($menus as $menu) {
             $amounts = [];
             $missing = [];
+            $excluded = [];
+            $mixed = [];
             foreach ($byMenu[$menu] as $case) {
                 if ($case['kind'] === 'missing') {
                     $missing[] = $this->sentence($case);
+
+                    continue;
+                }
+                if ($case['kind'] === 'excluded') {
+                    $excluded[] = $this->sentence($case);
+
+                    continue;
+                }
+                if ($case['kind'] === 'mixed') {
+                    $mixed[] = $this->sentence($case);
 
                     continue;
                 }
@@ -212,13 +252,66 @@ final class AccreditationCollectionAlert
             }
             $groups[] = [
                 'menu' => $menu,
-                'count' => count($amounts) + count($missing),
+                'count' => count($amounts) + count($missing) + count($excluded) + count($mixed),
                 'amounts' => $amounts,
                 'missing' => $missing,
+                'excluded' => $excluded,
+                'mixed' => $mixed,
             ];
         }
 
         return $groups;
+    }
+
+    /**
+     * @param  list<string>  $collected
+     * @param  list<string>  $accredited
+     * @param  array<string, mixed>  $extra
+     * @return array<string, mixed>
+     */
+    private function notice(string $kind, string $menu, array $collected, array $accredited, array $extra = []): array
+    {
+        return array_merge([
+            'menu' => $menu,
+            'kind' => $kind,
+            'collected_on' => array_values($collected),
+            'accredited_on' => array_values($accredited),
+            'debe_cents' => null,
+            'haber_cents' => 0,
+            'payment_id' => '',
+            'reasons' => [],
+            'gross_cents' => 0,
+            'commission_cents' => 0,
+            'net_cents' => 0,
+        ], $extra);
+    }
+
+    /**
+     * @param  array<string, mixed>  $case
+     */
+    private function exclusionSentence(array $case): string
+    {
+        $id = trim((string) ($case['payment_id'] ?? ''));
+        $who = $id !== '' ? 'El pago '.$id : 'Un pago';
+        $accredited = is_array($case['accredited_on'] ?? null) ? $case['accredited_on'] : [];
+        $when = isset($accredited[0]) && $accredited[0] !== '' ? ' del '.$this->dateLabel((string) $accredited[0]) : '';
+        $reasons = is_array($case['reasons'] ?? null) ? $case['reasons'] : [];
+        $bits = [];
+        if (in_array('unbalanced', $reasons, true)) {
+            $bits[] = 'el neto más la comisión no cierran con el cobro';
+        }
+        if (in_array('missing_collected', $reasons, true)) {
+            $bits[] = 'el cupón no tiene fecha de cobro';
+        }
+        if (in_array('missing_release', $reasons, true)) {
+            $bits[] = 'no tiene fecha de liberación';
+        }
+        $sentence = $who.' no entra al asiento de acreditación de Mercado Pago'.$when.': '.implode(' y ', $bits).'.';
+        if (in_array('unbalanced', $reasons, true)) {
+            $sentence .= ' Cobro: $'.$this->money((int) ($case['gross_cents'] ?? 0)).'. Comisión: $'.$this->money((int) ($case['commission_cents'] ?? 0)).'. Neto: $'.$this->money((int) ($case['net_cents'] ?? 0)).'.';
+        }
+
+        return $sentence;
     }
 
     private function collectionDebitCents(string $paymentType, string $date): ?int

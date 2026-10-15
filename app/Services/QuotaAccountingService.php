@@ -43,12 +43,7 @@ class QuotaAccountingService
             'accrual' => $accrual,
             'grants' => $grants,
             'collections' => $collections,
-            'settlements' => $this->postMercadoPagoSettlements(
-                $month,
-                $accounts,
-                $dryRun,
-                $collections['collected_order_ids'],
-            ),
+            'settlements' => $this->postMercadoPagoSettlements($month, $dryRun),
         ];
     }
 
@@ -806,19 +801,16 @@ class QuotaAccountingService
     }
 
     /**
-     * QR, Mercado Pago, Sol y Naranja se acreditan solo con el archivo.
-     * Actualizar saca las que se armaron por otro camino y no las vuelve a crear.
+     * Un asiento por fecha de liberación. Suma los cupones de ese día.
+     * El que no cierra, o no tiene fecha de cobro, queda afuera y se ve en el inicio.
      *
-     * @param  array<string, AccountingAccount>  $accounts
-     * @param  array<int, true>  $collectedThisMonth
-     * @return array<string, mixed>
+     * @return array{groups: list<array<string, mixed>>, updated: list<array<string, mixed>>, skipped: array<string, int>, removed: int, replaced: int}
      */
-    private function postMercadoPagoSettlements(Carbon $month, array $accounts, bool $dryRun, array $collectedThisMonth): array
+    private function postMercadoPagoSettlements(Carbon $month, bool $dryRun): array
     {
-        unset($accounts, $collectedThisMonth);
-
-        $from = $month->copy()->startOfMonth()->toDateString();
-        $to = $month->copy()->endOfMonth()->toDateString();
+        $built = app(MercadoPagoReleaseSettlement::class)->forMonth($month);
+        $groups = $built['groups'];
+        $skipped = $built['skipped'];
         $dates = [];
         $cursor = $month->copy()->startOfMonth();
         $end = $month->copy()->endOfMonth();
@@ -827,16 +819,123 @@ class QuotaAccountingService
             $cursor->addDay();
         }
 
+        $fromFile = $this->excelMercadoPagoDates(array_column($groups, 'date'));
+        $adjustedDates = $this->manuallyAdjustedMercadoPagoDates(array_column($groups, 'date'));
+        $blocked = array_values(array_unique(array_merge($fromFile, $adjustedDates)));
+        if ($blocked !== []) {
+            $groups = array_values(array_filter(
+                $groups,
+                fn (array $group) => ! in_array($group['date'], $blocked, true)
+            ));
+            $skipped['adjusted'] += count($adjustedDates);
+        }
+
+        $keys = array_column($groups, 'key');
+        $existing = $keys === []
+            ? []
+            : QuotaAccountingBatch::query()->whereIn('batch_key', $keys)->pluck('batch_key')->all();
+
+        if ($dryRun) {
+            return $this->mercadoPagoSettlementReport($groups, $existing, [], $skipped, 0, 0);
+        }
+
+        $removed = $this->deleteNonFileAccreditations(null, $dates);
+        $entries = $this->postImportedPaymentSettlements(PaymentSettlementChannels::MERCADOPAGO, $groups);
+        $numbers = [];
+        foreach ($entries as $entry) {
+            $batchKey = QuotaAccountingBatch::query()->where('accounting_entry_id', $entry->id)->value('batch_key');
+            if (is_string($batchKey) && $batchKey !== '') {
+                $numbers[$batchKey] = $entry->entry_number;
+            }
+        }
+
+        return $this->mercadoPagoSettlementReport($groups, $existing, $numbers, $skipped, $removed, 0);
+    }
+
+    /**
+     * Fechas que ya tienen el asiento cargado con el Excel de Mercado Pago.
+     * Actualizar no las vuelve a escribir.
+     *
+     * @param  list<string>  $dates
+     * @return list<string>
+     */
+    private function excelMercadoPagoDates(array $dates): array
+    {
+        $dates = array_values(array_filter($dates, fn ($date) => is_string($date) && $date !== ''));
+        if ($dates === []) {
+            return [];
+        }
+
+        return QuotaAccountingBatch::query()
+            ->where('kind', QuotaAccountingBatch::KIND_MP_SETTLEMENT)
+            ->whereIn('entry_date', $dates)
+            ->where(function ($query) {
+                $query->where('batch_key', 'like', 'mercadopago:%')
+                    ->orWhere('batch_key', 'like', 'mp-settlement:excel:%');
+            })
+            ->whereHas('entry', fn ($query) => $query->where('status', AccountingEntry::STATUS_POSTED))
+            ->pluck('entry_date')
+            ->map(fn ($date) => $date instanceof \DateTimeInterface ? $date->format('Y-m-d') : (string) $date)
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  list<string>  $dates
+     * @return list<string>
+     */
+    private function manuallyAdjustedMercadoPagoDates(array $dates): array
+    {
+        $dates = array_values(array_filter($dates, fn ($date) => is_string($date) && $date !== ''));
+        if ($dates === []) {
+            return [];
+        }
+
+        return QuotaAccountingBatch::query()
+            ->where('kind', QuotaAccountingBatch::KIND_MP_SETTLEMENT)
+            ->whereIn('entry_date', $dates)
+            ->whereHas('entry', fn ($query) => $query->where('manually_adjusted', true))
+            ->pluck('entry_date')
+            ->map(fn ($date) => $date instanceof \DateTimeInterface ? $date->format('Y-m-d') : (string) $date)
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $groups
+     * @param  list<string>  $existing
+     * @param  array<string, string|null>  $numbers
+     * @param  array<string, int>  $skipped
+     * @return array{groups: list<array<string, mixed>>, updated: list<array<string, mixed>>, skipped: array<string, int>, removed: int, replaced: int}
+     */
+    private function mercadoPagoSettlementReport(array $groups, array $existing, array $numbers, array $skipped, int $removed, int $replaced): array
+    {
+        $created = [];
+        $updated = [];
+        foreach ($groups as $group) {
+            $row = [
+                'date' => $group['date'],
+                'orders' => (int) ($group['orders'] ?? 0),
+                'net' => ((int) $group['net_cents']) / 100,
+                'commission' => ((int) $group['commission_cents']) / 100,
+                'gross' => ((int) $group['gross_cents']) / 100,
+                'entry_number' => $numbers[$group['key']] ?? null,
+            ];
+            if (in_array($group['key'], $existing, true)) {
+                $updated[] = $row;
+            } else {
+                $created[] = $row;
+            }
+        }
+
         return [
-            'groups' => [],
-            'updated' => [],
-            'skipped' => [
-                'pending_collection' => 0,
-                'not_collected' => 0,
-                'amount_mismatch' => 0,
-                'adjusted' => 0,
-            ],
-            'removed' => $dryRun ? 0 : $this->deleteNonFileAccreditations(null, $dates),
+            'groups' => $created,
+            'updated' => $updated,
+            'skipped' => $skipped,
+            'removed' => $removed,
+            'replaced' => $replaced,
         ];
     }
 
@@ -898,7 +997,7 @@ class QuotaAccountingService
 
     private function isUploadedAccreditation(string $batchKey): bool
     {
-        foreach (['mercadopago:', 'naranja:', 'sol:', 'qr:', 'mp-settlement:excel:'] as $prefix) {
+        foreach (['mercadopago:', 'naranja:', 'sol:', 'qr:', 'mp-settlement:excel:', 'mp-release:'] as $prefix) {
             if (str_starts_with($batchKey, $prefix)) {
                 return true;
             }
