@@ -15,6 +15,7 @@ class QuotaAccountingOrder extends Model
         'debtors_amount' => 'decimal:2',
         'interest_amount' => 'decimal:2',
         'bank_amount' => 'decimal:2',
+        'financing_amount' => 'decimal:2',
     ];
 
     public function batch(): BelongsTo

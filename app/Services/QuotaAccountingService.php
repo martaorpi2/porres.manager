@@ -8,6 +8,7 @@ use App\Models\QuotaAccountingBatch;
 use App\Models\QuotaAccountingCollectionDate;
 use App\Models\QuotaAccountingOrder;
 use App\Services\PaymentSettlement\PaymentSettlementChannels;
+use App\Support\Eporres\ReportePagosDiaCriteria;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
@@ -24,7 +25,7 @@ class QuotaAccountingService
     private const CANCELLED_STATE = 'App\\States\\Order\\Cancelled';
 
     /**
-     * Devenga las cuotas que vencen en el mes y asienta los cobros con paid_at en ese mes.
+     * Devenga las cuotas que vencen en el mes, asienta los cobros y los planes de pago.
      *
      * @return array<string, mixed>
      */
@@ -43,6 +44,8 @@ class QuotaAccountingService
             'accrual' => $accrual,
             'grants' => $grants,
             'collections' => $collections,
+            'plans' => $this->postPaymentPlans($month, $accounts, $dryRun),
+            'plan_collections' => $this->postPlanCollections($month, $accounts, $dryRun),
             'settlements' => $this->postMercadoPagoSettlements($month, $dryRun),
         ];
     }
@@ -1373,6 +1376,7 @@ class QuotaAccountingService
                         'debtors_amount' => $order['debtors_amount'],
                         'interest_amount' => $order['interest_amount'],
                         'bank_amount' => $order['bank_amount'],
+                        'financing_amount' => $order['financing_amount'] ?? $this->money(0),
                         'created_at' => $now,
                         'updated_at' => $now,
                     ];
@@ -1382,6 +1386,728 @@ class QuotaAccountingService
 
             return $entry;
         });
+    }
+
+    /**
+     * Un asiento por plan generado en el mes: el plan reemplaza a deudores por cuotas,
+     * reconoce la mora y deja el interés de financiación a devengar.
+     *
+     * @param  array<string, AccountingAccount>  $accounts
+     * @return array{groups: list<array<string, mixed>>, updated: list<array<string, mixed>>, skipped: array{adjusted: int}}
+     */
+    private function postPaymentPlans(Carbon $month, array $accounts, bool $dryRun): array
+    {
+        $plans = DB::connection('eporres')->table('students_plans')
+            ->whereBetween('created_at', [
+                $month->copy()->startOfMonth()->toDateTimeString(),
+                $month->copy()->endOfMonth()->toDateTimeString(),
+            ])
+            ->orderBy('id')
+            ->get(['id', 'created_at']);
+
+        $built = [];
+        if ($plans->isNotEmpty()) {
+            $ids = $plans->pluck('id')->map(fn ($id) => (int) $id)->all();
+            $pendByPlan = DB::connection('eporres')->table('orders_pend_plan')
+                ->whereIn('student_plan_id', $ids)
+                ->get(['student_plan_id', 'order_id', 'type', 'amount'])
+                ->groupBy(fn ($row) => (int) $row->student_plan_id);
+            $amortByPlan = DB::connection('eporres')->table('amortizations')
+                ->whereIn('student_plan_id', $ids)
+                ->get(['student_plan_id', 'order_id', 'interest_amount'])
+                ->groupBy(fn ($row) => (int) $row->student_plan_id);
+
+            foreach ($plans as $plan) {
+                $planId = (int) $plan->id;
+                $orders = $this->paymentPlanOpeningOrders(
+                    $pendByPlan->get($planId, collect()),
+                    $amortByPlan->get($planId, collect()),
+                );
+                if ($orders === []) {
+                    continue;
+                }
+                $built[$planId] = [
+                    'date' => Carbon::parse($plan->created_at)->toDateString(),
+                    'orders' => $orders,
+                ];
+            }
+        }
+
+        $existing = QuotaAccountingBatch::query()
+            ->where('kind', QuotaAccountingBatch::KIND_PLAN)
+            ->whereDate('entry_date', '>=', $month->copy()->startOfMonth()->toDateString())
+            ->whereDate('entry_date', '<=', $month->copy()->endOfMonth()->toDateString())
+            ->with(['orders', 'entry'])
+            ->get()
+            ->keyBy(fn (QuotaAccountingBatch $batch) => $this->planIdFromBatchKey((string) $batch->batch_key));
+
+        $posted = [];
+        $updated = [];
+        $adjusted = 0;
+        $planIds = array_values(array_unique(array_merge(array_keys($built), $existing->keys()->map(fn ($id) => (int) $id)->all())));
+        sort($planIds);
+
+        foreach ($planIds as $planId) {
+            if ($planId < 1) {
+                continue;
+            }
+            $desired = $built[$planId] ?? null;
+            $batch = $existing->get($planId);
+            if ($batch === null && $desired !== null) {
+                $batch = QuotaAccountingBatch::query()
+                    ->where('batch_key', 'plan:'.$planId)
+                    ->with(['orders', 'entry'])
+                    ->first();
+            }
+            $orders = $desired['orders'] ?? [];
+            $date = $desired['date'] ?? $batch?->entry_date?->toDateString();
+            if ($date === null) {
+                continue;
+            }
+            if ($batch !== null && $batch->entry?->manually_adjusted && $this->planOrdersDiffer($batch->orders, $orders)) {
+                $adjusted++;
+
+                continue;
+            }
+            if ($batch !== null && ! $this->planOrdersDiffer($batch->orders, $orders) && $batch->entry?->status === AccountingEntry::STATUS_POSTED) {
+                continue;
+            }
+            if ($orders === [] && ($batch === null || $batch->entry?->status !== AccountingEntry::STATUS_POSTED)) {
+                continue;
+            }
+
+            $totals = $this->planOpeningTotals($orders);
+            $description = 'ALTA PLAN DE PAGO '.$planId;
+            $item = [
+                'date' => $date,
+                'plan_id' => $planId,
+                'plan' => $this->amount($totals['plan']),
+                'debtors' => $this->amount($totals['debtors']),
+                'late' => $this->amount($totals['late']),
+                'financing' => $this->amount($totals['financing']),
+                'description' => $description,
+                'entry_number' => $batch?->entry?->entry_number,
+            ];
+
+            if (! $dryRun) {
+                $entry = $this->savePlanBatch(
+                    batch: $batch,
+                    kind: QuotaAccountingBatch::KIND_PLAN,
+                    batchKey: 'plan:'.$planId,
+                    entryDate: $date,
+                    paymentType: null,
+                    entryKind: AccountingEntry::KIND_QUOTA_PLAN,
+                    description: $description,
+                    lines: $this->planOpeningLines($totals['debtors'], $totals['late'], $totals['financing'], $accounts),
+                    orders: $orders,
+                    role: QuotaAccountingBatch::KIND_PLAN,
+                    accounts: $accounts,
+                );
+                $item['entry_number'] = $entry?->entry_number;
+            }
+
+            if ($batch === null || $batch->entry?->status !== AccountingEntry::STATUS_POSTED) {
+                $posted[] = $item;
+            } else {
+                $updated[] = $item;
+            }
+        }
+
+        return [
+            'groups' => $posted,
+            'updated' => $updated,
+            'skipped' => ['adjusted' => $adjusted],
+        ];
+    }
+
+    /**
+     * Cobro de una cuota del plan (cuota 100 en adelante).
+     * El medio recibe lo pagado. El plan baja por la cuota. La mora y el recargo del medio son ingreso.
+     * El interés de financiación pasa de «a devengar» a intereses ganados.
+     *
+     * @param  array<string, AccountingAccount>  $accounts
+     * @return array{groups: list<array<string, mixed>>, updated: list<array<string, mixed>>, skipped: array{split: int, unmapped: array<string, int>, zero: int, adjusted: int}}
+     */
+    private function postPlanCollections(Carbon $month, array $accounts, bool $dryRun): array
+    {
+        $splitIds = $this->idSet(
+            DB::connection('eporres')->table('order_split_payments')->pluck('order_id')
+        );
+        $skipped = [
+            'split' => 0,
+            'unmapped' => [],
+            'zero' => 0,
+            'adjusted' => 0,
+        ];
+        $groups = [];
+
+        foreach ($this->planCollectionRows($month) as $row) {
+            $orderId = (int) $row->id;
+            if (isset($splitIds[$orderId])) {
+                $skipped['split']++;
+
+                continue;
+            }
+            $paymentType = trim((string) $row->payment_type);
+            $bankCode = QuotaPaymentAccounts::bankCode($paymentType);
+            if ($paymentType === '' || $bankCode === null) {
+                $label = $paymentType === '' ? '(sin medio)' : $paymentType;
+                $skipped['unmapped'][$label] = ($skipped['unmapped'][$label] ?? 0) + 1;
+
+                continue;
+            }
+            $split = PaymentPlanSplit::collection(
+                (float) $row->amount_paid,
+                (float) $row->quota_amount,
+                (float) $row->surcharge_amount,
+                (float) $row->interest_amount,
+            );
+            if ($this->cents($split['paid']) < 1) {
+                $skipped['zero']++;
+
+                continue;
+            }
+
+            $date = Carbon::parse($row->paid_at)->toDateString();
+            $key = $date.'|'.$paymentType;
+            if (! isset($groups[$key])) {
+                $groups[$key] = [
+                    'date' => $date,
+                    'payment_type' => $paymentType,
+                    'bank_code' => $bankCode,
+                    'orders' => [],
+                    'paid' => 0,
+                    'plan' => 0,
+                    'late' => 0,
+                    'financing' => 0,
+                    'surcharge' => 0,
+                ];
+            }
+            $paid = $this->cents($split['paid']);
+            $plan = $this->cents($split['plan']);
+            $late = $this->cents($split['late']);
+            $financing = $this->cents($split['financing']);
+            $surcharge = $this->cents($split['surcharge']);
+            $groups[$key]['paid'] += $paid;
+            $groups[$key]['plan'] += $plan;
+            $groups[$key]['late'] += $late;
+            $groups[$key]['financing'] += $financing;
+            $groups[$key]['surcharge'] += $surcharge;
+            $groups[$key]['orders'][] = [
+                'eporres_order_id' => $orderId,
+                'debtors_amount' => $this->money($plan),
+                'interest_amount' => $this->money($late),
+                'bank_amount' => $this->money($paid),
+                'financing_amount' => $this->money($financing),
+            ];
+        }
+
+        ksort($groups);
+
+        $batchesByGroup = [];
+        $batches = QuotaAccountingBatch::query()
+            ->where('kind', QuotaAccountingBatch::KIND_PLAN_COLLECTION)
+            ->whereDate('entry_date', '>=', $month->copy()->startOfMonth()->toDateString())
+            ->whereDate('entry_date', '<=', $month->copy()->endOfMonth()->toDateString())
+            ->with(['orders', 'entry'])
+            ->orderBy('id')
+            ->get();
+        foreach ($batches as $batch) {
+            $batchesByGroup[$batch->entry_date->toDateString().'|'.$batch->payment_type][] = $batch;
+        }
+
+        $posted = [];
+        $updated = [];
+        $keys = array_values(array_unique(array_merge(array_keys($groups), array_keys($batchesByGroup))));
+        sort($keys);
+
+        foreach ($keys as $key) {
+            $group = $groups[$key] ?? null;
+            $groupBatches = $batchesByGroup[$key] ?? [];
+            if ($group === null) {
+                $sample = $groupBatches[0];
+                $bankCode = QuotaPaymentAccounts::bankCode($sample->payment_type) ?? '';
+                if ($bankCode === '') {
+                    continue;
+                }
+                $group = [
+                    'date' => $sample->entry_date->toDateString(),
+                    'payment_type' => (string) $sample->payment_type,
+                    'bank_code' => $bankCode,
+                    'orders' => [],
+                    'paid' => 0,
+                    'plan' => 0,
+                    'late' => 0,
+                    'financing' => 0,
+                    'surcharge' => 0,
+                ];
+            }
+
+            $storedOrders = [];
+            foreach ($groupBatches as $batch) {
+                foreach ($batch->orders as $order) {
+                    $storedOrders[] = $order;
+                }
+            }
+            if ($this->groupIsAdjusted($groupBatches) && $this->planOrdersDiffer($storedOrders, $group['orders'])) {
+                $skipped['adjusted']++;
+
+                continue;
+            }
+            if ($groupBatches !== [] && ! $this->planOrdersDiffer($storedOrders, $group['orders'])) {
+                continue;
+            }
+            if ($group['orders'] === [] && $groupBatches === []) {
+                continue;
+            }
+
+            $description = 'COBRANZA PLAN DE PAGO '.mb_strtoupper($group['payment_type']);
+            $primary = $groupBatches[0] ?? null;
+            $item = [
+                'date' => $group['date'],
+                'payment_type' => $group['payment_type'],
+                'orders' => count($group['orders']),
+                'paid' => $this->amount($group['paid']),
+                'plan' => $this->amount($group['plan']),
+                'late' => $this->amount($group['late']),
+                'financing' => $this->amount($group['financing']),
+                'surcharge' => $this->amount($group['surcharge']),
+                'entry_number' => $primary?->entry?->entry_number,
+            ];
+
+            if (! $dryRun) {
+                $entry = $this->savePlanBatch(
+                    batch: $primary,
+                    kind: QuotaAccountingBatch::KIND_PLAN_COLLECTION,
+                    batchKey: 'plan-collection:'.$group['date'].':'.$group['payment_type'],
+                    entryDate: $group['date'],
+                    paymentType: $group['payment_type'],
+                    entryKind: AccountingEntry::KIND_QUOTA_PLAN_COLLECTION,
+                    description: $description,
+                    lines: $this->planCollectionLines($group, $accounts),
+                    orders: $group['orders'],
+                    role: QuotaAccountingBatch::KIND_PLAN_COLLECTION,
+                    accounts: $accounts,
+                    extraBatches: array_slice($groupBatches, 1),
+                );
+                $item['entry_number'] = $entry?->entry_number;
+            }
+
+            if ($primary === null || $primary->entry?->status !== AccountingEntry::STATUS_POSTED) {
+                $posted[] = $item;
+            } else {
+                $updated[] = $item;
+            }
+        }
+
+        return [
+            'groups' => $posted,
+            'updated' => $updated,
+            'skipped' => $skipped,
+        ];
+    }
+
+    /**
+     * @param  iterable<int, object>  $pend
+     * @param  iterable<int, object>  $amortizations
+     * @return list<array{eporres_order_id: int, debtors_amount: string, interest_amount: string, bank_amount: string, financing_amount: string}>
+     */
+    private function paymentPlanOpeningOrders(iterable $pend, iterable $amortizations): array
+    {
+        $byOrder = [];
+        foreach ($pend as $row) {
+            $orderId = (int) $row->order_id;
+            if ($orderId < 1) {
+                continue;
+            }
+            $byOrder[$orderId] ??= ['debtors' => 0.0, 'late' => 0.0, 'financing' => 0.0];
+            if (strcasecmp((string) $row->type, 'Interes') === 0) {
+                $byOrder[$orderId]['late'] += (float) $row->amount;
+            } else {
+                $byOrder[$orderId]['debtors'] += (float) $row->amount;
+            }
+        }
+        foreach ($amortizations as $row) {
+            $orderId = (int) $row->order_id;
+            if ($orderId < 1) {
+                continue;
+            }
+            $byOrder[$orderId] ??= ['debtors' => 0.0, 'late' => 0.0, 'financing' => 0.0];
+            $byOrder[$orderId]['financing'] += (float) $row->interest_amount;
+        }
+
+        ksort($byOrder);
+        $orders = [];
+        foreach ($byOrder as $orderId => $parts) {
+            $debtors = $this->cents($parts['debtors']);
+            $late = $this->cents($parts['late']);
+            $financing = $this->cents($parts['financing']);
+            if ($debtors === 0 && $late === 0 && $financing === 0) {
+                continue;
+            }
+            $orders[] = [
+                'eporres_order_id' => $orderId,
+                'debtors_amount' => $this->money($debtors),
+                'interest_amount' => $this->money($late),
+                'bank_amount' => $this->money(0),
+                'financing_amount' => $this->money($financing),
+            ];
+        }
+
+        return $orders;
+    }
+
+    /**
+     * @param  list<array{debtors_amount: string, interest_amount: string, financing_amount?: string}>  $orders
+     * @return array{debtors: int, late: int, financing: int, plan: int}
+     */
+    private function planOpeningTotals(array $orders): array
+    {
+        $debtors = 0;
+        $late = 0;
+        $financing = 0;
+        foreach ($orders as $order) {
+            $debtors += $this->cents($order['debtors_amount']);
+            $late += $this->cents($order['interest_amount']);
+            $financing += $this->cents($order['financing_amount'] ?? 0);
+        }
+
+        return [
+            'debtors' => $debtors,
+            'late' => $late,
+            'financing' => $financing,
+            'plan' => $debtors + $late + $financing,
+        ];
+    }
+
+    /**
+     * @param  iterable<int, mixed>  $stored
+     * @param  list<array<string, mixed>>  $desired
+     */
+    private function planOrdersDiffer(iterable $stored, array $desired): bool
+    {
+        return $this->planOrderMap($stored) !== $this->planOrderMap($desired);
+    }
+
+    /**
+     * @param  iterable<int, mixed>  $orders
+     * @return array<int, array{0: int, 1: int, 2: int, 3: int}>
+     */
+    private function planOrderMap(iterable $orders): array
+    {
+        $map = [];
+        foreach ($orders as $order) {
+            $isArray = is_array($order);
+            $id = (int) ($isArray ? $order['eporres_order_id'] : $order->eporres_order_id);
+            $map[$id] = [
+                $this->cents($isArray ? $order['debtors_amount'] : $order->debtors_amount),
+                $this->cents($isArray ? $order['interest_amount'] : $order->interest_amount),
+                $this->cents($isArray ? $order['bank_amount'] : $order->bank_amount),
+                $this->cents($isArray ? ($order['financing_amount'] ?? 0) : ($order->financing_amount ?? 0)),
+            ];
+        }
+        ksort($map);
+
+        return $map;
+    }
+
+    private function planIdFromBatchKey(string $batchKey): int
+    {
+        if (preg_match('/^plan:(\d+)$/', $batchKey, $matches) === 1) {
+            return (int) $matches[1];
+        }
+
+        return 0;
+    }
+
+    /**
+     * @return list<object>
+     */
+    private function planCollectionRows(Carbon $month): array
+    {
+        return DB::connection('eporres')->table('orders as o')
+            ->join('amortizations as a', 'a.order_id', '=', 'o.id')
+            ->where('o.quota_number', '>=', ReportePagosDiaCriteria::PLAN_QUOTA_MIN)
+            ->where('o.state', self::PAID_STATE)
+            ->where(function ($query) {
+                $query->whereNull('o.estado')->orWhere('o.estado', 1);
+            })
+            ->whereBetween('o.paid_at', [
+                $month->copy()->startOfMonth()->toDateTimeString(),
+                $month->copy()->endOfMonth()->toDateTimeString(),
+            ])
+            ->groupBy('o.id')
+            ->orderBy('o.id')
+            ->get([
+                'o.id',
+                DB::raw('MAX(o.quota_amount) as quota_amount'),
+                DB::raw('MAX(o.amount_paid) as amount_paid'),
+                DB::raw('MAX(o.surcharge_amount) as surcharge_amount'),
+                DB::raw('MAX(o.payment_type) as payment_type'),
+                DB::raw('MAX(o.paid_at) as paid_at'),
+                DB::raw('SUM(a.interest_amount) as interest_amount'),
+            ])
+            ->all();
+    }
+
+    /**
+     * @param  array<string, AccountingAccount>  $accounts
+     * @return list<array{accounting_account_id: int, debit: string, credit: string, memo: string}>
+     */
+    private function planOpeningLines(int $debtors, int $late, int $financing, array $accounts): array
+    {
+        $plan = $debtors + $late + $financing;
+        if ($plan < 1) {
+            return [];
+        }
+
+        $lines = [
+            $this->line($accounts[QuotaPaymentAccounts::PLAN], $plan, 0, 'Plan de pago'),
+        ];
+        if ($debtors > 0) {
+            $lines[] = $this->line($accounts[QuotaPaymentAccounts::DEBTORS], 0, $debtors, 'Cuotas incluidas en el plan');
+        }
+        if ($late > 0) {
+            $lines[] = $this->line($accounts[QuotaPaymentAccounts::LATE_INTEREST], 0, $late, 'Intereses por mora');
+        }
+        if ($financing > 0) {
+            $lines[] = $this->line($accounts[QuotaPaymentAccounts::PLAN_FINANCING_DEFERRED], 0, $financing, 'Interés financiación a devengar');
+        }
+        $this->assertBalanced($lines);
+
+        return $lines;
+    }
+
+    /**
+     * @param  array{payment_type: string, bank_code: string, paid: int, plan: int, late: int, financing: int, surcharge: int}  $group
+     * @param  array<string, AccountingAccount>  $accounts
+     * @return list<array{accounting_account_id: int, debit: string, credit: string, memo: string}>
+     */
+    private function planCollectionLines(array $group, array $accounts): array
+    {
+        if ($group['paid'] < 1) {
+            return [];
+        }
+
+        $paymentType = $group['payment_type'];
+        $surchargeMemo = match (true) {
+            $paymentType === 'Mercado Pago' => 'Recargo Mercado Pago',
+            str_starts_with($paymentType, 'Tarjeta') => 'Int. por cobro tarjeta',
+            default => 'Otros recargos del medio',
+        };
+        $lines = [
+            $this->line($accounts[$group['bank_code']], $group['paid'], 0, 'Cobranza plan de pago'),
+        ];
+        if ($group['financing'] > 0) {
+            $lines[] = $this->line($accounts[QuotaPaymentAccounts::PLAN_FINANCING_DEFERRED], $group['financing'], 0, 'Interés financiación a devengar');
+        }
+        if ($group['plan'] > 0) {
+            $lines[] = $this->line($accounts[QuotaPaymentAccounts::PLAN], 0, $group['plan'], 'Plan de pago');
+        }
+        if ($group['financing'] > 0) {
+            $lines[] = $this->line($accounts[QuotaPaymentAccounts::PLAN_FINANCING_INCOME], 0, $group['financing'], 'Intereses ganados por financiación');
+        }
+        if ($group['late'] > 0) {
+            $lines[] = $this->line($accounts[QuotaPaymentAccounts::LATE_INTEREST], 0, $group['late'], 'Intereses por mora');
+        }
+        if ($group['surcharge'] > 0) {
+            $lines[] = $this->line(
+                $accounts[QuotaPaymentAccounts::planSurchargeCode($paymentType)],
+                0,
+                $group['surcharge'],
+                $surchargeMemo,
+            );
+        }
+        $this->assertBalanced($lines);
+
+        return $lines;
+    }
+
+    /**
+     * @param  list<QuotaAccountingBatch>  $extraBatches
+     * @param  list<array{accounting_account_id: int, debit: string, credit: string, memo: string}>  $lines
+     * @param  list<array{eporres_order_id: int, debtors_amount: string, interest_amount: string, bank_amount: string, financing_amount: string}>  $orders
+     * @param  array<string, AccountingAccount>  $accounts
+     */
+    private function savePlanBatch(
+        ?QuotaAccountingBatch $batch,
+        string $kind,
+        string $batchKey,
+        string $entryDate,
+        ?string $paymentType,
+        string $entryKind,
+        string $description,
+        array $lines,
+        array $orders,
+        string $role,
+        array $accounts,
+        array $extraBatches = [],
+    ): ?AccountingEntry {
+        return DB::transaction(function () use ($batch, $kind, $batchKey, $entryDate, $paymentType, $entryKind, $description, $lines, $orders, $role, $accounts, $extraBatches) {
+            foreach ($extraBatches as $extra) {
+                $extra->orders()->delete();
+                $this->clearEntry($extra->entry);
+                $extra->delete();
+            }
+
+            if ($batch !== null && ($batch->entry === null || $batch->entry->status !== AccountingEntry::STATUS_POSTED)) {
+                $batch->orders()->delete();
+                if ($batch->entry !== null) {
+                    $batch->entry->lines()->delete();
+                    $batch->entry->delete();
+                }
+                $batch->delete();
+                $batch = null;
+            }
+
+            $this->releasePlanRoleOrders(array_column($orders, 'eporres_order_id'), $batch?->id, $role, $accounts);
+
+            if ($lines === []) {
+                $orders = [];
+            }
+
+            if ($batch === null) {
+                if ($orders === []) {
+                    return null;
+                }
+
+                return $this->writeBatch(
+                    kind: $kind,
+                    batchKey: $batchKey,
+                    period: null,
+                    entryDate: $entryDate,
+                    paymentType: $paymentType,
+                    entryKind: $entryKind,
+                    description: $description,
+                    lines: $lines,
+                    orders: $orders,
+                    role: $role,
+                );
+            }
+
+            $batch->orders()->delete();
+            if ($orders === []) {
+                $this->clearEntry($batch->entry);
+
+                return $batch->entry;
+            }
+
+            $now = now();
+            foreach (array_chunk($orders, 500) as $chunk) {
+                $rows = [];
+                foreach ($chunk as $order) {
+                    $rows[] = [
+                        'quota_accounting_batch_id' => $batch->id,
+                        'role' => $role,
+                        'eporres_order_id' => $order['eporres_order_id'],
+                        'debtors_amount' => $order['debtors_amount'],
+                        'interest_amount' => $order['interest_amount'],
+                        'bank_amount' => $order['bank_amount'],
+                        'financing_amount' => $order['financing_amount'],
+                        'created_at' => $now,
+                        'updated_at' => $now,
+                    ];
+                }
+                QuotaAccountingOrder::query()->insert($rows);
+            }
+
+            $entry = $batch->entry;
+            $entry->lines()->delete();
+            foreach ($lines as $line) {
+                $entry->lines()->create($line);
+            }
+            $entry->update([
+                'date' => $entryDate,
+                'status' => AccountingEntry::STATUS_POSTED,
+                'description' => $description,
+            ]);
+            $batch->update([
+                'entry_date' => $entryDate,
+                'payment_type' => $paymentType,
+            ]);
+
+            return $entry->fresh();
+        });
+    }
+
+    /**
+     * @param  list<int>  $orderIds
+     * @param  array<string, AccountingAccount>  $accounts
+     */
+    private function releasePlanRoleOrders(array $orderIds, ?int $keepBatchId, string $role, array $accounts): void
+    {
+        if ($orderIds === []) {
+            return;
+        }
+
+        $misplaced = QuotaAccountingOrder::query()
+            ->where('role', $role)
+            ->whereIn('eporres_order_id', $orderIds)
+            ->when($keepBatchId, fn ($query) => $query->where('quota_accounting_batch_id', '!=', $keepBatchId))
+            ->get();
+        if ($misplaced->isEmpty()) {
+            return;
+        }
+
+        $batchIds = $misplaced->pluck('quota_accounting_batch_id')->unique()->all();
+        QuotaAccountingOrder::query()->whereIn('id', $misplaced->pluck('id'))->delete();
+
+        $batches = QuotaAccountingBatch::query()->with(['orders', 'entry'])->whereIn('id', $batchIds)->get();
+        foreach ($batches as $batch) {
+            $this->rewritePlanBatchFromOrders($batch, $accounts);
+        }
+    }
+
+    /**
+     * @param  array<string, AccountingAccount>  $accounts
+     */
+    private function rewritePlanBatchFromOrders(QuotaAccountingBatch $batch, array $accounts): void
+    {
+        $batch->load('orders', 'entry');
+        if ($batch->entry === null || $batch->entry->status !== AccountingEntry::STATUS_POSTED) {
+            return;
+        }
+        if ($batch->orders->isEmpty()) {
+            $this->clearEntry($batch->entry);
+
+            return;
+        }
+
+        $debtors = 0;
+        $late = 0;
+        $paid = 0;
+        $financing = 0;
+        foreach ($batch->orders as $order) {
+            $debtors += $this->cents($order->debtors_amount);
+            $late += $this->cents($order->interest_amount);
+            $paid += $this->cents($order->bank_amount);
+            $financing += $this->cents($order->financing_amount);
+        }
+
+        if ($batch->kind === QuotaAccountingBatch::KIND_PLAN) {
+            $lines = $this->planOpeningLines($debtors, $late, $financing, $accounts);
+        } else {
+            $lines = $this->planCollectionLines([
+                'payment_type' => (string) $batch->payment_type,
+                'bank_code' => QuotaPaymentAccounts::bankCode($batch->payment_type) ?? '',
+                'paid' => $paid,
+                'plan' => $debtors,
+                'late' => $late,
+                'financing' => $financing,
+                'surcharge' => $paid - $debtors - $late,
+            ], $accounts);
+        }
+
+        if ($lines === []) {
+            $this->clearEntry($batch->entry);
+
+            return;
+        }
+
+        $batch->entry->lines()->delete();
+        foreach ($lines as $line) {
+            $batch->entry->lines()->create($line);
+        }
     }
 
     /**
@@ -1398,6 +2124,11 @@ class QuotaAccountingService
                 QuotaPaymentAccounts::MP_AVAILABLE,
                 QuotaPaymentAccounts::MP_COMMISSION,
                 QuotaPaymentAccounts::MP_SURCHARGE_INCOME,
+                QuotaPaymentAccounts::PLAN,
+                QuotaPaymentAccounts::PLAN_FINANCING_DEFERRED,
+                QuotaPaymentAccounts::PLAN_FINANCING_INCOME,
+                QuotaPaymentAccounts::CARD_INTEREST,
+                QuotaPaymentAccounts::OTHER_FINANCIAL_INCOME,
             ],
             array_values(QuotaPaymentAccounts::BY_PAYMENT_TYPE),
         )));

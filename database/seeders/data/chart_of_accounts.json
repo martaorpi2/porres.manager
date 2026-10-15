@@ -125,6 +125,16 @@
         "account_type": "activo"
     },
     {
+        "code": "11204000",
+        "name": "PLAN DE PAGO DS X CUOTAS",
+        "account_type": "activo"
+    },
+    {
+        "code": "11205000",
+        "name": "INTERES FINANCIACION PLAN DE PAGO A DEVENGAR",
+        "account_type": "activo"
+    },
+    {
         "code": "11301000",
         "name": "ANTICIPO SUELDOS",
         "account_type": "activo"

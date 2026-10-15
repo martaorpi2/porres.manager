@@ -14,6 +14,10 @@ class QuotaAccountingBatch extends Model
 
     public const KIND_COLLECTION = 'collection';
 
+    public const KIND_PLAN = 'plan';
+
+    public const KIND_PLAN_COLLECTION = 'plan_collection';
+
     public const KIND_MP_SETTLEMENT = 'mp_settlement';
 
     public const KIND_NX_SETTLEMENT = 'nx_settlement';

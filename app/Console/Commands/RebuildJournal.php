@@ -107,7 +107,9 @@ class RebuildJournal extends Command
         $collections = count($result['collections']['groups'] ?? []) + count($result['collections']['updated'] ?? []);
         $settlements = count($result['settlements']['groups'] ?? []) + count($result['settlements']['updated'] ?? []);
         $removed = (int) ($result['settlements']['removed'] ?? 0);
-        $this->line('  Devengamiento: '.$accrual.'. Becas: '.$grants.'. Cobranzas: '.$collections.'. Acreditaciones fuera de archivo sacadas: '.$removed.'.');
+        $plans = count($result['plans']['groups'] ?? []) + count($result['plans']['updated'] ?? []);
+        $planCollections = count($result['plan_collections']['groups'] ?? []) + count($result['plan_collections']['updated'] ?? []);
+        $this->line('  Devengamiento: '.$accrual.'. Becas: '.$grants.'. Cobranzas: '.$collections.'. Planes: '.$plans.'. Cobros de plan: '.$planCollections.'. Acreditaciones fuera de archivo sacadas: '.$removed.'.');
     }
 
     private function date(string $value): ?Carbon
@@ -126,6 +128,8 @@ class RebuildJournal extends Command
             AccountingEntry::KIND_QUOTA_ACCRUAL,
             AccountingEntry::KIND_QUOTA_GRANT,
             AccountingEntry::KIND_QUOTA_COLLECTION,
+            AccountingEntry::KIND_QUOTA_PLAN,
+            AccountingEntry::KIND_QUOTA_PLAN_COLLECTION,
             AccountingEntry::KIND_QUOTA_MP_SETTLEMENT,
             AccountingEntry::KIND_QUOTA_NX_SETTLEMENT,
             AccountingEntry::KIND_QUOTA_SOL_SETTLEMENT,

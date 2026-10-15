@@ -423,6 +423,8 @@ class AccountingJournalController extends CrudController
             AccountingEntry::KIND_MANUAL => 'Asiento manual',
             AccountingEntry::KIND_QUOTA_GRANT => 'Becas otorgadas',
             AccountingEntry::KIND_QUOTA_COLLECTION => 'Cobranza de cuotas',
+            AccountingEntry::KIND_QUOTA_PLAN => 'Alta de plan de pago',
+            AccountingEntry::KIND_QUOTA_PLAN_COLLECTION => 'Cobranza de plan de pago',
             AccountingEntry::KIND_QUOTA_ACCRUAL => 'Devengamiento de cuotas',
             AccountingEntry::KIND_PAYROLL_ACCRUAL => 'Devengamiento de Sueldos',
             AccountingEntry::KIND_BANK_EXPENSE => 'Gastos Bancarios',
@@ -694,6 +696,19 @@ class AccountingJournalController extends CrudController
 
         if (in_array($result['grants']['status'] ?? '', ['posted', 'updated'], true)) {
             $bits[] = 'becas actualizadas';
+        }
+
+        $plans = count($result['plans']['groups'] ?? []) + count($result['plans']['updated'] ?? []);
+        if ($plans === 1) {
+            $bits[] = '1 plan de pago';
+        } elseif ($plans > 1) {
+            $bits[] = $plans.' planes de pago';
+        }
+        $planCollections = count($result['plan_collections']['groups'] ?? []) + count($result['plan_collections']['updated'] ?? []);
+        if ($planCollections === 1) {
+            $bits[] = '1 cobranza de plan de pago';
+        } elseif ($planCollections > 1) {
+            $bits[] = $planCollections.' cobranzas de plan de pago';
         }
 
         $adjusted = (int) ($result['collections']['skipped']['adjusted'] ?? 0)

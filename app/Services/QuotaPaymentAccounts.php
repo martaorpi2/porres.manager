@@ -28,6 +28,16 @@ final class QuotaPaymentAccounts
 
     public const MP_SURCHARGE_INCOME = '41303000';
 
+    public const PLAN = '11204000';
+
+    public const PLAN_FINANCING_DEFERRED = '11205000';
+
+    public const PLAN_FINANCING_INCOME = '41209000';
+
+    public const CARD_INTEREST = '41210000';
+
+    public const OTHER_FINANCIAL_INCOME = '41208000';
+
     /** @var array<string, string> */
     public const BY_PAYMENT_TYPE = [
         'BSE' => '11102002',
@@ -44,5 +54,23 @@ final class QuotaPaymentAccounts
         $type = trim((string) $paymentType);
 
         return self::BY_PAYMENT_TYPE[$type] ?? null;
+    }
+
+    /**
+     * Recargo que el medio suma a la cuota del plan.
+     * Tarjetas van a Int. por cobro tarjeta. Mercado Pago tiene cuenta propia.
+     * BSE y QR, si traen un resto, van a otros ingresos financieros.
+     */
+    public static function planSurchargeCode(?string $paymentType): string
+    {
+        $type = trim((string) $paymentType);
+        if ($type === 'Mercado Pago') {
+            return self::MP_SURCHARGE_INCOME;
+        }
+        if (str_starts_with($type, 'Tarjeta')) {
+            return self::CARD_INTEREST;
+        }
+
+        return self::OTHER_FINANCIAL_INCOME;
     }
 }

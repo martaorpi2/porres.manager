@@ -22,6 +22,10 @@ class AccountingEntry extends Model
 
     public const KIND_QUOTA_COLLECTION = 'quota_collection';
 
+    public const KIND_QUOTA_PLAN = 'quota_plan';
+
+    public const KIND_QUOTA_PLAN_COLLECTION = 'quota_plan_collection';
+
     public const KIND_QUOTA_MP_SETTLEMENT = 'quota_mp_settlement';
 
     public const KIND_QUOTA_NX_SETTLEMENT = 'quota_nx_settlement';
@@ -54,6 +58,8 @@ class AccountingEntry extends Model
             self::KIND_QUOTA_ACCRUAL,
             self::KIND_QUOTA_GRANT,
             self::KIND_QUOTA_COLLECTION,
+            self::KIND_QUOTA_PLAN,
+            self::KIND_QUOTA_PLAN_COLLECTION,
             self::KIND_QUOTA_MP_SETTLEMENT,
             self::KIND_QUOTA_NX_SETTLEMENT,
             self::KIND_QUOTA_SOL_SETTLEMENT,
@@ -121,6 +127,8 @@ class AccountingEntry extends Model
             self::KIND_QUOTA_ACCRUAL => 'Devengamiento de cuotas',
             self::KIND_QUOTA_GRANT => 'Becas otorgadas',
             self::KIND_QUOTA_COLLECTION => 'Cobranza de cuotas',
+            self::KIND_QUOTA_PLAN => 'Alta de plan de pago',
+            self::KIND_QUOTA_PLAN_COLLECTION => 'Cobranza de plan de pago',
             self::KIND_QUOTA_MP_SETTLEMENT => 'Acreditación Mercado Pago',
             self::KIND_QUOTA_NX_SETTLEMENT => 'Acreditación Naranja X',
             self::KIND_QUOTA_SOL_SETTLEMENT => 'Acreditación Sol Pago',
