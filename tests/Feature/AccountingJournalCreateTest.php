@@ -153,4 +153,37 @@ class AccountingJournalCreateTest extends TestCase
         $rejected->assertSessionHasErrors('lines');
         $this->assertFalse(AccountingEntry::query()->where('description', $description)->exists());
     }
+
+    public function test_the_journal_opens_on_the_current_month(): void
+    {
+        $user = User::query()->get()->first(fn (User $candidate) => $candidate->canViewAccounting() && ! $candidate->hasAdministradoraInstitucionRole());
+        $this->assertNotNull($user);
+
+        $from = now()->startOfMonth()->toDateString();
+        $to = now()->endOfMonth()->toDateString();
+        $page = $this->actingAs($user, 'backpack')->get('/admin/accounting-journal');
+        $page->assertOk();
+        $page->assertSee('value="'.$from.'"', false);
+        $page->assertSee('value="'.$to.'"', false);
+
+        $entry = AccountingEntry::query()->create([
+            'entry_number' => 'AS-T-'.substr(uniqid(), -8),
+            'date' => '2099-01-15',
+            'kind' => AccountingEntry::KIND_MANUAL,
+            'status' => AccountingEntry::STATUS_POSTED,
+            'source_type' => 'journal-month-test',
+            'source_id' => 0,
+            'description' => 'FUERA DEL MES EN CURSO',
+        ]);
+        try {
+            $hidden = $this->actingAs($user, 'backpack')->get('/admin/accounting-journal');
+            $hidden->assertOk();
+            $hidden->assertDontSee('FUERA DEL MES EN CURSO');
+            $shown = $this->actingAs($user, 'backpack')->get('/admin/accounting-journal?from=2099-01-01&to=2099-01-31');
+            $shown->assertOk();
+            $shown->assertSee('FUERA DEL MES EN CURSO');
+        } finally {
+            $entry->delete();
+        }
+    }
 }

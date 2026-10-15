@@ -27,6 +27,10 @@ class AccountingJournalController extends CrudController
         $from = $this->dateOrNull($request->input('from'));
         $to = $this->dateOrNull($request->input('to'));
         $collected = $this->dateOrNull($request->input('collected'));
+        if ($from === null && $to === null && $collected === null) {
+            $from = now()->startOfMonth()->toDateString();
+            $to = now()->endOfMonth()->toDateString();
+        }
         $kind = $request->input('kind');
         $accountId = $request->integer('account_id') ?: null;
 
