@@ -109,6 +109,7 @@
                                     <td colspan="3">
                                         <strong>Asiento {{ $entry->entry_number }}</strong>
                                         <span class="journal-asiento-meta">@if(str_starts_with((string) $entry->kind_label, 'Acreditación '))Acreditación {{ $entry->date?->format('d/m/Y') }} · {{ $entry->description }}@else{{ $entry->date?->format('d/m/Y') }} · {{ $entry->description }} · {{ $entry->kind_label }}@endif</span>
+                                        @include('admin.accounting.partials.journal_entry_links', ['entry' => $entry])
                                     </td>
                                     <td class="text-end">
                                         @if($entry->status === \App\Models\AccountingEntry::STATUS_POSTED)

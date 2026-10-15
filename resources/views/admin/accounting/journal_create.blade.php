@@ -48,6 +48,11 @@
                             @enderror
                         </div>
 
+                        @include('admin.accounting.partials.journal_related_picker', [
+                            'relatedEntries' => $relatedEntries,
+                            'paymentType' => $paymentType,
+                        ])
+
                         <div class="table-responsive">
                             <table class="table journal-edit-lines mb-2" id="lines-table">
                                 <thead>

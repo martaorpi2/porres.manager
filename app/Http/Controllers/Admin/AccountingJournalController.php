@@ -10,6 +10,7 @@ use App\Models\QuotaAccountingCollectionDate;
 use App\Models\QuotaAccountingOrder;
 use App\Models\User;
 use App\Services\AccountingEntryEditor;
+use App\Services\AccountingEntryLinks;
 use App\Services\EporresDailyPaymentsReport;
 use App\Services\PaymentSettlement\PaymentSettlementChannels;
 use App\Services\QuotaAccountingService;
@@ -39,7 +40,7 @@ class AccountingJournalController extends CrudController
         $entries = $collected !== null
             ? $this->entriesForCollectionDate($collected, is_string($kind) ? $kind : null, $accountId)
             : AccountingEntry::query()
-                ->with(['lines.account'])
+                ->with(['lines.account', 'relatedEntries', 'citingEntries'])
                 ->where('status', AccountingEntry::STATUS_POSTED)
                 ->whereIn('kind', AccountingEntry::bookKinds())
                 ->when($from, fn ($query) => $query->whereDate('date', '>=', $from))
@@ -113,7 +114,7 @@ class AccountingJournalController extends CrudController
         return redirect($back);
     }
 
-    public function create()
+    public function create(Request $request)
     {
         $this->authorizeAccounting();
 
@@ -122,6 +123,8 @@ class AccountingJournalController extends CrudController
         return view('admin.accounting.journal_create', [
             'accounts' => $accounts,
             'accountSides' => $this->accountSides($accounts),
+            'relatedEntries' => $this->selectedRelated($request),
+            'paymentType' => null,
             'title' => 'Nuevo asiento',
             'breadcrumbs' => [
                 trans('backpack::crud.admin') => backpack_url('dashboard'),
@@ -159,11 +162,16 @@ class AccountingJournalController extends CrudController
             return back()->withInput()->withErrors(['lines' => $accountError]);
         }
 
+        $linkError = $this->relatedLinkError($request);
+        if ($linkError !== null) {
+            return back()->withInput()->withErrors(['related_ids' => $linkError]);
+        }
+
         $user = backpack_user();
         $date = Carbon::parse($validated['date'])->toDateString();
 
         try {
-            $entry = DB::transaction(function () use ($prepared, $description, $user, $date) {
+            $entry = DB::transaction(function () use ($prepared, $description, $user, $date, $request) {
                 $entry = AccountingEntry::query()->create([
                     'entry_number' => AccountingEntry::nextEntryNumber(),
                     'date' => $date,
@@ -182,6 +190,7 @@ class AccountingJournalController extends CrudController
                         'credit' => $line['credit'],
                     ]);
                 }
+                $this->syncRelated($request, $entry);
 
                 return $entry;
             });
@@ -202,7 +211,7 @@ class AccountingJournalController extends CrudController
     {
         $this->authorizeAccounting();
         $this->ensureEditable($accountingEntry);
-        $accountingEntry->load(['lines.account']);
+        $accountingEntry->load(['lines.account', 'relatedEntries']);
 
         $accounts = $this->editableAccounts($accountingEntry);
 
@@ -210,6 +219,8 @@ class AccountingJournalController extends CrudController
             'entry' => $accountingEntry,
             'accounts' => $accounts,
             'accountSides' => $this->accountSides($accounts),
+            'relatedEntries' => $this->selectedRelated($request, $accountingEntry),
+            'paymentType' => $this->settlementPaymentType($accountingEntry),
             'returnQuery' => $this->returnQuery($request),
             'title' => 'Modificar '.$accountingEntry->entry_number,
             'breadcrumbs' => [
@@ -253,9 +264,14 @@ class AccountingJournalController extends CrudController
             return back()->withInput()->withErrors(['lines' => $accountError]);
         }
 
+        $linkError = $this->relatedLinkError($request, $accountingEntry->id);
+        if ($linkError !== null) {
+            return back()->withInput()->withErrors(['related_ids' => $linkError]);
+        }
+
         $memos = $accountingEntry->lines()->pluck('memo', 'id');
 
-        DB::transaction(function () use ($accountingEntry, $prepared, $memos, $description, $validated) {
+        DB::transaction(function () use ($accountingEntry, $prepared, $memos, $description, $validated, $request) {
             $accountingEntry->lines()->delete();
             foreach ($prepared['lines'] as $line) {
                 $accountingEntry->lines()->create([
@@ -273,6 +289,7 @@ class AccountingJournalController extends CrudController
                 $changes['date'] = Carbon::parse($validated['date'])->toDateString();
             }
             $accountingEntry->update($changes);
+            $this->syncRelated($request, $accountingEntry);
         });
 
         \Alert::success('El asiento '.$accountingEntry->entry_number.' quedó modificado.')->flash();
@@ -283,7 +300,7 @@ class AccountingJournalController extends CrudController
     public function show(AccountingEntry $accountingEntry)
     {
         $this->authorizeAccounting();
-        $accountingEntry->load(['lines.account']);
+        $accountingEntry->load(['lines.account', 'relatedEntries', 'citingEntries']);
 
         return view('admin.accounting.journal_show', [
             'entry' => $accountingEntry,
@@ -296,6 +313,23 @@ class AccountingJournalController extends CrudController
         ]);
     }
 
+    public function search(Request $request)
+    {
+        $this->authorizeAccounting();
+        $paymentType = $request->query('payment_type');
+
+        $entries = AccountingEntryLinks::search(
+            (string) $request->query('q', ''),
+            $request->integer('exclude') ?: null,
+            is_string($paymentType) ? $paymentType : null,
+        );
+
+        return response()->json($entries->map(fn (AccountingEntry $entry) => [
+            'id' => $entry->id,
+            'label' => $entry->relationLabel(),
+        ])->values());
+    }
+
     public function reconciliationEntries(Request $request, EporresDailyPaymentsReport $report)
     {
         $this->authorizeAccounting();
@@ -304,7 +338,7 @@ class AccountingJournalController extends CrudController
         $position = array_flip($ids);
 
         $entries = AccountingEntry::query()
-            ->with(['lines.account'])
+            ->with(['lines.account', 'relatedEntries', 'citingEntries'])
             ->whereIn('id', $ids === [] ? [0] : $ids)
             ->where('status', AccountingEntry::STATUS_POSTED)
             ->whereIn('kind', array_merge(
@@ -438,6 +472,43 @@ class AccountingJournalController extends CrudController
         if ($entry->status !== AccountingEntry::STATUS_POSTED) {
             abort(403, 'Solo se pueden modificar asientos registrados.');
         }
+    }
+
+    private function selectedRelated(Request $request, ?AccountingEntry $entry = null)
+    {
+        if (old('related_ids_present')) {
+            return AccountingEntryLinks::findForForm(array_map('intval', (array) old('related_ids', [])));
+        }
+
+        return $entry?->relatedEntries ?? collect();
+    }
+
+    private function relatedLinkError(Request $request, ?int $selfId = null): ?string
+    {
+        if (! $request->boolean('related_ids_present')) {
+            return null;
+        }
+
+        return AccountingEntryLinks::validateIds((array) $request->input('related_ids', []), $selfId);
+    }
+
+    private function syncRelated(Request $request, AccountingEntry $entry): void
+    {
+        if (! $request->boolean('related_ids_present')) {
+            return;
+        }
+
+        AccountingEntryLinks::replace($entry, (array) $request->input('related_ids', []));
+    }
+
+    private function settlementPaymentType(AccountingEntry $entry): ?string
+    {
+        $kind = QuotaAccountingBatch::query()->where('accounting_entry_id', $entry->id)->value('kind');
+        if (! is_string($kind)) {
+            return null;
+        }
+
+        return PaymentSettlementChannels::forBatchKind($kind)['payment_type'] ?? null;
     }
 
     /**
@@ -611,7 +682,7 @@ class AccountingJournalController extends CrudController
         }
 
         return AccountingEntry::query()
-            ->with(['lines.account'])
+            ->with(['lines.account', 'relatedEntries', 'citingEntries'])
             ->where('status', AccountingEntry::STATUS_POSTED)
             ->whereIn('id', $ids)
             ->when($accountId, function ($query) use ($accountId) {
@@ -699,6 +770,7 @@ class AccountingJournalController extends CrudController
             ]);
             $matches[0]->unsetRelation('collectionDates');
             app(QuotaAccountingService::class)->syncAccreditationDescription($matches[0]);
+            app(AccountingEntryLinks::class)->syncFromCollectionDates($matches[0]);
         }
 
         return $matches->pluck('accounting_entry_id')->map(fn ($id) => (int) $id)->values();

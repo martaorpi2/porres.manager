@@ -5,7 +5,9 @@ namespace App\Models;
 use Backpack\CRUD\app\Models\Traits\CrudTrait;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
 
 class AccountingEntry extends Model
@@ -111,9 +113,37 @@ class AccountingEntry extends Model
         return $this->hasMany(AccountingEntryLine::class)->orderBy('id');
     }
 
+    public function batch(): HasOne
+    {
+        return $this->hasOne(QuotaAccountingBatch::class, 'accounting_entry_id');
+    }
+
+    public function relatedEntries(): BelongsToMany
+    {
+        return $this->belongsToMany(self::class, 'accounting_entry_links', 'accounting_entry_id', 'related_entry_id')
+            ->withTimestamps()
+            ->orderBy('accounting_entries.date')
+            ->orderBy('accounting_entries.id');
+    }
+
+    public function citingEntries(): BelongsToMany
+    {
+        return $this->belongsToMany(self::class, 'accounting_entry_links', 'related_entry_id', 'accounting_entry_id')
+            ->withTimestamps()
+            ->orderBy('accounting_entries.date')
+            ->orderBy('accounting_entries.id');
+    }
+
     public function reversedEntry(): BelongsTo
     {
         return $this->belongsTo(self::class, 'reversed_entry_id');
+    }
+
+    public function relationLabel(): string
+    {
+        $date = $this->date?->format('d/m/Y') ?? '';
+
+        return trim($this->entry_number.' · '.$date.' · '.$this->kind_label.' · '.$this->description, ' ·');
     }
 
     public function createdBy(): BelongsTo

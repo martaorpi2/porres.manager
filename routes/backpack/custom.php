@@ -29,6 +29,7 @@ Route::group([
     Route::crud('accounting-account', 'AccountingAccountCrudController');
     Route::get('accounting-journal', 'AccountingJournalController@index')->name('accounting-journal.index');
     Route::get('accounting-journal/create', 'AccountingJournalController@create')->name('accounting-journal.create');
+    Route::get('accounting-journal/search', 'AccountingJournalController@search')->name('accounting-journal.search');
     Route::post('accounting-journal', 'AccountingJournalController@store')->name('accounting-journal.store');
     Route::post('accounting-journal/refresh', 'AccountingJournalController@refresh')->name('accounting-journal.refresh');
     Route::get('accounting-reconciliation/entries', 'AccountingJournalController@reconciliationEntries')->name('accounting-reconciliation.entries');

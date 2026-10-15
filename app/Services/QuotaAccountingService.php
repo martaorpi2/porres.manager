@@ -200,6 +200,7 @@ class QuotaAccountingService
             }
             $batch->unsetRelation('collectionDates');
             $this->syncAccreditationDescription($batch);
+            app(AccountingEntryLinks::class)->syncFromCollectionDates($batch);
         }
     }
 
@@ -1139,6 +1140,7 @@ class QuotaAccountingService
             $primary->orders()->delete();
             if ($group['orders'] === []) {
                 $this->clearEntry($primary->entry);
+                app(AccountingEntryLinks::class)->attachCollection($primary);
 
                 return $primary->entry;
             }
@@ -1170,6 +1172,7 @@ class QuotaAccountingService
                 'status' => AccountingEntry::STATUS_POSTED,
                 'description' => $description,
             ]);
+            app(AccountingEntryLinks::class)->attachCollection($primary);
 
             return $entry->fresh();
         });
@@ -1382,6 +1385,10 @@ class QuotaAccountingService
                     ];
                 }
                 QuotaAccountingOrder::query()->insert($rows);
+            }
+
+            if ($kind === QuotaAccountingBatch::KIND_COLLECTION) {
+                app(AccountingEntryLinks::class)->attachCollection($batch);
             }
 
             return $entry;
