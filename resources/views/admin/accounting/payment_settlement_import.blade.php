@@ -70,13 +70,13 @@
                 <div id="settlement-mismatch-modal" class="settlement-modal" hidden>
                     <div class="settlement-modal-card" role="dialog" aria-modal="true" aria-labelledby="settlement-mismatch-title">
                         <h2 id="settlement-mismatch-title">Inconsistencias en la conciliación de cobranzas y acreditaciones</h2>
-                        <p>Se detectaron diferencias entre los asientos de cobranza y las acreditaciones registradas por medio de pago. Revise los siguientes casos.</p>
-                        <ul>
+                        <p class="settlement-modal-lead">Se detectaron diferencias entre los asientos de cobranza y las acreditaciones registradas por medio de pago. Revise los siguientes casos.</p>
+                        <ul class="settlement-modal-list">
                             @foreach($alerts as $alert)
                                 <li>{{ $alert }}</li>
                             @endforeach
                         </ul>
-                        <p>Si aceptás, el asiento se guarda y el aviso queda en el inicio de Contabilidad hasta que los montos coincidan.</p>
+                        <p class="settlement-modal-note">Si aceptás, el asiento se guarda y el aviso queda en el inicio de Contabilidad hasta que los montos coincidan.</p>
                         <div class="settlement-modal-actions">
                             <button type="button" class="btn journal-back" id="settlement-mismatch-back">Volver</button>
                             <button type="button" class="btn journal-btn-filter" id="settlement-mismatch-accept">Aceptar</button>
@@ -188,18 +188,25 @@
     .settlement-modal {
         position: fixed;
         inset: 0;
-        z-index: 2000;
+        z-index: 10850;
         display: flex;
         align-items: center;
         justify-content: center;
         padding: 1.5rem;
+        overflow: hidden;
         background: rgba(16, 24, 40, 0.45);
     }
     .settlement-modal[hidden] {
         display: none;
     }
     .settlement-modal-card {
-        width: min(36rem, 100%);
+        width: min(40rem, 100%);
+        max-height: calc(100vh - 3rem);
+        max-height: calc(100dvh - 3rem);
+        margin: auto;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
         background: #fff;
         border-radius: 8px;
         padding: 1.25rem 1.4rem;
@@ -207,11 +214,24 @@
         color: #1e2a4a;
     }
     .settlement-modal-card h2 {
+        flex: 0 0 auto;
         font-size: 1.15rem;
         font-weight: 700;
         margin-bottom: 0.75rem;
     }
+    .settlement-modal-lead,
+    .settlement-modal-note {
+        flex: 0 0 auto;
+    }
+    .settlement-modal-list {
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow: auto;
+        margin: 0 0 0.75rem;
+        padding-left: 1.15rem;
+    }
     .settlement-modal-actions {
+        flex: 0 0 auto;
         display: flex;
         justify-content: flex-end;
         gap: 0.5rem;
@@ -239,6 +259,7 @@
         });
     }
     if (modal && confirmInput && form) {
+        document.body.appendChild(modal);
         document.getElementById('settlement-mismatch-accept').addEventListener('click', function () {
             confirmInput.value = '1';
             if (form.requestSubmit) {

@@ -74,6 +74,21 @@ class AccountingJournalEditTest extends TestCase
             $blank->assertRedirect('/admin/accounting-journal/'.$entry->id.'/edit');
             $blank->assertSessionHasErrors('description');
             $this->assertSame('DESCRIPCION MODIFICADA', $entry->fresh()->description);
+
+            $unbalanced = $this->actingAs($user, 'backpack')
+                ->from('/admin/accounting-journal/'.$entry->id.'/edit')
+                ->put('/admin/accounting-journal/'.$entry->id, [
+                    'description' => 'DESCRIPCION MODIFICADA',
+                    'lines' => [
+                        ['accounting_account_id' => $accounts[0]->id, 'debit' => '10,00', 'credit' => '0'],
+                        ['accounting_account_id' => $accounts[1]->id, 'debit' => '0', 'credit' => '9,00'],
+                    ],
+                ]);
+            $unbalanced->assertRedirect('/admin/accounting-journal/'.$entry->id.'/edit');
+            $unbalanced->assertSessionHasErrors('lines');
+            $entry->load('lines');
+            $this->assertSame('10.00', number_format((float) $entry->lines[0]->debit, 2, '.', ''));
+            $this->assertSame('10.00', number_format((float) $entry->lines[1]->credit, 2, '.', ''));
         } finally {
             $entry->lines()->delete();
             $entry->delete();

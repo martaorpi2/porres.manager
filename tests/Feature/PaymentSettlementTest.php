@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\AccountingAccount;
 use App\Models\AccountingEntry;
 use App\Models\QuotaAccountingBatch;
+use App\Models\QuotaAccountingOrder;
 use App\Models\User;
 use App\Services\MercadoPagoReleaseSettlement;
 use App\Services\QuotaAccountingService;
@@ -636,6 +637,15 @@ class PaymentSettlementTest extends TestCase
             $home->assertOk();
             $home->assertSee('Varias fechas de cobro');
             $home->assertSee('La acreditación de Mercado Pago del 21/08/2099 incluye cupones cobrados el 10/08/2099 y el 11/08/2099.');
+            $home->assertSee('entries='.$entry->id, false);
+            $home->assertSee('id="reconciliationEntriesModal"', false);
+
+            $detail = $this->actingAs($this->accountingUser(), 'backpack')
+                ->get('/admin/accounting-reconciliation/entries?entries='.$entry->id);
+            $detail->assertOk();
+            $detail->assertSee($entry->entry_number);
+            $detail->assertSee('Acreditación');
+            $detail->assertSee('Este asiento no guarda cupón por cupón.');
         } finally {
             if (DB::transactionLevel() > 0) {
                 DB::rollBack();
@@ -652,6 +662,48 @@ class PaymentSettlementTest extends TestCase
                 }
             }
             QuotaAccountingBatch::query()->where('batch_key', 'mercadopago:2099-08-20')->delete();
+        }
+    }
+
+    public function test_a_collection_entry_opens_the_daily_payment_lines_of_its_coupons(): void
+    {
+        $user = $this->accountingUser();
+        $entry = null;
+        $batch = null;
+        DB::beginTransaction();
+        try {
+            [$entry, $batch] = $this->collectionEntry('QR', '2099-12-01', '1000.00');
+            QuotaAccountingOrder::query()->create([
+                'quota_accounting_batch_id' => $batch->id,
+                'role' => QuotaAccountingBatch::KIND_COLLECTION,
+                'eporres_order_id' => 987654321,
+                'debtors_amount' => '1000.00',
+                'interest_amount' => '0.00',
+                'bank_amount' => '1000.00',
+            ]);
+
+            $detail = $this->actingAs($user, 'backpack')
+                ->get('/admin/accounting-reconciliation/entries?entries='.$entry->id);
+            $detail->assertOk();
+            $detail->assertSee('Cobranza');
+            $detail->assertSee('Ver cupones');
+            $detail->assertSee('/admin/accounting-journal/'.$entry->id.'/coupons', false);
+
+            $coupons = $this->actingAs($user, 'backpack')
+                ->get('/admin/accounting-journal/'.$entry->id.'/coupons');
+            $coupons->assertOk();
+            $coupons->assertSee('No se encontraron esos cupones en el reporte de pagos por día.');
+
+            DB::rollBack();
+        } finally {
+            if ($batch !== null && QuotaAccountingBatch::query()->whereKey($batch->id)->exists()) {
+                $batch->orders()->delete();
+                $batch->delete();
+            }
+            if ($entry !== null && AccountingEntry::query()->whereKey($entry->id)->exists()) {
+                $entry->lines()->delete();
+                $entry->delete();
+            }
         }
     }
 

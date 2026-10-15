@@ -34,6 +34,8 @@ class AccountingJournalCreateTest extends TestCase
             $page->assertSee('name="date"', false);
             $page->assertSee('name="description"', false);
             $page->assertSeeInOrder(['Agregar cuenta', 'Totales', 'Guardar']);
+            $page->assertSee('id="save-entry" disabled', false);
+            $page->assertSee('save.disabled = !balanced', false);
 
             $deudor = AccountingAccount::query()
                 ->where('is_grouping', false)

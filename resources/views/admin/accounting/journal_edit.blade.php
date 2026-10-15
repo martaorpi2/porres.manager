@@ -93,7 +93,7 @@
                     </div>
 
                     <div class="d-flex gap-2 journal-edit-actions">
-                        <button type="submit" class="btn journal-btn-save">Guardar</button>
+                        <button type="submit" class="btn journal-btn-save" id="save-entry" disabled>Guardar</button>
                     </div>
                 </form>
             </div>
@@ -169,6 +169,10 @@
         color: #fff;
         font-weight: 600;
     }
+    .journal-btn-save:disabled {
+        opacity: 0.45;
+        cursor: not-allowed;
+    }
     .journal-balance.is-ok { color: #1e2a4a; font-weight: 600; }
     .journal-balance.is-diff { color: #871f1f; font-weight: 700; }
     .line-side-hint {
@@ -208,24 +212,37 @@
             return number.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
         }
 
+        function rowCents(row) {
+            return {
+                debit: Math.round(parseAmount(row.querySelector('.line-debit').value) * 100),
+                credit: Math.round(parseAmount(row.querySelector('.line-credit').value) * 100)
+            };
+        }
+
         function refreshTotals() {
             var debit = 0;
             var credit = 0;
             var rows = body.querySelectorAll('tr');
             rows.forEach(function (row) {
-                debit += parseAmount(row.querySelector('.line-debit').value);
-                credit += parseAmount(row.querySelector('.line-credit').value);
+                var amounts = rowCents(row);
+                debit += amounts.debit;
+                credit += amounts.credit;
                 row.querySelector('.journal-btn-remove').disabled = rows.length < 3;
             });
-            document.getElementById('total-debit').textContent = formatAmount(debit);
-            document.getElementById('total-credit').textContent = formatAmount(credit);
+            document.getElementById('total-debit').textContent = formatAmount(debit / 100);
+            document.getElementById('total-credit').textContent = formatAmount(credit / 100);
             var note = document.getElementById('balance-note');
-            var diff = Math.round((debit - credit) * 100) / 100;
-            if (diff === 0) {
+            var save = document.getElementById('save-entry');
+            var balanced = debit === credit && debit > 0;
+            save.disabled = !balanced;
+            if (balanced) {
                 note.textContent = 'El debe y el haber coinciden.';
                 note.className = 'journal-balance is-ok';
+            } else if (debit === credit) {
+                note.textContent = 'Cargá importes en el debe y en el haber para guardar.';
+                note.className = 'journal-balance is-diff';
             } else {
-                note.textContent = 'Diferencia: ' + formatAmount(Math.abs(diff)) + '. El debe y el haber tienen que ser iguales para guardar.';
+                note.textContent = 'Diferencia: ' + formatAmount(Math.abs(debit - credit) / 100) + '. El debe y el haber tienen que ser iguales para guardar.';
                 note.className = 'journal-balance is-diff';
             }
         }
@@ -248,19 +265,13 @@
         });
 
         document.getElementById('entry-form').addEventListener('submit', function (event) {
-            var debit = 0;
-            var credit = 0;
-            body.querySelectorAll('tr').forEach(function (row) {
-                debit += Math.round(parseAmount(row.querySelector('.line-debit').value) * 100);
-                credit += Math.round(parseAmount(row.querySelector('.line-credit').value) * 100);
-            });
-            if (debit === credit) {
+            if (!document.getElementById('save-entry').disabled) {
                 return;
             }
             event.preventDefault();
             var warning = document.getElementById('save-warning');
             warning.hidden = false;
-            warning.textContent = 'El debe (' + formatAmount(debit / 100) + ') y el haber (' + formatAmount(credit / 100) + ') no coinciden. No se guardaron los cambios.';
+            warning.textContent = document.getElementById('balance-note').textContent;
             warning.scrollIntoView({ block: 'center' });
         });
 

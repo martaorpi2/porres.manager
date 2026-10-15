@@ -31,6 +31,8 @@ Route::group([
     Route::get('accounting-journal/create', 'AccountingJournalController@create')->name('accounting-journal.create');
     Route::post('accounting-journal', 'AccountingJournalController@store')->name('accounting-journal.store');
     Route::post('accounting-journal/refresh', 'AccountingJournalController@refresh')->name('accounting-journal.refresh');
+    Route::get('accounting-reconciliation/entries', 'AccountingJournalController@reconciliationEntries')->name('accounting-reconciliation.entries');
+    Route::get('accounting-journal/{accountingEntry}/coupons', 'AccountingJournalController@collectionCoupons')->name('accounting-journal.coupons');
     Route::get('accounting-journal/{accountingEntry}/edit', 'AccountingJournalController@edit')->name('accounting-journal.edit');
     Route::put('accounting-journal/{accountingEntry}', 'AccountingJournalController@update')->name('accounting-journal.update');
     Route::get('accounting-journal/{accountingEntry}', 'AccountingJournalController@show')->name('accounting-journal.show');

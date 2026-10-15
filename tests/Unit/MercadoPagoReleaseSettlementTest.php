@@ -79,11 +79,12 @@ class MercadoPagoReleaseSettlementTest extends TestCase
 
         $this->assertSame(
             'El pago 20 no entra al asiento de acreditación de Mercado Pago del 20/08/2099: el neto más la comisión no cierran con el cobro y el cupón no tiene fecha de cobro. Cobro: $100,00. Comisión: $5,00. Neto: $90,00.',
-            $groups[0]['excluded'][0]
+            $groups[0]['excluded'][0]['text']
         );
+        $this->assertSame([], $groups[0]['excluded'][0]['entries']);
         $this->assertSame(
             'La acreditación de Mercado Pago del 20/08/2099 incluye cupones cobrados el 10/08/2099 y el 11/08/2099.',
-            $groups[0]['mixed'][0]
+            $groups[0]['mixed'][0]['text']
         );
     }
 

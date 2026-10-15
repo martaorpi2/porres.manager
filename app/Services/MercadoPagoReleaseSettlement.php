@@ -68,6 +68,7 @@ class MercadoPagoReleaseSettlement
             if ($reasons !== []) {
                 $exclusions[] = [
                     'payment_id' => (string) ($row['payment_id'] ?? ''),
+                    'order_id' => (int) ($row['order_id'] ?? 0),
                     'release_on' => $releaseOn,
                     'reasons' => $reasons,
                     'gross_cents' => (int) round($inspected['gross'] * 100),
@@ -172,6 +173,7 @@ class MercadoPagoReleaseSettlement
             $paidAt = $event->order_id ? ($paid[$event->order_id] ?? null) : null;
             $rows[] = [
                 'payment_id' => (string) $event->payment_id,
+                'order_id' => $event->order_id ? (int) $event->order_id : 0,
                 'paid_on' => $this->paidOn($paidAt),
                 'payment' => $payment,
             ];

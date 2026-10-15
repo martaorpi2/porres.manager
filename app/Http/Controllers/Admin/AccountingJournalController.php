@@ -7,8 +7,10 @@ use App\Models\AccountingEntry;
 use App\Models\AccountingEntryLine;
 use App\Models\QuotaAccountingBatch;
 use App\Models\QuotaAccountingCollectionDate;
+use App\Models\QuotaAccountingOrder;
 use App\Models\User;
 use App\Services\AccountingEntryEditor;
+use App\Services\EporresDailyPaymentsReport;
 use App\Services\PaymentSettlement\PaymentSettlementChannels;
 use App\Services\QuotaAccountingService;
 use Backpack\CRUD\app\Http\Controllers\CrudController;
@@ -294,6 +296,58 @@ class AccountingJournalController extends CrudController
         ]);
     }
 
+    public function reconciliationEntries(Request $request, EporresDailyPaymentsReport $report)
+    {
+        $this->authorizeAccounting();
+        $ids = $this->idList($request->query('entries'));
+        $orderIds = $this->idList($request->query('orders'));
+        $position = array_flip($ids);
+
+        $entries = AccountingEntry::query()
+            ->with(['lines.account'])
+            ->whereIn('id', $ids === [] ? [0] : $ids)
+            ->where('status', AccountingEntry::STATUS_POSTED)
+            ->whereIn('kind', array_merge(
+                [AccountingEntry::KIND_QUOTA_COLLECTION],
+                AccountingEntry::accreditationKinds(),
+            ))
+            ->get()
+            ->sortBy(fn (AccountingEntry $entry) => $position[$entry->id] ?? 999)
+            ->values();
+
+        $orderCounts = QuotaAccountingBatch::query()
+            ->whereIn('accounting_entry_id', $entries->pluck('id')->all() ?: [0])
+            ->withCount('orders')
+            ->get()
+            ->groupBy('accounting_entry_id')
+            ->map(fn ($rows) => (int) $rows->sum('orders_count'));
+
+        return view('admin.accounting.partials.reconciliation_entries', [
+            'entries' => $entries,
+            'orderCounts' => $orderCounts,
+            'missingCollection' => $request->boolean('missing'),
+            'excluded' => $orderIds === [] ? null : $report->forOrderIds($orderIds),
+        ]);
+    }
+
+    public function collectionCoupons(AccountingEntry $accountingEntry, EporresDailyPaymentsReport $report)
+    {
+        $this->authorizeAccounting();
+        if ($accountingEntry->status !== AccountingEntry::STATUS_POSTED) {
+            abort(404);
+        }
+
+        $orderIds = QuotaAccountingOrder::query()
+            ->whereHas('batch', fn ($query) => $query->where('accounting_entry_id', $accountingEntry->id))
+            ->pluck('eporres_order_id')
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
+
+        return view('admin.accounting.partials.daily_payment_orders', $report->forOrderIds($orderIds));
+    }
+
     public function ledger(Request $request)
     {
         $this->authorizeAccounting();
@@ -400,6 +454,25 @@ class AccountingJournalController extends CrudController
         }
 
         return $query;
+    }
+
+    /**
+     * @return list<int>
+     */
+    private function idList(mixed $value): array
+    {
+        if (! is_string($value) || $value === '') {
+            return [];
+        }
+
+        $ids = [];
+        foreach (explode(',', $value) as $part) {
+            if (preg_match('/^\d+$/', $part) === 1) {
+                $ids[] = (int) $part;
+            }
+        }
+
+        return array_slice(array_values(array_unique($ids)), 0, 500);
     }
 
     private function authorizeAccounting(): void

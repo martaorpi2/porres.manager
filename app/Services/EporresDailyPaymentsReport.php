@@ -102,6 +102,37 @@ class EporresDailyPaymentsReport
     }
 
     /**
+     * Mismo detalle que el reporte de cobros de caja, limitado a estos cupones.
+     *
+     * @param  list<int>  $orderIds
+     * @return array{pagosPorDia: Collection, relatedByPlanId: Collection, vista: string}
+     */
+    public function forOrderIds(array $orderIds): array
+    {
+        $orderIds = array_values(array_unique(array_filter(array_map('intval', $orderIds))));
+        $pagos = $orderIds === []
+            ? collect()
+            : Order::query()
+                ->whereIn('id', $orderIds)
+                ->with(['student.career', 'tariff_category', 'splitPayment', 'student_plan', 'pend_plans', 'amortization'])
+                ->orderBy('paid_at', 'desc')
+                ->orderBy('id', 'desc')
+                ->get();
+
+        $pagosPorDia = $pagos->groupBy(function ($order) {
+            return $order->paid_at ? Carbon::parse($order->paid_at)->format('Y-m-d') : 'sin_fecha';
+        })->map(function ($items) {
+            return ReportePagosDiaMedioPagoOrder::sortOrdersForSameDay($items);
+        });
+
+        return [
+            'pagosPorDia' => $pagosPorDia,
+            'relatedByPlanId' => ReportePagosDiaCriteria::coveredArancelByPlanId($pagos),
+            'vista' => ReportePagosDiaCriteria::VISTA_COBROS,
+        ];
+    }
+
+    /**
      * @param  list<string>  $mediosPago
      * @return list<list<int|float|string>>
      */

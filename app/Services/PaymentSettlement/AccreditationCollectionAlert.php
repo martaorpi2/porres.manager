@@ -52,6 +52,7 @@ final class AccreditationCollectionAlert
                 array_values($bucket['accredited']),
                 $this->collectionDebitCents($paymentType, $collected),
                 (int) $bucket['haber'],
+                $paymentType,
             );
             if ($alert !== null) {
                 $alerts[] = $alert;
@@ -101,7 +102,11 @@ final class AccreditationCollectionAlert
                 ->values()
                 ->all();
             if ($batch->kind === QuotaAccountingBatch::KIND_MP_SETTLEMENT && count($dates) > 1 && $accredited !== '') {
-                $alerts[] = $this->notice('mixed', $menu, $dates, [$accredited]);
+                $alerts[] = $this->notice('mixed', $menu, $dates, [$accredited], [
+                    'payment_type' => $paymentType,
+                    'collection_entry_ids' => $this->collectionEntryIds($paymentType, $dates),
+                    'accreditation_entry_ids' => [(int) $entry->id],
+                ]);
             }
             $known = $batchLinks->every(fn (QuotaAccountingCollectionDate $link) => $link->haber_cents !== null);
             if ($known) {
@@ -110,7 +115,7 @@ final class AccreditationCollectionAlert
                     if ($date === null) {
                         continue;
                     }
-                    $this->addHaber($perDate, $paymentType, $menu, $date, (int) $link->haber_cents, $accredited);
+                    $this->addHaber($perDate, $paymentType, $menu, $date, (int) $link->haber_cents, $accredited, (int) $entry->id);
                 }
 
                 continue;
@@ -120,7 +125,7 @@ final class AccreditationCollectionAlert
                 continue;
             }
             if (count($dates) === 1) {
-                $this->addHaber($perDate, $paymentType, $menu, $dates[0], $this->creditCents($entry), $accredited);
+                $this->addHaber($perDate, $paymentType, $menu, $dates[0], $this->creditCents($entry), $accredited, (int) $entry->id);
 
                 continue;
             }
@@ -130,6 +135,8 @@ final class AccreditationCollectionAlert
                 $accredited === '' ? [] : [$accredited],
                 $this->debitOfDates($paymentType, $dates),
                 $this->creditCents($entry),
+                $paymentType,
+                [(int) $entry->id],
             );
             if ($alert !== null) {
                 $alerts[] = $alert;
@@ -144,6 +151,8 @@ final class AccreditationCollectionAlert
                 array_values($bucket['accredited']),
                 $this->collectionDebitCents($bucket['payment_type'], $bucket['collected']),
                 $bucket['haber'],
+                $bucket['payment_type'],
+                array_values($bucket['entry_ids']),
             );
             if ($alert !== null) {
                 $alerts[] = $alert;
@@ -151,12 +160,16 @@ final class AccreditationCollectionAlert
         }
 
         foreach (app(MercadoPagoReleaseSettlement::class)->exclusions() as $row) {
+            $accredited = isset($row['release_on']) && is_string($row['release_on']) && $row['release_on'] !== '' ? [$row['release_on']] : [];
             $alerts[] = $this->notice(
                 'excluded',
                 'Mercado Pago',
                 [],
-                isset($row['release_on']) && is_string($row['release_on']) && $row['release_on'] !== '' ? [$row['release_on']] : [],
-                $row,
+                $accredited,
+                $row + [
+                    'collection_entry_ids' => [],
+                    'accreditation_entry_ids' => $this->settlementEntryIds(QuotaAccountingBatch::KIND_MP_SETTLEMENT, $accredited),
+                ],
             );
         }
 
@@ -228,22 +241,22 @@ final class AccreditationCollectionAlert
             $mixed = [];
             foreach ($byMenu[$menu] as $case) {
                 if ($case['kind'] === 'missing') {
-                    $missing[] = $this->sentence($case);
+                    $missing[] = $this->homeItem($case);
 
                     continue;
                 }
                 if ($case['kind'] === 'excluded') {
-                    $excluded[] = $this->sentence($case);
+                    $excluded[] = $this->homeItem($case);
 
                     continue;
                 }
                 if ($case['kind'] === 'mixed') {
-                    $mixed[] = $this->sentence($case);
+                    $mixed[] = $this->homeItem($case);
 
                     continue;
                 }
                 $diff = (int) $case['haber_cents'] - (int) $case['debe_cents'];
-                $amounts[] = [
+                $amounts[] = $this->homeItem($case) + [
                     'when' => $this->whenLabel($case['collected_on'], $case['accredited_on']),
                     'debe' => '$'.$this->money((int) $case['debe_cents']),
                     'haber' => '$'.$this->money((int) $case['haber_cents']),
@@ -283,6 +296,9 @@ final class AccreditationCollectionAlert
             'gross_cents' => 0,
             'commission_cents' => 0,
             'net_cents' => 0,
+            'order_id' => 0,
+            'collection_entry_ids' => [],
+            'accreditation_entry_ids' => [],
         ], $extra);
     }
 
@@ -338,9 +354,9 @@ final class AccreditationCollectionAlert
     }
 
     /**
-     * @param  array<string, array{payment_type: string, menu: string, collected: string, haber: int, accredited: array<string, string>}>  $perDate
+     * @param  array<string, array{payment_type: string, menu: string, collected: string, haber: int, accredited: array<string, string>, entry_ids: array<int, int>}>  $perDate
      */
-    private function addHaber(array &$perDate, string $paymentType, string $menu, string $date, int $haber, string $accredited): void
+    private function addHaber(array &$perDate, string $paymentType, string $menu, string $date, int $haber, string $accredited, int $entryId = 0): void
     {
         $key = $paymentType.'|'.$date;
         if (! isset($perDate[$key])) {
@@ -350,12 +366,87 @@ final class AccreditationCollectionAlert
                 'collected' => $date,
                 'haber' => 0,
                 'accredited' => [],
+                'entry_ids' => [],
             ];
         }
         $perDate[$key]['haber'] += $haber;
         if ($accredited !== '') {
             $perDate[$key]['accredited'][$accredited] = $accredited;
         }
+        if ($entryId > 0) {
+            $perDate[$key]['entry_ids'][$entryId] = $entryId;
+        }
+    }
+
+    /**
+     * @param  list<string>  $dates
+     * @return list<int>
+     */
+    private function collectionEntryIds(string $paymentType, array $dates): array
+    {
+        return $this->entryIdsFor(QuotaAccountingBatch::KIND_COLLECTION, $dates, $paymentType);
+    }
+
+    /**
+     * @param  list<string>  $dates
+     * @return list<int>
+     */
+    private function settlementEntryIds(string $kind, array $dates): array
+    {
+        return $this->entryIdsFor($kind, $dates, null);
+    }
+
+    /**
+     * @param  list<string>  $dates
+     * @return list<int>
+     */
+    private function entryIdsFor(string $kind, array $dates, ?string $paymentType): array
+    {
+        $dates = array_values(array_filter(
+            $dates,
+            fn ($date) => is_string($date) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $date) === 1
+        ));
+        if ($dates === [] || ($paymentType !== null && $paymentType === '')) {
+            return [];
+        }
+
+        return QuotaAccountingBatch::query()
+            ->where('kind', $kind)
+            ->when($paymentType !== null, fn ($query) => $query->where('payment_type', $paymentType))
+            ->whereIn('entry_date', $dates)
+            ->whereHas('entry', fn ($query) => $query->where('status', AccountingEntry::STATUS_POSTED))
+            ->orderBy('id')
+            ->pluck('accounting_entry_id')
+            ->filter()
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  array<string, mixed>  $case
+     * @return array{text: string, entries: list<int>, orders: list<int>, missing_collection: bool}
+     */
+    private function homeItem(array $case): array
+    {
+        $entries = [];
+        foreach (['collection_entry_ids', 'accreditation_entry_ids'] as $key) {
+            foreach (is_array($case[$key] ?? null) ? $case[$key] : [] as $id) {
+                $id = (int) $id;
+                if ($id > 0) {
+                    $entries[$id] = $id;
+                }
+            }
+        }
+        $orderId = (int) ($case['order_id'] ?? 0);
+
+        return [
+            'text' => $this->sentence($case),
+            'entries' => array_values($entries),
+            'orders' => $orderId > 0 ? [$orderId] : [],
+            'missing_collection' => ($case['kind'] ?? '') === 'missing',
+        ];
     }
 
     /**
@@ -388,9 +479,10 @@ final class AccreditationCollectionAlert
     /**
      * @param  list<string>  $collectedDates
      * @param  list<string>  $accreditedDates
+     * @param  list<int>  $accreditationEntryIds
      * @return array{menu: string, kind: string, collected_on: list<string>, accredited_on: list<string>, debe_cents: int|null, haber_cents: int}|null
      */
-    private function compare(string $menu, array $collectedDates, array $accreditedDates, ?int $debe, int $haber): ?array
+    private function compare(string $menu, array $collectedDates, array $accreditedDates, ?int $debe, int $haber, string $paymentType = '', array $accreditationEntryIds = []): ?array
     {
         $collectedDates = array_values(array_unique($collectedDates));
         $accreditedDates = array_values(array_unique(array_filter($accreditedDates)));
@@ -407,6 +499,9 @@ final class AccreditationCollectionAlert
             'accredited_on' => $accreditedDates,
             'debe_cents' => $debe,
             'haber_cents' => $haber,
+            'payment_type' => $paymentType,
+            'collection_entry_ids' => $debe === null ? [] : $this->collectionEntryIds($paymentType, $collectedDates),
+            'accreditation_entry_ids' => array_values(array_unique(array_filter(array_map('intval', $accreditationEntryIds)))),
         ];
     }
 
