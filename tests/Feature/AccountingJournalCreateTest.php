@@ -163,6 +163,8 @@ class AccountingJournalCreateTest extends TestCase
         $to = now()->endOfMonth()->toDateString();
         $page = $this->actingAs($user, 'backpack')->get('/admin/accounting-journal');
         $page->assertOk();
+        $page->assertSee('Ver inconsistencias');
+        $page->assertSee(backpack_url('dashboard').'#accreditation-reconciliation-section', false);
         $page->assertSee('value="'.$from.'"', false);
         $page->assertSee('value="'.$to.'"', false);
 

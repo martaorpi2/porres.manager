@@ -4,6 +4,7 @@
     <section class="header-operation container-fluid animated fadeIn d-flex mb-2 align-items-center d-print-none" bp-section="page-header">
         <h1 class="mb-0 journal-title" bp-section="page-heading">Libro diario</h1>
         <a href="{{ backpack_url('accounting-journal/create') }}" class="btn journal-btn-new ms-3 ml-3">Nuevo asiento</a>
+        <a href="{{ backpack_url('dashboard') }}#accreditation-reconciliation-section" class="btn journal-btn-new ms-2 ml-2">Ver inconsistencias</a>
     </section>
 @endsection
 
