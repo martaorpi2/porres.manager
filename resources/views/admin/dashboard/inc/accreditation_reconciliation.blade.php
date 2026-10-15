@@ -60,7 +60,7 @@
 @endphp
 @once
 <style>
-    .reconciliation-alert .process-item-card { cursor: default; }
+    .reconciliation-alert .process-item-card { cursor: pointer; }
     #reconciliationEntriesModal { z-index: 10850 !important; }
     #reconciliationEntriesModal .modal-dialog {
         z-index: 10851;
@@ -111,7 +111,7 @@
                 $detailUrl = backpack_url('accounting-reconciliation/entries').($params === [] ? '' : '?'.http_build_query($params));
             @endphp
             <div class="reconciliation-alert">
-                <div class="process-item-card" data-reconciliation-card data-url="{{ $detailUrl }}" data-title="{{ $card['menu'] }}" data-summary="{{ collect($card['blocks'])->map(fn ($block) => implode(' · ', $block['parts'] ?? [$block['text']]))->implode(' · ') }}" style="border-left: 3px solid {{ $card['border'] }};">
+                <div class="process-item-card" data-reconciliation-card data-url="{{ $detailUrl }}" data-title="{{ $card['menu'] }}" data-summary="{{ collect($card['blocks'])->map(fn ($block) => implode(' · ', $block['parts'] ?? [$block['text']]))->implode(' · ') }}" tabindex="0" role="button" aria-haspopup="dialog" aria-controls="reconciliationEntriesModal" style="border-left: 3px solid {{ $card['border'] }};">
                     <div class="process-item-title">{{ $card['menu'] }}</div>
                     @foreach($card['blocks'] as $block)
                         <div class="process-item-meta">
@@ -122,7 +122,9 @@
                             @endforeach
                         </div>
                     @endforeach
-                    {{-- Temporal: el clic de la alerta no abre el modal. --}}
+                    <div class="process-item-meta">
+                        <span style="font-weight: bold;">Ver asientos</span>
+                    </div>
                 </div>
             </div>
         @endforeach
@@ -183,12 +185,18 @@ function bootReconciliationModal() {
             toggleCoupons(button);
             return;
         }
-        // Temporal: el clic de la alerta no abre el modal.
-        if (event.target.closest('[data-reconciliation-card]')) {
+        var card = event.target.closest('[data-reconciliation-card]');
+        if (!card) {
             return;
         }
+        openAlert(card);
     });
     document.addEventListener('keydown', function (event) {
+        if ((event.key === 'Enter' || event.key === ' ') && event.target.matches('[data-reconciliation-card]')) {
+            event.preventDefault();
+            event.target.click();
+            return;
+        }
         if (event.key === 'Escape' && modalEl.classList.contains('show')) {
             hideModal();
         }
