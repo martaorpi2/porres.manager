@@ -32,6 +32,16 @@ final class QuotaPaymentAccounts
 
     public const PLAN_FINANCING_DEFERRED = '11205000';
 
+    /**
+     * Nombres del plan cargado. Si el código no coincide, se busca la cuenta por este nombre.
+     *
+     * @var array<string, string>
+     */
+    public const NAMES = [
+        self::PLAN => 'PLAN DE PAGO DS X CUOTAS',
+        self::PLAN_FINANCING_DEFERRED => 'INTERES FINANCIACION PLAN DE PAGO A DEVENGAR',
+    ];
+
     public const PLAN_FINANCING_INCOME = '41209000';
 
     public const CARD_INTEREST = '41210000';
@@ -48,6 +58,17 @@ final class QuotaPaymentAccounts
         'Tarjeta Naranja' => '11202003',
         'Tarjeta Sol' => '11202001',
     ];
+
+    public static function normalizeName(string $name): string
+    {
+        $name = mb_strtoupper(trim($name), 'UTF-8');
+        $name = strtr($name, [
+            'Á' => 'A', 'É' => 'E', 'Í' => 'I', 'Ó' => 'O', 'Ú' => 'U', 'Ü' => 'U', 'Ñ' => 'N',
+        ]);
+        $name = preg_replace('/[^A-Z0-9]+/', ' ', $name) ?? $name;
+
+        return trim(preg_replace('/\s+/', ' ', $name) ?? $name);
+    }
 
     public static function bankCode(?string $paymentType): ?string
     {

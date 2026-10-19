@@ -1833,7 +1833,7 @@ class QuotaAccountingService
     private function planCollectionRows(Carbon $month): array
     {
         return DB::connection('eporres')->table('orders as o')
-            ->join('amortizations as a', 'a.order_id', '=', 'o.id')
+            ->leftJoin('amortizations as a', 'a.order_id', '=', 'o.id')
             ->where('o.quota_number', '>=', ReportePagosDiaCriteria::PLAN_QUOTA_MIN)
             ->where('o.state', self::PAID_STATE)
             ->where(function ($query) {
@@ -2141,13 +2141,61 @@ class QuotaAccountingService
         )));
 
         $found = AccountingAccount::query()->whereIn('code', $codes)->get()->keyBy('code');
+        foreach ($this->accountsNamedAs(array_values(array_diff($codes, $found->keys()->all()))) as $code => $account) {
+            $found->put($code, $account);
+        }
         $missing = array_values(array_diff($codes, $found->keys()->all()));
         if ($missing !== []) {
-            throw new RuntimeException('Faltan cuentas en el plan: '.implode(', ', $missing));
+            $labels = array_map(function (string $code) {
+                $name = QuotaPaymentAccounts::NAMES[$code] ?? null;
+
+                return $name === null ? $code : $code.' ('.$name.')';
+            }, $missing);
+            throw new RuntimeException('Faltan cuentas en el plan: '.implode(', ', $labels));
         }
         $this->rejectGroupingAccounts($found->all());
 
         return $found->all();
+    }
+
+    /**
+     * Cuentas del plan que están cargadas con otro código, pero con el nombre oficial.
+     *
+     * @param  list<string>  $codes
+     * @return array<string, AccountingAccount>
+     */
+    private function accountsNamedAs(array $codes): array
+    {
+        $wanted = [];
+        foreach ($codes as $code) {
+            $name = QuotaPaymentAccounts::NAMES[$code] ?? null;
+            if ($name !== null) {
+                $wanted[QuotaPaymentAccounts::normalizeName($name)] = $code;
+            }
+        }
+        if ($wanted === []) {
+            return [];
+        }
+
+        $matched = [];
+        $grouping = [];
+        foreach (AccountingAccount::query()->orderBy('code')->get() as $account) {
+            $code = $wanted[QuotaPaymentAccounts::normalizeName((string) $account->name)] ?? null;
+            if ($code === null || isset($matched[$code])) {
+                continue;
+            }
+            if ($account->is_grouping) {
+                $grouping[$code] ??= $account;
+
+                continue;
+            }
+            $matched[$code] = $account;
+        }
+        foreach ($grouping as $code => $account) {
+            $matched[$code] ??= $account;
+        }
+
+        return $matched;
     }
 
     /**

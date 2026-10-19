@@ -855,9 +855,28 @@ class AccountingJournalController extends CrudController
         } elseif ($planCollections > 1) {
             $bits[] = $planCollections.' cobranzas de plan de pago';
         }
+        $planSkipped = $result['plan_collections']['skipped'] ?? [];
+        $planSplit = (int) ($planSkipped['split'] ?? 0);
+        if ($planSplit === 1) {
+            $bits[] = '1 pago de plan dividido no entró al asiento';
+        } elseif ($planSplit > 1) {
+            $bits[] = $planSplit.' pagos de plan divididos no entraron al asiento';
+        }
+        $planZero = (int) ($planSkipped['zero'] ?? 0);
+        if ($planZero === 1) {
+            $bits[] = '1 pago de plan sin importe no entró al asiento';
+        } elseif ($planZero > 1) {
+            $bits[] = $planZero.' pagos de plan sin importe no entraron al asiento';
+        }
+        foreach ($planSkipped['unmapped'] ?? [] as $type => $count) {
+            $count = (int) $count;
+            $bits[] = $count.' pago'.($count === 1 ? '' : 's').' de plan sin cuenta de fondos ('.$type.')';
+        }
 
         $adjusted = (int) ($result['collections']['skipped']['adjusted'] ?? 0)
-            + (int) ($result['settlements']['skipped']['adjusted'] ?? 0);
+            + (int) ($result['settlements']['skipped']['adjusted'] ?? 0)
+            + (int) ($result['plans']['skipped']['adjusted'] ?? 0)
+            + (int) ($planSkipped['adjusted'] ?? 0);
         if (($result['grants']['status'] ?? '') === 'adjusted') {
             $adjusted++;
         }
