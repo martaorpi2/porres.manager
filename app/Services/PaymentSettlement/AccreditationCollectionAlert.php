@@ -6,10 +6,12 @@ use App\Models\AccountingEntry;
 use App\Models\QuotaAccountingBatch;
 use App\Models\QuotaAccountingCollectionDate;
 use App\Services\MercadoPagoReleaseSettlement;
+use App\Services\QuotaPaymentAccounts;
 
 /**
  * Compara el debe de la cobranza de la fecha de cobro del archivo
  * con el haber de la acreditación que cierra esa fecha.
+ * La cobranza incluye las cuotas y las cuotas de plan de pago de ese medio.
  * La fecha de acreditación puede ser otra: no se busca un asiento del mismo día.
  */
 final class AccreditationCollectionAlert
@@ -333,19 +335,27 @@ final class AccreditationCollectionAlert
     private function collectionDebitCents(string $paymentType, string $date): ?int
     {
         $batches = QuotaAccountingBatch::query()
-            ->where('kind', QuotaAccountingBatch::KIND_COLLECTION)
+            ->whereIn('kind', [
+                QuotaAccountingBatch::KIND_COLLECTION,
+                QuotaAccountingBatch::KIND_PLAN_COLLECTION,
+            ])
             ->where('payment_type', $paymentType)
             ->whereDate('entry_date', $date)
             ->whereHas('entry', fn ($query) => $query->where('status', AccountingEntry::STATUS_POSTED))
-            ->with('entry.lines')
+            ->with('entry.lines.account')
             ->get();
         if ($batches->isEmpty()) {
             return null;
         }
 
+        $bankCode = QuotaPaymentAccounts::bankCode($paymentType);
         $cents = 0;
         foreach ($batches as $batch) {
             foreach ($batch->entry->lines as $line) {
+                if ($batch->kind === QuotaAccountingBatch::KIND_PLAN_COLLECTION
+                    && ($bankCode === null || (string) $line->account?->code !== $bankCode)) {
+                    continue;
+                }
                 $cents += (int) round(((float) $line->debit) * 100);
             }
         }
@@ -384,7 +394,10 @@ final class AccreditationCollectionAlert
      */
     private function collectionEntryIds(string $paymentType, array $dates): array
     {
-        return $this->entryIdsFor(QuotaAccountingBatch::KIND_COLLECTION, $dates, $paymentType);
+        return array_values(array_unique(array_merge(
+            $this->entryIdsFor(QuotaAccountingBatch::KIND_COLLECTION, $dates, $paymentType),
+            $this->entryIdsFor(QuotaAccountingBatch::KIND_PLAN_COLLECTION, $dates, $paymentType),
+        )));
     }
 
     /**

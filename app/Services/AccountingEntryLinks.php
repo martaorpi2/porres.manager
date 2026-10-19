@@ -48,7 +48,9 @@ class AccountingEntryLinks
      */
     public function attachCollection(QuotaAccountingBatch $collection): void
     {
-        if ($collection->kind !== QuotaAccountingBatch::KIND_COLLECTION || $collection->payment_type === null || $collection->payment_type === '') {
+        if (! in_array($collection->kind, [QuotaAccountingBatch::KIND_COLLECTION, QuotaAccountingBatch::KIND_PLAN_COLLECTION], true)
+            || $collection->payment_type === null
+            || $collection->payment_type === '') {
             return;
         }
 
@@ -220,14 +222,20 @@ class AccountingEntryLinks
     private function collectionEntryIds(string $paymentType, array $dates, int $exceptId): array
     {
         return QuotaAccountingBatch::query()
-            ->where('kind', QuotaAccountingBatch::KIND_COLLECTION)
+            ->whereIn('kind', [
+                QuotaAccountingBatch::KIND_COLLECTION,
+                QuotaAccountingBatch::KIND_PLAN_COLLECTION,
+            ])
             ->where('payment_type', $paymentType)
             ->whereIn('entry_date', $dates)
             ->whereNotNull('accounting_entry_id')
             ->where('accounting_entry_id', '!=', $exceptId)
             ->whereHas('entry', function ($query) {
                 $query->where('status', AccountingEntry::STATUS_POSTED)
-                    ->where('kind', AccountingEntry::KIND_QUOTA_COLLECTION);
+                    ->whereIn('kind', [
+                        AccountingEntry::KIND_QUOTA_COLLECTION,
+                        AccountingEntry::KIND_QUOTA_PLAN_COLLECTION,
+                    ]);
             })
             ->pluck('accounting_entry_id')
             ->map(fn ($id) => (int) $id)

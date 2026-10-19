@@ -1387,7 +1387,7 @@ class QuotaAccountingService
                 QuotaAccountingOrder::query()->insert($rows);
             }
 
-            if ($kind === QuotaAccountingBatch::KIND_COLLECTION) {
+            if (in_array($kind, [QuotaAccountingBatch::KIND_COLLECTION, QuotaAccountingBatch::KIND_PLAN_COLLECTION], true)) {
                 app(AccountingEntryLinks::class)->attachCollection($batch);
             }
 
@@ -1662,6 +1662,10 @@ class QuotaAccountingService
                 continue;
             }
             if ($groupBatches !== [] && ! $this->planOrdersDiffer($storedOrders, $group['orders'])) {
+                if (! $dryRun) {
+                    app(AccountingEntryLinks::class)->attachCollection($groupBatches[0]);
+                }
+
                 continue;
             }
             if ($group['orders'] === [] && $groupBatches === []) {
@@ -1995,6 +1999,7 @@ class QuotaAccountingService
             $batch->orders()->delete();
             if ($orders === []) {
                 $this->clearEntry($batch->entry);
+                app(AccountingEntryLinks::class)->attachCollection($batch);
 
                 return $batch->entry;
             }
@@ -2032,6 +2037,7 @@ class QuotaAccountingService
                 'entry_date' => $entryDate,
                 'payment_type' => $paymentType,
             ]);
+            app(AccountingEntryLinks::class)->attachCollection($batch);
 
             return $entry->fresh();
         });
