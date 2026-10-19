@@ -13,9 +13,7 @@
     <label for="related-search" class="journal-label">Asientos relacionados</label>
     <input type="hidden" name="related_ids_present" value="1">
     <input type="text" id="related-search" class="form-control" placeholder="Número, fecha o descripción" autocomplete="off">
-    @if($paymentType)
-        <p class="related-hint mb-0">La búsqueda muestra primero las cobranzas de este medio.</p>
-    @endif
+    <p class="related-hint mb-0">Elegí un asiento y seguí buscando: se pueden relacionar varios.</p>
     <div id="related-results" hidden></div>
     @error('related_ids')
         <div class="invalid-feedback d-block">{{ $message }}</div>
@@ -40,11 +38,9 @@
         font-size: 0.85rem;
     }
     #related-results {
-        position: absolute;
-        z-index: 5;
-        left: 0;
-        right: 0;
-        margin-top: 0.25rem;
+        position: relative;
+        z-index: 30;
+        margin-top: 0.35rem;
         background: #fff;
         border: 1px solid #e6e8ee;
         border-radius: 6px;
@@ -52,6 +48,7 @@
         max-height: 16rem;
         overflow: auto;
     }
+    #related-results[hidden] { display: none; }
     .related-option {
         display: block;
         width: 100%;

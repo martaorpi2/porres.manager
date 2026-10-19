@@ -36,6 +36,7 @@ class AccountingEntryLinksTest extends TestCase
             $page = $this->actingAs($user, 'backpack')->get('/admin/accounting-journal/create');
             $page->assertOk();
             $page->assertSee('Asientos relacionados');
+            $page->assertSee('se pueden relacionar varios');
             $page->assertSee('related_ids_present', false);
 
             $description = 'ASIENTO CON VINCULOS '.$suffix;
