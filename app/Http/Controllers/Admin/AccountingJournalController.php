@@ -661,17 +661,23 @@ class AccountingJournalController extends CrudController
                 ->values();
         }
 
-        $collectionIds = $kind !== null && $paymentType === null && $kind !== AccountingEntry::KIND_QUOTA_COLLECTION
+        $batchKinds = $this->collectedBatchKinds($kind);
+        $batches = $batchKinds === []
             ? collect()
             : QuotaAccountingBatch::query()
-                ->where('kind', QuotaAccountingBatch::KIND_COLLECTION)
+                ->whereIn('kind', $batchKinds)
                 ->whereDate('entry_date', $collected)
                 ->when($paymentType !== null, fn ($query) => $query->where('payment_type', $paymentType))
                 ->whereNotNull('accounting_entry_id')
-                ->pluck('accounting_entry_id');
+                ->get(['accounting_entry_id', 'kind']);
+        $collectionIds = $batches->pluck('accounting_entry_id');
+        $regularCollectionIds = $batches
+            ->where('kind', QuotaAccountingBatch::KIND_COLLECTION)
+            ->pluck('accounting_entry_id')
+            ->values();
 
         if ($pairWithAccreditation && $accreditationIds->isEmpty()) {
-            $accreditationIds = $this->accreditationIdsByAmount($kind, $collected, $collectionIds);
+            $accreditationIds = $this->accreditationIdsByAmount($kind, $collected, $regularCollectionIds);
         }
 
         $ids = $pairWithAccreditation
@@ -691,6 +697,27 @@ class AccountingJournalController extends CrudController
             ->orderBy('date')
             ->orderBy('id')
             ->get();
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function collectedBatchKinds(?string $kind): array
+    {
+        if ($kind === AccountingEntry::KIND_QUOTA_PLAN_COLLECTION) {
+            return [QuotaAccountingBatch::KIND_PLAN_COLLECTION];
+        }
+        if ($kind === AccountingEntry::KIND_QUOTA_COLLECTION) {
+            return [QuotaAccountingBatch::KIND_COLLECTION];
+        }
+        if ($kind === null || $this->paymentTypeForKind($kind) !== null) {
+            return [
+                QuotaAccountingBatch::KIND_COLLECTION,
+                QuotaAccountingBatch::KIND_PLAN_COLLECTION,
+            ];
+        }
+
+        return [];
     }
 
     private function paymentTypeForKind(?string $kind): ?string
