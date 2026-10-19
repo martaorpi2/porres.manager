@@ -1,10 +1,12 @@
 @php
-    $reconciliationCount = 0;
+    $reconciliationCutoff = '2026-08-01';
     $reconciliationCards = [];
+    $earlierReconciliationCards = [];
     foreach ($accreditationAmountAlerts as $group) {
-        $reconciliationCount += (int) $group['count'];
+        $rows = [];
         foreach ($group['amounts'] as $row) {
-            $reconciliationCards[] = [
+            $rows[] = [
+                'on' => $row['on'] ?? null,
                 'menu' => $group['menu'],
                 'border' => '#dc3545',
                 'entries' => $row['entries'] ?? [],
@@ -18,7 +20,8 @@
             ];
         }
         foreach ($group['missing'] as $missing) {
-            $reconciliationCards[] = [
+            $rows[] = [
+                'on' => $missing['on'] ?? null,
                 'menu' => $group['menu'],
                 'border' => '#ffc107',
                 'entries' => $missing['entries'] ?? [],
@@ -31,7 +34,8 @@
             ];
         }
         foreach ($group['excluded'] ?? [] as $excluded) {
-            $reconciliationCards[] = [
+            $rows[] = [
+                'on' => $excluded['on'] ?? null,
                 'menu' => $group['menu'],
                 'border' => '#ffc107',
                 'entries' => $excluded['entries'] ?? [],
@@ -44,7 +48,8 @@
             ];
         }
         foreach ($group['mixed'] ?? [] as $mixed) {
-            $reconciliationCards[] = [
+            $rows[] = [
+                'on' => $mixed['on'] ?? null,
                 'menu' => $group['menu'],
                 'border' => '#871f1f',
                 'entries' => $mixed['entries'] ?? [],
@@ -55,6 +60,13 @@
                     ['text' => $mixed['text']],
                 ],
             ];
+        }
+        foreach ($rows as $card) {
+            if (is_string($card['on']) && $card['on'] < $reconciliationCutoff) {
+                $earlierReconciliationCards[] = $card;
+            } else {
+                $reconciliationCards[] = $card;
+            }
         }
     }
 @endphp
@@ -84,12 +96,30 @@
         cursor: pointer;
     }
     .modal-backdrop.reconciliation-backdrop { z-index: 10840 !important; }
+    .reconciliation-earlier {
+        margin-top: 1rem;
+        border: 1px solid #e6d3a1;
+        border-left: 4px solid #856404;
+        border-radius: 6px;
+        background: #fffdf6;
+    }
+    .reconciliation-earlier summary {
+        cursor: pointer;
+        list-style: none;
+        padding: 0.85rem 1rem;
+        color: #856404;
+        font-weight: 700;
+    }
+    .reconciliation-earlier summary::-webkit-details-marker { display: none; }
+    .reconciliation-earlier summary::before { content: '▸ '; }
+    .reconciliation-earlier[open] summary::before { content: '▾ '; }
+    .reconciliation-earlier .process-step-content { padding-top: 0; }
 </style>
 @endonce
 <div class="row mb-4">
     <div class="col-md-12">
         <h3 class="section-title mb-0">Inconsistencias en la conciliación de cobranzas y acreditaciones</h3>
-        <p class="mb-0 mt-2" style="color:#000;">Se detectaron diferencias entre los asientos de cobranza y las acreditaciones registradas por medio de pago. Revise los siguientes casos.</p>
+        <p class="mb-0 mt-2" style="color:#000;">Se muestran las del 01/08/2026 en adelante.@if($earlierReconciliationCards !== []) Las anteriores quedan agrupadas debajo.@endif</p>
     </div>
 </div>
 <div id="accreditation-reconciliation-section" class="process-step" style="border-left: 4px solid #dc3545;">
@@ -98,38 +128,23 @@
             <i class="la la-balance-scale process-step-icon" style="color: #721c24;"></i>
             <span style="color: #721c24; font-weight: bold;">Cobranzas y acreditaciones</span>
         </div>
-        <span class="process-step-count" style="background-color: #dc3545; color: white;">{{ $reconciliationCount }}</span>
+        <span class="process-step-count" style="background-color: #dc3545; color: white;">{{ count($reconciliationCards) }}</span>
     </div>
     <div class="process-step-content">
-        @foreach($reconciliationCards as $card)
-            @php
-                $params = array_filter([
-                    'entries' => $card['entries'] === [] ? null : implode(',', $card['entries']),
-                    'orders' => $card['orders'] === [] ? null : implode(',', $card['orders']),
-                    'missing' => $card['missing'] ? 1 : null,
-                ], fn ($value) => $value !== null && $value !== '');
-                $detailUrl = backpack_url('accounting-reconciliation/entries').($params === [] ? '' : '?'.http_build_query($params));
-            @endphp
-            <div class="reconciliation-alert">
-                <div class="process-item-card" data-reconciliation-card data-url="{{ $detailUrl }}" data-title="{{ $card['menu'] }}" data-summary="{{ collect($card['blocks'])->map(fn ($block) => implode(' · ', $block['parts'] ?? [$block['text']]))->implode(' · ') }}" tabindex="0" role="button" aria-haspopup="dialog" aria-controls="reconciliationEntriesModal" style="border-left: 3px solid {{ $card['border'] }};">
-                    <div class="process-item-title">{{ $card['menu'] }}</div>
-                    @foreach($card['blocks'] as $block)
-                        <div class="process-item-meta">
-                            @foreach($block['parts'] ?? [$block['text']] as $part)
-                                <span @if(!empty($block['color'])) style="color: {{ $block['color'] }}; font-weight: bold;" @endif>
-                                    @if(!empty($block['icon']) && $loop->first)<i class="la {{ $block['icon'] }}"></i> @endif{{ $part }}
-                                </span>
-                            @endforeach
-                        </div>
-                    @endforeach
-                    <div class="process-item-meta">
-                        <span style="font-weight: bold;">Ver asientos</span>
-                    </div>
-                </div>
-            </div>
-        @endforeach
+        @if($reconciliationCards === [])
+            <p class="mb-0">No hay inconsistencias a partir del 01/08/2026.</p>
+        @endif
+        @include('admin.dashboard.inc.accreditation_reconciliation_cards', ['cards' => $reconciliationCards])
     </div>
 </div>
+@if($earlierReconciliationCards !== [])
+    <details class="reconciliation-earlier">
+        <summary>Anteriores al 01/08/2026 ({{ count($earlierReconciliationCards) }})</summary>
+        <div class="process-step-content">
+            @include('admin.dashboard.inc.accreditation_reconciliation_cards', ['cards' => $earlierReconciliationCards])
+        </div>
+    </details>
+@endif
 <div class="modal fade" id="reconciliationEntriesModal" tabindex="-1" aria-labelledby="reconciliationEntriesModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-xl modal-dialog-scrollable">
         <div class="modal-content">

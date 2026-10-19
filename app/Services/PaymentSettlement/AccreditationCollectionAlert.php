@@ -446,7 +446,32 @@ final class AccreditationCollectionAlert
             'entries' => array_values($entries),
             'orders' => $orderId > 0 ? [$orderId] : [],
             'missing_collection' => ($case['kind'] ?? '') === 'missing',
+            'on' => $this->referenceDate($case),
         ];
+    }
+
+    /**
+     * La fecha de la acreditación. Si no hay, la de cobro.
+     *
+     * @param  array<string, mixed>  $case
+     */
+    private function referenceDate(array $case): ?string
+    {
+        foreach (['accredited_on', 'collected_on'] as $key) {
+            $dates = [];
+            foreach (is_array($case[$key] ?? null) ? $case[$key] : [] as $date) {
+                if (is_string($date) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $date) === 1) {
+                    $dates[] = $date;
+                }
+            }
+            if ($dates !== []) {
+                rsort($dates);
+
+                return $dates[0];
+            }
+        }
+
+        return null;
     }
 
     /**
