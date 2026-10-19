@@ -451,13 +451,13 @@ final class AccreditationCollectionAlert
     }
 
     /**
-     * La fecha de la acreditación. Si no hay, la de cobro.
+     * La fecha de cobro. Si no hay, la de acreditación.
      *
      * @param  array<string, mixed>  $case
      */
     private function referenceDate(array $case): ?string
     {
-        foreach (['accredited_on', 'collected_on'] as $key) {
+        foreach (['collected_on', 'accredited_on'] as $key) {
             $dates = [];
             foreach (is_array($case[$key] ?? null) ? $case[$key] : [] as $date) {
                 if (is_string($date) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $date) === 1) {

@@ -10,7 +10,7 @@ class AccreditationReconciliationHomeTest extends TestCase
     public function test_alerts_before_august_2026_stay_in_a_closed_group(): void
     {
         $groups = (new AccreditationCollectionAlert)->homeGroups([
-            $this->amount('2026-07-15', '2026-07-20', 10000, 9000),
+            $this->amount('2026-07-15', '2026-08-05', 10000, 9000),
             $this->amount('2026-06-02', '2026-06-03', 5000, 4000),
             $this->amount('2026-08-01', '2026-08-01', 8000, 7000),
         ]);
@@ -24,9 +24,9 @@ class AccreditationReconciliationHomeTest extends TestCase
         $this->assertNotFalse($open);
         $this->assertNotFalse($older);
         $this->assertLessThan($older, strpos($html, '01/08/2026', $open));
-        $this->assertGreaterThan($older, strpos($html, '15/07 → 20/07/2026'));
+        $this->assertGreaterThan($older, strpos($html, '15/07 → 05/08/2026'));
         $this->assertGreaterThan($older, strpos($html, '02/06 → 03/06/2026'));
-        $this->assertStringContainsString('Anteriores al 01/08/2026 (2)', $html);
+        $this->assertStringContainsString('Cobros anteriores al 01/08/2026 (2)', $html);
         $this->assertStringContainsString('color: white;">1</span>', $html);
         $this->assertStringNotContainsString('<details class="reconciliation-earlier" open', $html);
     }

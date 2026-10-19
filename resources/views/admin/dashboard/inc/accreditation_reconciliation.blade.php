@@ -119,7 +119,7 @@
 <div class="row mb-4">
     <div class="col-md-12">
         <h3 class="section-title mb-0">Inconsistencias en la conciliación de cobranzas y acreditaciones</h3>
-        <p class="mb-0 mt-2" style="color:#000;">Se muestran las del 01/08/2026 en adelante.@if($earlierReconciliationCards !== []) Las anteriores quedan agrupadas debajo.@endif</p>
+        <p class="mb-0 mt-2" style="color:#000;">Se muestran las de cobros del 01/08/2026 en adelante.@if($earlierReconciliationCards !== []) Las acreditaciones de cobros anteriores quedan agrupadas debajo.@endif</p>
     </div>
 </div>
 <div id="accreditation-reconciliation-section" class="process-step" style="border-left: 4px solid #dc3545;">
@@ -132,14 +132,14 @@
     </div>
     <div class="process-step-content">
         @if($reconciliationCards === [])
-            <p class="mb-0">No hay inconsistencias a partir del 01/08/2026.</p>
+            <p class="mb-0">No hay inconsistencias de cobros a partir del 01/08/2026.</p>
         @endif
         @include('admin.dashboard.inc.accreditation_reconciliation_cards', ['cards' => $reconciliationCards])
     </div>
 </div>
 @if($earlierReconciliationCards !== [])
     <details class="reconciliation-earlier">
-        <summary>Anteriores al 01/08/2026 ({{ count($earlierReconciliationCards) }})</summary>
+        <summary>Cobros anteriores al 01/08/2026 ({{ count($earlierReconciliationCards) }})</summary>
         <div class="process-step-content">
             @include('admin.dashboard.inc.accreditation_reconciliation_cards', ['cards' => $earlierReconciliationCards])
         </div>
