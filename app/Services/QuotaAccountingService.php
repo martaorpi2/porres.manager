@@ -1396,8 +1396,8 @@ class QuotaAccountingService
     }
 
     /**
-     * Un asiento por plan generado en el mes: el plan reemplaza a deudores por cuotas,
-     * reconoce la mora y deja el interés de financiación a devengar.
+     * Un asiento por día: suma los planes abiertos esa fecha.
+     * El plan reemplaza a deudores por cuotas, reconoce la mora y deja el interés de financiación a devengar.
      *
      * @param  array<string, AccountingAccount>  $accounts
      * @return array{groups: list<array<string, mixed>>, updated: list<array<string, mixed>>, skipped: array{adjusted: int}}
@@ -1433,74 +1433,91 @@ class QuotaAccountingService
                 if ($orders === []) {
                     continue;
                 }
-                $built[$planId] = [
-                    'date' => Carbon::parse($plan->created_at)->toDateString(),
-                    'orders' => $orders,
-                ];
+                $date = Carbon::parse($plan->created_at)->toDateString();
+                $built[$date]['plan_ids'][] = $planId;
+                foreach ($orders as $order) {
+                    $built[$date]['orders'][] = $order;
+                }
             }
         }
+        foreach ($built as $date => $group) {
+            $built[$date]['orders'] = $this->mergePlanOrders($group['orders']);
+        }
 
+        $batchesByDate = [];
         $existing = QuotaAccountingBatch::query()
             ->where('kind', QuotaAccountingBatch::KIND_PLAN)
             ->whereDate('entry_date', '>=', $month->copy()->startOfMonth()->toDateString())
             ->whereDate('entry_date', '<=', $month->copy()->endOfMonth()->toDateString())
             ->with(['orders', 'entry'])
-            ->get()
-            ->keyBy(fn (QuotaAccountingBatch $batch) => $this->planIdFromBatchKey((string) $batch->batch_key));
+            ->orderBy('id')
+            ->get();
+        foreach ($existing as $batch) {
+            $date = $batch->entry_date?->toDateString();
+            if ($date !== null) {
+                $batchesByDate[$date][] = $batch;
+            }
+        }
 
         $posted = [];
         $updated = [];
         $adjusted = 0;
-        $planIds = array_values(array_unique(array_merge(array_keys($built), $existing->keys()->map(fn ($id) => (int) $id)->all())));
-        sort($planIds);
+        $dates = array_values(array_unique(array_merge(array_keys($built), array_keys($batchesByDate))));
+        sort($dates);
 
-        foreach ($planIds as $planId) {
-            if ($planId < 1) {
+        foreach ($dates as $date) {
+            $orders = $built[$date]['orders'] ?? [];
+            $groupBatches = $batchesByDate[$date] ?? [];
+            $storedOrders = [];
+            foreach ($groupBatches as $batch) {
+                foreach ($batch->orders as $order) {
+                    $storedOrders[] = $order;
+                }
+            }
+            if ($orders === [] && $groupBatches === []) {
                 continue;
             }
-            $desired = $built[$planId] ?? null;
-            $batch = $existing->get($planId);
-            if ($batch === null && $desired !== null) {
-                $batch = QuotaAccountingBatch::query()
-                    ->where('batch_key', 'plan:'.$planId)
-                    ->with(['orders', 'entry'])
-                    ->first();
-            }
-            $orders = $desired['orders'] ?? [];
-            $date = $desired['date'] ?? $batch?->entry_date?->toDateString();
-            if ($date === null) {
-                continue;
-            }
-            if ($batch !== null && $batch->entry?->manually_adjusted && $this->planOrdersDiffer($batch->orders, $orders)) {
-                $adjusted++;
+            if ($this->groupIsAdjusted($groupBatches)) {
+                $description = 'ALTA PLAN DE PAGO';
+                $needsWrite = count($groupBatches) > 1
+                    || $this->planOrdersDiffer($storedOrders, $orders)
+                    || ($groupBatches[0]->entry?->description ?? '') !== $description;
+                if ($needsWrite) {
+                    $adjusted++;
+                }
 
                 continue;
             }
-            if ($batch !== null && ! $this->planOrdersDiffer($batch->orders, $orders) && $batch->entry?->status === AccountingEntry::STATUS_POSTED) {
+            $description = 'ALTA PLAN DE PAGO';
+            $unchanged = count($groupBatches) === 1
+                && $groupBatches[0]->entry?->status === AccountingEntry::STATUS_POSTED
+                && $groupBatches[0]->entry?->description === $description
+                && ! $this->planOrdersDiffer($storedOrders, $orders);
+            if ($unchanged) {
                 continue;
             }
-            if ($orders === [] && ($batch === null || $batch->entry?->status !== AccountingEntry::STATUS_POSTED)) {
+            if ($orders === [] && ($groupBatches === [] || $groupBatches[0]->entry?->status !== AccountingEntry::STATUS_POSTED)) {
                 continue;
             }
 
             $totals = $this->planOpeningTotals($orders);
-            $description = 'ALTA PLAN DE PAGO '.$planId;
+            $primary = $groupBatches[0] ?? null;
             $item = [
                 'date' => $date,
-                'plan_id' => $planId,
+                'plans' => count($built[$date]['plan_ids'] ?? []),
                 'plan' => $this->amount($totals['plan']),
                 'debtors' => $this->amount($totals['debtors']),
                 'late' => $this->amount($totals['late']),
                 'financing' => $this->amount($totals['financing']),
                 'description' => $description,
-                'entry_number' => $batch?->entry?->entry_number,
+                'entry_number' => $primary?->entry?->entry_number,
             ];
 
             if (! $dryRun) {
                 $entry = $this->savePlanBatch(
-                    batch: $batch,
+                    batch: $primary,
                     kind: QuotaAccountingBatch::KIND_PLAN,
-                    batchKey: 'plan:'.$planId,
+                    batchKey: 'plan:'.$date,
                     entryDate: $date,
                     paymentType: null,
                     entryKind: AccountingEntry::KIND_QUOTA_PLAN,
@@ -1509,11 +1526,12 @@ class QuotaAccountingService
                     orders: $orders,
                     role: QuotaAccountingBatch::KIND_PLAN,
                     accounts: $accounts,
+                    extraBatches: array_slice($groupBatches, 1),
                 );
                 $item['entry_number'] = $entry?->entry_number;
             }
 
-            if ($batch === null || $batch->entry?->status !== AccountingEntry::STATUS_POSTED) {
+            if ($primary === null || $primary->entry?->status !== AccountingEntry::STATUS_POSTED) {
                 $posted[] = $item;
             } else {
                 $updated[] = $item;
@@ -1769,6 +1787,29 @@ class QuotaAccountingService
     }
 
     /**
+     * @param  list<array{eporres_order_id: int, debtors_amount: string, interest_amount: string, bank_amount: string, financing_amount: string}>  $orders
+     * @return list<array{eporres_order_id: int, debtors_amount: string, interest_amount: string, bank_amount: string, financing_amount: string}>
+     */
+    private function mergePlanOrders(array $orders): array
+    {
+        $byId = [];
+        foreach ($orders as $order) {
+            $id = (int) $order['eporres_order_id'];
+            if (! isset($byId[$id])) {
+                $byId[$id] = $order;
+
+                continue;
+            }
+            foreach (['debtors_amount', 'interest_amount', 'bank_amount', 'financing_amount'] as $field) {
+                $byId[$id][$field] = $this->money($this->cents($byId[$id][$field] ?? 0) + $this->cents($order[$field] ?? 0));
+            }
+        }
+        ksort($byId);
+
+        return array_values($byId);
+    }
+
+    /**
      * @param  list<array{debtors_amount: string, interest_amount: string, financing_amount?: string}>  $orders
      * @return array{debtors: int, late: int, financing: int, plan: int}
      */
@@ -1820,15 +1861,6 @@ class QuotaAccountingService
         ksort($map);
 
         return $map;
-    }
-
-    private function planIdFromBatchKey(string $batchKey): int
-    {
-        if (preg_match('/^plan:(\d+)$/', $batchKey, $matches) === 1) {
-            return (int) $matches[1];
-        }
-
-        return 0;
     }
 
     /**
@@ -2034,6 +2066,7 @@ class QuotaAccountingService
                 'description' => $description,
             ]);
             $batch->update([
+                'batch_key' => $batchKey,
                 'entry_date' => $entryDate,
                 'payment_type' => $paymentType,
             ]);

@@ -261,9 +261,9 @@ class PostQuotaAccountingEntries extends Command
     private function planLine(array $plan): string
     {
         return sprintf(
-            '%s  plan %s  total: %s  deudores: %s  mora: %s  financiación: %s%s',
+            '%s  planes: %d  total: %s  deudores: %s  mora: %s  financiación: %s%s',
             $plan['date'],
-            $plan['plan_id'],
+            (int) ($plan['plans'] ?? 1),
             $this->money($plan['plan']),
             $this->money($plan['debtors']),
             $this->money($plan['late']),

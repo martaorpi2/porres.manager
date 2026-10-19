@@ -872,9 +872,9 @@ class AccountingJournalController extends CrudController
 
         $plans = count($result['plans']['groups'] ?? []) + count($result['plans']['updated'] ?? []);
         if ($plans === 1) {
-            $bits[] = '1 plan de pago';
+            $bits[] = '1 alta de plan de pago';
         } elseif ($plans > 1) {
-            $bits[] = $plans.' planes de pago';
+            $bits[] = $plans.' altas de plan de pago';
         }
         $planCollections = count($result['plan_collections']['groups'] ?? []) + count($result['plan_collections']['updated'] ?? []);
         if ($planCollections === 1) {
