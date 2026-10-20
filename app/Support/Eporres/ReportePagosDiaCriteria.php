@@ -290,10 +290,36 @@ final class ReportePagosDiaCriteria
         return rtrim(rtrim(number_format($normalized, 2, ',', ''), '0'), ',');
     }
 
-    public static function notaReporte(Order $order, Collection $relatedByPlanId): string
+    /**
+     * Badge cuando se cobró la cuota sin la beca, porque el pago fue fuera de término.
+     */
+    public static function etiquetaBecaPerdida(Order $order): string
     {
-        $beca = self::labelBeca($order);
+        $pct = self::becaPercentage($order);
+        if ($pct <= 0) {
+            return 'Beca perdida';
+        }
+
+        return 'Beca '.self::formatBecaPercentage($pct).'% perdida';
+    }
+
+    public static function notaCuotaOriginalPorBecaPerdida(float $cuotaOriginal): string
+    {
+        $importe = number_format($cuotaOriginal, 2, ',', '.');
+
+        return 'Se cobró la cuota original de $'.$importe.' porque el beneficio se perdió por pago fuera de término.';
+    }
+
+    public static function notaReporte(Order $order, Collection $relatedByPlanId, bool $becaPerdida = false, ?float $cuotaOriginal = null): string
+    {
         $vinculo = self::notaVinculo($order, $relatedByPlanId);
+        if ($becaPerdida) {
+            $texto = self::etiquetaBecaPerdida($order).'. '.self::notaCuotaOriginalPorBecaPerdida((float) $cuotaOriginal);
+
+            return $vinculo !== '' ? $texto.' · '.$vinculo : $texto;
+        }
+
+        $beca = self::labelBeca($order);
         if ($beca !== '' && $vinculo !== '') {
             return $beca.' · '.$vinculo;
         }

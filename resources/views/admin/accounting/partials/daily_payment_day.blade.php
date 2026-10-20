@@ -4,6 +4,8 @@
     tr.row-plan-cuota { background: #f0f7ff; }
     tr.row-otro-concepto { background: #f3faf3; }
     .badge-beca { background-color: #6f42c1; color: #fff; }
+    .badge-beca-perdida { background-color: #9a3412; color: #fff; }
+    .nota-beca-perdida { display: block; font-size: 0.75rem; color: #9a3412; margin-top: 0.15rem; max-width: 18rem; }
     .nota-plan { font-size: 0.8rem; color: #6c757d; }
 </style>
 @endonce
@@ -46,7 +48,7 @@
                 @endphp
                 @foreach($pagos as $pago)
                     @php
-                        $lines = OrderPaymentLines::forOrder($pago);
+                        $lines = OrderPaymentLines::forOrder($pago, true);
                         $rowspan = count($lines);
                         $esImputacion = ReportePagosDiaCriteria::isImputacionPlan($pago);
                         $esPlan = ReportePagosDiaCriteria::isCuotaPlanPago($pago);
@@ -74,7 +76,12 @@
                                     @if($esPlan)<span class="badge bg-primary">Plan</span>@endif
                                     @if($esOtro)<span class="badge bg-success">Otro</span>@endif
                                     @if($esImputacion)<span class="badge bg-warning text-dark">Imputación</span>@endif
-                                    @if($labelBeca !== '')<span class="badge badge-beca">{{ $labelBeca }}</span>@endif
+                                    @if(!empty($line['beca_perdida']))
+                                        <span class="badge badge-beca-perdida">{{ ReportePagosDiaCriteria::etiquetaBecaPerdida($pago) }}</span>
+                                        <span class="nota-beca-perdida">{{ ReportePagosDiaCriteria::notaCuotaOriginalPorBecaPerdida((float) ($line['order_pure'] ?? 0)) }}</span>
+                                    @elseif($labelBeca !== '')
+                                        <span class="badge badge-beca">{{ $labelBeca }}</span>
+                                    @endif
                                     @if($nota !== '')<span class="nota-plan d-block">{{ $nota }}</span>@endif
                                 </td>
                                 <td rowspan="{{ $rowspan }}">{{ $pago->student ? $pago->student->last_name.', '.$pago->student->first_name.' - '.($pago->student->dni ?: 's/d') : '-' }}</td>

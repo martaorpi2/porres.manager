@@ -150,7 +150,12 @@ class EporresDailyPaymentsReport
                 ? $pago->student->career->short_name
                 : '-';
             $nota = $line['is_first_line']
-                ? ReportePagosDiaCriteria::notaReporte($pago, $relatedByPlanId)
+                ? ReportePagosDiaCriteria::notaReporte(
+                    $pago,
+                    $relatedByPlanId,
+                    (bool) ($line['beca_perdida'] ?? false),
+                    (float) ($line['order_pure'] ?? 0)
+                )
                 : '';
             $pure = '';
             $planFin = '';

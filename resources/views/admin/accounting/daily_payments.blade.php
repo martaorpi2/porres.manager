@@ -27,6 +27,8 @@
     tr.row-plan-cuota { background: #f0f7ff; }
     tr.row-otro-concepto { background: #f3faf3; }
     .badge-beca { background-color: #6f42c1; color: #fff; }
+    .badge-beca-perdida { background-color: #9a3412; color: #fff; }
+    .nota-beca-perdida { display: block; font-size: 0.75rem; color: #9a3412; margin-top: 0.15rem; max-width: 18rem; }
 </style>
 
 <div class="card mb-3">

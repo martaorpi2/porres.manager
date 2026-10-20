@@ -17,10 +17,13 @@ final class OrderPaymentLines
         'Tarjeta Sol',
     ];
 
-    public static function forOrder(Order $order): array
+    public static function forOrder(Order $order, bool $reportePagosDia = false): array
     {
         $order->loadMissing('splitPayment');
-        $breakdown = OrderPaymentBreakdown::amounts($order);
+        $breakdown = $reportePagosDia
+            ? OrderPaymentBreakdown::amountsForReporte($order)
+            : OrderPaymentBreakdown::amounts($order);
+        $becaPerdida = (bool) ($breakdown['beca_perdida'] ?? false);
         $split = $order->splitPayment;
 
         if ($split === null) {
@@ -38,6 +41,7 @@ final class OrderPaymentLines
                 'order_interest_plan' => $breakdown['interest_plan_financing'],
                 'is_split' => false,
                 'is_first_line' => true,
+                'beca_perdida' => $becaPerdida,
             ]];
         }
 
@@ -59,6 +63,7 @@ final class OrderPaymentLines
                 'order_interest_plan' => $breakdown['interest_plan_financing'],
                 'is_split' => true,
                 'is_first_line' => true,
+                'beca_perdida' => $becaPerdida,
             ],
             [
                 'order' => $order,
@@ -71,6 +76,7 @@ final class OrderPaymentLines
                 'order_interest_plan' => null,
                 'is_split' => true,
                 'is_first_line' => false,
+                'beca_perdida' => false,
             ],
         ];
     }
@@ -155,7 +161,7 @@ final class OrderPaymentLines
     {
         $lines = collect();
         foreach ($orders as $order) {
-            foreach (self::forOrder($order) as $line) {
+            foreach (self::forOrder($order, true) as $line) {
                 $lines->push($line);
             }
         }
@@ -170,8 +176,8 @@ final class OrderPaymentLines
         $planFinAssigned = [];
 
         foreach ($orders as $order) {
-            $lines = self::forOrder($order);
-            $breakdown = OrderPaymentBreakdown::amounts($order);
+            $lines = self::forOrder($order, true);
+            $breakdown = OrderPaymentBreakdown::amountsForReporte($order);
 
             foreach ($lines as $line) {
                 $medio = self::etiquetaMedio($line['payment_type']);
