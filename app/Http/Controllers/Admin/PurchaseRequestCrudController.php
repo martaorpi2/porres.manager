@@ -1001,10 +1001,15 @@ class PurchaseRequestCrudController extends CrudController
                             specifications: specs
                         };
                         if (typeof productId === "string" && productId.indexOf("new_") === 0) {
+                            const promptedDescription = item.getAttribute("data-new-description") || "";
+                            const description = (specs && String(specs).trim()) ? specs : promptedDescription;
                             row.name = item.getAttribute("data-new-name") || "";
                             row.unit = item.getAttribute("data-new-unit") || "unidad";
-                            row.description = item.getAttribute("data-new-description") || "";
-                            row.product_description = specs || item.getAttribute("data-new-description") || "";
+                            row.description = description;
+                            row.product_description = description;
+                            if (!row.specifications) {
+                                row.specifications = description;
+                            }
                         }
                         products.push(row);
                     });
@@ -1404,10 +1409,15 @@ class PurchaseRequestCrudController extends CrudController
                         specifications: specs
                     };
                     if (typeof productId === "string" && productId.indexOf("new_") === 0) {
+                        const promptedDescription = item.getAttribute("data-new-description") || "";
+                        const description = (specs && String(specs).trim()) ? specs : promptedDescription;
                         row.name = item.getAttribute("data-new-name") || "";
                         row.unit = item.getAttribute("data-new-unit") || "unidad";
-                        row.description = item.getAttribute("data-new-description") || "";
-                        row.product_description = specs || item.getAttribute("data-new-description") || "";
+                        row.description = description;
+                        row.product_description = description;
+                        if (!row.specifications) {
+                            row.specifications = description;
+                        }
                     }
                     products.push(row);
                 });
@@ -2066,19 +2076,25 @@ class PurchaseRequestCrudController extends CrudController
             // Convertir a números para evitar errores de multiplicación
             $quantity = (float) ($productData['quantity'] ?? 0);
             $price = (float) ($productData['price'] ?? 0);
-            $specifications = $productData['specifications'] ?? '';
-            // Unificado: descripción/especificaciones se guarda en ambos campos para compatibilidad
-            $productDescription = $productData['product_description'] ?? $specifications;
+            $specificationsRaw = trim((string) ($productData['specifications'] ?? ''));
+            $productDescriptionRaw = trim((string) ($productData['product_description'] ?? ''));
+            $descriptionRaw = trim((string) ($productData['description'] ?? ''));
+            // Una cadena vacía no debe tapar la descripción escrita en el otro campo.
+            $lineDescription = $productDescriptionRaw !== ''
+                ? $productDescriptionRaw
+                : ($specificationsRaw !== '' ? $specificationsRaw : $descriptionRaw);
+            $specifications = $specificationsRaw !== '' ? $specificationsRaw : $lineDescription;
+            $productDescription = $lineDescription;
 
             $isNewProduct = is_string($productIdRaw) && str_starts_with($productIdRaw, 'new_');
 
             if ($isNewProduct) {
                 $name = trim((string) ($productData['name'] ?? ''));
-                $specTrim = trim((string) $specifications);
+                $specTrim = $lineDescription;
                 if ($name === '' || preg_match('/^producto\s+nuevo$/iu', $name)) {
                     $name = $specTrim !== '' ? Str::limit($specTrim, 255, '') : 'Producto Nuevo';
                 }
-                $description = trim((string) ($productData['description'] ?? $productData['product_description'] ?? $specTrim));
+                $description = $descriptionRaw !== '' ? $descriptionRaw : $lineDescription;
                 $unit = trim((string) ($productData['unit'] ?? 'unidad')) ?: 'unidad';
 
                 $defaultCategoryId = \App\Models\Category::query()->orderBy('id')->value('id') ?? 1;

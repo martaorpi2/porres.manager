@@ -229,6 +229,16 @@ class User extends Authenticatable
     }
 
     /**
+     * Eliminar productos del inventario: administrador del sistema, administradora del instituto y compras.
+     */
+    public function canDeleteInventoryProducts(): bool
+    {
+        return $this->isAdminSistema()
+            || $this->hasAdministradoraInstitucionRole()
+            || $this->hasResponsableComprasRole();
+    }
+
+    /**
      * Corregir cotizaciones ya cargadas: compras, admin. sistema y administradora del instituto.
      */
     public function canEditLoadedPurchaseRequestQuotations(): bool

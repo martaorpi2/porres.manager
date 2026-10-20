@@ -45,15 +45,13 @@ class ProductCrudController extends CrudController
         // Habilitar tabla responsiva
         CRUD::enableResponsiveTable();
         
-        // Ocultar botones de editar y eliminar para role_admin_institucion y role_representante_legal
+        // La administradora y el representante legal no editan el catálogo
         $user = backpack_user();
         if ($user && ($user->hasRole('role_admin_institucion', 'backpack') || $user->hasRole('role_representante_legal', 'backpack'))) {
             CRUD::removeButton('update');
-            CRUD::removeButton('delete');
         }
-        
-        // Solo el administrador del sistema puede eliminar productos
-        if (!$user || !$user->hasRole('role_admin_sistema', 'backpack')) {
+
+        if (! $user || ! $user->canDeleteInventoryProducts()) {
             CRUD::removeButton('delete');
         }
         
@@ -203,10 +201,9 @@ class ProductCrudController extends CrudController
      */
     protected function setupDeleteOperation()
     {
-        // Solo el administrador del sistema puede eliminar productos
         $user = backpack_user();
-        if (!$user || !$user->hasRole('role_admin_sistema', 'backpack')) {
-            abort(403, 'Solo el administrador del sistema puede eliminar productos.');
+        if (! $user || ! $user->canDeleteInventoryProducts()) {
+            abort(403, 'No tienes permiso para eliminar productos.');
         }
     }
     
@@ -217,10 +214,9 @@ class ProductCrudController extends CrudController
     {
         $this->crud->hasAccessOrFail('delete');
         
-        // Solo el administrador del sistema puede eliminar productos
         $user = backpack_user();
-        if (!$user || !$user->hasRole('role_admin_sistema', 'backpack')) {
-            abort(403, 'Solo el administrador del sistema puede eliminar productos.');
+        if (! $user || ! $user->canDeleteInventoryProducts()) {
+            abort(403, 'No tienes permiso para eliminar productos.');
         }
         
         return $this->crud->delete($id);
