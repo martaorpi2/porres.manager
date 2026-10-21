@@ -645,7 +645,8 @@ class PaymentSettlementTest extends TestCase
             $detail->assertOk();
             $detail->assertSee($entry->entry_number);
             $detail->assertSee('Acreditación');
-            $detail->assertSee('Este asiento no guarda cupón por cupón.');
+            $detail->assertSee('Ver cupones');
+            $detail->assertSee('/admin/accounting-journal/'.$entry->id.'/coupons', false);
         } finally {
             if (DB::transactionLevel() > 0) {
                 DB::rollBack();

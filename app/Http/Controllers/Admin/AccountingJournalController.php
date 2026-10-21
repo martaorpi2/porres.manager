@@ -342,23 +342,18 @@ class AccountingJournalController extends CrudController
             ->whereIn('id', $ids === [] ? [0] : $ids)
             ->where('status', AccountingEntry::STATUS_POSTED)
             ->whereIn('kind', array_merge(
-                [AccountingEntry::KIND_QUOTA_COLLECTION],
+                [
+                    AccountingEntry::KIND_QUOTA_COLLECTION,
+                    AccountingEntry::KIND_QUOTA_PLAN_COLLECTION,
+                ],
                 AccountingEntry::accreditationKinds(),
             ))
             ->get()
             ->sortBy(fn (AccountingEntry $entry) => $position[$entry->id] ?? 999)
             ->values();
 
-        $orderCounts = QuotaAccountingBatch::query()
-            ->whereIn('accounting_entry_id', $entries->pluck('id')->all() ?: [0])
-            ->withCount('orders')
-            ->get()
-            ->groupBy('accounting_entry_id')
-            ->map(fn ($rows) => (int) $rows->sum('orders_count'));
-
         return view('admin.accounting.partials.reconciliation_entries', [
             'entries' => $entries,
-            'orderCounts' => $orderCounts,
             'missingCollection' => $request->boolean('missing'),
             'excluded' => $orderIds === [] ? null : $report->forOrderIds($orderIds),
         ]);
@@ -371,15 +366,9 @@ class AccountingJournalController extends CrudController
             abort(404);
         }
 
-        $orderIds = QuotaAccountingOrder::query()
-            ->whereHas('batch', fn ($query) => $query->where('accounting_entry_id', $accountingEntry->id))
-            ->pluck('eporres_order_id')
-            ->map(fn ($id) => (int) $id)
-            ->unique()
-            ->values()
-            ->all();
-
-        return view('admin.accounting.partials.daily_payment_orders', $report->forOrderIds($orderIds));
+        return view('admin.accounting.partials.daily_payment_orders', $report->forOrderIds(
+            $this->couponOrderIds($accountingEntry)
+        ));
     }
 
     public function ledger(Request $request)
@@ -697,6 +686,68 @@ class AccountingJournalController extends CrudController
             ->orderBy('date')
             ->orderBy('id')
             ->get();
+    }
+
+    /**
+     * Cupones guardados en el asiento. En una acreditación, los de las cobranzas de las fechas que cierra.
+     *
+     * @return list<int>
+     */
+    private function couponOrderIds(AccountingEntry $entry): array
+    {
+        $entryIds = [(int) $entry->id];
+        if (in_array($entry->kind, AccountingEntry::accreditationKinds(), true)) {
+            $entryIds = array_values(array_unique(array_merge(
+                $entryIds,
+                $this->collectionEntryIdsForAccreditation($entry),
+            )));
+        }
+
+        return QuotaAccountingOrder::query()
+            ->whereHas('batch', fn ($query) => $query->whereIn('accounting_entry_id', $entryIds))
+            ->pluck('eporres_order_id')
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @return list<int>
+     */
+    private function collectionEntryIdsForAccreditation(AccountingEntry $entry): array
+    {
+        $batch = QuotaAccountingBatch::query()
+            ->where('accounting_entry_id', $entry->id)
+            ->with('collectionDates')
+            ->first();
+        if ($batch === null || $batch->payment_type === null || $batch->payment_type === '') {
+            return [];
+        }
+
+        $dates = $batch->collectionDates
+            ->map(fn ($row) => $row->collected_on?->toDateString())
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+        if ($dates === []) {
+            return [];
+        }
+
+        return QuotaAccountingBatch::query()
+            ->whereIn('kind', [
+                QuotaAccountingBatch::KIND_COLLECTION,
+                QuotaAccountingBatch::KIND_PLAN_COLLECTION,
+            ])
+            ->where('payment_type', $batch->payment_type)
+            ->whereIn('entry_date', $dates)
+            ->whereNotNull('accounting_entry_id')
+            ->pluck('accounting_entry_id')
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
     }
 
     /**
