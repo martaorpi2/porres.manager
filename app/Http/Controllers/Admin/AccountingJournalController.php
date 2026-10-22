@@ -5,7 +5,6 @@ namespace App\Http\Controllers\Admin;
 use App\Models\AccountingAccount;
 use App\Models\AccountingEntry;
 use App\Models\AccountingEntryLine;
-use App\Models\Eporres\Order;
 use App\Models\QuotaAccountingBatch;
 use App\Models\QuotaAccountingCollectionDate;
 use App\Models\QuotaAccountingOrder;
@@ -13,9 +12,9 @@ use App\Models\User;
 use App\Services\AccountingEntryEditor;
 use App\Services\AccountingEntryLinks;
 use App\Services\EporresDailyPaymentsReport;
+use App\Services\PaymentPlanDetail;
 use App\Services\PaymentSettlement\PaymentSettlementChannels;
 use App\Services\QuotaAccountingService;
-use App\Support\Eporres\ReportePagosDiaCriteria;
 use Backpack\CRUD\app\Http\Controllers\CrudController;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -382,45 +381,11 @@ class AccountingJournalController extends CrudController
             abort(404);
         }
 
-        $opening = $accountingEntry->kind === AccountingEntry::KIND_QUOTA_PLAN;
         $entryIds = in_array($accountingEntry->kind, AccountingEntry::accreditationKinds(), true)
             ? $this->linkedEntryIds($accountingEntry, [AccountingEntry::KIND_QUOTA_PLAN_COLLECTION])
             : [$accountingEntry->id];
-        $stored = $this->mergedPlanOrders($entryIds);
-        $eporres = $stored === []
-            ? collect()
-            : Order::query()
-                ->whereIn('id', array_column($stored, 'id'))
-                ->with(['student', 'student_plan'])
-                ->get()
-                ->keyBy('id');
-        $related = $opening
-            ? ReportePagosDiaCriteria::planInstallmentsByPlanId($eporres)
-            : ReportePagosDiaCriteria::coveredArancelByPlanId($eporres);
 
-        $rows = [];
-        foreach ($stored as $order) {
-            $pago = $eporres->get($order['id']);
-            $plan = $pago?->student_plan;
-            $rows[] = [
-                'id' => $order['id'],
-                'student' => $pago?->student
-                    ? $pago->student->last_name.', '.$pago->student->first_name.' - '.($pago->student->dni ?: 's/d')
-                    : '—',
-                'plan' => $plan ? '#'.$plan->id : '—',
-                'quota' => $pago ? ReportePagosDiaCriteria::labelNumeroCuota($pago, $plan) : '—',
-                'debtors' => $order['debtors'],
-                'interest' => $order['interest'],
-                'financing' => $order['financing'],
-                'bank' => $order['bank'],
-                'note' => $pago ? ReportePagosDiaCriteria::notaVinculo($pago, $related) : '',
-            ];
-        }
-
-        return view('admin.accounting.partials.plan_orders', [
-            'rows' => $rows,
-            'heading' => $opening ? 'Cuotas incluidas en el alta del plan' : 'Cuotas de plan de pago',
-        ]);
+        return view('admin.accounting.partials.plan_orders', PaymentPlanDetail::present($this->mergedPlanOrders($entryIds)));
     }
 
     public function ledger(Request $request)

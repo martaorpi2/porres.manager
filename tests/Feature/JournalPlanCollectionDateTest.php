@@ -87,7 +87,8 @@ class JournalPlanCollectionDateTest extends TestCase
 
             $plans = $this->actingAs($user, 'backpack')->get('/admin/accounting-journal/'.$entry->id.'/plans');
             $plans->assertOk();
-            $plans->assertSee('Cuotas incluidas en el alta del plan');
+            $plans->assertSee('No se encontró el plan de este comprobante.');
+            $plans->assertDontSee('Cuotas que debía');
             $plans->assertSee('987654321');
             $plans->assertSee('1.500,00');
             $plans->assertSee('80,00');
