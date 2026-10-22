@@ -140,6 +140,13 @@
                                     <td class="text-end">{{ number_format($debit, 2, ',', '.') }}</td>
                                     <td class="text-end">{{ number_format($credit, 2, ',', '.') }}</td>
                                 </tr>
+                                @if($entry->showsCollectionCoupons() || $entry->showsPaymentPlans())
+                                    <tr>
+                                        <td colspan="4">
+                                            @include('admin.accounting.partials.journal_entry_actions', ['entry' => $entry])
+                                        </td>
+                                    </tr>
+                                @endif
                             @empty
                                 <tr>
                                     <td colspan="4" class="text-muted">{{ $filters['collected'] && $pairsAccreditation ? 'No hay cobranza ni acreditación para esa fecha de cobro.' : 'No hay asientos para ese filtro.' }}</td>
@@ -322,4 +329,5 @@
         });
     });
 </script>
+@include('admin.accounting.partials.journal_detail_script')
 @endsection

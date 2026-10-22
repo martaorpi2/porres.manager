@@ -645,7 +645,15 @@ class PaymentSettlementTest extends TestCase
             $detail->assertOk();
             $detail->assertSee($entry->entry_number);
             $detail->assertSee('Acreditación');
-            $detail->assertSee('Este asiento no guarda cupón por cupón.');
+            $detail->assertSee('Ver cupones');
+            $detail->assertSee('Ver planes');
+            $detail->assertSee('/admin/accounting-journal/'.$entry->id.'/coupons', false);
+            $detail->assertSee('/admin/accounting-journal/'.$entry->id.'/plans', false);
+            $detail->assertDontSee('Este asiento no guarda cupón por cupón.');
+            $plans = $this->actingAs($this->accountingUser(), 'backpack')
+                ->get('/admin/accounting-journal/'.$entry->id.'/plans');
+            $plans->assertOk();
+            $plans->assertSee('No hay planes de pago asociados a este asiento.');
         } finally {
             if (DB::transactionLevel() > 0) {
                 DB::rollBack();

@@ -94,6 +94,22 @@ class AccountingEntry extends Model
         ];
     }
 
+    public function showsCollectionCoupons(): bool
+    {
+        return in_array($this->kind, array_merge(
+            [self::KIND_QUOTA_COLLECTION, self::KIND_QUOTA_PLAN_COLLECTION],
+            self::accreditationKinds(),
+        ), true);
+    }
+
+    public function showsPaymentPlans(): bool
+    {
+        return in_array($this->kind, array_merge(
+            [self::KIND_QUOTA_PLAN, self::KIND_QUOTA_PLAN_COLLECTION],
+            self::accreditationKinds(),
+        ), true);
+    }
+
     protected $table = 'accounting_entries';
 
     protected $guarded = ['id'];

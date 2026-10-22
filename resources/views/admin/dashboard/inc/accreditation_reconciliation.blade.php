@@ -289,11 +289,13 @@ function bootReconciliationModal() {
         }
         var open = panel.hidden;
         panel.hidden = !open;
-        button.textContent = open ? 'Ocultar cupones' : 'Ver cupones';
+        button.textContent = open
+            ? (button.getAttribute('data-open-label') || 'Ocultar cupones')
+            : (button.getAttribute('data-closed-label') || 'Ver cupones');
         if (!open || panel.getAttribute('data-loaded') === '1') {
             return;
         }
-        panel.innerHTML = '<p>Cargando cupones…</p>';
+        panel.innerHTML = '<p>Cargando…</p>';
         fetch(button.getAttribute('data-coupons-url'), { headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'text/html' }, credentials: 'same-origin' })
             .then(function (response) {
                 if (!response.ok) {
@@ -306,7 +308,7 @@ function bootReconciliationModal() {
                 panel.setAttribute('data-loaded', '1');
             })
             .catch(function () {
-                panel.innerHTML = '<p>No se pudieron cargar los cupones.</p>';
+                panel.innerHTML = '<p>No se pudo cargar el detalle.</p>';
             });
     }
 }

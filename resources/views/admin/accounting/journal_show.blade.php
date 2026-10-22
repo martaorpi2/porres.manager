@@ -95,3 +95,7 @@
     }
 </style>
 @endsection
+
+@section('after_scripts')
+    @include('admin.accounting.partials.journal_detail_script')
+@endsection

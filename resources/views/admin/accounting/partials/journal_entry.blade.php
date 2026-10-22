@@ -115,6 +115,7 @@
                     </tfoot>
                 </table>
             </div>
+            @include('admin.accounting.partials.journal_entry_actions', ['entry' => $entry])
         </div>
     </div>
 </div>

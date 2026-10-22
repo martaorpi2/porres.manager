@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Models\AccountingAccount;
 use App\Models\AccountingEntry;
 use App\Models\AccountingEntryLine;
+use App\Models\Eporres\Order;
 use App\Models\QuotaAccountingBatch;
 use App\Models\QuotaAccountingCollectionDate;
 use App\Models\QuotaAccountingOrder;
@@ -14,6 +15,7 @@ use App\Services\AccountingEntryLinks;
 use App\Services\EporresDailyPaymentsReport;
 use App\Services\PaymentSettlement\PaymentSettlementChannels;
 use App\Services\QuotaAccountingService;
+use App\Support\Eporres\ReportePagosDiaCriteria;
 use Backpack\CRUD\app\Http\Controllers\CrudController;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -342,23 +344,15 @@ class AccountingJournalController extends CrudController
             ->whereIn('id', $ids === [] ? [0] : $ids)
             ->where('status', AccountingEntry::STATUS_POSTED)
             ->whereIn('kind', array_merge(
-                [AccountingEntry::KIND_QUOTA_COLLECTION],
+                [AccountingEntry::KIND_QUOTA_COLLECTION, AccountingEntry::KIND_QUOTA_PLAN_COLLECTION],
                 AccountingEntry::accreditationKinds(),
             ))
             ->get()
             ->sortBy(fn (AccountingEntry $entry) => $position[$entry->id] ?? 999)
             ->values();
 
-        $orderCounts = QuotaAccountingBatch::query()
-            ->whereIn('accounting_entry_id', $entries->pluck('id')->all() ?: [0])
-            ->withCount('orders')
-            ->get()
-            ->groupBy('accounting_entry_id')
-            ->map(fn ($rows) => (int) $rows->sum('orders_count'));
-
         return view('admin.accounting.partials.reconciliation_entries', [
             'entries' => $entries,
-            'orderCounts' => $orderCounts,
             'missingCollection' => $request->boolean('missing'),
             'excluded' => $orderIds === [] ? null : $report->forOrderIds($orderIds),
         ]);
@@ -367,19 +361,63 @@ class AccountingJournalController extends CrudController
     public function collectionCoupons(AccountingEntry $accountingEntry, EporresDailyPaymentsReport $report)
     {
         $this->authorizeAccounting();
-        if ($accountingEntry->status !== AccountingEntry::STATUS_POSTED) {
+        if ($accountingEntry->status !== AccountingEntry::STATUS_POSTED || ! $accountingEntry->showsCollectionCoupons()) {
             abort(404);
         }
 
-        $orderIds = QuotaAccountingOrder::query()
-            ->whereHas('batch', fn ($query) => $query->where('accounting_entry_id', $accountingEntry->id))
-            ->pluck('eporres_order_id')
-            ->map(fn ($id) => (int) $id)
-            ->unique()
-            ->values()
-            ->all();
+        $entryIds = in_array($accountingEntry->kind, AccountingEntry::accreditationKinds(), true)
+            ? $this->linkedEntryIds($accountingEntry, [AccountingEntry::KIND_QUOTA_COLLECTION])
+            : [$accountingEntry->id];
 
-        return view('admin.accounting.partials.daily_payment_orders', $report->forOrderIds($orderIds));
+        return view('admin.accounting.partials.daily_payment_orders', $report->forOrderIds($this->orderIdsOf($entryIds)));
+    }
+
+    public function entryPlans(AccountingEntry $accountingEntry)
+    {
+        $this->authorizeAccounting();
+        if ($accountingEntry->status !== AccountingEntry::STATUS_POSTED || ! $accountingEntry->showsPaymentPlans()) {
+            abort(404);
+        }
+
+        $opening = $accountingEntry->kind === AccountingEntry::KIND_QUOTA_PLAN;
+        $entryIds = in_array($accountingEntry->kind, AccountingEntry::accreditationKinds(), true)
+            ? $this->linkedEntryIds($accountingEntry, [AccountingEntry::KIND_QUOTA_PLAN_COLLECTION])
+            : [$accountingEntry->id];
+        $stored = $this->mergedPlanOrders($entryIds);
+        $eporres = $stored === []
+            ? collect()
+            : Order::query()
+                ->whereIn('id', array_column($stored, 'id'))
+                ->with(['student', 'student_plan'])
+                ->get()
+                ->keyBy('id');
+        $related = $opening
+            ? ReportePagosDiaCriteria::planInstallmentsByPlanId($eporres)
+            : ReportePagosDiaCriteria::coveredArancelByPlanId($eporres);
+
+        $rows = [];
+        foreach ($stored as $order) {
+            $pago = $eporres->get($order['id']);
+            $plan = $pago?->student_plan;
+            $rows[] = [
+                'id' => $order['id'],
+                'student' => $pago?->student
+                    ? $pago->student->last_name.', '.$pago->student->first_name.' - '.($pago->student->dni ?: 's/d')
+                    : '—',
+                'plan' => $plan ? '#'.$plan->id : '—',
+                'quota' => $pago ? ReportePagosDiaCriteria::labelNumeroCuota($pago, $plan) : '—',
+                'debtors' => $order['debtors'],
+                'interest' => $order['interest'],
+                'financing' => $order['financing'],
+                'bank' => $order['bank'],
+                'note' => $pago ? ReportePagosDiaCriteria::notaVinculo($pago, $related) : '',
+            ];
+        }
+
+        return view('admin.accounting.partials.plan_orders', [
+            'rows' => $rows,
+            'heading' => $opening ? 'Cuotas incluidas en el alta del plan' : 'Cuotas de plan de pago',
+        ]);
     }
 
     public function ledger(Request $request)
@@ -410,6 +448,113 @@ class AccountingJournalController extends CrudController
                 'Sumas y saldos' => false,
             ],
         ]);
+    }
+
+    /**
+     * @param  list<string>  $kinds
+     * @return list<int>
+     */
+    private function linkedEntryIds(AccountingEntry $entry, array $kinds): array
+    {
+        $linked = $entry->relatedEntries()->pluck('accounting_entries.id');
+        if ($linked->isNotEmpty()) {
+            return $entry->relatedEntries()
+                ->whereIn('accounting_entries.kind', $kinds)
+                ->pluck('accounting_entries.id')
+                ->map(fn ($id) => (int) $id)
+                ->unique()
+                ->values()
+                ->all();
+        }
+
+        $batch = $entry->batch()->with('collectionDates')->first();
+        if ($batch === null || $batch->payment_type === null || $batch->payment_type === '') {
+            return [];
+        }
+        $dates = $batch->collectionDates
+            ->map(fn ($row) => $row->collected_on?->toDateString())
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+        if ($dates === []) {
+            return [];
+        }
+
+        $batchKinds = [];
+        if (in_array(AccountingEntry::KIND_QUOTA_COLLECTION, $kinds, true)) {
+            $batchKinds[] = QuotaAccountingBatch::KIND_COLLECTION;
+        }
+        if (in_array(AccountingEntry::KIND_QUOTA_PLAN_COLLECTION, $kinds, true)) {
+            $batchKinds[] = QuotaAccountingBatch::KIND_PLAN_COLLECTION;
+        }
+        if ($batchKinds === []) {
+            return [];
+        }
+
+        return QuotaAccountingBatch::query()
+            ->whereIn('kind', $batchKinds)
+            ->where('payment_type', $batch->payment_type)
+            ->whereIn('entry_date', $dates)
+            ->whereNotNull('accounting_entry_id')
+            ->whereHas('entry', function ($query) use ($kinds) {
+                $query->where('status', AccountingEntry::STATUS_POSTED)
+                    ->whereIn('kind', $kinds);
+            })
+            ->pluck('accounting_entry_id')
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  list<int>  $entryIds
+     * @return list<int>
+     */
+    private function orderIdsOf(array $entryIds): array
+    {
+        if ($entryIds === []) {
+            return [];
+        }
+
+        return QuotaAccountingOrder::query()
+            ->whereHas('batch', fn ($query) => $query->whereIn('accounting_entry_id', $entryIds))
+            ->pluck('eporres_order_id')
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  list<int>  $entryIds
+     * @return list<array{id: int, debtors: float, interest: float, financing: float, bank: float}>
+     */
+    private function mergedPlanOrders(array $entryIds): array
+    {
+        if ($entryIds === []) {
+            return [];
+        }
+
+        $merged = [];
+        $orders = QuotaAccountingOrder::query()
+            ->whereHas('batch', fn ($query) => $query->whereIn('accounting_entry_id', $entryIds))
+            ->orderBy('eporres_order_id')
+            ->get();
+        foreach ($orders as $order) {
+            $id = (int) $order->eporres_order_id;
+            if (! isset($merged[$id])) {
+                $merged[$id] = ['id' => $id, 'debtors' => 0.0, 'interest' => 0.0, 'financing' => 0.0, 'bank' => 0.0];
+            }
+            $merged[$id]['debtors'] += (float) $order->debtors_amount;
+            $merged[$id]['interest'] += (float) $order->interest_amount;
+            $merged[$id]['financing'] += (float) $order->financing_amount;
+            $merged[$id]['bank'] += (float) $order->bank_amount;
+        }
+        ksort($merged);
+
+        return array_values($merged);
     }
 
     /**
