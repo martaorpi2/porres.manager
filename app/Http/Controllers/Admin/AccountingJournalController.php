@@ -344,7 +344,10 @@ class AccountingJournalController extends CrudController
             ->whereIn('id', $ids === [] ? [0] : $ids)
             ->where('status', AccountingEntry::STATUS_POSTED)
             ->whereIn('kind', array_merge(
-                [AccountingEntry::KIND_QUOTA_COLLECTION, AccountingEntry::KIND_QUOTA_PLAN_COLLECTION],
+                [
+                    AccountingEntry::KIND_QUOTA_COLLECTION,
+                    AccountingEntry::KIND_QUOTA_PLAN_COLLECTION,
+                ],
                 AccountingEntry::accreditationKinds(),
             ))
             ->get()
