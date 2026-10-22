@@ -1547,8 +1547,7 @@ class QuotaAccountingService
 
     /**
      * Cobro de una cuota del plan (cuota 100 en adelante).
-     * El medio recibe lo pagado. El plan baja por la cuota. La mora y el recargo del medio son ingreso.
-     * El interés de financiación pasa de «a devengar» a intereses ganados.
+     * En término el medio a cobrar va contra el plan. Fuera de término se acredita además el interés por mora.
      *
      * @param  array<string, AccountingAccount>  $accounts
      * @return array{groups: list<array<string, mixed>>, updated: list<array<string, mixed>>, skipped: array{split: int, unmapped: array<string, int>, zero: int, adjusted: int}}
@@ -1674,12 +1673,15 @@ class QuotaAccountingService
                     $storedOrders[] = $order;
                 }
             }
-            if ($this->groupIsAdjusted($groupBatches) && $this->planOrdersDiffer($storedOrders, $group['orders'])) {
+            $lines = $this->planCollectionLines($group, $accounts);
+            $ordersDiffer = $this->planOrdersDiffer($storedOrders, $group['orders']);
+            $linesDiffer = $groupBatches !== [] && $this->planEntryLinesDiffer($groupBatches[0]->entry, $lines);
+            if ($this->groupIsAdjusted($groupBatches) && ($ordersDiffer || $linesDiffer)) {
                 $skipped['adjusted']++;
 
                 continue;
             }
-            if ($groupBatches !== [] && ! $this->planOrdersDiffer($storedOrders, $group['orders'])) {
+            if ($groupBatches !== [] && ! $ordersDiffer && ! $linesDiffer) {
                 if (! $dryRun) {
                     app(AccountingEntryLinks::class)->attachCollection($groupBatches[0]);
                 }
@@ -1713,7 +1715,7 @@ class QuotaAccountingService
                     paymentType: $group['payment_type'],
                     entryKind: AccountingEntry::KIND_QUOTA_PLAN_COLLECTION,
                     description: $description,
-                    lines: $this->planCollectionLines($group, $accounts),
+                    lines: $lines,
                     orders: $group['orders'],
                     role: QuotaAccountingBatch::KIND_PLAN_COLLECTION,
                     accounts: $accounts,
@@ -1928,42 +1930,43 @@ class QuotaAccountingService
      */
     private function planCollectionLines(array $group, array $accounts): array
     {
-        if ($group['paid'] < 1) {
-            return [];
+        $lines = [];
+        foreach (PaymentPlanCollectionEntry::lines($group['payment_type'], $group['plan'], $group['late']) as $spec) {
+            $lines[] = $this->line($accounts[$spec['code']], $spec['debit'], $spec['credit'], $spec['memo']);
         }
-
-        $paymentType = $group['payment_type'];
-        $surchargeMemo = match (true) {
-            $paymentType === 'Mercado Pago' => 'Recargo Mercado Pago',
-            str_starts_with($paymentType, 'Tarjeta') => 'Int. por cobro tarjeta',
-            default => 'Otros recargos del medio',
-        };
-        $lines = [
-            $this->line($accounts[$group['bank_code']], $group['paid'], 0, 'Cobranza plan de pago'),
-        ];
-        if ($group['financing'] > 0) {
-            $lines[] = $this->line($accounts[QuotaPaymentAccounts::PLAN_FINANCING_DEFERRED], $group['financing'], 0, 'Interés financiación a devengar');
+        if ($lines !== []) {
+            $this->assertBalanced($lines);
         }
-        if ($group['plan'] > 0) {
-            $lines[] = $this->line($accounts[QuotaPaymentAccounts::PLAN], 0, $group['plan'], 'Plan de pago');
-        }
-        if ($group['financing'] > 0) {
-            $lines[] = $this->line($accounts[QuotaPaymentAccounts::PLAN_FINANCING_INCOME], 0, $group['financing'], 'Intereses ganados por financiación');
-        }
-        if ($group['late'] > 0) {
-            $lines[] = $this->line($accounts[QuotaPaymentAccounts::LATE_INTEREST], 0, $group['late'], 'Intereses por mora');
-        }
-        if ($group['surcharge'] > 0) {
-            $lines[] = $this->line(
-                $accounts[QuotaPaymentAccounts::planSurchargeCode($paymentType)],
-                0,
-                $group['surcharge'],
-                $surchargeMemo,
-            );
-        }
-        $this->assertBalanced($lines);
 
         return $lines;
+    }
+
+    /**
+     * @param  list<array{accounting_account_id: int, debit: string, credit: string, memo: string}>  $desired
+     */
+    private function planEntryLinesDiffer(?AccountingEntry $entry, array $desired): bool
+    {
+        $normalize = function (array $rows): array {
+            usort($rows, fn (array $left, array $right) => $left <=> $right);
+
+            return $rows;
+        };
+        $stored = $entry === null
+            ? []
+            : $normalize($entry->lines()->get()->map(fn ($line) => [
+                (int) $line->accounting_account_id,
+                $this->cents($line->debit),
+                $this->cents($line->credit),
+                (string) $line->memo,
+            ])->all());
+        $wanted = $normalize(array_map(fn (array $line) => [
+            (int) $line['accounting_account_id'],
+            $this->cents($line['debit']),
+            $this->cents($line['credit']),
+            (string) $line['memo'],
+        ], $desired));
+
+        return $stored !== $wanted;
     }
 
     /**

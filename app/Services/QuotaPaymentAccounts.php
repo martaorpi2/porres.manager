@@ -77,6 +77,19 @@ final class QuotaPaymentAccounts
         return self::BY_PAYMENT_TYPE[$type] ?? null;
     }
 
+    public static function receivableMemo(?string $paymentType): string
+    {
+        return match (trim((string) $paymentType)) {
+            'QR' => 'QR a cobrar',
+            'Mercado Pago' => 'Mercado Pago a cobrar',
+            'Tarjeta Naranja' => 'Tarjeta Naranja a cobrar',
+            'Tarjeta Sol' => 'Tarjeta Sol a cobrar',
+            'Tarjeta de Débito', 'Tarjeta Naranja Débito' => 'Tarjeta de débito a cobrar',
+            'BSE' => 'Banco BSE',
+            default => 'Cobranza plan de pago',
+        };
+    }
+
     /**
      * Recargo que el medio suma a la cuota del plan.
      * Tarjetas van a Int. por cobro tarjeta. Mercado Pago tiene cuenta propia.

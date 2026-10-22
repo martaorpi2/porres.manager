@@ -1,0 +1,31 @@
+<?php
+
+namespace Tests\Unit;
+
+use App\Services\PaymentPlanCollectionEntry;
+use App\Services\QuotaPaymentAccounts;
+use PHPUnit\Framework\TestCase;
+
+class PaymentPlanCollectionEntryTest extends TestCase
+{
+    public function test_an_on_time_qr_plan_collection_is_the_receivable_against_the_plan(): void
+    {
+        $lines = PaymentPlanCollectionEntry::lines('QR', 9000000, 0);
+
+        $this->assertSame([
+            ['code' => QuotaPaymentAccounts::QR_RECEIVABLE, 'debit' => 9000000, 'credit' => 0, 'memo' => 'QR a cobrar'],
+            ['code' => QuotaPaymentAccounts::PLAN, 'debit' => 0, 'credit' => 9000000, 'memo' => 'Plan de pago deudores por cuota'],
+        ], $lines);
+    }
+
+    public function test_a_late_qr_plan_collection_adds_late_interest_on_the_credit_side(): void
+    {
+        $lines = PaymentPlanCollectionEntry::lines('QR', 9000000, 500000);
+
+        $this->assertSame([
+            ['code' => QuotaPaymentAccounts::QR_RECEIVABLE, 'debit' => 9500000, 'credit' => 0, 'memo' => 'QR a cobrar'],
+            ['code' => QuotaPaymentAccounts::PLAN, 'debit' => 0, 'credit' => 9000000, 'memo' => 'Plan de pago deudores por cuota'],
+            ['code' => QuotaPaymentAccounts::LATE_INTEREST, 'debit' => 0, 'credit' => 500000, 'memo' => 'Intereses por mora'],
+        ], $lines);
+    }
+}
