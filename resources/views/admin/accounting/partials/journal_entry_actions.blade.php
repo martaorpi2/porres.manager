@@ -18,6 +18,10 @@
         width: 100%;
         max-width: 100%;
         overflow-x: auto;
+        font-size: 0.85rem;
+    }
+    .entry-detail-body h6 {
+        font-size: 0.95rem;
     }
     .entry-detail-body .table-responsive {
         overflow-x: visible;
