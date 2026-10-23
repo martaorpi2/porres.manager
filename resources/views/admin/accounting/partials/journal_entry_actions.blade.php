@@ -20,20 +20,19 @@
         overflow-x: auto;
     }
     .entry-detail-body .table-responsive {
-        display: block;
-        width: max-content;
-        min-width: 100%;
-        max-width: none;
-        overflow: visible;
+        overflow-x: visible;
     }
     .entry-detail-body table {
         width: max-content;
         min-width: 100%;
         margin-bottom: 0;
-        white-space: nowrap;
+        table-layout: auto;
     }
-    .journal-asiento-detail td {
-        max-width: 0;
+    .entry-detail-body th,
+    .entry-detail-body td {
+        white-space: nowrap;
+        width: auto;
+        max-width: none;
     }
 </style>
 @endonce

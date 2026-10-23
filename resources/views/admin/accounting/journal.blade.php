@@ -244,7 +244,7 @@
         border-collapse: collapse;
         margin-bottom: 0;
     }
-    .journal-lines thead th {
+    .journal-lines > thead > tr > th {
         background: #871f1f !important;
         color: #fff !important;
         font-weight: 700;
@@ -253,14 +253,14 @@
         letter-spacing: 0;
         padding: 0.7rem 0.9rem;
     }
-    .journal-lines tbody td {
+    .journal-lines > tbody > tr > td {
         padding: 0.7rem 0.9rem;
         border-bottom: 1px solid #e6e8ee;
         background: #fff;
         vertical-align: middle;
         color: #1e2a4a;
     }
-    .journal-asiento-label td {
+    .journal-asiento-label > td {
         background: #f7f8fb !important;
         border-bottom: 1px solid #e6e8ee !important;
         padding-top: 0.85rem;
@@ -270,22 +270,23 @@
         margin-left: 0.75rem;
         font-weight: 400;
     }
-    .journal-asiento-end td,
-    .journal-asiento-detail td {
+    .journal-asiento-end > td,
+    .journal-asiento-detail > td {
         border-bottom: 3px solid #871f1f !important;
     }
-    .journal-asiento-end td,
-    .journal-asiento-subtotal td {
+    .journal-asiento-end > td,
+    .journal-asiento-subtotal > td {
         font-weight: 700;
     }
-    .journal-asiento-subtotal td {
+    .journal-asiento-subtotal > td {
         border-bottom: 1px solid #e6e8ee !important;
     }
-    .journal-asiento-detail td {
+    .journal-asiento-detail > td {
         background: #fbf7f7 !important;
         padding-top: 0.35rem;
         padding-bottom: 1rem;
         max-width: 0;
+        overflow: hidden;
     }
     .journal-account {
         color: #871f1f !important;
