@@ -28,6 +28,7 @@
             <thead class="table-light">
                 <tr>
                     <th>Comprobante</th>
+                    <th>Cupón POS</th>
                     <th>Estudiante</th>
                     <th>Carrera</th>
                     <th>Tipo</th>
@@ -84,6 +85,7 @@
                                     @endif
                                     @if($nota !== '')<span class="nota-plan d-block">{{ $nota }}</span>@endif
                                 </td>
+                                <td rowspan="{{ $rowspan }}">{{ trim((string) ($pago->payment_id ?? '')) !== '' ? $pago->payment_id : '—' }}</td>
                                 <td rowspan="{{ $rowspan }}">{{ $pago->student ? $pago->student->last_name.', '.$pago->student->first_name.' - '.($pago->student->dni ?: 's/d') : '-' }}</td>
                                 <td rowspan="{{ $rowspan }}">{{ $pago->student && $pago->student->career ? $pago->student->career->short_name : '-' }}</td>
                                 <td rowspan="{{ $rowspan }}">{{ ReportePagosDiaCriteria::labelTipo($pago) }}</td>
@@ -104,7 +106,7 @@
             </tbody>
             <tfoot class="table-light fw-bold">
                 <tr>
-                    <td colspan="7" class="text-end">{{ $vista === 'imputaciones' ? 'Subtotal día (imputado, no caja)' : 'Subtotal día (caja)' }}</td>
+                    <td colspan="8" class="text-end">{{ $vista === 'imputaciones' ? 'Subtotal día (imputado, no caja)' : 'Subtotal día (caja)' }}</td>
                     <td class="text-end">${{ number_format($diaPure, 2, ',', '.') }}</td>
                     <td class="text-end">${{ number_format($diaPlanFin, 2, ',', '.') }}</td>
                     <td class="text-end">${{ number_format($diaMora, 2, ',', '.') }}</td>

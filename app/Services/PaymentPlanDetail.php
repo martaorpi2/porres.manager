@@ -239,6 +239,7 @@ final class PaymentPlanDetail
                 'state' => $isPaid ? 'Pagada' : 'Pendiente',
                 'paid_on' => self::date($order->paid_at),
                 'payment_type' => trim((string) ($order->payment_type ?? '')) ?: '—',
+                'coupon' => trim((string) ($order->payment_id ?? '')) !== '' ? trim((string) $order->payment_id) : '—',
             ];
             $amount += $quota;
             $paid += $collected;

@@ -13,6 +13,7 @@ use App\Services\AccountingEntryEditor;
 use App\Services\AccountingEntryLinks;
 use App\Services\EporresDailyPaymentsReport;
 use App\Services\PaymentPlanDetail;
+use App\Services\PosCouponOrders;
 use App\Services\PaymentSettlement\PaymentSettlementChannels;
 use App\Services\QuotaAccountingService;
 use Backpack\CRUD\app\Http\Controllers\CrudController;
@@ -370,8 +371,11 @@ class AccountingJournalController extends CrudController
         $entryIds = in_array($accountingEntry->kind, AccountingEntry::accreditationKinds(), true)
             ? $this->linkedEntryIds($accountingEntry, [AccountingEntry::KIND_QUOTA_COLLECTION])
             : [$accountingEntry->id];
+        $planInstallments = $accountingEntry->kind === AccountingEntry::KIND_QUOTA_PLAN_COLLECTION;
 
-        return view('admin.accounting.partials.daily_payment_orders', $report->forOrderIds($this->orderIdsOf($entryIds)));
+        return view('admin.accounting.partials.daily_payment_orders', $report->forOrderIds(
+            PosCouponOrders::expand($this->orderIdsOf($entryIds), $planInstallments)
+        ));
     }
 
     public function entryPlans(AccountingEntry $accountingEntry)
@@ -384,8 +388,22 @@ class AccountingJournalController extends CrudController
         $entryIds = in_array($accountingEntry->kind, AccountingEntry::accreditationKinds(), true)
             ? $this->linkedEntryIds($accountingEntry, [AccountingEntry::KIND_QUOTA_PLAN_COLLECTION])
             : [$accountingEntry->id];
+        $stored = $this->mergedPlanOrders($entryIds);
+        $known = array_map('intval', array_column($stored, 'id'));
+        foreach (PosCouponOrders::expand($known, true) as $orderId) {
+            if (! in_array($orderId, $known, true)) {
+                $stored[] = [
+                    'id' => $orderId,
+                    'debtors' => 0.0,
+                    'interest' => 0.0,
+                    'financing' => 0.0,
+                    'bank' => 0.0,
+                ];
+                $known[] = $orderId;
+            }
+        }
 
-        return view('admin.accounting.partials.plan_orders', PaymentPlanDetail::present($this->mergedPlanOrders($entryIds)));
+        return view('admin.accounting.partials.plan_orders', PaymentPlanDetail::present($stored));
     }
 
     public function ledger(Request $request)

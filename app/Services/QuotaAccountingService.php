@@ -52,9 +52,10 @@ class QuotaAccountingService
 
     /**
      * Asienta una liquidación de Mercado Pago, Naranja X, Sol Pago o QR.
-     * El asiento es uno por fecha, con los totales del archivo. No cruza cupones con ePorres.
+     * El asiento es uno por fecha, con los totales del archivo.
      * El archivo acredita el neto en el banco, la comisión al gasto y cancela la cuenta a cobrar.
-     * La cobranza de ese medio ya quedó registrada el día del cobro.
+     * Si esa cobranza incluye cuotas de plan, también pasa el interés de financiación
+     * de «a devengar» a intereses ganados.
      *
      * @param  list<array{key: string, date: string, gross_cents: int, commission_cents: int, interest_cents: int, net_cents: int, document: string}>  $groups
      * @return list<AccountingEntry>
@@ -319,7 +320,27 @@ class QuotaAccountingService
         if ((int) $group['interest_cents'] > 0 && $definition['interest'] !== null) {
             $lines[] = $this->line($accounts[$definition['interest']], (int) $group['interest_cents'], 0, (string) $definition['interest_memo']);
         }
+        $financing = $this->planAccreditationFinancingCents(
+            (string) ($definition['payment_type'] ?? ''),
+            is_array($group['collected_on'] ?? null) ? $group['collected_on'] : [],
+        );
+        $financingAccounts = $financing > 0
+            ? $this->accountsForCodes([
+                QuotaPaymentAccounts::PLAN_FINANCING_DEFERRED,
+                QuotaPaymentAccounts::PLAN_FINANCING_INCOME,
+            ])
+            : [];
+        foreach (PaymentPlanAccreditationEntry::financingLines($financing) as $spec) {
+            if ($spec['debit'] > 0) {
+                $lines[] = $this->line($financingAccounts[$spec['code']], $spec['debit'], $spec['credit'], $spec['memo']);
+            }
+        }
         $lines[] = $this->line($accounts[$definition['receivable']], 0, (int) $group['gross_cents'], (string) $definition['receivable_memo']);
+        foreach (PaymentPlanAccreditationEntry::financingLines($financing) as $spec) {
+            if ($spec['credit'] > 0) {
+                $lines[] = $this->line($financingAccounts[$spec['code']], $spec['debit'], $spec['credit'], $spec['memo']);
+            }
+        }
         $this->assertBalanced($lines);
 
         return $lines;
@@ -1390,6 +1411,9 @@ class QuotaAccountingService
             if (in_array($kind, [QuotaAccountingBatch::KIND_COLLECTION, QuotaAccountingBatch::KIND_PLAN_COLLECTION], true)) {
                 app(AccountingEntryLinks::class)->attachCollection($batch);
             }
+            if ($kind === QuotaAccountingBatch::KIND_PLAN_COLLECTION) {
+                $this->refreshPlanAccreditationFinancing((string) $paymentType, (string) $entryDate);
+            }
 
             return $entry;
         });
@@ -1684,6 +1708,7 @@ class QuotaAccountingService
             if ($groupBatches !== [] && ! $ordersDiffer && ! $linesDiffer) {
                 if (! $dryRun) {
                     app(AccountingEntryLinks::class)->attachCollection($groupBatches[0]);
+                    $this->refreshPlanAccreditationFinancing($group['payment_type'], $group['date']);
                 }
 
                 continue;
@@ -2035,6 +2060,9 @@ class QuotaAccountingService
             if ($orders === []) {
                 $this->clearEntry($batch->entry);
                 app(AccountingEntryLinks::class)->attachCollection($batch);
+                if ($kind === QuotaAccountingBatch::KIND_PLAN_COLLECTION) {
+                    $this->refreshPlanAccreditationFinancing((string) $paymentType, (string) $entryDate);
+                }
 
                 return $batch->entry;
             }
@@ -2074,9 +2102,143 @@ class QuotaAccountingService
                 'payment_type' => $paymentType,
             ]);
             app(AccountingEntryLinks::class)->attachCollection($batch);
+            if ($kind === QuotaAccountingBatch::KIND_PLAN_COLLECTION) {
+                $this->refreshPlanAccreditationFinancing((string) $paymentType, (string) $entryDate);
+            }
 
             return $entry->fresh();
         });
+    }
+
+    /**
+     * @param  list<string>  $dates
+     */
+    private function planAccreditationFinancingCents(string $paymentType, array $dates): int
+    {
+        $dates = array_values(array_filter(
+            $dates,
+            fn ($date) => is_string($date) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $date) === 1
+        ));
+        if ($paymentType === '' || $dates === []) {
+            return 0;
+        }
+
+        $total = 0;
+        $amounts = QuotaAccountingOrder::query()
+            ->where('role', QuotaAccountingBatch::KIND_PLAN_COLLECTION)
+            ->whereHas('batch', function ($query) use ($paymentType, $dates) {
+                $query->where('kind', QuotaAccountingBatch::KIND_PLAN_COLLECTION)
+                    ->where('payment_type', $paymentType)
+                    ->whereIn('entry_date', $dates)
+                    ->whereHas('entry', fn ($entry) => $entry->where('status', AccountingEntry::STATUS_POSTED));
+            })
+            ->pluck('financing_amount');
+        foreach ($amounts as $amount) {
+            $total += $this->cents($amount);
+        }
+
+        return $total;
+    }
+
+    private function refreshPlanAccreditationFinancing(string $paymentType, string $date): void
+    {
+        if ($paymentType === '' || preg_match('/^\d{4}-\d{2}-\d{2}$/', $date) !== 1) {
+            return;
+        }
+
+        $batches = QuotaAccountingBatch::query()
+            ->whereIn('kind', [
+                QuotaAccountingBatch::KIND_MP_SETTLEMENT,
+                QuotaAccountingBatch::KIND_NX_SETTLEMENT,
+                QuotaAccountingBatch::KIND_SOL_SETTLEMENT,
+                QuotaAccountingBatch::KIND_QR_SETTLEMENT,
+            ])
+            ->where('payment_type', $paymentType)
+            ->whereHas('collectionDates', fn ($query) => $query->whereDate('collected_on', $date))
+            ->whereHas('entry', function ($query) {
+                $query->where('status', AccountingEntry::STATUS_POSTED)
+                    ->where('manually_adjusted', false);
+            })
+            ->with(['entry.lines.account', 'collectionDates'])
+            ->get();
+
+        foreach ($batches as $batch) {
+            $dates = $batch->collectionDates
+                ->map(fn ($row) => $row->collected_on?->toDateString())
+                ->filter()
+                ->values()
+                ->all();
+            $this->rewriteAccreditationFinancing(
+                $batch,
+                $this->planAccreditationFinancingCents($paymentType, $dates),
+            );
+        }
+    }
+
+    private function rewriteAccreditationFinancing(QuotaAccountingBatch $batch, int $financing): void
+    {
+        $entry = $batch->entry;
+        if ($entry === null) {
+            return;
+        }
+
+        $kept = [];
+        foreach ($entry->lines as $line) {
+            if ($line->account === null) {
+                return;
+            }
+            $code = (string) $line->account->code;
+            if (in_array($code, [
+                QuotaPaymentAccounts::PLAN_FINANCING_DEFERRED,
+                QuotaPaymentAccounts::PLAN_FINANCING_INCOME,
+            ], true)) {
+                continue;
+            }
+            $kept[] = $this->line($line->account, $this->cents($line->debit), $this->cents($line->credit), (string) $line->memo);
+        }
+        if ($financing > 0) {
+            $accounts = $this->accountsForCodes([
+                QuotaPaymentAccounts::PLAN_FINANCING_DEFERRED,
+                QuotaPaymentAccounts::PLAN_FINANCING_INCOME,
+            ]);
+            foreach (PaymentPlanAccreditationEntry::financingLines($financing) as $spec) {
+                if ($spec['debit'] > 0) {
+                    array_splice($kept, count($kept) - 1, 0, [
+                        $this->line($accounts[$spec['code']], $spec['debit'], $spec['credit'], $spec['memo']),
+                    ]);
+                }
+            }
+            foreach (PaymentPlanAccreditationEntry::financingLines($financing) as $spec) {
+                if ($spec['credit'] > 0) {
+                    $kept[] = $this->line($accounts[$spec['code']], $spec['debit'], $spec['credit'], $spec['memo']);
+                }
+            }
+        }
+        if ($kept === []) {
+            return;
+        }
+        $this->assertBalanced($kept);
+
+        $current = $entry->lines->map(fn ($line) => [
+            (int) $line->accounting_account_id,
+            $this->cents($line->debit),
+            $this->cents($line->credit),
+            (string) $line->memo,
+        ])->all();
+        $desired = array_map(fn (array $line) => [
+            (int) $line['accounting_account_id'],
+            $this->cents($line['debit']),
+            $this->cents($line['credit']),
+            (string) $line['memo'],
+        ], $kept);
+        if ($current === $desired) {
+            return;
+        }
+
+        $entry->lines()->delete();
+        foreach ($kept as $line) {
+            $entry->lines()->create($line);
+        }
     }
 
     /**

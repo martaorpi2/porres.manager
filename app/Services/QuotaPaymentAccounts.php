@@ -48,6 +48,21 @@ final class QuotaPaymentAccounts
 
     public const OTHER_FINANCIAL_INCOME = '41208000';
 
+    /**
+     * El cupón del POS se guarda en payment_id.
+     * Una operación es de cuotas originales o de cuotas de plan, no de las dos.
+     *
+     * @var list<string>
+     */
+    public const POS_PAYMENT_TYPES = [
+        'QR',
+        'Tarjeta de Crédito',
+        'Tarjeta de Débito',
+        'Tarjeta Naranja',
+        'Tarjeta Naranja Débito',
+        'Tarjeta Sol',
+    ];
+
     /** @var array<string, string> */
     public const BY_PAYMENT_TYPE = [
         'BSE' => '11102002',

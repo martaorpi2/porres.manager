@@ -28,4 +28,20 @@ class PaymentPlanCollectionEntryTest extends TestCase
             ['code' => QuotaPaymentAccounts::LATE_INTEREST, 'debit' => 0, 'credit' => 500000, 'memo' => 'Intereses por mora'],
         ], $lines);
     }
+
+    public function test_a_qr_plan_collection_matches_the_on_time_and_late_models(): void
+    {
+        $onTime = PaymentPlanCollectionEntry::lines('QR', 11000000, 0);
+        $this->assertSame([
+            ['code' => QuotaPaymentAccounts::QR_RECEIVABLE, 'debit' => 11000000, 'credit' => 0, 'memo' => 'QR a cobrar'],
+            ['code' => QuotaPaymentAccounts::PLAN, 'debit' => 0, 'credit' => 11000000, 'memo' => 'Plan de pago deudores por cuota'],
+        ], $onTime);
+
+        $late = PaymentPlanCollectionEntry::lines('QR', 11000000, 500000);
+        $this->assertSame([
+            ['code' => QuotaPaymentAccounts::QR_RECEIVABLE, 'debit' => 11500000, 'credit' => 0, 'memo' => 'QR a cobrar'],
+            ['code' => QuotaPaymentAccounts::PLAN, 'debit' => 0, 'credit' => 11000000, 'memo' => 'Plan de pago deudores por cuota'],
+            ['code' => QuotaPaymentAccounts::LATE_INTEREST, 'debit' => 0, 'credit' => 500000, 'memo' => 'Intereses por mora'],
+        ], $late);
+    }
 }

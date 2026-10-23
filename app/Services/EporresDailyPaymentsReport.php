@@ -169,6 +169,7 @@ class EporresDailyPaymentsReport
 
             $rows[] = [
                 $line['is_split'] && ! $line['is_first_line'] ? '↳ '.$pago->id : $pago->id,
+                $line['is_first_line'] ? trim((string) ($pago->payment_id ?? '')) : '',
                 $estudiante,
                 $carrera,
                 ReportePagosDiaCriteria::labelTipo($pago),

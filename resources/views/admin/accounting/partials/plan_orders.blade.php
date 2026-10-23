@@ -74,6 +74,7 @@
                             <th>Estado</th>
                             <th>Fecha de pago</th>
                             <th>Medio</th>
+                            <th>Cupón POS</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -87,6 +88,7 @@
                                 <td>{{ $installment['state'] }}</td>
                                 <td>{{ $installment['paid_on'] }}</td>
                                 <td>{{ $installment['payment_type'] }}</td>
+                                <td>{{ $installment['coupon'] }}</td>
                             </tr>
                         @endforeach
                     </tbody>
@@ -96,7 +98,7 @@
                             <td class="text-end">${{ number_format($plan['installment_total'], 2, ',', '.') }}</td>
                             <td></td>
                             <td class="text-end">${{ number_format($plan['paid_total'], 2, ',', '.') }}</td>
-                            <td colspan="3">Pendiente ${{ number_format($plan['pending_total'], 2, ',', '.') }}</td>
+                            <td colspan="4">Pendiente ${{ number_format($plan['pending_total'], 2, ',', '.') }}</td>
                         </tr>
                     </tfoot>
                 </table>

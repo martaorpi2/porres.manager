@@ -6,7 +6,8 @@ namespace App\Services;
  * Cobranza de una cuota de plan de pago.
  * En término: el medio a cobrar contra el plan.
  * Fuera de término: el mismo asiento, más el interés por mora en el haber.
- * El interés de financiación y el recargo del medio no entran en este asiento.
+ * El interés de financiación se reconoce en la acreditación.
+ * El recargo del medio de pago no entra en este asiento.
  */
 final class PaymentPlanCollectionEntry
 {
