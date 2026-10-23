@@ -13,6 +13,28 @@
         color: #871f1f;
         font-weight: 700;
     }
+    .entry-detail-body {
+        display: block;
+        width: 100%;
+        max-width: 100%;
+        overflow-x: auto;
+    }
+    .entry-detail-body .table-responsive {
+        display: block;
+        width: max-content;
+        min-width: 100%;
+        max-width: none;
+        overflow: visible;
+    }
+    .entry-detail-body table {
+        width: max-content;
+        min-width: 100%;
+        margin-bottom: 0;
+        white-space: nowrap;
+    }
+    .journal-asiento-detail td {
+        max-width: 0;
+    }
 </style>
 @endonce
 @if($entry->showsCollectionCoupons() || $entry->showsPaymentPlans())

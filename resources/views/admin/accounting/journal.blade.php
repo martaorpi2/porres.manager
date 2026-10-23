@@ -91,6 +91,12 @@
                 @endphp
                 <div class="table-responsive">
                     <table class="table journal-lines mb-0">
+                        <colgroup>
+                            <col style="width: 14%">
+                            <col style="width: 46%">
+                            <col style="width: 20%">
+                            <col style="width: 20%">
+                        </colgroup>
                         <thead>
                             <tr>
                                 <th>Cuenta</th>
@@ -234,6 +240,7 @@
     }
     .journal-lines {
         width: 100%;
+        table-layout: fixed;
         border-collapse: collapse;
         margin-bottom: 0;
     }
@@ -278,6 +285,7 @@
         background: #fbf7f7 !important;
         padding-top: 0.35rem;
         padding-bottom: 1rem;
+        max-width: 0;
     }
     .journal-account {
         color: #871f1f !important;
