@@ -28,7 +28,7 @@
             <thead class="table-light">
                 <tr>
                     <th>Comprobante</th>
-                    <th>Cupón POS</th>
+                    <th>Nro de transacción/cupón</th>
                     <th>Estudiante</th>
                     <th>Carrera</th>
                     <th>Tipo</th>

@@ -42,7 +42,7 @@ class AccountingDailyPaymentsController
         return SpreadsheetDownload::fromRows(
             'reporte-pagos-dia-'.$data['vista'].'-'.$filters['fechaDesde'].'-'.$filters['fechaHasta'].'.xlsx',
             [
-                'Comprobante', 'Cupón POS', 'Estudiante', 'Carrera', 'Tipo', 'Nº cuota', 'Fecha de pago',
+                'Comprobante', 'Nro de transacción/cupón', 'Estudiante', 'Carrera', 'Tipo', 'Nº cuota', 'Fecha de pago',
                 'Medio de pago', 'Monto del medio', 'Importe cuota pura', 'Int. financiación plan',
                 'Interés por mora', 'Otros intereses', 'Total línea', 'Observación / vínculo plan',
             ],

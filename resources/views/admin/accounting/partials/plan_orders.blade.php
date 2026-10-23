@@ -74,7 +74,7 @@
                             <th>Estado</th>
                             <th>Fecha de pago</th>
                             <th>Medio</th>
-                            <th>Cupón POS</th>
+                            <th>Nro de transacción/cupón</th>
                         </tr>
                     </thead>
                     <tbody>
