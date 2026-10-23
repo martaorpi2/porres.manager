@@ -1,12 +1,41 @@
+@once
+<style>
+    .entry-detail-panel {
+        margin-top: 0.75rem;
+        padding: 0.75rem 0.9rem 0.9rem;
+        background: #fff;
+        border: 1px solid #e7c4c4;
+        border-left: 4px solid #871f1f;
+        border-radius: 4px;
+    }
+    .entry-detail-caption {
+        margin-bottom: 0.65rem;
+        color: #871f1f;
+        font-weight: 700;
+    }
+</style>
+@endonce
 @if($entry->showsCollectionCoupons() || $entry->showsPaymentPlans())
-    <div class="journal-entry-actions mb-2">
+    <div class="journal-entry-actions">
+        <div class="mb-1">
+            @if($entry->showsCollectionCoupons())
+                <button type="button" class="btn btn-sm mb-2 me-2 mr-2" style="background:#871f1f;color:#fff;" data-coupons-url="{{ backpack_url('accounting-journal/'.$entry->id.'/coupons') }}" data-detail-target="entry-detail-{{ $entry->id }}-coupons" data-closed-label="Ver cupones" data-open-label="Ocultar cupones">Ver cupones</button>
+            @endif
+            @if($entry->showsPaymentPlans())
+                <button type="button" class="btn btn-sm mb-2" style="background:#1e2a4a;color:#fff;" data-coupons-url="{{ backpack_url('accounting-journal/'.$entry->id.'/plans') }}" data-detail-target="entry-detail-{{ $entry->id }}-plans" data-closed-label="Ver planes" data-open-label="Ocultar planes">Ver planes</button>
+            @endif
+        </div>
         @if($entry->showsCollectionCoupons())
-            <button type="button" class="btn btn-sm mb-2 me-2 mr-2" style="background:#871f1f;color:#fff;" data-coupons-url="{{ backpack_url('accounting-journal/'.$entry->id.'/coupons') }}" data-closed-label="Ver cupones" data-open-label="Ocultar cupones">Ver cupones</button>
-            <div class="entry-detail-panel mb-3" hidden></div>
+            <div id="entry-detail-{{ $entry->id }}-coupons" class="entry-detail-panel" hidden>
+                <p class="entry-detail-caption">Cupones del asiento {{ $entry->entry_number }}</p>
+                <div class="entry-detail-body"></div>
+            </div>
         @endif
         @if($entry->showsPaymentPlans())
-            <button type="button" class="btn btn-sm mb-2" style="background:#1e2a4a;color:#fff;" data-coupons-url="{{ backpack_url('accounting-journal/'.$entry->id.'/plans') }}" data-closed-label="Ver planes" data-open-label="Ocultar planes">Ver planes</button>
-            <div class="entry-detail-panel mb-3" hidden></div>
+            <div id="entry-detail-{{ $entry->id }}-plans" class="entry-detail-panel" hidden>
+                <p class="entry-detail-caption">Planes del asiento {{ $entry->entry_number }}</p>
+                <div class="entry-detail-body"></div>
+            </div>
         @endif
     </div>
 @endif

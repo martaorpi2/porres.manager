@@ -135,13 +135,16 @@
                                         <td class="text-end text-nowrap">{{ number_format((float) $line->credit, 2, ',', '.') }}</td>
                                     </tr>
                                 @endforeach
-                                <tr class="journal-asiento-end">
+                                @php
+                                    $hasEntryDetail = $entry->showsCollectionCoupons() || $entry->showsPaymentPlans();
+                                @endphp
+                                <tr class="{{ $hasEntryDetail ? 'journal-asiento-subtotal' : 'journal-asiento-end' }}">
                                     <td colspan="2">Totales</td>
                                     <td class="text-end">{{ number_format($debit, 2, ',', '.') }}</td>
                                     <td class="text-end">{{ number_format($credit, 2, ',', '.') }}</td>
                                 </tr>
-                                @if($entry->showsCollectionCoupons() || $entry->showsPaymentPlans())
-                                    <tr>
+                                @if($hasEntryDetail)
+                                    <tr class="journal-asiento-detail">
                                         <td colspan="4">
                                             @include('admin.accounting.partials.journal_entry_actions', ['entry' => $entry])
                                         </td>
@@ -260,9 +263,21 @@
         margin-left: 0.75rem;
         font-weight: 400;
     }
-    .journal-asiento-end td {
-        font-weight: 700;
+    .journal-asiento-end td,
+    .journal-asiento-detail td {
         border-bottom: 3px solid #871f1f !important;
+    }
+    .journal-asiento-end td,
+    .journal-asiento-subtotal td {
+        font-weight: 700;
+    }
+    .journal-asiento-subtotal td {
+        border-bottom: 1px solid #e6e8ee !important;
+    }
+    .journal-asiento-detail td {
+        background: #fbf7f7 !important;
+        padding-top: 0.35rem;
+        padding-bottom: 1rem;
     }
     .journal-account {
         color: #871f1f !important;

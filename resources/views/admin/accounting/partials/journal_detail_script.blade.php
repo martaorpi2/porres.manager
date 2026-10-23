@@ -5,10 +5,11 @@
             return;
         }
         event.preventDefault();
-        var panel = button.nextElementSibling;
+        var panel = document.getElementById(button.getAttribute('data-detail-target')) || button.nextElementSibling;
         if (!panel) {
             return;
         }
+        var body = panel.querySelector('.entry-detail-body') || panel;
         var open = panel.hidden;
         panel.hidden = !open;
         button.textContent = open
@@ -17,7 +18,7 @@
         if (!open || panel.getAttribute('data-loaded') === '1') {
             return;
         }
-        panel.innerHTML = '<p>Cargando…</p>';
+        body.innerHTML = '<p>Cargando…</p>';
         fetch(button.getAttribute('data-coupons-url'), { headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'text/html' }, credentials: 'same-origin' })
             .then(function (response) {
                 if (!response.ok) {
@@ -26,11 +27,11 @@
                 return response.text();
             })
             .then(function (html) {
-                panel.innerHTML = html;
+                body.innerHTML = html;
                 panel.setAttribute('data-loaded', '1');
             })
             .catch(function () {
-                panel.innerHTML = '<p>No se pudo cargar el detalle.</p>';
+                body.innerHTML = '<p>No se pudo cargar el detalle.</p>';
             });
     });
 </script>
