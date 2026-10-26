@@ -54,8 +54,7 @@ class QuotaAccountingService
      * Asienta una liquidación de Mercado Pago, Naranja X, Sol Pago o QR.
      * El asiento es uno por fecha, con los totales del archivo.
      * El archivo acredita el neto en el banco, la comisión al gasto y cancela la cuenta a cobrar.
-     * Si esa cobranza incluye cuotas de plan, también pasa el interés de financiación
-     * de «a devengar» a intereses ganados.
+     * El interés de financiación del plan se reconoce en la cobranza, no acá.
      *
      * @param  list<array{key: string, date: string, gross_cents: int, commission_cents: int, interest_cents: int, net_cents: int, document: string}>  $groups
      * @return list<AccountingEntry>
@@ -326,8 +325,8 @@ class QuotaAccountingService
         );
         $financingAccounts = $financing > 0
             ? $this->accountsForCodes([
+                QuotaPaymentAccounts::PLAN,
                 QuotaPaymentAccounts::PLAN_FINANCING_DEFERRED,
-                QuotaPaymentAccounts::PLAN_FINANCING_INCOME,
             ])
             : [];
         foreach (PaymentPlanAccreditationEntry::financingLines($financing) as $spec) {
@@ -1956,7 +1955,13 @@ class QuotaAccountingService
     private function planCollectionLines(array $group, array $accounts): array
     {
         $lines = [];
-        foreach (PaymentPlanCollectionEntry::lines($group['payment_type'], $group['plan'], $group['late']) as $spec) {
+        foreach (PaymentPlanCollectionEntry::lines(
+            $group['payment_type'],
+            $group['plan'],
+            $group['late'],
+            $group['financing'],
+            $group['surcharge'],
+        ) as $spec) {
             $lines[] = $this->line($accounts[$spec['code']], $spec['debit'], $spec['credit'], $spec['memo']);
         }
         if ($lines !== []) {
@@ -2189,6 +2194,7 @@ class QuotaAccountingService
             }
             $code = (string) $line->account->code;
             if (in_array($code, [
+                QuotaPaymentAccounts::PLAN,
                 QuotaPaymentAccounts::PLAN_FINANCING_DEFERRED,
                 QuotaPaymentAccounts::PLAN_FINANCING_INCOME,
             ], true)) {
@@ -2198,8 +2204,8 @@ class QuotaAccountingService
         }
         if ($financing > 0) {
             $accounts = $this->accountsForCodes([
+                QuotaPaymentAccounts::PLAN,
                 QuotaPaymentAccounts::PLAN_FINANCING_DEFERRED,
-                QuotaPaymentAccounts::PLAN_FINANCING_INCOME,
             ]);
             foreach (PaymentPlanAccreditationEntry::financingLines($financing) as $spec) {
                 if ($spec['debit'] > 0) {

@@ -127,7 +127,7 @@ final class AccreditationCollectionAlert
                 continue;
             }
             if (count($dates) === 1) {
-                $this->addHaber($perDate, $paymentType, $menu, $dates[0], $this->creditCents($entry), $accredited, (int) $entry->id);
+                $this->addHaber($perDate, $paymentType, $menu, $dates[0], $this->receivableCreditCents($entry, $paymentType), $accredited, (int) $entry->id);
 
                 continue;
             }
@@ -136,7 +136,7 @@ final class AccreditationCollectionAlert
                 $dates,
                 $accredited === '' ? [] : [$accredited],
                 $this->debitOfDates($paymentType, $dates),
-                $this->creditCents($entry),
+                $this->receivableCreditCents($entry, $paymentType),
                 $paymentType,
                 [(int) $entry->id],
             );
@@ -504,10 +504,14 @@ final class AccreditationCollectionAlert
         return $sum;
     }
 
-    private function creditCents(AccountingEntry $entry): int
+    private function receivableCreditCents(AccountingEntry $entry, string $paymentType): int
     {
+        $code = QuotaPaymentAccounts::bankCode($paymentType);
         $cents = 0;
         foreach ($entry->lines as $line) {
+            if ($code !== null && (string) $line->account?->code !== $code) {
+                continue;
+            }
             $cents += (int) round(((float) $line->credit) * 100);
         }
 

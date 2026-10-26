@@ -44,4 +44,17 @@ class PaymentPlanCollectionEntryTest extends TestCase
             ['code' => QuotaPaymentAccounts::LATE_INTEREST, 'debit' => 0, 'credit' => 500000, 'memo' => 'Intereses por mora'],
         ], $late);
     }
+
+    public function test_mercado_pago_plan_collection_includes_financing_and_the_payment_method_interest(): void
+    {
+        $lines = PaymentPlanCollectionEntry::lines('Mercado Pago', 12471187, 0, 256600, 1247119);
+
+        $this->assertSame([
+            ['code' => QuotaPaymentAccounts::MP_RECEIVABLE, 'debit' => 13718306, 'credit' => 0, 'memo' => 'Mercado Pago a cobrar'],
+            ['code' => QuotaPaymentAccounts::PLAN_FINANCING_DEFERRED, 'debit' => 256600, 'credit' => 0, 'memo' => 'Interés financiación a devengar'],
+            ['code' => QuotaPaymentAccounts::PLAN, 'debit' => 0, 'credit' => 12471187, 'memo' => 'Plan de pago deudores por cuota'],
+            ['code' => QuotaPaymentAccounts::PLAN_FINANCING_INCOME, 'debit' => 0, 'credit' => 256600, 'memo' => 'Intereses ganados por financiación'],
+            ['code' => QuotaPaymentAccounts::MP_SURCHARGE_INCOME, 'debit' => 0, 'credit' => 1247119, 'memo' => 'Recargo Mercado Pago'],
+        ], $lines);
+    }
 }
