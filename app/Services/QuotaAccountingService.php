@@ -54,7 +54,8 @@ class QuotaAccountingService
      * Asienta una liquidación de Mercado Pago, Naranja X, Sol Pago o QR.
      * El asiento es uno por fecha, con los totales del archivo.
      * El archivo acredita el neto en el banco, la comisión al gasto y cancela la cuenta a cobrar.
-     * El interés de financiación del plan se reconoce en la cobranza, no acá.
+     * Si esa cobranza incluye cuotas de plan, también pasa el interés de financiación
+     * de «a devengar» a intereses ganados.
      *
      * @param  list<array{key: string, date: string, gross_cents: int, commission_cents: int, interest_cents: int, net_cents: int, document: string}>  $groups
      * @return list<AccountingEntry>
@@ -325,8 +326,8 @@ class QuotaAccountingService
         );
         $financingAccounts = $financing > 0
             ? $this->accountsForCodes([
-                QuotaPaymentAccounts::PLAN,
                 QuotaPaymentAccounts::PLAN_FINANCING_DEFERRED,
+                QuotaPaymentAccounts::PLAN_FINANCING_INCOME,
             ])
             : [];
         foreach (PaymentPlanAccreditationEntry::financingLines($financing) as $spec) {
@@ -2204,8 +2205,8 @@ class QuotaAccountingService
         }
         if ($financing > 0) {
             $accounts = $this->accountsForCodes([
-                QuotaPaymentAccounts::PLAN,
                 QuotaPaymentAccounts::PLAN_FINANCING_DEFERRED,
+                QuotaPaymentAccounts::PLAN_FINANCING_INCOME,
             ]);
             foreach (PaymentPlanAccreditationEntry::financingLines($financing) as $spec) {
                 if ($spec['debit'] > 0) {
