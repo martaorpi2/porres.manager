@@ -4,10 +4,9 @@ namespace App\Services;
 
 /**
  * Cobranza de una cuota de plan de pago.
- * El medio a cobrar es la cuota pura, más el interés de financiación,
- * la mora y el interés del medio de pago.
- * El interés de financiación que quedó a devengar en el alta se debita
- * y pasa a intereses ganados. El plan baja por la cuota completa.
+ * Mercado Pago y QR: el medio a cobrar junta la cuota, la financiación y la comisión.
+ * En término va contra el plan. Fuera de término se agrega la mora en el haber.
+ * Los demás medios reconocen la financiación y la comisión en sus cuentas.
  */
 final class PaymentPlanCollectionEntry
 {
@@ -21,8 +20,15 @@ final class PaymentPlanCollectionEntry
         $lateCents = max(0, $lateCents);
         $financingCents = max(0, min($financingCents, $planCents));
         $surchargeCents = max(0, $surchargeCents);
+        if ($bank === null) {
+            return [];
+        }
+        if (self::foldsIntoThePlan($paymentType)) {
+            return self::foldedLines($bank, $paymentType, $planCents, $lateCents, $surchargeCents);
+        }
+
         $receivable = $planCents + $lateCents + $surchargeCents;
-        if ($bank === null || $receivable < 1) {
+        if ($receivable < 1) {
             return [];
         }
 
@@ -74,6 +80,48 @@ final class PaymentPlanCollectionEntry
         }
 
         return $lines;
+    }
+
+    /**
+     * @return list<array{code: string, debit: int, credit: int, memo: string}>
+     */
+    private static function foldedLines(string $bank, string $paymentType, int $planCents, int $lateCents, int $surchargeCents): array
+    {
+        $planCredit = $planCents + $surchargeCents;
+        $receivable = $planCredit + $lateCents;
+        if ($receivable < 1) {
+            return [];
+        }
+
+        $lines = [[
+            'code' => $bank,
+            'debit' => $receivable,
+            'credit' => 0,
+            'memo' => QuotaPaymentAccounts::receivableMemo($paymentType),
+        ]];
+        if ($planCredit > 0) {
+            $lines[] = [
+                'code' => QuotaPaymentAccounts::PLAN,
+                'debit' => 0,
+                'credit' => $planCredit,
+                'memo' => 'Plan de pago deudores por cuota',
+            ];
+        }
+        if ($lateCents > 0) {
+            $lines[] = [
+                'code' => QuotaPaymentAccounts::LATE_INTEREST,
+                'debit' => 0,
+                'credit' => $lateCents,
+                'memo' => 'Intereses por mora',
+            ];
+        }
+
+        return $lines;
+    }
+
+    private static function foldsIntoThePlan(string $paymentType): bool
+    {
+        return in_array(trim($paymentType), ['Mercado Pago', 'QR'], true);
     }
 
     private static function surchargeMemo(string $paymentType): string

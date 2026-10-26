@@ -51,10 +51,18 @@ class PaymentPlanCollectionEntryTest extends TestCase
 
         $this->assertSame([
             ['code' => QuotaPaymentAccounts::MP_RECEIVABLE, 'debit' => 13718306, 'credit' => 0, 'memo' => 'Mercado Pago a cobrar'],
-            ['code' => QuotaPaymentAccounts::PLAN_FINANCING_DEFERRED, 'debit' => 256600, 'credit' => 0, 'memo' => 'Interés financiación a devengar'],
-            ['code' => QuotaPaymentAccounts::PLAN, 'debit' => 0, 'credit' => 12471187, 'memo' => 'Plan de pago deudores por cuota'],
-            ['code' => QuotaPaymentAccounts::PLAN_FINANCING_INCOME, 'debit' => 0, 'credit' => 256600, 'memo' => 'Intereses ganados por financiación'],
-            ['code' => QuotaPaymentAccounts::MP_SURCHARGE_INCOME, 'debit' => 0, 'credit' => 1247119, 'memo' => 'Recargo Mercado Pago'],
+            ['code' => QuotaPaymentAccounts::PLAN, 'debit' => 0, 'credit' => 13718306, 'memo' => 'Plan de pago deudores por cuota'],
+        ], $lines);
+    }
+
+    public function test_a_late_mercado_pago_plan_collection_adds_only_late_interest_on_the_credit_side(): void
+    {
+        $lines = PaymentPlanCollectionEntry::lines('Mercado Pago', 10000000, 500000, 200000, 800000);
+
+        $this->assertSame([
+            ['code' => QuotaPaymentAccounts::MP_RECEIVABLE, 'debit' => 11300000, 'credit' => 0, 'memo' => 'Mercado Pago a cobrar'],
+            ['code' => QuotaPaymentAccounts::PLAN, 'debit' => 0, 'credit' => 10800000, 'memo' => 'Plan de pago deudores por cuota'],
+            ['code' => QuotaPaymentAccounts::LATE_INTEREST, 'debit' => 0, 'credit' => 500000, 'memo' => 'Intereses por mora'],
         ], $lines);
     }
 }
