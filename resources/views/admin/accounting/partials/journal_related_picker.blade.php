@@ -2,6 +2,7 @@
     $relatedEntries = $relatedEntries ?? collect();
     $paymentType = $paymentType ?? null;
     $excludeId = $excludeId ?? null;
+    $automaticRelatedIds = array_map('intval', (array) ($automaticRelatedIds ?? []));
 @endphp
 <div
     class="mb-3"
@@ -20,13 +21,25 @@
     @enderror
     <ul id="related-selected" class="related-selected">
         @foreach($relatedEntries as $related)
-            <li class="related-entry">
+            <li class="related-entry" @if(in_array((int) $related->id, $automaticRelatedIds, true)) data-automatic="1" @endif>
                 <input type="hidden" name="related_ids[]" value="{{ $related->id }}">
                 <span>{{ $related->relationLabel() }}</span>
                 <button type="button" class="btn journal-btn-remove related-remove">Quitar</button>
             </li>
         @endforeach
     </ul>
+</div>
+
+<div id="related-automatic-modal" class="related-modal" hidden>
+    <div class="related-modal-card" role="dialog" aria-modal="true" aria-labelledby="related-automatic-title">
+        <h2 id="related-automatic-title">Relación automática</h2>
+        <p id="related-automatic-lead" class="related-modal-lead"></p>
+        <p class="related-modal-note">Si la quitás, no se vuelve a crear sola. ¿Querés quitarla?</p>
+        <div class="related-modal-actions">
+            <button type="button" class="btn journal-btn-remove" id="related-automatic-cancel">Cancelar</button>
+            <button type="button" class="btn journal-btn-save" id="related-automatic-confirm">Quitar</button>
+        </div>
+    </div>
 </div>
 
 @once
@@ -82,6 +95,37 @@
     }
     .related-entry span { font-size: 0.92rem; }
     .related-selected:empty { display: none; }
+    .related-modal {
+        position: fixed;
+        inset: 0;
+        z-index: 10850;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 1.5rem;
+        background: rgba(16, 24, 40, 0.45);
+    }
+    .related-modal[hidden] { display: none; }
+    .related-modal-card {
+        width: min(32rem, 100%);
+        background: #fff;
+        border-radius: 8px;
+        padding: 1.25rem 1.4rem;
+        box-shadow: 0 12px 40px rgba(16, 24, 40, 0.2);
+        color: #1e2a4a;
+    }
+    .related-modal-card h2 {
+        font-size: 1.15rem;
+        font-weight: 700;
+        margin-bottom: 0.75rem;
+    }
+    .related-modal-lead,
+    .related-modal-note { margin-bottom: 0.75rem; }
+    .related-modal-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 0.5rem;
+    }
 </style>
 @endonce
 
@@ -98,6 +142,18 @@
         var paymentType = root.getAttribute('data-payment-type') || '';
         var exclude = root.getAttribute('data-exclude') || '';
         var timer = null;
+        var modal = document.getElementById('related-automatic-modal');
+        var lead = document.getElementById('related-automatic-lead');
+        var pendingRow = null;
+
+        if (modal && modal.parentNode !== document.body) {
+            document.body.appendChild(modal);
+        }
+
+        function closeAutomaticModal() {
+            pendingRow = null;
+            if (modal) modal.hidden = true;
+        }
 
         function selectedIds() {
             return Array.prototype.map.call(selected.querySelectorAll('input[name="related_ids[]"]'), function (field) {
@@ -199,8 +255,31 @@
         selected.addEventListener('click', function (event) {
             var button = event.target.closest('.related-remove');
             if (!button) return;
-            button.closest('.related-entry').remove();
+            var row = button.closest('.related-entry');
+            if (row.getAttribute('data-automatic') === '1' && modal && lead) {
+                pendingRow = row;
+                var label = (row.querySelector('span') || {}).textContent || 'este asiento';
+                lead.textContent = 'La relación con ' + label.trim() + ' se generó automáticamente.';
+                modal.hidden = false;
+                var cancel = document.getElementById('related-automatic-cancel');
+                if (cancel) cancel.focus();
+                return;
+            }
+            row.remove();
         });
+        if (modal) {
+            document.getElementById('related-automatic-cancel').addEventListener('click', closeAutomaticModal);
+            document.getElementById('related-automatic-confirm').addEventListener('click', function () {
+                if (pendingRow) pendingRow.remove();
+                closeAutomaticModal();
+            });
+            modal.addEventListener('click', function (event) {
+                if (event.target === modal) closeAutomaticModal();
+            });
+            document.addEventListener('keydown', function (event) {
+                if (event.key === 'Escape' && modal && !modal.hidden) closeAutomaticModal();
+            });
+        }
         document.addEventListener('click', function (event) {
             if (!root.contains(event.target)) results.hidden = true;
         });

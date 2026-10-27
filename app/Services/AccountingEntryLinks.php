@@ -6,6 +6,7 @@ use App\Models\AccountingEntry;
 use App\Models\QuotaAccountingBatch;
 use App\Services\PaymentSettlement\PaymentSettlementChannels;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 
 class AccountingEntryLinks
 {
@@ -40,7 +41,11 @@ class AccountingEntryLinks
             ? []
             : $this->collectionEntryIds((string) $definition['payment_type'], $dates, $entry->id);
 
-        $entry->relatedEntries()->sync($ids);
+        $sync = [];
+        foreach ($ids as $id) {
+            $sync[$id] = ['automatic' => true];
+        }
+        $entry->relatedEntries()->sync($sync);
     }
 
     /**
@@ -133,6 +138,64 @@ class AccountingEntryLinks
     }
 
     /**
+     * @return list<int>
+     */
+    public static function automaticIds(AccountingEntry $entry): array
+    {
+        return $entry->relatedEntries()
+            ->wherePivot('automatic', true)
+            ->pluck('accounting_entries.id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+    }
+
+    /**
+     * Marca los vínculos que ya coinciden con una acreditación automática.
+     */
+    public function markAutomaticLinks(): void
+    {
+        QuotaAccountingBatch::query()
+            ->whereIn('kind', [
+                QuotaAccountingBatch::KIND_MP_SETTLEMENT,
+                QuotaAccountingBatch::KIND_NX_SETTLEMENT,
+                QuotaAccountingBatch::KIND_SOL_SETTLEMENT,
+                QuotaAccountingBatch::KIND_QR_SETTLEMENT,
+            ])
+            ->whereNotNull('accounting_entry_id')
+            ->with(['entry', 'collectionDates'])
+            ->orderBy('id')
+            ->chunkById(100, function ($batches) {
+                foreach ($batches as $batch) {
+                    $entry = $batch->entry;
+                    if ($entry === null) {
+                        continue;
+                    }
+                    $definition = PaymentSettlementChannels::forBatchKind((string) $batch->kind);
+                    if ($definition === null) {
+                        continue;
+                    }
+                    $dates = $batch->collectionDates
+                        ->map(fn ($row) => $row->collected_on?->toDateString())
+                        ->filter()
+                        ->unique()
+                        ->values()
+                        ->all();
+                    if ($dates === []) {
+                        continue;
+                    }
+                    $ids = $this->collectionEntryIds((string) $definition['payment_type'], $dates, $entry->id);
+                    if ($ids === []) {
+                        continue;
+                    }
+                    DB::table('accounting_entry_links')
+                        ->where('accounting_entry_id', $entry->id)
+                        ->whereIn('related_entry_id', $ids)
+                        ->update(['automatic' => true]);
+                }
+            });
+    }
+
+    /**
      * @param  list<mixed>  $raw
      */
     public static function replace(AccountingEntry $entry, array $raw): void
@@ -141,7 +204,13 @@ class AccountingEntryLinks
         foreach ($raw as $id) {
             $ids[] = (int) $id;
         }
-        $entry->relatedEntries()->sync(array_values(array_unique($ids)));
+        $ids = array_values(array_unique($ids));
+        $automatic = array_fill_keys(self::automaticIds($entry), true);
+        $sync = [];
+        foreach ($ids as $id) {
+            $sync[$id] = ['automatic' => isset($automatic[$id])];
+        }
+        $entry->relatedEntries()->sync($sync);
     }
 
     /**

@@ -63,6 +63,7 @@
                         'relatedEntries' => $relatedEntries,
                         'paymentType' => $paymentType,
                         'excludeId' => $entry->id,
+                        'automaticRelatedIds' => $automaticRelatedIds ?? [],
                     ])
 
                     <div class="table-responsive">

@@ -63,7 +63,17 @@ final class AccountingEntryEditor
             return self::fail('El debe ('.self::pesos($debit).') y el haber ('.self::pesos($credit).') no coinciden. No se guardaron los cambios.');
         }
 
-        return ['lines' => $lines, 'error' => null];
+        $debits = [];
+        $credits = [];
+        foreach ($lines as $line) {
+            if (self::cents($line['debit']) > 0) {
+                $debits[] = $line;
+            } else {
+                $credits[] = $line;
+            }
+        }
+
+        return ['lines' => array_merge($debits, $credits), 'error' => null];
     }
 
     /**

@@ -158,6 +158,7 @@ class AccountingEntry extends Model
     public function relatedEntries(): BelongsToMany
     {
         return $this->belongsToMany(self::class, 'accounting_entry_links', 'accounting_entry_id', 'related_entry_id')
+            ->withPivot('automatic')
             ->withTimestamps()
             ->orderBy('accounting_entries.date')
             ->orderBy('accounting_entries.id');

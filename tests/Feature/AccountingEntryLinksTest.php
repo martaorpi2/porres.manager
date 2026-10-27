@@ -81,6 +81,7 @@ class AccountingEntryLinksTest extends TestCase
             $edit->assertOk();
             $edit->assertSee($first->relationLabel());
             $edit->assertSee('name="related_ids[]"', false);
+            $edit->assertDontSee('data-automatic="1"', false);
 
             $updated = $this->actingAs($user, 'backpack')->put('/admin/accounting-journal/'.$created->id, [
                 'date' => '2099-05-20',
@@ -166,6 +167,33 @@ class AccountingEntryLinksTest extends TestCase
                 $entries[0]->relatedEntries()->pluck('accounting_entries.id')->all()
             );
             $this->assertFalse($other->citingEntries()->where('accounting_entries.id', $entryId)->exists());
+            $flags = DB::table('accounting_entry_links')
+                ->where('accounting_entry_id', $entryId)
+                ->pluck('automatic', 'related_entry_id');
+            $this->assertSame(1, (int) $flags[$may->id]);
+            $this->assertSame(1, (int) $flags[$june->id]);
+
+            AccountingEntryLinks::replace($entries[0], [$may->id, $other->id]);
+            $flags = DB::table('accounting_entry_links')
+                ->where('accounting_entry_id', $entryId)
+                ->pluck('automatic', 'related_entry_id');
+            $this->assertEqualsCanonicalizing(
+                [$may->id, $other->id],
+                $flags->keys()->map(fn ($id) => (int) $id)->all()
+            );
+            $this->assertSame(1, (int) $flags[$may->id]);
+            $this->assertSame(0, (int) $flags[$other->id]);
+            app(AccountingEntryLinks::class)->syncFromCollectionDates(
+                QuotaAccountingBatch::query()->where('batch_key', 'mercadopago:2099-06-20:'.$suffix)->first()
+            );
+
+            $user = User::query()->get()->first(fn (User $candidate) => $candidate->canViewAccounting() && ! $candidate->hasAdministradoraInstitucionRole());
+            $this->assertNotNull($user);
+            $edit = $this->actingAs($user, 'backpack')->get('/admin/accounting-journal/'.$entryId.'/edit');
+            $edit->assertOk();
+            $edit->assertSee('data-automatic="1"', false);
+            $edit->assertSee('se generó automáticamente', false);
+            $edit->assertSee('Si la quitás, no se vuelve a crear sola.', false);
 
             $entries[0]->update(['manually_adjusted' => true]);
             $entries[0]->relatedEntries()->sync([$may->id]);

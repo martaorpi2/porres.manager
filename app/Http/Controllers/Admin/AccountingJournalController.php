@@ -243,6 +243,7 @@ class AccountingJournalController extends CrudController
             'accountSides' => $this->accountSides($accounts),
             'openPeriods' => $this->openPeriods(),
             'relatedEntries' => $this->selectedRelated($request, $accountingEntry),
+            'automaticRelatedIds' => AccountingEntryLinks::automaticIds($accountingEntry),
             'paymentType' => $this->settlementPaymentType($accountingEntry),
             'returnQuery' => $this->returnQuery($request),
             'title' => 'Modificar '.$accountingEntry->entry_number,

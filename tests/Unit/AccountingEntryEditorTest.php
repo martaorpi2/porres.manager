@@ -19,6 +19,23 @@ class AccountingEntryEditorTest extends TestCase
         $this->assertSame('100.50', $result['lines'][1]['credit']);
     }
 
+    public function test_debit_lines_are_stored_above_credit_lines(): void
+    {
+        $result = AccountingEntryEditor::prepare([
+            ['accounting_account_id' => 9, 'debit' => '0', 'credit' => '40'],
+            ['accounting_account_id' => 1, 'debit' => '25', 'credit' => '0'],
+            ['accounting_account_id' => 8, 'debit' => '0', 'credit' => '60'],
+            ['accounting_account_id' => 2, 'debit' => '75', 'credit' => '0'],
+        ]);
+
+        $this->assertNull($result['error']);
+        $this->assertSame([1, 2, 9, 8], array_column($result['lines'], 'accounting_account_id'));
+        $this->assertSame('25.00', $result['lines'][0]['debit']);
+        $this->assertSame('75.00', $result['lines'][1]['debit']);
+        $this->assertSame('40.00', $result['lines'][2]['credit']);
+        $this->assertSame('60.00', $result['lines'][3]['credit']);
+    }
+
     public function test_an_unbalanced_entry_is_rejected(): void
     {
         $result = AccountingEntryEditor::prepare([
