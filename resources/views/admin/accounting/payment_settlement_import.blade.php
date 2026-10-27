@@ -124,6 +124,9 @@
                                     <th class="text-end">Cargos e impuestos</th>
                                     <th class="text-end">Intereses</th>
                                     <th class="text-end">Total a recibir</th>
+                                    @if(in_array($channel, ['naranja', 'sol', 'qr'], true))
+                                        <th>Nro de cupón POSNET</th>
+                                    @endif
                                     <th>Resultado</th>
                                 </tr>
                             </thead>
@@ -136,7 +139,7 @@
                                             'already_posted' => 'Ya registrada',
                                             'adjusted' => 'Modificado a mano',
                                             'unbalanced' => 'No cierra',
-                                            'invalid' => 'Fecha inválida',
+                                            'invalid' => str_contains((string) ($row['detail'] ?? ''), 'cupón') ? 'Falta el cupón' : 'Fecha inválida',
                                         ][$row['outcome']] ?? $row['outcome'];
                                     @endphp
                                     <tr>
@@ -146,6 +149,9 @@
                                         <td class="text-end text-nowrap">{{ $money($row['commission_cents']) }}</td>
                                         <td class="text-end text-nowrap">{{ $money($row['interest_cents']) }}</td>
                                         <td class="text-end text-nowrap">{{ $money($row['net_cents']) }}</td>
+                                        @if(in_array($channel, ['naranja', 'sol', 'qr'], true))
+                                            <td>{{ ($row['coupon'] ?? '') !== '' ? $row['coupon'] : '—' }}</td>
+                                        @endif
                                         <td>
                                             <strong>{{ $outcomeLabel }}</strong>
                                             <div class="text-muted small">{{ $row['detail'] }}</div>

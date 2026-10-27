@@ -19,8 +19,10 @@ final class PaymentSettlementExcel
         $rows = [];
         $buckets = [];
 
-        foreach ($this->sheet->read($path, true) as $sale) {
-            $row = $this->classify($sale);
+        $matchCoupons = PaymentSettlementChannels::matchesPosCoupons($channel);
+
+        foreach ($this->sheet->read($path, true, $matchCoupons) as $sale) {
+            $row = $this->classify($sale, $matchCoupons);
             $date = (string) ($row['date'] ?? '');
             $row['group_key'] = $row['outcome'] === 'ready' && $date !== '' ? $channel.':'.$date : '';
             if ($row['outcome'] === 'ready') {
@@ -41,7 +43,7 @@ final class PaymentSettlementExcel
                 $collected = (string) $item['collected_on'];
                 $collectedAmounts[$collected] = ($collectedAmounts[$collected] ?? 0) + (int) $item['gross_cents'];
             }
-            $groups[] = [
+            $group = [
                 'key' => $key,
                 'date' => $items[0]['date'],
                 'collected_on' => $collectedOn,
@@ -55,20 +57,32 @@ final class PaymentSettlementExcel
                     $collectedOn,
                 )),
             ];
+            if ($matchCoupons) {
+                $coupons = [];
+                foreach ($items as $item) {
+                    $coupon = trim((string) ($item['coupon'] ?? ''));
+                    if ($coupon !== '') {
+                        $coupons[$coupon] = $coupon;
+                    }
+                }
+                $group['coupons'] = array_values($coupons);
+            }
+            $groups[] = $group;
         }
 
         return ['rows' => $rows, 'groups' => $groups];
     }
 
     /**
-     * @param  array{date: string, collected_on: string|null, gross_cents: int, commission_cents: int, interest_cents: int, net_cents: int}  $sale
+     * @param  array{date: string, collected_on: string|null, gross_cents: int, commission_cents: int, interest_cents: int, net_cents: int, coupon?: string}  $sale
      * @return array<string, mixed>
      */
-    private function classify(array $sale): array
+    private function classify(array $sale, bool $requireCoupon): array
     {
         $row = [
             'date' => $sale['date'],
             'collected_on' => $sale['collected_on'],
+            'coupon' => trim((string) ($sale['coupon'] ?? '')),
             'gross_cents' => $sale['gross_cents'],
             'commission_cents' => $sale['commission_cents'],
             'interest_cents' => $sale['interest_cents'],
@@ -87,6 +101,13 @@ final class PaymentSettlementExcel
         if ($sale['collected_on'] === null) {
             $row['outcome'] = 'invalid';
             $row['detail'] = 'Falta la fecha de cobro.';
+
+            return $row;
+        }
+
+        if ($requireCoupon && $row['coupon'] === '') {
+            $row['outcome'] = 'invalid';
+            $row['detail'] = 'Falta el nro de cupón.';
 
             return $row;
         }

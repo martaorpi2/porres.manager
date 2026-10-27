@@ -32,6 +32,7 @@ class QuotaAccountingBatch extends Model
 
     protected $casts = [
         'entry_date' => 'date',
+        'matched_by_coupon' => 'boolean',
     ];
 
     public function entry(): BelongsTo

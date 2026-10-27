@@ -30,6 +30,12 @@ class AccountingEntryLinks
             return;
         }
 
+        if ($batch->matched_by_coupon) {
+            $this->syncFromAccreditedOrders($batch);
+
+            return;
+        }
+
         $dates = $batch->collectionDates
             ->map(fn ($row) => $row->collected_on?->toDateString())
             ->filter()
@@ -44,6 +50,30 @@ class AccountingEntryLinks
         $sync = [];
         foreach ($ids as $id) {
             $sync[$id] = ['automatic' => true];
+        }
+        $entry->relatedEntries()->sync($sync);
+    }
+
+    /**
+     * Relaciona la acreditación con las cobranzas que tienen los cupones guardados.
+     */
+    public function syncFromAccreditedOrders(QuotaAccountingBatch $batch): void
+    {
+        $batch->loadMissing('entry');
+        $entry = $batch->entry;
+        if ($entry === null || $entry->status !== AccountingEntry::STATUS_POSTED || $entry->manually_adjusted) {
+            return;
+        }
+
+        $orderIds = $batch->orders()
+            ->pluck('eporres_order_id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+        $sync = [];
+        foreach (PosCouponOrders::collectionEntryIds($orderIds) as $id) {
+            if ($id !== $entry->id) {
+                $sync[$id] = ['automatic' => true];
+            }
         }
         $entry->relatedEntries()->sync($sync);
     }

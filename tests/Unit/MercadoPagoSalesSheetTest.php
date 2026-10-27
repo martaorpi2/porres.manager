@@ -72,6 +72,29 @@ class MercadoPagoSalesSheetTest extends TestCase
         $this->assertSame('2026-10-02', $rows[0]['date']);
     }
 
+    public function test_reads_the_pos_coupon_and_requires_the_column(): void
+    {
+        $path = $this->workbook([
+            ['Fecha de cobro', 'Fecha de acreditación', 'Nro de cupón POSNET', 'Cobro', 'Cargos e impuestos', 'Total a recibir'],
+            ['01/10/2026', '02/10/2026', '00077881', '1000', '8', '992'],
+        ]);
+
+        $rows = (new MercadoPagoSalesSheet)->read($path, true, true);
+
+        $this->assertSame('77881', ltrim($rows[0]['coupon'], '0'));
+        $this->assertSame('00077881', $rows[0]['coupon']);
+
+        $withoutCoupon = $this->workbook([
+            ['Fecha de cobro', 'Fecha de acreditación', 'Cobro', 'Cargos e impuestos', 'Total a recibir'],
+            ['01/10/2026', '02/10/2026', '1000', '8', '992'],
+        ]);
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('nro de cupón');
+
+        (new MercadoPagoSalesSheet)->read($withoutCoupon, true, true);
+    }
+
     public function test_settlement_read_requires_the_collection_date_column(): void
     {
         $path = $this->workbook([

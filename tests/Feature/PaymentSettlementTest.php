@@ -40,6 +40,7 @@ class PaymentSettlementTest extends TestCase
         $chooser->assertSee('QR');
         $chooser->assertSee('El nombre es estricto');
         $chooser->assertSee('Fecha de cobro');
+        $chooser->assertSee('Nro de cupón POSNET');
         $chooser->assertSee('Fecha de acreditación');
         $chooser->assertDontSee('Fecha de la compra');
         $chooser->assertDontSee('tiene que quedar en 0');
@@ -804,6 +805,104 @@ class PaymentSettlementTest extends TestCase
     /**
      * @return array{0: AccountingEntry, 1: QuotaAccountingBatch}
      */
+    public function test_a_card_accreditation_links_the_collection_of_the_pos_coupon(): void
+    {
+        $user = $this->accountingUser();
+        $order = DB::connection('eporres')->table('orders')->orderByDesc('id')->first();
+        $this->assertNotNull($order);
+        $debitEntry = null;
+        $debitBatch = null;
+        $otherEntry = null;
+        $otherBatch = null;
+        $postedId = null;
+        $createdDebit = false;
+        $couponKey = null;
+
+        DB::connection('eporres')->beginTransaction();
+        DB::beginTransaction();
+        try {
+            DB::connection('eporres')->table('orders')->where('id', $order->id)->update([
+                'payment_type' => 'Tarjeta de Débito',
+                'payment_id' => '00077881',
+            ]);
+            $stored = QuotaAccountingOrder::query()
+                ->where('role', QuotaAccountingBatch::KIND_COLLECTION)
+                ->where('eporres_order_id', $order->id)
+                ->first();
+            if ($stored !== null) {
+                $debitBatch = $stored->batch;
+                $debitEntry = $debitBatch?->entry;
+            } else {
+                $createdDebit = true;
+                [$debitEntry, $debitBatch] = $this->collectionEntry('Tarjeta de Débito', '2099-04-01', '1000.00');
+                QuotaAccountingOrder::query()->create([
+                    'quota_accounting_batch_id' => $debitBatch->id,
+                    'role' => QuotaAccountingBatch::KIND_COLLECTION,
+                    'eporres_order_id' => $order->id,
+                    'debtors_amount' => '1000.00',
+                    'interest_amount' => '0.00',
+                    'bank_amount' => '1000.00',
+                    'financing_amount' => '0.00',
+                ]);
+            }
+            $this->assertNotNull($debitEntry);
+            $collected = $debitEntry->date?->format('d/m/Y') ?? '01/04/2099';
+            [$otherEntry, $otherBatch] = $this->collectionEntry('Tarjeta Naranja', $debitEntry->date?->toDateString() ?? '2099-04-01', '1000.00');
+            $otherBatch->update(['batch_key' => 'collection:coupon-test:Tarjeta Naranja:other']);
+
+            $preview = $this->actingAs($user, 'backpack')->post('/admin/accounting-settlement/naranja/preview', [
+                'archivo' => $this->excel('naranja-cupon.xlsx', [
+                    ['Fecha de cobro', 'Fecha de acreditación', 'Nro de cupón', 'Cobro', 'Cargos e impuestos', 'Total a recibir'],
+                    [$collected, '02/04/2099', '00077881', '1000', '0', '1000'],
+                    [$collected, '02/04/2099', '999000111', '100', '0', '100'],
+                ]),
+            ]);
+            $preview->assertOk();
+            $preview->assertSee('El cupón 00077881 corresponde al asiento '.$debitEntry->entry_number.'.', false);
+            $preview->assertSee('El cupón 999000111 no está en las cobranzas.', false);
+            $preview->assertDontSee($otherEntry->entry_number);
+
+            $couponKey = 'naranja:coupon-test:'.substr(uniqid(), -6);
+            $entries = app(QuotaAccountingService::class)->postImportedPaymentSettlements('naranja', [[
+                'key' => $couponKey,
+                'date' => '2099-04-02',
+                'collected_on' => ['2099-04-01'],
+                'collected_amounts' => ['2099-04-01' => 100000],
+                'gross_cents' => 100000,
+                'commission_cents' => 0,
+                'interest_cents' => 0,
+                'net_cents' => 100000,
+                'document' => '01/04/2099',
+                'coupons' => ['00077881'],
+            ]]);
+            $this->assertCount(1, $entries);
+            $postedId = $entries[0]->id;
+            $this->assertSame(
+                [$debitEntry->id],
+                $entries[0]->relatedEntries()->pluck('accounting_entries.id')->map(fn ($id) => (int) $id)->all()
+            );
+            $this->assertTrue($entries[0]->batch->matched_by_coupon);
+        } finally {
+            if (DB::transactionLevel() > 0) {
+                DB::rollBack();
+            }
+            if (DB::connection('eporres')->transactionLevel() > 0) {
+                DB::connection('eporres')->rollBack();
+            }
+            $createdIds = array_filter([$postedId, $createdDebit ? $debitEntry?->id : null, $otherEntry?->id]);
+            foreach ($createdIds as $id) {
+                if (AccountingEntry::query()->whereKey($id)->exists()) {
+                    AccountingEntry::query()->whereKey($id)->delete();
+                }
+            }
+            QuotaAccountingBatch::query()->whereIn('id', array_filter([
+                $createdDebit ? $debitBatch?->id : null,
+                $otherBatch?->id,
+            ]))->delete();
+            QuotaAccountingBatch::query()->where('batch_key', $couponKey ?? '')->delete();
+        }
+    }
+
     private function collectionEntry(string $paymentType, string $date, string $debit): array
     {
         $account = AccountingAccount::query()
@@ -865,6 +964,16 @@ class PaymentSettlementTest extends TestCase
      */
     private function excel(string $name, array $grid): UploadedFile
     {
+        if (isset($grid[0]) && is_array($grid[0]) && ! in_array('Nro de cupón', $grid[0], true) && ! str_contains($name, 'mp')) {
+            $grid[0][] = 'Nro de cupón';
+            foreach ($grid as $index => $row) {
+                if ($index === 0 || ! is_array($row)) {
+                    continue;
+                }
+                $row[] = 'C'.$index;
+                $grid[$index] = $row;
+            }
+        }
         $spreadsheet = new Spreadsheet;
         $spreadsheet->getActiveSheet()->fromArray($grid, null, 'A1');
         $path = tempnam(sys_get_temp_dir(), 'acred-');

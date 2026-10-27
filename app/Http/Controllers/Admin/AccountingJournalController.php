@@ -397,13 +397,20 @@ class AccountingJournalController extends CrudController
             abort(404);
         }
 
-        $entryIds = in_array($accountingEntry->kind, AccountingEntry::accreditationKinds(), true)
-            ? $this->linkedEntryIds($accountingEntry, [AccountingEntry::KIND_QUOTA_COLLECTION])
-            : [$accountingEntry->id];
+        $accountingEntry->loadMissing('batch');
+        $matchedOrders = $this->accreditedOrderIds($accountingEntry);
         $planInstallments = $accountingEntry->kind === AccountingEntry::KIND_QUOTA_PLAN_COLLECTION;
+        if ($matchedOrders !== null) {
+            $orderIds = $matchedOrders;
+        } else {
+            $entryIds = in_array($accountingEntry->kind, AccountingEntry::accreditationKinds(), true)
+                ? $this->linkedEntryIds($accountingEntry, [AccountingEntry::KIND_QUOTA_COLLECTION])
+                : [$accountingEntry->id];
+            $orderIds = $this->orderIdsOf($entryIds);
+        }
 
         return view('admin.accounting.partials.daily_payment_orders', $report->forOrderIds(
-            PosCouponOrders::expand($this->orderIdsOf($entryIds), $planInstallments)
+            PosCouponOrders::expand($orderIds, $planInstallments)
         ));
     }
 
@@ -414,10 +421,18 @@ class AccountingJournalController extends CrudController
             abort(404);
         }
 
+        $accountingEntry->loadMissing('batch');
         $entryIds = in_array($accountingEntry->kind, AccountingEntry::accreditationKinds(), true)
             ? $this->linkedEntryIds($accountingEntry, [AccountingEntry::KIND_QUOTA_PLAN_COLLECTION])
             : [$accountingEntry->id];
         $stored = $this->mergedPlanOrders($entryIds);
+        $matchedOrders = $this->accreditedOrderIds($accountingEntry);
+        if ($matchedOrders !== null) {
+            $stored = array_values(array_filter(
+                $stored,
+                fn (array $row) => in_array((int) $row['id'], $matchedOrders, true),
+            ));
+        }
         $known = array_map('intval', array_column($stored, 'id'));
         foreach (PosCouponOrders::expand($known, true) as $orderId) {
             if (! in_array($orderId, $known, true)) {
@@ -520,6 +535,24 @@ class AccountingJournalController extends CrudController
             ->map(fn ($id) => (int) $id)
             ->unique()
             ->values()
+            ->all();
+    }
+
+    /**
+     * Cupones de la acreditación cruzados con payment_id. Null si esta acreditación se sigue armando por fecha.
+     *
+     * @return list<int>|null
+     */
+    private function accreditedOrderIds(AccountingEntry $entry): ?array
+    {
+        $batch = $entry->batch;
+        if ($batch === null || ! $batch->matched_by_coupon) {
+            return null;
+        }
+
+        return $batch->orders()
+            ->pluck('eporres_order_id')
+            ->map(fn ($id) => (int) $id)
             ->all();
     }
 

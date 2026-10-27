@@ -14,9 +14,9 @@ use RuntimeException;
 final class MercadoPagoSalesSheet
 {
     /**
-     * @return list<array{date: string, collected_on: string|null, gross_cents: int, commission_cents: int, interest_cents: int, net_cents: int}>
+     * @return list<array{date: string, collected_on: string|null, gross_cents: int, commission_cents: int, interest_cents: int, net_cents: int, coupon: string}>
      */
-    public function read(string $path, bool $requireCollectedOn = false): array
+    public function read(string $path, bool $requireCollectedOn = false, bool $requireCoupon = false): array
     {
         try {
             $workbook = IOFactory::load($path);
@@ -25,7 +25,7 @@ final class MercadoPagoSalesSheet
         }
 
         foreach ($workbook->getAllSheets() as $sheet) {
-            $parsed = $this->readSheet($sheet, $requireCollectedOn);
+            $parsed = $this->readSheet($sheet, $requireCollectedOn, $requireCoupon);
             if ($parsed !== null) {
                 return $parsed;
             }
@@ -35,14 +35,17 @@ final class MercadoPagoSalesSheet
         if ($requireCollectedOn) {
             $columns = 'fecha de cobro, '.$columns;
         }
+        if ($requireCoupon) {
+            $columns .= ' y nro de cupón POSNET';
+        }
 
         throw new RuntimeException('El Excel no tiene las columnas de acreditación: '.$columns.'.');
     }
 
     /**
-     * @return list<array{date: string, collected_on: string|null, gross_cents: int, commission_cents: int, interest_cents: int, net_cents: int}>|null
+     * @return list<array{date: string, collected_on: string|null, gross_cents: int, commission_cents: int, interest_cents: int, net_cents: int, coupon: string}>|null
      */
-    private function readSheet(\PhpOffice\PhpSpreadsheet\Worksheet\Worksheet $sheet, bool $requireCollectedOn): ?array
+    private function readSheet(\PhpOffice\PhpSpreadsheet\Worksheet\Worksheet $sheet, bool $requireCollectedOn, bool $requireCoupon): ?array
     {
         $headerRow = null;
         $columns = [];
@@ -59,7 +62,8 @@ final class MercadoPagoSalesSheet
                 }
             }
             if (isset($found['date'], $found['gross'], $found['commission'], $found['net'])
-                && (! $requireCollectedOn || isset($found['collected_on']))) {
+                && (! $requireCollectedOn || isset($found['collected_on']))
+                && (! $requireCoupon || isset($found['coupon']))) {
                 $headerRow = $row;
                 $columns = $found;
                 break;
@@ -89,6 +93,7 @@ final class MercadoPagoSalesSheet
                 'commission_cents' => $commission,
                 'interest_cents' => $interest,
                 'net_cents' => $net,
+                'coupon' => isset($columns['coupon']) ? $this->coupon($cells[$columns['coupon']] ?? null) : '',
             ];
         }
 
@@ -108,6 +113,7 @@ final class MercadoPagoSalesSheet
             'intereses' => 'interest',
             'interes' => 'interest',
             'total a recibir' => 'net',
+            'cupon', 'nro de cupon', 'nro de cupon posnet', 'numero de cupon', 'nro de transaccion', 'numero de transaccion' => 'coupon',
             default => null,
         };
     }
@@ -134,6 +140,18 @@ final class MercadoPagoSalesSheet
         }
 
         return sprintf('%04d-%02d-%02d', (int) $match[3], (int) $match[2], (int) $match[1]);
+    }
+
+    private function coupon(mixed $value): string
+    {
+        if (is_int($value)) {
+            return (string) $value;
+        }
+        if (is_float($value)) {
+            return number_format($value, 0, '', '');
+        }
+
+        return trim((string) $value);
     }
 
     private function cents(mixed $value): int

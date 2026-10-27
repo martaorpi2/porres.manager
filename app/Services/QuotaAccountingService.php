@@ -201,6 +201,10 @@ class QuotaAccountingService
                 }
             }
             $batch->unsetRelation('collectionDates');
+            $definition = PaymentSettlementChannels::forBatchKind((string) $batch->kind);
+            if ($definition !== null && ! empty($definition['match_coupons']) && array_key_exists('coupons', $group)) {
+                $this->storeAccreditedCoupons($batch, (array) $group['coupons'], (array) ($definition['pos_payment_types'] ?? []));
+            }
             $this->syncAccreditationDescription($batch);
             app(AccountingEntryLinks::class)->syncFromCollectionDates($batch);
         }
@@ -238,6 +242,78 @@ class QuotaAccountingService
 
         $entry->description = $description;
         $entry->save();
+    }
+
+    /**
+     * @param  list<mixed>  $coupons
+     * @param  list<string>  $paymentTypes
+     */
+    private function storeAccreditedCoupons(QuotaAccountingBatch $batch, array $coupons, array $paymentTypes): void
+    {
+        $normalized = [];
+        foreach ($coupons as $coupon) {
+            if (! is_string($coupon) && ! is_int($coupon)) {
+                continue;
+            }
+            $coupon = PosCouponOrders::normalize((string) $coupon);
+            if ($coupon !== '') {
+                $normalized[$coupon] = $coupon;
+            }
+        }
+
+        $orderIds = [];
+        foreach (PosCouponOrders::matchingIds(array_values($normalized), $paymentTypes) as $ids) {
+            foreach ($ids as $id) {
+                $orderIds[$id] = $id;
+            }
+        }
+        $orderIds = array_values($orderIds);
+
+        $others = QuotaAccountingOrder::query()
+            ->where('role', $batch->kind)
+            ->whereIn('eporres_order_id', $orderIds === [] ? [0] : $orderIds)
+            ->where('quota_accounting_batch_id', '!=', $batch->id)
+            ->pluck('quota_accounting_batch_id')
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->all();
+        if ($orderIds !== []) {
+            QuotaAccountingOrder::query()
+                ->where('role', $batch->kind)
+                ->whereIn('eporres_order_id', $orderIds)
+                ->where('quota_accounting_batch_id', '!=', $batch->id)
+                ->delete();
+        }
+        $batch->orders()->delete();
+
+        $now = now();
+        foreach (array_chunk($orderIds, 500) as $chunk) {
+            $rows = [];
+            foreach ($chunk as $orderId) {
+                $rows[] = [
+                    'quota_accounting_batch_id' => $batch->id,
+                    'role' => $batch->kind,
+                    'eporres_order_id' => $orderId,
+                    'debtors_amount' => '0.00',
+                    'interest_amount' => '0.00',
+                    'bank_amount' => '0.00',
+                    'financing_amount' => '0.00',
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ];
+            }
+            QuotaAccountingOrder::query()->insert($rows);
+        }
+
+        $batch->matched_by_coupon = true;
+        $batch->save();
+
+        foreach ($others as $batchId) {
+            $other = QuotaAccountingBatch::query()->find($batchId);
+            if ($other !== null && $other->matched_by_coupon) {
+                app(AccountingEntryLinks::class)->syncFromAccreditedOrders($other);
+            }
+        }
     }
 
     public function syncAccreditationDescriptions(): void

@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Services\PaymentSettlement\AccreditationCollectionAlert;
 use App\Services\PaymentSettlement\PaymentSettlementChannels;
 use App\Services\PaymentSettlement\PaymentSettlementExcel;
+use App\Services\PosCouponOrders;
 use App\Services\QuotaAccountingService;
 use Backpack\CRUD\app\Http\Controllers\CrudController;
 use Illuminate\Http\Request;
@@ -85,6 +86,7 @@ class PaymentSettlementController extends CrudController
             }
             $rows[] = $row;
         }
+        $rows = PosCouponOrders::annotate($rows, (array) ($definition['pos_payment_types'] ?? []));
         $ready = [];
         $manual = [];
         $manualNotices = [];
@@ -330,7 +332,7 @@ class PaymentSettlementController extends CrudController
             } elseif ($net + $commission + $interest !== $gross) {
                 return [];
             }
-            $ready[] = [
+            $item = [
                 'key' => $key,
                 'date' => $date,
                 'collected_on' => $collectedOn,
@@ -341,9 +343,43 @@ class PaymentSettlementController extends CrudController
                 'net_cents' => $net,
                 'document' => $document,
             ];
+            if (! empty($definition['match_coupons'])) {
+                $coupons = $this->couponList($group['coupons'] ?? null);
+                if ($coupons === []) {
+                    return [];
+                }
+                $item['coupons'] = $coupons;
+            }
+            $ready[] = $item;
         }
 
         return $ready;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function couponList(mixed $coupons): array
+    {
+        if (! is_array($coupons) || $coupons === []) {
+            return [];
+        }
+
+        $clean = [];
+        foreach ($coupons as $coupon) {
+            if (! is_string($coupon) && ! is_int($coupon)) {
+                return [];
+            }
+            $normalized = PosCouponOrders::normalize((string) $coupon);
+            if ($normalized === '') {
+                return [];
+            }
+            $clean[$normalized] = $normalized;
+        }
+        $clean = array_values($clean);
+        sort($clean);
+
+        return $clean;
     }
 
     /**

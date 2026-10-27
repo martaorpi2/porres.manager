@@ -41,6 +41,11 @@ final class PaymentSettlementChannels
     /**
      * @return array<string, mixed>|null
      */
+    public static function matchesPosCoupons(string $channel): bool
+    {
+        return ! empty(self::definitions()[$channel]['match_coupons']);
+    }
+
     public static function forBatchKind(string $kind): ?array
     {
         foreach (self::definitions() as $definition) {
@@ -94,6 +99,8 @@ final class PaymentSettlementChannels
                 ],
                 'mode' => 'receivable',
                 'payment_type' => 'Tarjeta Naranja',
+                'match_coupons' => true,
+                'pos_payment_types' => ['Tarjeta Naranja', 'Tarjeta Naranja Débito', 'Tarjeta de Débito', 'Tarjeta de Crédito'],
                 'batch_kind' => QuotaAccountingBatch::KIND_NX_SETTLEMENT,
                 'entry_kind' => AccountingEntry::KIND_QUOTA_NX_SETTLEMENT,
                 'description' => 'ACREDITACION COBRANZA NARANJA X',
@@ -117,6 +124,8 @@ final class PaymentSettlementChannels
                 'paragraphs' => [],
                 'mode' => 'receivable',
                 'payment_type' => 'Tarjeta Sol',
+                'match_coupons' => true,
+                'pos_payment_types' => ['Tarjeta Sol'],
                 'batch_kind' => QuotaAccountingBatch::KIND_SOL_SETTLEMENT,
                 'entry_kind' => AccountingEntry::KIND_QUOTA_SOL_SETTLEMENT,
                 'description' => 'ACREDITACION COBRANZA SOL PAGO',
@@ -140,6 +149,8 @@ final class PaymentSettlementChannels
                 'paragraphs' => [],
                 'mode' => 'receivable',
                 'payment_type' => 'QR',
+                'match_coupons' => true,
+                'pos_payment_types' => ['QR'],
                 'batch_kind' => QuotaAccountingBatch::KIND_QR_SETTLEMENT,
                 'entry_kind' => AccountingEntry::KIND_QUOTA_QR_SETTLEMENT,
                 'description' => 'ACREDITACION COBRANZA QR',
