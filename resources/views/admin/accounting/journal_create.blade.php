@@ -34,10 +34,11 @@
 
                         <div class="mb-3 journal-date">
                             <label for="entry-date" class="journal-label">Fecha</label>
-                            <input type="date" name="date" id="entry-date" class="form-control @error('date') is-invalid @enderror" required value="{{ old('date', now()->toDateString()) }}">
+                            <input type="date" name="date" id="entry-date" class="form-control @error('date') is-invalid @enderror" required value="{{ old('date', now()->toDateString()) }}" @include('admin.accounting.partials.journal_period_bounds')>
                             @error('date')
                                 <div class="invalid-feedback">{{ $message }}</div>
                             @enderror
+                            @include('admin.accounting.partials.journal_period_hint')
                         </div>
 
                         <div class="mb-3">

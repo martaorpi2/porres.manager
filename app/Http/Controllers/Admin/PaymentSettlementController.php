@@ -61,22 +61,24 @@ class PaymentSettlementController extends CrudController
             return back()->withErrors(['archivo' => 'El Excel no tiene operaciones para registrar.']);
         }
 
+        $posted = $this->postedKeys(array_column($parsed['groups'], 'key'));
+        $adjusted = $this->adjustedKeys(array_column($parsed['groups'], 'key'));
         $postable = [];
         foreach ($parsed['groups'] as $group) {
+            if (isset($adjusted[$group['key']])) {
+                continue;
+            }
             $normalized = $this->readyGroups($definition, [$group]);
             if ($normalized !== []) {
                 $postable[] = $normalized[0];
             }
         }
         $accounting->linkImportedCollectionDates($postable);
-
-        $posted = $this->postedKeys(array_column($parsed['groups'], 'key'));
-        $adjusted = $this->adjustedKeys(array_column($parsed['groups'], 'key'));
         $rows = [];
         foreach ($parsed['rows'] as $row) {
             if ($row['outcome'] === 'ready' && isset($adjusted[$row['group_key']])) {
                 $row['outcome'] = 'adjusted';
-                $row['detail'] = 'El asiento de esa fecha fue modificado a mano.';
+                $row['detail'] = 'Fue modificado a mano. Podés conservarlo o sobreescribirlo con este archivo.';
             } elseif ($row['outcome'] === 'ready' && isset($posted[$row['group_key']])) {
                 $row['outcome'] = 'update';
                 $row['detail'] = 'Se actualiza el asiento de esta fecha con el archivo.';
@@ -84,10 +86,20 @@ class PaymentSettlementController extends CrudController
             $rows[] = $row;
         }
         $ready = [];
+        $manual = [];
+        $manualNotices = [];
         foreach ($parsed['groups'] as $group) {
-            if (! isset($adjusted[$group['key']]) && $this->groupIsPostable($definition, $group)) {
-                $ready[] = $group;
+            if (! $this->groupIsPostable($definition, $group)) {
+                continue;
             }
+            $notice = $adjusted[$group['key']] ?? null;
+            if ($notice === null) {
+                $ready[] = $group;
+
+                continue;
+            }
+            $manual[] = $group;
+            $manualNotices[] = $notice['entry_number'].' del '.$notice['date'];
         }
 
         $cases = $alerts->forRows($definition, $rows);
@@ -96,12 +108,15 @@ class PaymentSettlementController extends CrudController
             'token' => $token,
             'channel' => $channel,
             'ready' => $ready,
+            'manual' => $manual,
             'alerts' => $cases,
         ]);
 
         return view('admin.accounting.payment_settlement_import', array_merge($this->pageData($channel, $definition), [
             'rows' => $rows,
             'ready' => $ready,
+            'manualGroups' => $manual,
+            'manualNotices' => $manualNotices,
             'token' => $token,
             'document' => $file->getClientOriginalName(),
             'alerts' => array_map(fn (array $case) => $alerts->sentence($case), $cases),
@@ -129,14 +144,26 @@ class PaymentSettlementController extends CrudController
         }
 
         $ready = $this->readyGroups($definition, $saved['ready'] ?? []);
-        if ($ready === []) {
-            \Alert::warning('No hay acreditaciones para registrar.')->flash();
+        $manual = $this->readyGroups($definition, $saved['manual'] ?? []);
+        $overwrite = (string) $request->input('overwrite_adjusted');
+        if ($manual !== [] && ! in_array($overwrite, ['0', '1'], true)) {
+            \Alert::warning('Elegí si querés conservar la modificación manual o sobreescribir el asiento.')->flash();
+
+            return redirect(backpack_url('accounting-settlement/'.$channel));
+        }
+
+        $groups = $overwrite === '1' ? array_merge($ready, $manual) : $ready;
+        if ($groups === []) {
+            $request->session()->forget('payment_settlement_import');
+            \Alert::warning($manual !== []
+                ? 'Se conservó la modificación manual. No se registró un asiento nuevo.'
+                : 'No hay acreditaciones para registrar.')->flash();
 
             return redirect(backpack_url('accounting-settlement/'.$channel));
         }
 
         try {
-            $entries = $accounting->postImportedPaymentSettlements($channel, $ready);
+            $entries = $accounting->postImportedPaymentSettlements($channel, $groups, $overwrite === '1');
         } catch (Throwable $exception) {
             \Alert::error($exception->getMessage())->flash();
 
@@ -155,7 +182,8 @@ class PaymentSettlementController extends CrudController
         $dates = array_map(fn ($entry) => $entry->date->toDateString(), $entries);
         sort($dates);
 
-        \Alert::success('Se registraron los asientos '.implode(', ', $numbers).'.')->flash();
+        $kept = $manual !== [] && $overwrite !== '1' ? ' Se conservó la modificación manual.' : '';
+        \Alert::success('Se registraron los asientos '.implode(', ', $numbers).'.'.$kept)->flash();
 
         return redirect(backpack_url('accounting-journal').'?'.http_build_query([
             'from' => $dates[0],
@@ -193,6 +221,8 @@ class PaymentSettlementController extends CrudController
             'definition' => $definition,
             'rows' => null,
             'ready' => [],
+            'manualGroups' => [],
+            'manualNotices' => [],
             'token' => null,
             'document' => null,
             'alerts' => [],
@@ -223,7 +253,7 @@ class PaymentSettlementController extends CrudController
 
     /**
      * @param  list<string>  $keys
-     * @return array<string, true>
+     * @return array<string, array{entry_number: string, date: string}>
      */
     private function adjustedKeys(array $keys): array
     {
@@ -233,14 +263,22 @@ class PaymentSettlementController extends CrudController
 
         $adjusted = [];
         $found = QuotaAccountingBatch::query()
+            ->with('entry')
             ->whereIn('batch_key', $keys)
             ->whereHas('entry', function ($query) {
                 $query->where('status', AccountingEntry::STATUS_POSTED)
                     ->where('manually_adjusted', true);
             })
-            ->pluck('batch_key');
-        foreach ($found as $key) {
-            $adjusted[(string) $key] = true;
+            ->get();
+        foreach ($found as $batch) {
+            $entry = $batch->entry;
+            if ($entry === null) {
+                continue;
+            }
+            $adjusted[(string) $batch->batch_key] = [
+                'entry_number' => (string) $entry->entry_number,
+                'date' => $entry->date?->format('d/m/Y') ?? '',
+            ];
         }
 
         return $adjusted;

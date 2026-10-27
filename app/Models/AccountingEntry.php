@@ -3,7 +3,9 @@
 namespace App\Models;
 
 use Backpack\CRUD\app\Models\Traits\CrudTrait;
+use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Model;
+use RuntimeException;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -118,6 +120,25 @@ class AccountingEntry extends Model
         'date' => 'date',
         'manually_adjusted' => 'boolean',
     ];
+
+    protected static function booted(): void
+    {
+        static::saving(function (self $entry): void {
+            if ($entry->exists && ! $entry->isDirty('date')) {
+                return;
+            }
+
+            $raw = $entry->getAttributes()['date'] ?? null;
+            if ($raw === null || $raw === '') {
+                return;
+            }
+
+            $message = AccountingPeriod::entryDateError(Carbon::parse($raw)->toDateString());
+            if ($message !== null) {
+                throw new RuntimeException($message);
+            }
+        });
+    }
 
     public function source(): MorphTo
     {

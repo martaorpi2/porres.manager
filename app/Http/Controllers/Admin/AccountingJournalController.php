@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Models\AccountingAccount;
 use App\Models\AccountingEntry;
+use App\Models\AccountingPeriod;
 use App\Models\AccountingEntryLine;
 use App\Models\QuotaAccountingBatch;
 use App\Models\QuotaAccountingCollectionDate;
@@ -116,6 +117,21 @@ class AccountingJournalController extends CrudController
         return redirect($back);
     }
 
+    private function openPeriods()
+    {
+        return AccountingPeriod::query()->orderBy('start_date')->orderBy('id')->get();
+    }
+
+    private function redirectIfDateOutsidePeriod(string $date)
+    {
+        $message = AccountingPeriod::entryDateError($date);
+        if ($message === null) {
+            return null;
+        }
+
+        return back()->withInput()->withErrors(['date' => $message]);
+    }
+
     public function create(Request $request)
     {
         $this->authorizeAccounting();
@@ -127,6 +143,7 @@ class AccountingJournalController extends CrudController
             'accountSides' => $this->accountSides($accounts),
             'relatedEntries' => $this->selectedRelated($request),
             'paymentType' => null,
+            'openPeriods' => $this->openPeriods(),
             'title' => 'Nuevo asiento',
             'breadcrumbs' => [
                 trans('backpack::crud.admin') => backpack_url('dashboard'),
@@ -171,6 +188,9 @@ class AccountingJournalController extends CrudController
 
         $user = backpack_user();
         $date = Carbon::parse($validated['date'])->toDateString();
+        if ($redirect = $this->redirectIfDateOutsidePeriod($date)) {
+            return $redirect;
+        }
 
         try {
             $entry = DB::transaction(function () use ($prepared, $description, $user, $date, $request) {
@@ -221,6 +241,7 @@ class AccountingJournalController extends CrudController
             'entry' => $accountingEntry,
             'accounts' => $accounts,
             'accountSides' => $this->accountSides($accounts),
+            'openPeriods' => $this->openPeriods(),
             'relatedEntries' => $this->selectedRelated($request, $accountingEntry),
             'paymentType' => $this->settlementPaymentType($accountingEntry),
             'returnQuery' => $this->returnQuery($request),
@@ -269,6 +290,13 @@ class AccountingJournalController extends CrudController
         $linkError = $this->relatedLinkError($request, $accountingEntry->id);
         if ($linkError !== null) {
             return back()->withInput()->withErrors(['related_ids' => $linkError]);
+        }
+
+        if ($accountingEntry->kind === AccountingEntry::KIND_MANUAL) {
+            $date = Carbon::parse($validated['date'])->toDateString();
+            if ($redirect = $this->redirectIfDateOutsidePeriod($date)) {
+                return $redirect;
+            }
         }
 
         $memos = $accountingEntry->lines()->pluck('memo', 'id');

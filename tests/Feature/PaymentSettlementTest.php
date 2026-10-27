@@ -371,6 +371,92 @@ class PaymentSettlementTest extends TestCase
         }
     }
 
+    public function test_a_manually_adjusted_accreditation_asks_before_overwriting(): void
+    {
+        $user = $this->accountingUser();
+        $entryId = null;
+        $key = 'naranja:2099-07-15';
+        DB::beginTransaction();
+        try {
+            $group = [
+                'key' => $key,
+                'date' => '2099-07-15',
+                'collected_on' => ['2099-07-01'],
+                'gross_cents' => 100000,
+                'commission_cents' => 1500,
+                'interest_cents' => 2500,
+                'net_cents' => 96000,
+                'document' => '01/07/2099',
+            ];
+            $entries = app(QuotaAccountingService::class)->postImportedPaymentSettlements('naranja', [$group]);
+            $this->assertCount(1, $entries);
+            $entryId = $entries[0]->id;
+            $entries[0]->update(['manually_adjusted' => true]);
+
+            $group['gross_cents'] = 200000;
+            $group['commission_cents'] = 3000;
+            $group['interest_cents'] = 5000;
+            $group['net_cents'] = 192000;
+            $keptByService = app(QuotaAccountingService::class)->postImportedPaymentSettlements('naranja', [$group]);
+            $this->assertSame([], $keptByService);
+            $entry = AccountingEntry::query()->findOrFail($entryId);
+            $this->assertTrue($entry->manually_adjusted);
+            $this->assertSame('960.00', $entry->lines()->orderBy('id')->first()->debit);
+
+            $headers = ['Fecha de cobro', 'Fecha de acreditación', 'Cobro', 'Cargos e impuestos', 'Intereses', 'Total a recibir'];
+            $preview = $this->actingAs($user, 'backpack')->post('/admin/accounting-settlement/naranja/preview', [
+                'archivo' => $this->excel('naranja-manual.xlsx', [
+                    $headers,
+                    ['01/07/2099', '15/07/2099', '2000', '30', '50', '1920'],
+                ]),
+            ]);
+            $preview->assertOk();
+            $preview->assertSee('Asiento modificado a mano');
+            $preview->assertSee($entry->entry_number.' del 15/07/2099', false);
+            $preview->assertSee('¿Querés conservar esa modificación o sobreescribir el asiento con el archivo?', false);
+            $preview->assertSee('Conservar la modificación');
+            $preview->assertSee('Sobrescribir');
+            $preview->assertSee('Modificado a mano');
+
+            $token = session('payment_settlement_import.token');
+            $this->assertNotEmpty($token);
+
+            $keep = $this->actingAs($user, 'backpack')->post('/admin/accounting-settlement/naranja', [
+                'token' => $token,
+                'overwrite_adjusted' => '0',
+            ]);
+            $keep->assertRedirect('/admin/accounting-settlement/naranja');
+            $entry->refresh();
+            $this->assertTrue($entry->manually_adjusted);
+            $this->assertSame('960.00', $entry->lines()->orderBy('id')->first()->debit);
+
+            $again = $this->actingAs($user, 'backpack')->post('/admin/accounting-settlement/naranja/preview', [
+                'archivo' => $this->excel('naranja-manual.xlsx', [
+                    $headers,
+                    ['01/07/2099', '15/07/2099', '2000', '30', '50', '1920'],
+                ]),
+            ]);
+            $again->assertOk();
+            $overwrite = $this->actingAs($user, 'backpack')->post('/admin/accounting-settlement/naranja', [
+                'token' => session('payment_settlement_import.token'),
+                'overwrite_adjusted' => '1',
+            ]);
+            $overwrite->assertRedirect();
+            $entry->refresh();
+            $this->assertFalse($entry->manually_adjusted);
+            $this->assertSame('1920.00', $entry->lines()->orderBy('id')->first()->debit);
+            $this->assertSame(1, QuotaAccountingBatch::query()->where('batch_key', $key)->count());
+        } finally {
+            if (DB::transactionLevel() > 0) {
+                DB::rollBack();
+            }
+            if ($entryId !== null && AccountingEntry::query()->whereKey($entryId)->exists()) {
+                AccountingEntry::query()->whereKey($entryId)->delete();
+            }
+            QuotaAccountingBatch::query()->where('batch_key', $key)->delete();
+        }
+    }
+
     public function test_naranja_settlement_credits_the_receivable(): void
     {
         $entryId = null;

@@ -4,7 +4,9 @@ namespace Tests\Feature;
 
 use App\Models\AccountingAccount;
 use App\Models\AccountingEntry;
+use App\Models\AccountingPeriod;
 use App\Models\User;
+use RuntimeException;
 use Tests\TestCase;
 
 class AccountingJournalCreateTest extends TestCase
@@ -188,6 +190,98 @@ class AccountingJournalCreateTest extends TestCase
             $shown->assertSee('FUERA DEL MES EN CURSO');
         } finally {
             $entry->delete();
+        }
+    }
+
+    public function test_a_manual_entry_outside_an_open_period_is_rejected(): void
+    {
+        $user = User::query()->get()->first(fn (User $candidate) => $candidate->canViewAccounting() && ! $candidate->hasAdministradoraInstitucionRole());
+        $this->assertNotNull($user);
+
+        $accounts = AccountingAccount::query()
+            ->where('is_grouping', false)
+            ->where('is_active', true)
+            ->orderBy('id')
+            ->limit(2)
+            ->get();
+        $this->assertCount(2, $accounts);
+        $this->withoutMiddleware(\Illuminate\Foundation\Http\Middleware\ValidateCsrfToken::class);
+
+        $this->assertNull(AccountingPeriod::entryDateError('2026-01-01'));
+        $this->assertNull(AccountingPeriod::entryDateError('2026-12-31'));
+        $outside = AccountingPeriod::entryDateError('2027-01-01');
+        $this->assertNotNull($outside);
+        $this->assertStringContainsString('01/01/2026 al 31/12/2026', $outside);
+
+        $description = 'ASIENTO FUERA DE PERIODO '.substr(uniqid(), -8);
+        $entry = null;
+
+        try {
+            $page = $this->actingAs($user, 'backpack')->get('/admin/accounting-journal/create');
+            $page->assertOk();
+            $page->assertSee('los períodos abiertos', false);
+            $page->assertSee('01/01/2026 al 31/12/2026', false);
+
+            $rejected = $this->actingAs($user, 'backpack')
+                ->from('/admin/accounting-journal/create')
+                ->post('/admin/accounting-journal', [
+                    'date' => '2027-06-01',
+                    'description' => $description,
+                    'lines' => [
+                        ['accounting_account_id' => $accounts[0]->id, 'debit' => '10,00', 'credit' => '0'],
+                        ['accounting_account_id' => $accounts[1]->id, 'debit' => '0', 'credit' => '10,00'],
+                    ],
+                ]);
+            $rejected->assertRedirect('/admin/accounting-journal/create');
+            $rejected->assertSessionHasErrors('date');
+            $this->assertStringContainsString('01/01/2026 al 31/12/2026', session('errors')->get('date')[0]);
+            $this->assertFalse(AccountingEntry::query()->where('description', $description)->exists());
+
+            $stored = $this->actingAs($user, 'backpack')->post('/admin/accounting-journal', [
+                'date' => '2026-06-15',
+                'description' => $description,
+                'lines' => [
+                    ['accounting_account_id' => $accounts[0]->id, 'debit' => '10,00', 'credit' => '0'],
+                    ['accounting_account_id' => $accounts[1]->id, 'debit' => '0', 'credit' => '10,00'],
+                ],
+            ]);
+            $entry = AccountingEntry::query()->where('description', $description)->first();
+            $this->assertNotNull($entry);
+            $stored->assertRedirect();
+
+            $moved = $this->actingAs($user, 'backpack')
+                ->from('/admin/accounting-journal/'.$entry->id.'/edit')
+                ->put('/admin/accounting-journal/'.$entry->id, [
+                    'date' => '2025-12-31',
+                    'description' => $description,
+                    'lines' => [
+                        ['id' => $entry->lines[0]->id, 'accounting_account_id' => $accounts[0]->id, 'debit' => '10,00', 'credit' => '0'],
+                        ['id' => $entry->lines[1]->id, 'accounting_account_id' => $accounts[1]->id, 'debit' => '0', 'credit' => '10,00'],
+                    ],
+                ]);
+            $moved->assertRedirect('/admin/accounting-journal/'.$entry->id.'/edit');
+            $moved->assertSessionHasErrors('date');
+            $this->assertSame('2026-06-15', $entry->fresh()->date->toDateString());
+
+            $blocked = false;
+            try {
+                AccountingEntry::query()->create([
+                    'entry_number' => 'AS-X-'.substr(uniqid(), -8),
+                    'date' => '2027-02-01',
+                    'kind' => AccountingEntry::KIND_MANUAL,
+                    'status' => AccountingEntry::STATUS_POSTED,
+                    'description' => $description.' DIRECTO',
+                ]);
+            } catch (RuntimeException $exception) {
+                $blocked = str_contains($exception->getMessage(), '01/01/2026 al 31/12/2026');
+            }
+            $this->assertTrue($blocked);
+            $this->assertFalse(AccountingEntry::query()->where('description', $description.' DIRECTO')->exists());
+        } finally {
+            if ($entry !== null) {
+                $entry->lines()->delete();
+                $entry->delete();
+            }
         }
     }
 }

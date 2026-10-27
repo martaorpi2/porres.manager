@@ -43,10 +43,11 @@
                     @if($entry->kind === \App\Models\AccountingEntry::KIND_MANUAL)
                         <div class="mb-3">
                             <label for="entry-date" class="journal-label">Fecha</label>
-                            <input type="date" name="date" id="entry-date" class="form-control @error('date') is-invalid @enderror" required value="{{ old('date', $entry->date?->toDateString()) }}">
+                            <input type="date" name="date" id="entry-date" class="form-control @error('date') is-invalid @enderror" required value="{{ old('date', $entry->date?->toDateString()) }}" @include('admin.accounting.partials.journal_period_bounds')>
                             @error('date')
                                 <div class="invalid-feedback">{{ $message }}</div>
                             @enderror
+                            @include('admin.accounting.partials.journal_period_hint')
                         </div>
                     @endif
 

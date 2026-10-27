@@ -60,7 +60,7 @@ class QuotaAccountingService
      * @param  list<array{key: string, date: string, gross_cents: int, commission_cents: int, interest_cents: int, net_cents: int, document: string}>  $groups
      * @return list<AccountingEntry>
      */
-    public function postImportedPaymentSettlements(string $channel, array $groups): array
+    public function postImportedPaymentSettlements(string $channel, array $groups, bool $overwriteAdjusted = false): array
     {
         if ($groups === []) {
             return [];
@@ -75,7 +75,7 @@ class QuotaAccountingService
         ]));
         $accounts = $this->accountsForCodes($codes);
 
-        return DB::transaction(function () use ($groups, $definition, $accounts, $channel) {
+        return DB::transaction(function () use ($groups, $definition, $accounts, $channel, $overwriteAdjusted) {
             $this->deleteNonFileAccreditations((string) $definition['batch_kind'], array_column($groups, 'date'));
 
             $entries = [];
@@ -85,7 +85,7 @@ class QuotaAccountingService
                     ->lockForUpdate()
                     ->first();
                 if ($batch !== null) {
-                    $updated = $this->replaceImportedSettlement($batch, $definition, $group, $accounts);
+                    $updated = $this->replaceImportedSettlement($batch, $definition, $group, $accounts, $overwriteAdjusted);
                     if ($updated !== null) {
                         $entries[] = $updated;
                     }
@@ -117,10 +117,10 @@ class QuotaAccountingService
      * @param  array<string, mixed>  $group
      * @param  array<string, AccountingAccount>  $accounts
      */
-    private function replaceImportedSettlement(QuotaAccountingBatch $batch, array $definition, array $group, array $accounts): ?AccountingEntry
+    private function replaceImportedSettlement(QuotaAccountingBatch $batch, array $definition, array $group, array $accounts, bool $overwriteAdjusted = false): ?AccountingEntry
     {
         $entry = $batch->entry;
-        if ($entry !== null && $entry->manually_adjusted) {
+        if ($entry !== null && $entry->manually_adjusted && ! $overwriteAdjusted) {
             return null;
         }
 
@@ -155,6 +155,7 @@ class QuotaAccountingService
             'date' => $group['date'],
             'description' => $this->importedSettlementDescription($definition, $group),
             'status' => AccountingEntry::STATUS_POSTED,
+            'manually_adjusted' => false,
         ]);
 
         return $entry->fresh();

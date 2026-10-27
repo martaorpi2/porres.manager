@@ -22,12 +22,13 @@
     $readyCommission = 0;
     $readyInterest = 0;
     $readyNet = 0;
-    foreach ($ready as $item) {
+    foreach (array_merge($ready, $manualGroups ?? []) as $item) {
         $readyGross += $item['gross_cents'];
         $readyCommission += $item['commission_cents'];
         $readyInterest += $item['interest_cents'];
         $readyNet += $item['net_cents'];
     }
+    $manualNotices = $manualNotices ?? [];
 @endphp
 <div class="row journal-page mp-import">
     <div class="col-12">
@@ -61,10 +62,36 @@
         @if(is_array($rows))
             <div class="card journal-card journal-book mb-3">
                 <div class="card-body">
-                    <p class="mb-1">Archivo <strong>{{ $document }}</strong>. <strong>{{ count($ready) }}</strong> {{ count($ready) === 1 ? 'asiento listo' : 'asientos listos' }} para registrar.</p>
+                    <p class="mb-1">Archivo <strong>{{ $document }}</strong>.
+                        @if(count($ready) > 0)
+                            <strong>{{ count($ready) }}</strong> {{ count($ready) === 1 ? 'asiento listo' : 'asientos listos' }} para registrar.
+                        @endif
+                        @if($manualNotices !== [])
+                            <strong>{{ count($manualNotices) }}</strong> {{ count($manualNotices) === 1 ? 'asiento fue modificado a mano' : 'asientos fueron modificados a mano' }}.
+                        @endif
+                    </p>
                     <p class="mb-0">Bruto {{ $money($readyGross) }} · Comisión {{ $money($readyCommission) }} · Intereses {{ $money($readyInterest) }} · Neto {{ $money($readyNet) }}</p>
                 </div>
             </div>
+
+            @if($manualNotices !== [])
+                <div id="settlement-manual-modal" class="settlement-modal" hidden>
+                    <div class="settlement-modal-card" role="dialog" aria-modal="true" aria-labelledby="settlement-manual-title">
+                        <h2 id="settlement-manual-title">{{ count($manualNotices) === 1 ? 'Asiento modificado a mano' : 'Asientos modificados a mano' }}</h2>
+                        <p class="settlement-modal-lead">{{ count($manualNotices) === 1 ? 'Esta acreditación incluye un asiento que fue modificado a mano.' : 'Esta acreditación incluye asientos que fueron modificados a mano.' }}</p>
+                        <ul class="settlement-modal-list">
+                            @foreach($manualNotices as $notice)
+                                <li>{{ $notice }}</li>
+                            @endforeach
+                        </ul>
+                        <p class="settlement-modal-note">{{ count($manualNotices) === 1 ? '¿Querés conservar esa modificación o sobreescribir el asiento con el archivo? Si lo sobreescribís, se pierde la modificación manual.' : '¿Querés conservar esas modificaciones o sobreescribir los asientos con el archivo? Si los sobreescribís, se pierden las modificaciones manuales.' }}</p>
+                        <div class="settlement-modal-actions">
+                            <button type="button" class="btn journal-back" id="settlement-manual-keep">Conservar la modificación</button>
+                            <button type="button" class="btn journal-btn-filter" id="settlement-manual-overwrite">Sobrescribir</button>
+                        </div>
+                    </div>
+                </div>
+            @endif
 
             @if($alerts !== [])
                 <div id="settlement-mismatch-modal" class="settlement-modal" hidden>
@@ -131,10 +158,16 @@
                 </div>
             </div>
 
-            @if($ready !== [])
-                <form method="post" action="{{ backpack_url('accounting-settlement/'.$channel) }}" id="settlement-register">
+            @if($ready !== [] || $manualNotices !== [])
+                @if($manualNotices !== [])
+                    <p id="settlement-manual-kept" class="mb-2" hidden>Se conserva la modificación manual. No se va a registrar otro asiento.</p>
+                @endif
+                <form method="post" action="{{ backpack_url('accounting-settlement/'.$channel) }}" id="settlement-register" data-ready="{{ $ready === [] ? '0' : '1' }}">
                     @csrf
                     <input type="hidden" name="token" value="{{ $token }}">
+                    @if($manualNotices !== [])
+                        <input type="hidden" name="overwrite_adjusted" id="overwrite-adjusted" value="">
+                    @endif
                     @if($alerts !== [])
                         <input type="hidden" name="confirm_mismatch" id="confirm-mismatch" value="0">
                     @endif
@@ -243,12 +276,76 @@
 <script>
     var form = document.getElementById('settlement-register');
     var modal = document.getElementById('settlement-mismatch-modal');
+    var manualModal = document.getElementById('settlement-manual-modal');
     var confirmInput = document.getElementById('confirm-mismatch');
+    var overwriteInput = document.getElementById('overwrite-adjusted');
+    var keptNote = document.getElementById('settlement-manual-kept');
+
+    function showModal(target) {
+        if (target) {
+            target.hidden = false;
+        }
+    }
+
+    function hideModal(target) {
+        if (target) {
+            target.hidden = true;
+        }
+    }
+
+    function submitForm() {
+        if (!form) {
+            return;
+        }
+        if (form.requestSubmit) {
+            form.requestSubmit();
+        } else {
+            form.submit();
+        }
+    }
+
+    if (manualModal) {
+        document.body.appendChild(manualModal);
+        showModal(manualModal);
+        document.getElementById('settlement-manual-keep').addEventListener('click', function () {
+            if (overwriteInput) {
+                overwriteInput.value = '0';
+            }
+            hideModal(manualModal);
+            if (keptNote) {
+                keptNote.hidden = false;
+            }
+            if (form && form.getAttribute('data-ready') === '0') {
+                var registerButton = document.getElementById('settlement-register-button');
+                if (registerButton) {
+                    registerButton.hidden = true;
+                }
+            } else if (keptNote) {
+                keptNote.textContent = 'Se conserva la modificación manual. Se registran las demás acreditaciones.';
+            }
+        });
+        document.getElementById('settlement-manual-overwrite').addEventListener('click', function () {
+            if (overwriteInput) {
+                overwriteInput.value = '1';
+            }
+            hideModal(manualModal);
+        });
+        manualModal.addEventListener('click', function (event) {
+            if (event.target === manualModal) {
+                hideModal(manualModal);
+            }
+        });
+    }
     if (form) {
         form.addEventListener('submit', function (event) {
+            if (overwriteInput && overwriteInput.value !== '0' && overwriteInput.value !== '1') {
+                event.preventDefault();
+                showModal(manualModal);
+                return;
+            }
             if (modal && confirmInput && confirmInput.value !== '1') {
                 event.preventDefault();
-                modal.hidden = false;
+                showModal(modal);
                 return;
             }
             var button = document.getElementById('settlement-register-button');
@@ -262,23 +359,19 @@
         document.body.appendChild(modal);
         document.getElementById('settlement-mismatch-accept').addEventListener('click', function () {
             confirmInput.value = '1';
-            if (form.requestSubmit) {
-                form.requestSubmit();
-            } else {
-                form.submit();
-            }
+            submitForm();
         });
         document.getElementById('settlement-mismatch-back').addEventListener('click', function () {
-            modal.hidden = true;
+            hideModal(modal);
         });
         modal.addEventListener('click', function (event) {
             if (event.target === modal) {
-                modal.hidden = true;
+                hideModal(modal);
             }
         });
         document.addEventListener('keydown', function (event) {
-            if (event.key === 'Escape' && !modal.hidden) {
-                modal.hidden = true;
+            if (event.key === 'Escape' && modal && !modal.hidden) {
+                hideModal(modal);
             }
         });
     }
