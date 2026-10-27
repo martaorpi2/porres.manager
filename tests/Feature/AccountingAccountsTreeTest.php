@@ -3,7 +3,11 @@
 namespace Tests\Feature;
 
 use App\Models\AccountingAccount;
+use App\Models\AccountingEntry;
+use App\Models\AccountingEntryLine;
 use App\Models\User;
+use App\Services\AccountingChartEditor;
+use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 class AccountingAccountsTreeTest extends TestCase
@@ -19,6 +23,7 @@ class AccountingAccountsTreeTest extends TestCase
         $page->assertOk();
         $page->assertSee('Plan de cuentas');
         $page->assertSee('Agregar rubro');
+        $page->assertSee('Reordenar numeración');
         $page->assertSee('Agregar subrubro');
         $page->assertSee('Tipo de saldo');
         $page->assertSee('Quitar');
@@ -288,6 +293,77 @@ class AccountingAccountsTreeTest extends TestCase
                 'CUENTA SIN SALDO',
                 'CUENTA CON SALDO',
             ])->delete();
+        }
+    }
+
+    public function test_renumber_closes_gaps_and_the_journal_keeps_the_same_account(): void
+    {
+        $user = User::query()->get()->first(fn (User $candidate) => $candidate->canViewAccounting() && ! $candidate->hasAdministradoraInstitucionRole());
+        $this->assertNotNull($user);
+        $this->withoutMiddleware(\Illuminate\Foundation\Http\Middleware\ValidateCsrfToken::class);
+
+        DB::beginTransaction();
+        try {
+            AccountingAccount::query()->create([
+                'code' => '71000000',
+                'name' => 'RUBRO REORDEN',
+                'account_type' => 'activo',
+                'is_active' => true,
+                'is_grouping' => true,
+            ]);
+            $first = AccountingAccount::query()->create([
+                'code' => '71100000',
+                'name' => 'CUENTA REORDEN UNO',
+                'account_type' => 'activo',
+                'balance_nature' => 'deudor',
+                'is_active' => true,
+                'is_grouping' => false,
+            ]);
+            $second = AccountingAccount::query()->create([
+                'code' => '71300000',
+                'name' => 'CUENTA REORDEN DOS',
+                'account_type' => 'activo',
+                'balance_nature' => 'deudor',
+                'is_active' => true,
+                'is_grouping' => false,
+            ]);
+            $nested = AccountingAccount::query()->create([
+                'code' => '71301000',
+                'name' => 'CUENTA REORDEN HIJA',
+                'account_type' => 'activo',
+                'balance_nature' => 'deudor',
+                'is_active' => true,
+                'is_grouping' => false,
+            ]);
+            $entry = AccountingEntry::query()->create([
+                'entry_number' => 'TMP-REORDEN-'.uniqid(),
+                'date' => '2099-06-01',
+                'kind' => AccountingEntry::KIND_MANUAL,
+                'status' => AccountingEntry::STATUS_POSTED,
+                'source_type' => AccountingEntry::class,
+                'source_id' => 1,
+                'description' => 'Asiento reorden',
+            ]);
+            $line = AccountingEntryLine::query()->create([
+                'accounting_entry_id' => $entry->id,
+                'accounting_account_id' => $second->id,
+                'debit' => 10,
+                'credit' => 0,
+            ]);
+
+            $changed = app(AccountingChartEditor::class)->renumber();
+            $this->assertGreaterThan(0, $changed);
+            $this->assertSame('71100000', $first->fresh()->code);
+            $this->assertSame('71200000', $second->fresh()->code);
+            $this->assertSame('71201000', $nested->fresh()->code);
+            $this->assertSame((int) $second->id, (int) $line->fresh()->accounting_account_id);
+            $this->assertSame('71200000', $line->fresh()->account->code);
+            $this->assertSame(0, app(AccountingChartEditor::class)->renumber());
+
+            $posted = $this->actingAs($user, 'backpack')->post('/admin/accounting-account/reordenar');
+            $posted->assertRedirect('/admin/accounting-account');
+        } finally {
+            DB::rollBack();
         }
     }
 }

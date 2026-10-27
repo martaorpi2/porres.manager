@@ -26,6 +26,40 @@ class AccountingPeriodTest extends TestCase
         $html = $list->getContent();
         $this->assertLessThan(strpos($html, 'Cuentas'), strpos($html, 'Periodo'));
         $this->assertLessThan(strpos($html, 'Libro diario'), strpos($html, 'Cuentas'));
+        if (! $this->accountingUser()->isAdminSistema()) {
+            $list->assertDontSee('Sumas y saldos');
+        }
+    }
+
+    public function test_sumas_y_saldos_menu_is_only_for_the_system_admin(): void
+    {
+        $admin = User::query()
+            ->whereHas('roles', fn ($query) => $query->where('name', 'role_admin_sistema'))
+            ->first();
+        $this->assertNotNull($admin);
+
+        $menu = $this->actingAs($admin, 'backpack')->get('/admin/accounting-period');
+        $menu->assertOk();
+        $menu->assertSee('Sumas y saldos');
+        $menu->assertSee('accounting-ledger', false);
+
+        $page = $this->actingAs($admin, 'backpack')->get('/admin/accounting-ledger');
+        $page->assertOk();
+        $page->assertSee('Sumas y saldos');
+
+        $accounting = User::query()
+            ->whereHas('roles', fn ($query) => $query->where('name', 'role_contabilidad'))
+            ->whereDoesntHave('roles', fn ($query) => $query->where('name', 'role_admin_sistema'))
+            ->first();
+        if ($accounting === null) {
+            return;
+        }
+
+        $hidden = $this->actingAs($accounting, 'backpack')->get('/admin/accounting-period');
+        $hidden->assertOk();
+        $hidden->assertDontSee('Sumas y saldos');
+
+        $this->actingAs($accounting, 'backpack')->get('/admin/accounting-ledger')->assertForbidden();
     }
 
     public function test_create_form_asks_for_start_and_end_dates(): void

@@ -70,6 +70,9 @@
             <x-backpack::menu-dropdown-item title="Periodo" :link="backpack_url('accounting-period')" />
             <x-backpack::menu-dropdown-item title="Cuentas" :link="backpack_url('accounting-account')" />
             <x-backpack::menu-dropdown-item title="Libro diario" :link="backpack_url('accounting-journal')" />
+            @if(backpack_user()->isAdminSistema())
+                <x-backpack::menu-dropdown-item title="Sumas y saldos" :link="backpack_url('accounting-ledger')" />
+            @endif
             <x-backpack::menu-dropdown-item title="Registración de cobranzas" :link="backpack_url('accounting-settlement')" />
             <x-backpack::menu-dropdown-item title="Pago/Morosidad" :link="backpack_url('accounting-delinquency/'.date('Y'))" />
             <x-backpack::menu-dropdown-item title="Pagos por Día" :link="backpack_url('accounting-daily-payments')" />

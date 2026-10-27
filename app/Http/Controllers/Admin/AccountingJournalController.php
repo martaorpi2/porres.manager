@@ -452,7 +452,10 @@ class AccountingJournalController extends CrudController
 
     public function ledger(Request $request)
     {
-        $this->authorizeAccounting();
+        $user = backpack_user();
+        if (! $user instanceof User || ! $user->isAdminSistema()) {
+            abort(403, 'No tiene permiso para ver sumas y saldos.');
+        }
 
         $from = $this->dateOrNull($request->input('from'));
         $to = $this->dateOrNull($request->input('to'));

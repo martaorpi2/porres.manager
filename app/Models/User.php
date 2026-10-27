@@ -271,8 +271,9 @@ class User extends Authenticatable
     }
 
     /**
-     * Libro diario, sumas y saldos y plan de cuentas.
+     * Libro diario y plan de cuentas.
      * Solo contabilidad, administradora del instituto y administrador del sistema.
+     * Sumas y saldos queda solo para el administrador del sistema.
      */
     public function canViewAccounting(): bool
     {

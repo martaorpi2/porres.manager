@@ -80,6 +80,194 @@ final class AccountingChartEditor
     }
 
     /**
+     * Cierra huecos en la numeración. Cada cuenta sigue bajo el mismo rubro.
+     * Las líneas de los asientos guardan el id de la cuenta, así que muestran el código nuevo.
+     */
+    public function renumber(): int
+    {
+        return DB::transaction(function () {
+            $before = AccountingAccount::query()->pluck('code', 'id');
+            $this->renumberChildren('');
+            $after = AccountingAccount::query()->pluck('code', 'id');
+            $changed = 0;
+            foreach ($before as $id => $code) {
+                if (($after[$id] ?? null) !== $code) {
+                    $changed++;
+                }
+            }
+
+            return $changed;
+        });
+    }
+
+    private function renumberChildren(string $parentCode): void
+    {
+        $children = $this->childrenOf($parentCode);
+        $this->compactChildren($parentCode, $children);
+        foreach ($this->childrenOf($parentCode) as $child) {
+            $this->renumberChildren($child->code);
+        }
+    }
+
+    /**
+     * @param  Collection<int, AccountingAccount>  $children
+     */
+    private function compactChildren(string $parentCode, Collection $children): void
+    {
+        if ($parentCode !== '' && preg_match('/^\d+$/', $parentCode) !== 1) {
+            return;
+        }
+
+        $groups = [];
+        foreach ($children as $child) {
+            if (preg_match('/^\d+$/', (string) $child->code) !== 1) {
+                continue;
+            }
+            $groups[$this->trailingZeros((string) $child->code).'|'.strlen((string) $child->code)][] = $child;
+        }
+
+        $map = [];
+        foreach ($groups as $group) {
+            foreach ($this->planGroup($parentCode, collect($group)) as $id => $code) {
+                $map[$id] = $code;
+            }
+        }
+        if ($map === []) {
+            return;
+        }
+
+        $this->assertAvailable($map);
+        foreach ($map as $id => $code) {
+            AccountingAccount::query()->whereKey($id)->update(['code' => 'tmp-'.$id]);
+        }
+        foreach ($map as $id => $code) {
+            AccountingAccount::query()->whereKey($id)->update(['code' => $code]);
+        }
+    }
+
+    /**
+     * @param  Collection<int, AccountingAccount>  $children
+     * @return array<int, string>
+     */
+    private function planGroup(string $parentCode, Collection $children): array
+    {
+        $sorted = $children->sortBy(fn (AccountingAccount $account) => (int) $account->code)->values();
+        $parentValue = $parentCode === '' ? 0 : (int) $parentCode;
+        $offsets = [];
+        foreach ($sorted as $child) {
+            $offset = (int) $child->code - $parentValue;
+            if ($offset <= 0) {
+                return [];
+            }
+            $offsets[] = $offset;
+        }
+
+        $step = count($offsets) === 1
+            ? $this->stepFromOffset($offsets[0])
+            : $this->gcdOf($offsets);
+        if ($step < 1) {
+            return [];
+        }
+
+        $planned = [];
+        foreach ($sorted as $index => $child) {
+            $code = $this->formatCode($parentValue + $step * ($index + 1), strlen((string) $child->code));
+            if ($code === null || $this->trailingZeros($code) !== $this->trailingZeros((string) $child->code)) {
+                return [];
+            }
+            $planned[] = [$child, $code];
+        }
+
+        $map = [];
+        foreach ($planned as [$child, $code]) {
+            if ($code === (string) $child->code) {
+                continue;
+            }
+            $map[(int) $child->id] = $code;
+            $oldStem = $this->stem((string) $child->code);
+            $newStem = $this->stem($code);
+            foreach ($this->report->descendantAccounts((string) $child->code) as $descendant) {
+                $map[(int) $descendant->id] = $this->mappedCode((string) $descendant->code, $oldStem, $newStem);
+            }
+        }
+
+        return $map;
+    }
+
+    /**
+     * @return Collection<int, AccountingAccount>
+     */
+    private function childrenOf(string $parentCode): Collection
+    {
+        $codes = [];
+        foreach ($this->report->rows() as $row) {
+            if ($row['sums_to'] === $parentCode) {
+                $codes[] = $row['code'];
+            }
+        }
+        if ($codes === []) {
+            return collect();
+        }
+
+        return AccountingAccount::query()->whereIn('code', $codes)->orderBy('code')->get();
+    }
+
+    private function trailingZeros(string $code): int
+    {
+        if (preg_match('/0+$/', $code, $match) !== 1) {
+            return 0;
+        }
+
+        return strlen($match[0]);
+    }
+
+    private function stepFromOffset(int $offset): int
+    {
+        $text = (string) $offset;
+        $zeros = strlen($text) - strlen(rtrim($text, '0'));
+
+        return 10 ** $zeros;
+    }
+
+    /**
+     * @param  list<int>  $values
+     */
+    private function gcdOf(array $values): int
+    {
+        $result = 0;
+        foreach ($values as $value) {
+            $result = $this->gcd($result, $value);
+        }
+
+        return $result;
+    }
+
+    private function gcd(int $a, int $b): int
+    {
+        while ($b !== 0) {
+            $rest = $a % $b;
+            $a = $b;
+            $b = $rest;
+        }
+
+        return $a;
+    }
+
+    private function formatCode(int $number, int $width): ?string
+    {
+        $raw = (string) $number;
+        if ($raw === '' || strlen($raw) > $width) {
+            return null;
+        }
+        $code = str_pad($raw, $width, '0', STR_PAD_LEFT);
+        if (str_starts_with($code, '0')) {
+            return null;
+        }
+
+        return $code;
+    }
+
+    /**
      * @param  Collection<int, AccountingAccount>  $descendants
      */
     private function rewrite(Collection $descendants, string $fromCode, string $toCode): void

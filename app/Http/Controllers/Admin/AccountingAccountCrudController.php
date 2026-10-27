@@ -62,6 +62,7 @@ class AccountingAccountCrudController extends CrudController
             'pdfUrl' => backpack_url('accounting-account/export/pdf'),
             'saveUrl' => backpack_url('accounting-account/guardar'),
             'removeUrl' => backpack_url('accounting-account/quitar'),
+            'renumberUrl' => backpack_url('accounting-account/reordenar'),
             'title' => 'Cuentas',
             'breadcrumbs' => [
                 trans('backpack::crud.admin') => backpack_url('dashboard'),
@@ -206,6 +207,33 @@ class AccountingAccountCrudController extends CrudController
         }
 
         return redirect($url);
+    }
+
+    public function renumberAccounts(AccountingChartEditor $editor)
+    {
+        $this->authorizeAccounting();
+
+        $user = backpack_user();
+        if (! $user instanceof User || $user->hasAdministradoraInstitucionRole()) {
+            abort(403, 'No tiene permiso para reordenar la numeración.');
+        }
+
+        try {
+            $changed = $editor->renumber();
+        } catch (AccountingChartException $exception) {
+            return redirect()
+                ->back()
+                ->withErrors(['code' => $exception->getMessage()]);
+        }
+
+        $message = $changed === 0
+            ? 'La numeración ya está ordenada.'
+            : ($changed === 1
+                ? 'Se reordenó 1 cuenta. Los asientos muestran el código nuevo.'
+                : 'Se reordenaron '.$changed.' cuentas. Los asientos muestran el código nuevo.');
+        \Alert::success($message)->flash();
+
+        return redirect(backpack_url('accounting-account'));
     }
 
     protected function setupListOperation()

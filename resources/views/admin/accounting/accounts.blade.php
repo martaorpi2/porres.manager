@@ -14,9 +14,17 @@
             <div class="card-body">
                 <div class="accounts-tree-head">
                     <label for="account-search" class="journal-label mb-0">Plan de cuentas</label>
-                    @if($canCreate)
-                        <button type="button" class="accounts-text-action" id="account-add-rubro">Agregar rubro</button>
-                    @endif
+                    <div class="accounts-tree-actions">
+                        @if($canUpdate)
+                            <form method="post" action="{{ $renumberUrl }}" onsubmit="return confirm('Se van a cerrar los huecos de la numeración. Los asientos van a mostrar el código nuevo de cada cuenta. ¿Querés reordenar?');">
+                                @csrf
+                                <button type="submit" class="accounts-text-action">Reordenar numeración</button>
+                            </form>
+                        @endif
+                        @if($canCreate)
+                            <button type="button" class="accounts-text-action" id="account-add-rubro">Agregar rubro</button>
+                        @endif
+                    </div>
                 </div>
                 <input type="search" id="account-search" class="form-control mb-3" placeholder="Buscar por código o nombre" autocomplete="off">
                 <div class="accounts-tree-scroll" id="account-tree">
@@ -142,6 +150,13 @@
         gap: 1rem;
         margin-bottom: 0.65rem;
     }
+    .accounts-tree-actions {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        gap: 0.75rem 1rem;
+    }
+    .accounts-tree-actions form { margin: 0; }
     #account-search {
         display: block;
         width: 100%;

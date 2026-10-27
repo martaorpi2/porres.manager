@@ -25,6 +25,7 @@ Route::group([
     Route::crud('accounting-period', 'AccountingPeriodCrudController');
     Route::post('accounting-account/guardar', 'AccountingAccountCrudController@saveAccount')->name('accounting-account.save');
     Route::post('accounting-account/quitar', 'AccountingAccountCrudController@removeAccount')->name('accounting-account.remove');
+    Route::post('accounting-account/reordenar', 'AccountingAccountCrudController@renumberAccounts')->name('accounting-account.renumber');
     Route::get('accounting-account/export/pdf', 'AccountingAccountCrudController@exportPdf')->name('accounting-account.export.pdf');
     Route::crud('accounting-account', 'AccountingAccountCrudController');
     Route::get('accounting-journal', 'AccountingJournalController@index')->name('accounting-journal.index');
