@@ -102,6 +102,26 @@ class PaymentPlanPortfolioTest extends TestCase
         $this->assertSame([12, 11], array_column($report['plans'], 'id'));
         $this->assertSame(30.0, $report['pending']);
 
+        $closed = PaymentPlanPortfolio::assemble(
+            [
+                $this->plan(20, 1, '2025-08-08', 2),
+                $this->plan(21, 2, '2026-07-24', 3),
+            ],
+            [
+                $this->student(1, 'Pérez', 'Nora', '3'),
+                $this->student(2, 'Sosa', 'Iván', '4'),
+            ],
+            [],
+            [],
+            [
+                $this->installment(20, 400, Order::STATE_PENDING, null),
+                $this->installment(21, 500, Order::STATE_PENDING, null),
+            ],
+        );
+        $this->assertSame([], $closed['plans']);
+        $this->assertSame(0, $closed['active']);
+        $this->assertSame(0.0, $closed['pending']);
+
         $empty = PaymentPlanPortfolio::assemble([], [], [], [], []);
         $this->assertSame(0, $empty['active']);
         $this->assertSame(0, $empty['paid_installments']);
@@ -109,12 +129,13 @@ class PaymentPlanPortfolioTest extends TestCase
         $this->assertSame([], $empty['plans']);
     }
 
-    private function plan(int $id, int $studentId, ?string $createdAt): object
+    private function plan(int $id, int $studentId, ?string $createdAt, int $current = PaymentPlanPortfolio::ACTIVE): object
     {
         return (object) [
             'id' => $id,
             'student_id' => $studentId,
             'created_at' => $createdAt,
+            'current' => $current,
         ];
     }
 

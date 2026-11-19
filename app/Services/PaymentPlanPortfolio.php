@@ -8,12 +8,17 @@ use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Cartera vigente de planes de pago.
- * Un plan sigue activo mientras tenga alguna cuota del plan sin cobrar.
+ * Cartera de planes de pago vigentes.
+ * En ePorres el plan vigente es students_plans.current = 1.
+ * El 2 es el plan caído (expirado por mora) y el 3 es una solicitud todavía pendiente.
+ * Además tiene que quedar alguna cuota del plan sin cobrar.
  * Cuota pura, mora y financiación son el armado del alta. El saldo es lo que falta cobrar.
  */
 final class PaymentPlanPortfolio
 {
+    /** Vigente. El mismo valor que usa ePorres en students_plans.current. */
+    public const ACTIVE = 1;
+
     /**
      * @return array{
      *     active: int,
@@ -43,7 +48,8 @@ final class PaymentPlanPortfolio
 
         $plans = DB::connection('eporres')->table('students_plans')
             ->whereIn('id', $activeIds)
-            ->get(['id', 'student_id', 'created_at', 'dues']);
+            ->where('current', self::ACTIVE)
+            ->get(['id', 'student_id', 'created_at', 'dues', 'current']);
 
         $studentIds = $plans
             ->pluck('student_id')
@@ -142,7 +148,10 @@ final class PaymentPlanPortfolio
                 continue;
             }
             $plan = $plansById[$planId] ?? null;
-            $student = $plan === null ? null : ($studentsById[(int) ($plan->student_id ?? 0)] ?? null);
+            if ($plan === null || (int) ($plan->current ?? 0) !== self::ACTIVE) {
+                continue;
+            }
+            $student = $studentsById[(int) ($plan->student_id ?? 0)] ?? null;
             $split = $parts[$planId] ?? ['debt' => 0.0, 'late' => 0.0, 'financing' => 0.0];
             $rows[] = [
                 'id' => $planId,
@@ -180,7 +189,9 @@ final class PaymentPlanPortfolio
     {
         return Order::query()
             ->where('quota_number', '>=', ReportePagosDiaCriteria::PLAN_QUOTA_MIN)
-            ->where('student_plan_id', '>', 0)
+            ->whereIn('student_plan_id', function ($query) {
+                $query->select('id')->from('students_plans')->where('current', self::ACTIVE);
+            })
             ->where(function ($query) {
                 $query->whereNull('estado')->orWhere('estado', 1);
             })

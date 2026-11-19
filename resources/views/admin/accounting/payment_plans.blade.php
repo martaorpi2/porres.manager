@@ -44,7 +44,7 @@
 </div>
 
 <p class="text-muted">
-    Un plan figura mientras tenga alguna cuota del plan sin pagar.
+    Entran los planes vigentes que todavía tienen alguna cuota sin pagar. Los caídos por mora y las solicitudes pendientes quedan afuera.
     Cuota pura, mora y financiación son los importes con los que se abrió el plan.
     El saldo es la suma de las cuotas del plan que todavía no se cobraron.
 </p>
