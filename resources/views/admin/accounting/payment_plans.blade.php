@@ -14,11 +14,10 @@
 <style>
     .plan-metric h3 { margin-bottom: 0; }
     .plan-metric .text-muted { font-size: 0.85rem; }
-    .plan-note {
-        background: #cfe2ff;
-        color: #000;
-        border: 1px solid #9ec5fe;
-    }
+    #payment-plans-table_wrapper .dataTables_filter,
+    #payment-plans-table_wrapper .dataTables_length,
+    #payment-plans-table_wrapper .dataTables_info,
+    #payment-plans-table_wrapper .dataTables_paginate { color: #1e2a4a; }
 </style>
 
 <div class="row mb-3">
@@ -72,15 +71,18 @@
     </div>
 </div>
 
-<div class="alert plan-note" role="alert">
+<div class="alert alert-info text-black" role="alert">
     El detalle lista los planes vigentes que todavía tienen alguna cuota sin pagar. Las tarjetas cuentan los planes caídos por mora, los completados y los reemplazados.
     Período, estado, cuotas y monto son los del listado de planes de ePorres. En cada plan se abren las cuotas originales y las cuotas del plan.
     Cuota pura, mora y financiación son los importes con los que se abrió el plan.
     El saldo es la suma de las cuotas del plan que todavía no se cobraron.
 </div>
 
+@if($plans === [])
+    <p class="mb-0">No hay planes de pago con cuotas pendientes.</p>
+@else
 <div class="table-responsive">
-    <table class="table table-sm table-bordered bg-white">
+    <table id="payment-plans-table" class="table table-sm table-bordered bg-white w-100">
         <thead class="table-light">
             <tr>
                 <th>Alumno</th>
@@ -97,23 +99,17 @@
             </tr>
         </thead>
         <tbody>
-            @forelse($plans as $plan)
+            @foreach($plans as $plan)
+                @php
+                    $openedOrder = $plan['opened_on'];
+                    if (preg_match('/^(\d{2})\/(\d{2})\/(\d{4})$/', $plan['opened_on'], $openedMatch)) {
+                        $openedOrder = $openedMatch[3].$openedMatch[2].$openedMatch[1];
+                    }
+                @endphp
                 <tr>
-                    <td>{{ $plan['student'] }}</td>
-                    <td>{{ $plan['period'] }}</td>
-                    <td>{{ $plan['status'] }}</td>
-                    <td class="text-center">{{ $plan['agreed_dues'] }}</td>
-                    <td class="text-end">${{ $money($plan['amount_owed']) }}</td>
-                    <td>{{ $plan['opened_on'] }}</td>
-                    <td class="text-center">{{ $plan['paid'] }} / {{ $plan['dues'] }}</td>
-                    <td class="text-end">${{ $money($plan['debt']) }}</td>
-                    <td class="text-end">${{ $money($plan['late']) }}</td>
-                    <td class="text-end">${{ $money($plan['financing']) }}</td>
-                    <td class="text-end">${{ $money($plan['pending']) }}</td>
-                </tr>
-                <tr>
-                    <td colspan="11" class="bg-light">
-                        <details>
+                    <td data-order="{{ $plan['student'] }}">
+                        <div>{{ $plan['student'] }}</div>
+                        <details class="mt-1">
                             <summary>Cuotas originales ({{ count($plan['originals']) }}) y cuotas del plan ({{ count($plan['schedule']) }})</summary>
                             <div class="row mt-2">
                                 <div class="col-lg-6">
@@ -127,28 +123,75 @@
                             </div>
                         </details>
                     </td>
+                    <td>{{ $plan['period'] }}</td>
+                    <td>{{ $plan['status'] }}</td>
+                    <td class="text-center" data-order="{{ $plan['agreed_dues'] }}">{{ $plan['agreed_dues'] }}</td>
+                    <td class="text-end" data-order="{{ $plan['amount_owed'] }}">${{ $money($plan['amount_owed']) }}</td>
+                    <td data-order="{{ $openedOrder }}">{{ $plan['opened_on'] }}</td>
+                    <td class="text-center" data-order="{{ $plan['paid'] }}">{{ $plan['paid'] }} / {{ $plan['dues'] }}</td>
+                    <td class="text-end" data-order="{{ $plan['debt'] }}">${{ $money($plan['debt']) }}</td>
+                    <td class="text-end" data-order="{{ $plan['late'] }}">${{ $money($plan['late']) }}</td>
+                    <td class="text-end" data-order="{{ $plan['financing'] }}">${{ $money($plan['financing']) }}</td>
+                    <td class="text-end" data-order="{{ $plan['pending'] }}">${{ $money($plan['pending']) }}</td>
                 </tr>
-            @empty
-                <tr>
-                    <td colspan="11">No hay planes de pago con cuotas pendientes.</td>
-                </tr>
-            @endforelse
+            @endforeach
         </tbody>
-        @if($plans !== [])
-            <tfoot class="table-light fw-bold">
-                <tr>
-                    <td colspan="3">Total</td>
-                    <td class="text-center">{{ $agreed_dues }}</td>
-                    <td class="text-end">${{ $money($amount_owed) }}</td>
-                    <td></td>
-                    <td class="text-center">{{ $paid_installments }} / {{ $installments }}</td>
-                    <td class="text-end">${{ $money($debt) }}</td>
-                    <td class="text-end">${{ $money($late) }}</td>
-                    <td class="text-end">${{ $money($financing) }}</td>
-                    <td class="text-end">${{ $money($pending) }}</td>
-                </tr>
-            </tfoot>
-        @endif
+        <tfoot class="table-light fw-bold">
+            <tr>
+                <td>Total</td>
+                <td></td>
+                <td></td>
+                <td class="text-center">{{ $agreed_dues }}</td>
+                <td class="text-end">${{ $money($amount_owed) }}</td>
+                <td></td>
+                <td class="text-center">{{ $paid_installments }} / {{ $installments }}</td>
+                <td class="text-end">${{ $money($debt) }}</td>
+                <td class="text-end">${{ $money($late) }}</td>
+                <td class="text-end">${{ $money($financing) }}</td>
+                <td class="text-end">${{ $money($pending) }}</td>
+            </tr>
+        </tfoot>
     </table>
 </div>
+@endif
+@endsection
+
+@section('after_styles')
+    <link rel="stylesheet" href="https://cdn.datatables.net/1.13.1/css/dataTables.bootstrap5.min.css">
+@endsection
+
+@section('after_scripts')
+<script src="https://cdn.datatables.net/1.13.1/js/jquery.dataTables.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.1/js/dataTables.bootstrap5.min.js"></script>
+<script>
+    jQuery(function () {
+        var table = document.getElementById('payment-plans-table');
+        if (!table || !jQuery.fn.DataTable) {
+            return;
+        }
+        jQuery(table).DataTable({
+            pageLength: 10,
+            lengthMenu: [[10, 25, 50, -1], [10, 25, 50, 'Todos']],
+            order: [[0, 'asc']],
+            scrollX: true,
+            language: {
+                decimal: ',',
+                thousands: '.',
+                emptyTable: 'No hay planes de pago con cuotas pendientes.',
+                info: 'Mostrando _START_ a _END_ de _TOTAL_ planes',
+                infoEmpty: 'No hay planes para mostrar',
+                infoFiltered: '(filtrados de _MAX_)',
+                lengthMenu: 'Mostrar _MENU_',
+                search: 'Buscar:',
+                zeroRecords: 'No se encontraron planes',
+                paginate: {
+                    first: 'Primero',
+                    last: 'Último',
+                    next: 'Siguiente',
+                    previous: 'Anterior'
+                }
+            }
+        });
+    });
+</script>
 @endsection
