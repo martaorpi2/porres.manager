@@ -188,7 +188,7 @@
         jQuery(table).DataTable({
             pageLength: 10,
             lengthMenu: [[10, 25, 50, -1], [10, 25, 50, 'Todos']],
-            order: [[0, 'asc']],
+            order: [[3, 'desc']],
             scrollX: true,
             language: {
                 decimal: ',',
