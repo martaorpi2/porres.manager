@@ -67,7 +67,7 @@
     <div class="col-6 col-xl">
         <div class="card plan-metric h-100">
             <div class="card-body">
-                <div class="text-muted">Monto</div>
+                <div class="text-muted">Monto total</div>
                 <h3>${{ $money($amount_owed) }}</h3>
             </div>
         </div>
@@ -107,8 +107,8 @@
 </div>
 
 <div class="alert alert-info text-black" role="alert">
-    El detalle lista los planes vigentes que todavía tienen alguna cuota sin pagar. La primera fila cuenta los planes y las cuotas pagadas. La segunda muestra los totales de monto, cuota pura, interés por mora, interés de financiación y saldo, los mismos del Excel.
-    Cuotas y monto son los del listado de planes de ePorres.
+    El detalle lista los planes vigentes que todavía tienen alguna cuota sin pagar. La primera fila cuenta los planes y las cuotas pagadas. La segunda muestra el monto total, la cuota pura, el interés por mora, el interés de financiación y el saldo, los mismos del Excel.
+    Cuotas y monto total son los del listado de planes de ePorres.
     Cuota pura, interés por mora e interés de financiación muestran solo lo que todavía se debe.
     El saldo es la suma de las cuotas del plan que todavía no se cobraron.
 </div>
@@ -124,7 +124,7 @@
             <tr>
                 <th>Alumno</th>
                 <th class="text-center">Cuotas</th>
-                <th class="text-end">Monto</th>
+                <th class="text-end">Monto total</th>
                 <th>Alta</th>
                 <th class="text-center">Pagadas</th>
                 <th class="text-end">Cuota pura</th>

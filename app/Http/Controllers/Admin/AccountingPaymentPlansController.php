@@ -49,7 +49,7 @@ class AccountingPaymentPlansController
 
         return SpreadsheetDownload::fromRows(
             'planes_de_pago_'.date('Y-m-d').'.xlsx',
-            ['Alumno', 'Cuotas', 'Monto', 'Alta', 'Cuotas pagadas', 'Cuotas generadas', 'Cuota pura a pagar', 'Interés por mora a pagar', 'Interés financiación a pagar', 'Saldo'],
+            ['Alumno', 'Cuotas', 'Monto total', 'Alta', 'Cuotas pagadas', 'Cuotas generadas', 'Cuota pura a pagar', 'Interés por mora a pagar', 'Interés financiación a pagar', 'Saldo'],
             $rows
         );
     }
