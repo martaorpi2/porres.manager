@@ -22,6 +22,12 @@ final class PaymentPlanPortfolio
     /** Caído por mora. */
     public const FALLEN = 2;
 
+    /** Completo. */
+    public const COMPLETE = 4;
+
+    /** Reemplazado por un plan nuevo. */
+    public const REPLACED = 5;
+
     /**
      * @return array{
      *     active: int,
@@ -40,9 +46,8 @@ final class PaymentPlanPortfolio
         $activeIds = $this->activePlanIds();
         if ($activeIds === []) {
             $report = self::assemble([], [], [], [], []);
-            $report['fallen'] = $this->fallenCount();
 
-            return $report;
+            return $this->withStatusCounts($report);
         }
 
         $installments = $this->linkedOrders($activeIds, true);
@@ -88,9 +93,8 @@ final class PaymentPlanPortfolio
                 ->get(['id', 'start_date', 'end_date']);
 
         $report = self::assemble($plans, $students, $pend, $amortizations, $installments, $catalogs, $originals);
-        $report['fallen'] = $this->fallenCount();
 
-        return $report;
+        return $this->withStatusCounts($report);
     }
 
     /**
@@ -127,11 +131,22 @@ final class PaymentPlanPortfolio
             ]);
     }
 
-    private function fallenCount(): int
+    /** @param  array<string, mixed>  $report
+     * @return array<string, mixed>
+     */
+    private function withStatusCounts(array $report): array
     {
-        return (int) DB::connection('eporres')->table('students_plans')
-            ->where('current', self::FALLEN)
-            ->count();
+        $counts = DB::connection('eporres')->table('students_plans')
+            ->selectRaw('current, COUNT(*) as total')
+            ->whereIn('current', [self::FALLEN, self::COMPLETE, self::REPLACED])
+            ->groupBy('current')
+            ->pluck('total', 'current');
+
+        $report['fallen'] = (int) ($counts[self::FALLEN] ?? 0);
+        $report['completed'] = (int) ($counts[self::COMPLETE] ?? 0);
+        $report['replaced'] = (int) ($counts[self::REPLACED] ?? 0);
+
+        return $report;
     }
 
     /**

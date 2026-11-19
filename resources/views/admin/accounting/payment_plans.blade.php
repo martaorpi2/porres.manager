@@ -22,7 +22,7 @@
 </style>
 
 <div class="row mb-3">
-    <div class="col-sm-6 col-xl-3">
+    <div class="col-6 col-xl-2">
         <div class="card plan-metric">
             <div class="card-body">
                 <div class="text-muted">Planes activos</div>
@@ -30,7 +30,7 @@
             </div>
         </div>
     </div>
-    <div class="col-sm-6 col-xl-3">
+    <div class="col-6 col-xl-2">
         <div class="card plan-metric">
             <div class="card-body">
                 <div class="text-muted">Planes caídos</div>
@@ -38,7 +38,23 @@
             </div>
         </div>
     </div>
-    <div class="col-sm-6 col-xl-3">
+    <div class="col-6 col-xl-2">
+        <div class="card plan-metric">
+            <div class="card-body">
+                <div class="text-muted">Planes completados</div>
+                <h3>{{ $completed }}</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-xl-2">
+        <div class="card plan-metric">
+            <div class="card-body">
+                <div class="text-muted">Planes reemplazados</div>
+                <h3>{{ $replaced }}</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-xl-2">
         <div class="card plan-metric">
             <div class="card-body">
                 <div class="text-muted">Cuotas pagadas</div>
@@ -46,7 +62,7 @@
             </div>
         </div>
     </div>
-    <div class="col-sm-6 col-xl-3">
+    <div class="col-6 col-xl-2">
         <div class="card plan-metric">
             <div class="card-body">
                 <div class="text-muted">Saldo por pagar</div>
@@ -57,7 +73,7 @@
 </div>
 
 <div class="alert plan-note" role="alert">
-    El detalle lista los planes vigentes que todavía tienen alguna cuota sin pagar. La tarjeta de caídos cuenta los que ePorres marcó como caídos por mora.
+    El detalle lista los planes vigentes que todavía tienen alguna cuota sin pagar. Las tarjetas cuentan los planes caídos por mora, los completados y los reemplazados.
     Período, estado, cuotas y monto son los del listado de planes de ePorres. En cada plan se abren las cuotas originales y las cuotas del plan.
     Cuota pura, mora y financiación son los importes con los que se abrió el plan.
     El saldo es la suma de las cuotas del plan que todavía no se cobraron.
