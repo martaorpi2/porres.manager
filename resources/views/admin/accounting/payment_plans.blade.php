@@ -21,50 +21,85 @@
 </style>
 
 <div class="row mb-3">
-    <div class="col-6 col-xl-2">
-        <div class="card plan-metric">
+    <div class="col-6 col-xl">
+        <div class="card plan-metric h-100">
             <div class="card-body">
                 <div class="text-muted">Planes activos</div>
                 <h3>{{ $active }}</h3>
             </div>
         </div>
     </div>
-    <div class="col-6 col-xl-2">
-        <div class="card plan-metric">
+    <div class="col-6 col-xl">
+        <div class="card plan-metric h-100">
             <div class="card-body">
                 <div class="text-muted">Planes caídos</div>
                 <h3>{{ $fallen }}</h3>
             </div>
         </div>
     </div>
-    <div class="col-6 col-xl-2">
-        <div class="card plan-metric">
+    <div class="col-6 col-xl">
+        <div class="card plan-metric h-100">
             <div class="card-body">
                 <div class="text-muted">Planes completados</div>
                 <h3>{{ $completed }}</h3>
             </div>
         </div>
     </div>
-    <div class="col-6 col-xl-2">
-        <div class="card plan-metric">
+    <div class="col-6 col-xl">
+        <div class="card plan-metric h-100">
             <div class="card-body">
                 <div class="text-muted">Planes reemplazados</div>
                 <h3>{{ $replaced }}</h3>
             </div>
         </div>
     </div>
-    <div class="col-6 col-xl-2">
-        <div class="card plan-metric">
+    <div class="col-6 col-xl">
+        <div class="card plan-metric h-100">
             <div class="card-body">
                 <div class="text-muted">Cuotas pagadas</div>
                 <h3>{{ $paid_installments }} <span class="fs-6 text-muted">de {{ $installments }}</span></h3>
             </div>
         </div>
     </div>
-    <div class="col-6 col-xl-2">
-        <div class="card plan-metric">
+</div>
+
+<div class="row mb-3">
+    <div class="col-6 col-xl">
+        <div class="card plan-metric h-100">
             <div class="card-body">
-                <div class="text-muted">Saldo por pagar</div>
+                <div class="text-muted">Monto</div>
+                <h3>${{ $money($amount_owed) }}</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-xl">
+        <div class="card plan-metric h-100">
+            <div class="card-body">
+                <div class="text-muted">Cuota pura a pagar</div>
+                <h3>${{ $money($debt) }}</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-xl">
+        <div class="card plan-metric h-100">
+            <div class="card-body">
+                <div class="text-muted">Interés por mora a pagar</div>
+                <h3>${{ $money($late) }}</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-xl">
+        <div class="card plan-metric h-100">
+            <div class="card-body">
+                <div class="text-muted">Interés financiación a pagar</div>
+                <h3>${{ $money($financing) }}</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-xl">
+        <div class="card plan-metric h-100">
+            <div class="card-body">
+                <div class="text-muted">Saldo</div>
                 <h3>${{ $money($pending) }}</h3>
             </div>
         </div>
@@ -72,11 +107,13 @@
 </div>
 
 <div class="alert alert-info text-black" role="alert">
-    El detalle lista los planes vigentes que todavía tienen alguna cuota sin pagar. Las tarjetas cuentan los planes caídos por mora, los completados y los reemplazados.
+    El detalle lista los planes vigentes que todavía tienen alguna cuota sin pagar. La primera fila cuenta los planes y las cuotas pagadas. La segunda muestra los totales de monto, cuota pura, interés por mora, interés de financiación y saldo, los mismos del Excel.
     Cuotas y monto son los del listado de planes de ePorres.
     Cuota pura, interés por mora e interés de financiación muestran solo lo que todavía se debe.
     El saldo es la suma de las cuotas del plan que todavía no se cobraron.
 </div>
+
+<h2 class="h4 mb-2">Detalle</h2>
 
 @if($plans === [])
     <p class="mb-0">No hay planes de pago con cuotas pendientes.</p>
