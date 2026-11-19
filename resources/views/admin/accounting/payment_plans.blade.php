@@ -17,7 +17,7 @@
 </style>
 
 <div class="row mb-3">
-    <div class="col-md-4">
+    <div class="col-sm-6 col-xl-3">
         <div class="card plan-metric">
             <div class="card-body">
                 <div class="text-muted">Planes activos</div>
@@ -25,7 +25,15 @@
             </div>
         </div>
     </div>
-    <div class="col-md-4">
+    <div class="col-sm-6 col-xl-3">
+        <div class="card plan-metric">
+            <div class="card-body">
+                <div class="text-muted">Planes caídos</div>
+                <h3>{{ $fallen }}</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-xl-3">
         <div class="card plan-metric">
             <div class="card-body">
                 <div class="text-muted">Cuotas pagadas</div>
@@ -33,7 +41,7 @@
             </div>
         </div>
     </div>
-    <div class="col-md-4">
+    <div class="col-sm-6 col-xl-3">
         <div class="card plan-metric">
             <div class="card-body">
                 <div class="text-muted">Saldo por pagar</div>
@@ -44,7 +52,7 @@
 </div>
 
 <p class="text-muted">
-    Entran los planes vigentes que todavía tienen alguna cuota sin pagar. Los caídos por mora y las solicitudes pendientes quedan afuera.
+    El detalle lista los planes vigentes que todavía tienen alguna cuota sin pagar. La tarjeta de caídos cuenta los que ePorres marcó como caídos por mora.
     Cuota pura, mora y financiación son los importes con los que se abrió el plan.
     El saldo es la suma de las cuotas del plan que todavía no se cobraron.
 </p>

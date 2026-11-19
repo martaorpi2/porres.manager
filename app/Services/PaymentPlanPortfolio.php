@@ -19,9 +19,13 @@ final class PaymentPlanPortfolio
     /** Vigente. El mismo valor que usa ePorres en students_plans.current. */
     public const ACTIVE = 1;
 
+    /** Caído por mora. */
+    public const FALLEN = 2;
+
     /**
      * @return array{
      *     active: int,
+     *     fallen: int,
      *     paid_installments: int,
      *     installments: int,
      *     pending: float,
@@ -35,7 +39,10 @@ final class PaymentPlanPortfolio
     {
         $activeIds = $this->activePlanIds();
         if ($activeIds === []) {
-            return self::assemble([], [], [], [], []);
+            $report = self::assemble([], [], [], [], []);
+            $report['fallen'] = $this->fallenCount();
+
+            return $report;
         }
 
         $installments = Order::query()
@@ -72,7 +79,17 @@ final class PaymentPlanPortfolio
             ->whereIn('student_plan_id', $activeIds)
             ->get(['student_plan_id', 'interest_amount']);
 
-        return self::assemble($plans, $students, $pend, $amortizations, $installments);
+        $report = self::assemble($plans, $students, $pend, $amortizations, $installments);
+        $report['fallen'] = $this->fallenCount();
+
+        return $report;
+    }
+
+    private function fallenCount(): int
+    {
+        return (int) DB::connection('eporres')->table('students_plans')
+            ->where('current', self::FALLEN)
+            ->count();
     }
 
     /**
