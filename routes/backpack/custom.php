@@ -47,6 +47,8 @@ Route::group([
     Route::get('accounting-delinquency/{anio}/deudores/{cuotas}.xlsx', 'AccountingDelinquencyController@exportDeudoresTramo')->whereNumber('anio')->where('cuotas', '[0-9]+|mas-de-6')->name('accounting-delinquency.deudores-tramo');
     Route::get('accounting-delinquency/{anio}/egresados.xlsx', 'AccountingDelinquencyController@exportEgresados')->whereNumber('anio')->name('accounting-delinquency.egresados');
     Route::get('accounting-delinquency/{anio?}', 'AccountingDelinquencyController@index')->whereNumber('anio')->name('accounting-delinquency.index');
+    Route::get('accounting-payment-plans/excel', 'AccountingPaymentPlansController@excel')->name('accounting-payment-plans.excel');
+    Route::get('accounting-payment-plans', 'AccountingPaymentPlansController@index')->name('accounting-payment-plans.index');
     Route::get('accounting-tariff-reductions/excel', 'AccountingTariffReductionController@excel')->name('accounting-tariff-reductions.excel');
     Route::get('accounting-tariff-reductions', 'AccountingTariffReductionController@index')->name('accounting-tariff-reductions.index');
     Route::get('accounting-daily-payments/excel', 'AccountingDailyPaymentsController@excel')->name('accounting-daily-payments.excel');

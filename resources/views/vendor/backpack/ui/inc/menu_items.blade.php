@@ -47,6 +47,7 @@
         <x-backpack::menu-item title="Libro diario" icon="la la-book" :link="backpack_url('accounting-journal')" />
         <x-backpack::menu-item title="Registración de cobranzas" icon="la la-upload" :link="backpack_url('accounting-settlement')" />
         <x-backpack::menu-item title="Pago/Morosidad" icon="la la-exclamation-triangle" :link="backpack_url('accounting-delinquency/'.date('Y'))" />
+        <x-backpack::menu-item title="Planes de pago" icon="la la-file-invoice-dollar" :link="backpack_url('accounting-payment-plans')" />
         <x-backpack::menu-item title="Pagos por Día" icon="la la-money-bill" :link="backpack_url('accounting-daily-payments')" />
         <x-backpack::menu-item title="Liberación MP" icon="la la-calendar-check" :link="backpack_url('accounting-mercadopago-releases')" />
         <x-backpack::menu-item title="Reducciones arancelarias" icon="la la-percent" :link="backpack_url('accounting-tariff-reductions')" />
@@ -75,6 +76,7 @@
             @endif
             <x-backpack::menu-dropdown-item title="Registración de cobranzas" :link="backpack_url('accounting-settlement')" />
             <x-backpack::menu-dropdown-item title="Pago/Morosidad" :link="backpack_url('accounting-delinquency/'.date('Y'))" />
+            <x-backpack::menu-dropdown-item title="Planes de pago" :link="backpack_url('accounting-payment-plans')" />
             <x-backpack::menu-dropdown-item title="Pagos por Día" :link="backpack_url('accounting-daily-payments')" />
             <x-backpack::menu-dropdown-item title="Liberación MP" :link="backpack_url('accounting-mercadopago-releases')" />
             <x-backpack::menu-dropdown-item title="Reducciones arancelarias" :link="backpack_url('accounting-tariff-reductions')" />
