@@ -107,8 +107,7 @@
 </div>
 
 <div class="alert alert-info text-black" role="alert">
-    El detalle lista los planes vigentes que todavía tienen alguna cuota sin pagar. La primera fila cuenta los planes y las cuotas pagadas. La segunda muestra el monto total, la cuota pura, el interés por mora, el interés de financiación y el saldo, los mismos del Excel.
-    Cuotas y monto total son los del listado de planes de ePorres.
+    El detalle lista los planes vigentes que todavía tienen alguna cuota sin pagar.
     Cuota pura, interés por mora e interés de financiación muestran solo lo que todavía se debe.
     El saldo es la suma de las cuotas del plan que todavía no se cobraron.
 </div>
