@@ -12,7 +12,8 @@ use Illuminate\Support\Facades\DB;
  * En ePorres el plan vigente es students_plans.current = 1.
  * El 2 es el plan caído (expirado por mora) y el 3 es una solicitud todavía pendiente.
  * Además tiene que quedar alguna cuota del plan sin cobrar.
- * Cuota pura, mora y financiación son el armado del alta. El saldo es lo que falta cobrar.
+ * Cuota pura y mora son lo que falta cobrar del capital, en la proporción del alta.
+ * La financiación es el interés de las cuotas del plan que siguen pendientes.
  */
 final class PaymentPlanPortfolio
 {
@@ -77,7 +78,7 @@ final class PaymentPlanPortfolio
 
         $amortizations = DB::connection('eporres')->table('amortizations')
             ->whereIn('student_plan_id', $activeIds)
-            ->get(['student_plan_id', 'interest_amount']);
+            ->get(['student_plan_id', 'order_id', 'interest_amount']);
 
         $catalogIds = $plans
             ->pluck('plan_id')
@@ -202,13 +203,13 @@ final class PaymentPlanPortfolio
                 $parts[$planId]['debt'] += (float) $row->amount;
             }
         }
+        $amortByOrder = [];
         foreach ($amortizations as $row) {
-            $planId = (int) $row->student_plan_id;
-            if ($planId < 1) {
+            $orderId = (int) ($row->order_id ?? 0);
+            if ($orderId < 1) {
                 continue;
             }
-            $parts[$planId] ??= ['debt' => 0.0, 'late' => 0.0, 'financing' => 0.0];
-            $parts[$planId]['financing'] += (float) ($row->interest_amount ?? 0);
+            $amortByOrder[$orderId] = ($amortByOrder[$orderId] ?? 0.0) + (float) ($row->interest_amount ?? 0);
         }
 
         $schedule = [];
@@ -217,7 +218,7 @@ final class PaymentPlanPortfolio
             if ($planId < 1) {
                 continue;
             }
-            $schedule[$planId] ??= ['paid' => 0, 'dues' => 0, 'pending' => 0.0, 'orders' => []];
+            $schedule[$planId] ??= ['paid' => 0, 'dues' => 0, 'pending' => 0.0, 'financing_due' => 0.0, 'surcharge_due' => 0.0, 'orders' => []];
             if (property_exists($order, 'quota_number')) {
                 $schedule[$planId]['orders'][] = $order;
             }
@@ -227,6 +228,9 @@ final class PaymentPlanPortfolio
 
                 continue;
             }
+            $orderId = (int) ($order->id ?? 0);
+            $schedule[$planId]['financing_due'] += ($amortByOrder[$orderId] ?? 0.0);
+            $schedule[$planId]['surcharge_due'] += (float) ($order->surcharge_amount ?? 0);
             $schedule[$planId]['pending'] += (float) $order->quota_amount;
         }
 
@@ -241,6 +245,13 @@ final class PaymentPlanPortfolio
             }
             $student = $studentsById[(int) ($plan->student_id ?? 0)] ?? null;
             $split = $parts[$planId] ?? ['debt' => 0.0, 'late' => 0.0, 'financing' => 0.0];
+            $owed = self::owed(
+                $counts['pending'],
+                $counts['financing_due'],
+                $counts['surcharge_due'],
+                $split['debt'],
+                $split['late'],
+            );
             $agreed = (int) ($plan->dues ?? 0);
             $catalog = $catalogsById[(int) ($plan->plan_id ?? 0)] ?? null;
             $rows[] = [
@@ -253,10 +264,10 @@ final class PaymentPlanPortfolio
                 'amount_owed' => round((float) ($plan->amount_owed ?? 0), 2),
                 'paid' => $counts['paid'],
                 'dues' => $counts['dues'],
-                'debt' => round($split['debt'], 2),
-                'late' => round($split['late'], 2),
-                'financing' => round($split['financing'], 2),
-                'pending' => round($counts['pending'], 2),
+                'debt' => $owed['debt'],
+                'late' => $owed['late'],
+                'financing' => $owed['financing'],
+                'pending' => $owed['pending'],
                 'originals' => array_map(fn (object $order) => self::orderLine($order, $agreed), $originalsByPlan[$planId] ?? []),
                 'schedule' => array_map(fn (object $order) => self::orderLine($order, $agreed), $counts['orders']),
             ];
@@ -314,6 +325,32 @@ final class PaymentPlanPortfolio
         $paidAt = $order->paid_at ?? null;
 
         return $paidAt !== null && $paidAt !== '' && ! str_starts_with((string) $paidAt, '0000-00-00');
+    }
+
+    /**
+     * @return array{debt: float, late: float, financing: float, pending: float}
+     */
+    private static function owed(float $pendingQuota, float $financing, float $surcharge, float $openingDebt, float $openingLate): array
+    {
+        $pendingQuota = round(max(0, $pendingQuota), 2);
+        $financing = round(min(max(0, $financing), $pendingQuota), 2);
+        $capital = round($pendingQuota - $financing, 2);
+        $base = round($openingDebt + $openingLate, 2);
+        if ($base > 0) {
+            $debt = round($capital * ($openingDebt / $base), 2);
+            $late = round($capital - $debt, 2);
+        } else {
+            $debt = $capital;
+            $late = 0.0;
+        }
+        $late = round($late + max(0, $surcharge), 2);
+
+        return [
+            'debt' => $debt,
+            'late' => $late,
+            'financing' => $financing,
+            'pending' => round($debt + $late + $financing, 2),
+        ];
     }
 
     private static function statusLabel(int $current): string

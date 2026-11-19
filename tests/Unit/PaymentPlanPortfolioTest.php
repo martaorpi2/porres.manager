@@ -20,13 +20,14 @@ class PaymentPlanPortfolioTest extends TestCase
                 $this->pend(7, 0, 'Cuota', 999),
             ],
             [
-                $this->financing(7, 80),
-                $this->financing(7, 20),
+                $this->financing(7, 40, 11),
+                $this->financing(7, 36, 12),
+                $this->financing(7, 24, 13),
             ],
             [
-                $this->installment(7, 1000, Order::STATE_PAID, '2026-04-01'),
-                $this->installment(7, 1000, Order::STATE_PENDING, null),
-                $this->installment(7, 500, Order::STATE_PENDING, null),
+                $this->installment(7, 1000, Order::STATE_PAID, '2026-04-01', 11),
+                $this->installment(7, 1000, Order::STATE_PENDING, null, 12),
+                $this->installment(7, 500, Order::STATE_PENDING, null, 13),
             ],
         );
 
@@ -34,9 +35,9 @@ class PaymentPlanPortfolioTest extends TestCase
         $this->assertSame(1, $report['paid_installments']);
         $this->assertSame(3, $report['installments']);
         $this->assertSame(1500.0, $report['pending']);
-        $this->assertSame(1500.0, $report['debt']);
-        $this->assertSame(100.0, $report['late']);
-        $this->assertSame(100.0, $report['financing']);
+        $this->assertSame(1350.0, $report['debt']);
+        $this->assertSame(90.0, $report['late']);
+        $this->assertSame(60.0, $report['financing']);
         $this->assertSame('García, Ana - 30111222', $report['plans'][0]['student']);
         $this->assertSame('01/03/2026', $report['plans'][0]['opened_on']);
         $this->assertSame(1, $report['plans'][0]['paid']);
@@ -58,13 +59,13 @@ class PaymentPlanPortfolioTest extends TestCase
                 $this->pend(4, 10, 'interes', 40),
             ],
             [
-                $this->financing(4, 15.5),
+                $this->financing(4, 15.5, 24),
             ],
             [
-                $this->installment(2, 800, Order::STATE_PAID, '2026-02-01'),
-                $this->installment(2, 800, Order::STATE_PAID, '2026-03-01'),
-                $this->installment(4, 700, Order::STATE_PENDING, '2026-05-02'),
-                $this->installment(4, 650, Order::STATE_PENDING, null),
+                $this->installment(2, 800, Order::STATE_PAID, '2026-02-01', 21),
+                $this->installment(2, 800, Order::STATE_PAID, '2026-03-01', 22),
+                $this->installment(4, 700, Order::STATE_PENDING, '2026-05-02', 23),
+                $this->installment(4, 650, Order::STATE_PENDING, null, 24),
             ],
         );
 
@@ -76,7 +77,7 @@ class PaymentPlanPortfolioTest extends TestCase
         $this->assertSame(2, $report['installments']);
         $this->assertSame(650.0, $report['pending']);
         $this->assertSame(0.0, $report['debt']);
-        $this->assertSame(40.0, $report['late']);
+        $this->assertSame(634.5, $report['late']);
         $this->assertSame(15.5, $report['financing']);
     }
 
@@ -231,17 +232,19 @@ class PaymentPlanPortfolioTest extends TestCase
         ];
     }
 
-    private function financing(int $planId, float $interest): object
+    private function financing(int $planId, float $interest, int $orderId = 0): object
     {
         return (object) [
             'student_plan_id' => $planId,
+            'order_id' => $orderId,
             'interest_amount' => $interest,
         ];
     }
 
-    private function installment(int $planId, float $quota, string $state, ?string $paidAt): object
+    private function installment(int $planId, float $quota, string $state, ?string $paidAt, int $id = 0): object
     {
         return (object) [
+            'id' => $id,
             'student_plan_id' => $planId,
             'quota_amount' => $quota,
             'state' => $state,

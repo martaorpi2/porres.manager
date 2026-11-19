@@ -73,8 +73,8 @@
 
 <div class="alert alert-info text-black" role="alert">
     El detalle lista los planes vigentes que todavía tienen alguna cuota sin pagar. Las tarjetas cuentan los planes caídos por mora, los completados y los reemplazados.
-    Período, estado, cuotas y monto son los del listado de planes de ePorres. En cada plan se abren las cuotas originales y las cuotas del plan.
-    Cuota pura, mora y financiación son los importes con los que se abrió el plan.
+    Período, estado, cuotas y monto son los del listado de planes de ePorres.
+    Cuota pura, interés por mora e interés de financiación muestran solo lo que todavía se debe.
     El saldo es la suma de las cuotas del plan que todavía no se cobraron.
 </div>
 
@@ -93,8 +93,8 @@
                 <th>Alta</th>
                 <th class="text-center">Pagadas</th>
                 <th class="text-end">Cuota pura</th>
-                <th class="text-end">Mora</th>
-                <th class="text-end">Financiación</th>
+                <th class="text-end">Interés por mora</th>
+                <th class="text-end">Interés financiación</th>
                 <th class="text-end">Saldo</th>
             </tr>
         </thead>
@@ -107,22 +107,7 @@
                     }
                 @endphp
                 <tr>
-                    <td data-order="{{ $plan['student'] }}">
-                        <div>{{ $plan['student'] }}</div>
-                        <details class="mt-1">
-                            <summary>Cuotas originales ({{ count($plan['originals']) }}) y cuotas del plan ({{ count($plan['schedule']) }})</summary>
-                            <div class="row mt-2">
-                                <div class="col-lg-6">
-                                    <p class="mb-1"><strong>Cuotas originales</strong></p>
-                                    @include('admin.accounting.partials.payment_plan_orders', ['orders' => $plan['originals']])
-                                </div>
-                                <div class="col-lg-6">
-                                    <p class="mb-1"><strong>Cuotas del plan</strong></p>
-                                    @include('admin.accounting.partials.payment_plan_orders', ['orders' => $plan['schedule']])
-                                </div>
-                            </div>
-                        </details>
-                    </td>
+                    <td data-order="{{ $plan['student'] }}">{{ $plan['student'] }}</td>
                     <td>{{ $plan['period'] }}</td>
                     <td>{{ $plan['status'] }}</td>
                     <td class="text-center" data-order="{{ $plan['agreed_dues'] }}">{{ $plan['agreed_dues'] }}</td>
