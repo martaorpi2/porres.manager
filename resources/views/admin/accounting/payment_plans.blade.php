@@ -73,7 +73,7 @@
 
 <div class="alert alert-info text-black" role="alert">
     El detalle lista los planes vigentes que todavía tienen alguna cuota sin pagar. Las tarjetas cuentan los planes caídos por mora, los completados y los reemplazados.
-    Período, estado, cuotas y monto son los del listado de planes de ePorres.
+    Cuotas y monto son los del listado de planes de ePorres.
     Cuota pura, interés por mora e interés de financiación muestran solo lo que todavía se debe.
     El saldo es la suma de las cuotas del plan que todavía no se cobraron.
 </div>
@@ -86,8 +86,6 @@
         <thead class="table-light">
             <tr>
                 <th>Alumno</th>
-                <th>Período</th>
-                <th>Estado</th>
                 <th class="text-center">Cuotas</th>
                 <th class="text-end">Monto</th>
                 <th>Alta</th>
@@ -108,8 +106,6 @@
                 @endphp
                 <tr>
                     <td data-order="{{ $plan['student'] }}">{{ $plan['student'] }}</td>
-                    <td>{{ $plan['period'] }}</td>
-                    <td>{{ $plan['status'] }}</td>
                     <td class="text-center" data-order="{{ $plan['agreed_dues'] }}">{{ $plan['agreed_dues'] }}</td>
                     <td class="text-end" data-order="{{ $plan['amount_owed'] }}">${{ $money($plan['amount_owed']) }}</td>
                     <td data-order="{{ $openedOrder }}">{{ $plan['opened_on'] }}</td>
@@ -124,8 +120,6 @@
         <tfoot class="table-light fw-bold">
             <tr>
                 <td>Total</td>
-                <td></td>
-                <td></td>
                 <td class="text-center">{{ $agreed_dues }}</td>
                 <td class="text-end">${{ $money($amount_owed) }}</td>
                 <td></td>
