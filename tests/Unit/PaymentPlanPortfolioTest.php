@@ -129,6 +129,78 @@ class PaymentPlanPortfolioTest extends TestCase
         $this->assertSame([], $empty['plans']);
     }
 
+    public function test_each_plan_carries_the_eporres_list_and_its_orders(): void
+    {
+        $report = PaymentPlanPortfolio::assemble(
+            [(object) [
+                'id' => 93,
+                'student_id' => 3,
+                'plan_id' => 4,
+                'dues' => 4,
+                'amount_owed' => 817560,
+                'current' => PaymentPlanPortfolio::ACTIVE,
+                'created_at' => '2026-07-02',
+            ]],
+            [$this->student(3, 'García', 'Ana', '30111222')],
+            [],
+            [],
+            [
+                (object) [
+                    'id' => 501,
+                    'student_plan_id' => 93,
+                    'quota_number' => 101,
+                    'quota_amount' => 200000,
+                    'amount_paid' => 200000,
+                    'state' => Order::STATE_PAID,
+                    'paid_at' => '2026-08-10',
+                    'expirated_at' => '2026-08-14',
+                    'concept' => 'Plan de pago',
+                    'tariff_type' => 'Plan Pago',
+                ],
+                (object) [
+                    'id' => 502,
+                    'student_plan_id' => 93,
+                    'quota_number' => 102,
+                    'quota_amount' => 200000,
+                    'amount_paid' => 0,
+                    'state' => Order::STATE_PENDING,
+                    'paid_at' => null,
+                    'expirated_at' => '2026-09-10',
+                    'concept' => 'Plan de pago',
+                    'tariff_type' => 'Plan Pago',
+                ],
+            ],
+            [(object) ['id' => 4, 'start_date' => '2026-06-18', 'end_date' => '2026-10-30']],
+            [
+                (object) [
+                    'id' => 80,
+                    'student_plan_id' => 93,
+                    'quota_number' => 3,
+                    'quota_amount' => 180000,
+                    'amount_paid' => 0,
+                    'state' => Order::STATE_PENDING,
+                    'paid_at' => '0000-00-00',
+                    'expirated_at' => '2026-05-10',
+                    'concept' => 'Tecnicatura',
+                    'tariff_type' => 'Arancel Mensual',
+                ],
+            ],
+        );
+
+        $plan = $report['plans'][0];
+        $this->assertSame('18/06/2026 – 30/10/2026', $plan['period']);
+        $this->assertSame('Activo', $plan['status']);
+        $this->assertSame(4, $plan['agreed_dues']);
+        $this->assertSame(817560.0, $plan['amount_owed']);
+        $this->assertSame('3', $plan['originals'][0]['quota']);
+        $this->assertSame('Tecnicatura', $plan['originals'][0]['concept']);
+        $this->assertSame('Pendiente', $plan['originals'][0]['state']);
+        $this->assertSame('1/4', $plan['schedule'][0]['quota']);
+        $this->assertSame('Pagado', $plan['schedule'][0]['state']);
+        $this->assertSame('2/4', $plan['schedule'][1]['quota']);
+        $this->assertSame(200000.0, $plan['pending']);
+    }
+
     private function plan(int $id, int $studentId, ?string $createdAt, int $current = PaymentPlanPortfolio::ACTIVE): object
     {
         return (object) [

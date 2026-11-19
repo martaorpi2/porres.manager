@@ -22,8 +22,11 @@ class AccountingPaymentPlansController
         $rows = [];
         foreach ($data['plans'] as $plan) {
             $rows[] = [
-                $plan['id'],
                 $plan['student'],
+                $plan['period'],
+                $plan['status'],
+                $plan['agreed_dues'],
+                $this->money($plan['amount_owed']),
                 $plan['opened_on'],
                 $plan['paid'],
                 $plan['dues'],
@@ -37,6 +40,9 @@ class AccountingPaymentPlansController
             'TOTAL',
             '',
             '',
+            $data['agreed_dues'],
+            $this->money($data['amount_owed']),
+            '',
             $data['paid_installments'],
             $data['installments'],
             $this->money($data['debt']),
@@ -47,7 +53,7 @@ class AccountingPaymentPlansController
 
         return SpreadsheetDownload::fromRows(
             'planes_de_pago_'.date('Y-m-d').'.xlsx',
-            ['Plan', 'Alumno', 'Alta', 'Cuotas pagadas', 'Cuotas del plan', 'Cuota pura', 'Mora', 'Financiación', 'Saldo'],
+            ['Alumno', 'Período', 'Estado', 'Cuotas', 'Monto', 'Alta', 'Cuotas pagadas', 'Cuotas generadas', 'Cuota pura', 'Mora', 'Financiación', 'Saldo'],
             $rows
         );
     }

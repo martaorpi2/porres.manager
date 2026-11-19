@@ -45,18 +45,13 @@ final class PaymentPlanPortfolio
             return $report;
         }
 
-        $installments = Order::query()
-            ->whereIn('student_plan_id', $activeIds)
-            ->where('quota_number', '>=', ReportePagosDiaCriteria::PLAN_QUOTA_MIN)
-            ->where(function ($query) {
-                $query->whereNull('estado')->orWhere('estado', 1);
-            })
-            ->get(['id', 'student_plan_id', 'quota_amount', 'state', 'paid_at']);
+        $installments = $this->linkedOrders($activeIds, true);
+        $originals = $this->linkedOrders($activeIds, false);
 
         $plans = DB::connection('eporres')->table('students_plans')
             ->whereIn('id', $activeIds)
             ->where('current', self::ACTIVE)
-            ->get(['id', 'student_id', 'created_at', 'dues', 'current']);
+            ->get(['id', 'student_id', 'plan_id', 'created_at', 'dues', 'amount_owed', 'current']);
 
         $studentIds = $plans
             ->pluck('student_id')
@@ -79,10 +74,57 @@ final class PaymentPlanPortfolio
             ->whereIn('student_plan_id', $activeIds)
             ->get(['student_plan_id', 'interest_amount']);
 
-        $report = self::assemble($plans, $students, $pend, $amortizations, $installments);
+        $catalogIds = $plans
+            ->pluck('plan_id')
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn (int $id) => $id > 0)
+            ->unique()
+            ->values()
+            ->all();
+        $catalogs = $catalogIds === []
+            ? collect()
+            : DB::connection('eporres')->table('payment_plans')
+                ->whereIn('id', $catalogIds)
+                ->get(['id', 'start_date', 'end_date']);
+
+        $report = self::assemble($plans, $students, $pend, $amortizations, $installments, $catalogs, $originals);
         $report['fallen'] = $this->fallenCount();
 
         return $report;
+    }
+
+    /**
+     * @param  list<int>  $planIds
+     */
+    private function linkedOrders(array $planIds, bool $planInstallments)
+    {
+        $query = DB::connection('eporres')->table('orders as o')
+            ->leftJoin('tariff_categories as tc', 'tc.id', '=', 'o.tariff_category_id')
+            ->whereIn('o.student_plan_id', $planIds)
+            ->where(function ($query) {
+                $query->whereNull('o.estado')->orWhere('o.estado', 1);
+            });
+        if ($planInstallments) {
+            $query->where('o.quota_number', '>=', ReportePagosDiaCriteria::PLAN_QUOTA_MIN);
+        } else {
+            $query->where('o.quota_number', '<', ReportePagosDiaCriteria::PLAN_QUOTA_MIN);
+        }
+
+        return $query
+            ->orderBy('o.quota_number')
+            ->orderBy('o.id')
+            ->get([
+                'o.id',
+                'o.student_plan_id',
+                'o.quota_number',
+                'o.quota_amount',
+                'o.amount_paid',
+                'o.state',
+                'o.paid_at',
+                'o.expirated_at',
+                'tc.type as tariff_type',
+                'tc.description as concept',
+            ]);
     }
 
     private function fallenCount(): int
@@ -109,7 +151,7 @@ final class PaymentPlanPortfolio
      *     plans: list<array{id: int, student: string, opened_on: string, paid: int, dues: int, debt: float, late: float, financing: float, pending: float}>
      * }
      */
-    public static function assemble(iterable $plans, iterable $students, iterable $pend, iterable $amortizations, iterable $installments): array
+    public static function assemble(iterable $plans, iterable $students, iterable $pend, iterable $amortizations, iterable $installments, iterable $catalogs = [], iterable $originals = []): array
     {
         $plansById = [];
         foreach ($plans as $plan) {
@@ -118,6 +160,17 @@ final class PaymentPlanPortfolio
         $studentsById = [];
         foreach ($students as $student) {
             $studentsById[(int) $student->id] = $student;
+        }
+        $catalogsById = [];
+        foreach ($catalogs as $catalog) {
+            $catalogsById[(int) $catalog->id] = $catalog;
+        }
+        $originalsByPlan = [];
+        foreach ($originals as $order) {
+            $planId = (int) $order->student_plan_id;
+            if ($planId > 0) {
+                $originalsByPlan[$planId][] = $order;
+            }
         }
 
         $parts = [];
@@ -149,7 +202,10 @@ final class PaymentPlanPortfolio
             if ($planId < 1) {
                 continue;
             }
-            $schedule[$planId] ??= ['paid' => 0, 'dues' => 0, 'pending' => 0.0];
+            $schedule[$planId] ??= ['paid' => 0, 'dues' => 0, 'pending' => 0.0, 'orders' => []];
+            if (property_exists($order, 'quota_number')) {
+                $schedule[$planId]['orders'][] = $order;
+            }
             $schedule[$planId]['dues']++;
             if (self::isPaid($order)) {
                 $schedule[$planId]['paid']++;
@@ -170,16 +226,24 @@ final class PaymentPlanPortfolio
             }
             $student = $studentsById[(int) ($plan->student_id ?? 0)] ?? null;
             $split = $parts[$planId] ?? ['debt' => 0.0, 'late' => 0.0, 'financing' => 0.0];
+            $agreed = (int) ($plan->dues ?? 0);
+            $catalog = $catalogsById[(int) ($plan->plan_id ?? 0)] ?? null;
             $rows[] = [
                 'id' => $planId,
                 'student' => self::studentName($student),
                 'opened_on' => self::date($plan->created_at ?? null),
+                'period' => self::period($catalog),
+                'status' => self::statusLabel((int) ($plan->current ?? 0)),
+                'agreed_dues' => $agreed > 0 ? $agreed : $counts['dues'],
+                'amount_owed' => round((float) ($plan->amount_owed ?? 0), 2),
                 'paid' => $counts['paid'],
                 'dues' => $counts['dues'],
                 'debt' => round($split['debt'], 2),
                 'late' => round($split['late'], 2),
                 'financing' => round($split['financing'], 2),
                 'pending' => round($counts['pending'], 2),
+                'originals' => array_map(fn (object $order) => self::orderLine($order, $agreed), $originalsByPlan[$planId] ?? []),
+                'schedule' => array_map(fn (object $order) => self::orderLine($order, $agreed), $counts['orders']),
             ];
         }
 
@@ -197,6 +261,8 @@ final class PaymentPlanPortfolio
             'debt' => round(array_sum(array_column($rows, 'debt')), 2),
             'late' => round(array_sum(array_column($rows, 'late')), 2),
             'financing' => round(array_sum(array_column($rows, 'financing')), 2),
+            'agreed_dues' => array_sum(array_column($rows, 'agreed_dues')),
+            'amount_owed' => round(array_sum(array_column($rows, 'amount_owed')), 2),
             'plans' => $rows,
         ];
     }
@@ -232,7 +298,75 @@ final class PaymentPlanPortfolio
 
         $paidAt = $order->paid_at ?? null;
 
-        return $paidAt !== null && $paidAt !== '';
+        return $paidAt !== null && $paidAt !== '' && ! str_starts_with((string) $paidAt, '0000-00-00');
+    }
+
+    private static function statusLabel(int $current): string
+    {
+        return match ($current) {
+            self::ACTIVE => 'Activo',
+            self::FALLEN => 'Caído por mora',
+            3 => 'Solicitud pendiente',
+            4 => 'Completo',
+            5 => 'Reemplazado',
+            default => 'Inactivo',
+        };
+    }
+
+    private static function period(?object $catalog): string
+    {
+        if ($catalog === null) {
+            return '—';
+        }
+
+        return self::date($catalog->start_date ?? null).' – '.self::date($catalog->end_date ?? null);
+    }
+
+    /**
+     * @return array{id: int|string, quota: string, concept: string, due_on: string, amount: float, paid_amount: float, state: string, paid_on: string}
+     */
+    private static function orderLine(object $order, int $agreedDues): array
+    {
+        $quota = (int) ($order->quota_number ?? 0);
+        $isPlan = $quota >= ReportePagosDiaCriteria::PLAN_QUOTA_MIN;
+        if ($isPlan) {
+            $number = (string) max(1, $quota - ReportePagosDiaCriteria::PLAN_QUOTA_MIN);
+            $label = $agreedDues > 0 ? $number.'/'.$agreedDues : $number;
+        } elseif ($quota === 0) {
+            $label = 'Matrícula';
+        } else {
+            $label = (string) $quota;
+        }
+        $concept = trim((string) ($order->concept ?? ''));
+        if ($concept === '') {
+            $concept = trim((string) ($order->tariff_type ?? ''));
+        }
+        if ($concept === '') {
+            $concept = $isPlan ? 'Cuota de plan' : 'Cuota';
+        }
+
+        return [
+            'id' => $order->id ?? '—',
+            'quota' => $label,
+            'concept' => $concept,
+            'due_on' => self::date($order->expirated_at ?? null),
+            'amount' => round((float) ($order->quota_amount ?? 0), 2),
+            'paid_amount' => round((float) ($order->amount_paid ?? 0), 2),
+            'state' => self::stateLabel($order),
+            'paid_on' => self::isPaid($order) ? self::date($order->paid_at ?? null) : '—',
+        ];
+    }
+
+    private static function stateLabel(object $order): string
+    {
+        if (self::isPaid($order)) {
+            return 'Pagado';
+        }
+
+        return match ((string) ($order->state ?? '')) {
+            'App\\States\\Order\\Cancelled' => 'Cancelado',
+            default => 'Pendiente',
+        };
     }
 
     private static function studentName(?object $student): string
@@ -246,7 +380,7 @@ final class PaymentPlanPortfolio
 
     private static function date(mixed $value): string
     {
-        if ($value === null || $value === '') {
+        if ($value === null || $value === '' || str_starts_with((string) $value, '0000-00-00')) {
             return '—';
         }
 
