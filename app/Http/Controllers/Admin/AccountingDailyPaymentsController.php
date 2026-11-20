@@ -43,10 +43,14 @@ class AccountingDailyPaymentsController
             'reporte-pagos-dia-'.$data['vista'].'-'.$filters['fechaDesde'].'-'.$filters['fechaHasta'].'.xlsx',
             [
                 'Comprobante', 'Nro de transacción/cupón', 'Estudiante', 'Carrera', 'Tipo', 'Nº cuota', 'Fecha de pago',
-                'Medio de pago', 'Monto del medio', 'Importe cuota pura', 'Int. financiación plan',
-                'Interés por mora', 'Otros intereses', 'Total línea', 'Observación / vínculo plan',
+                'Medio de pago',
+                'Importe pagado del plan', 'Cuota pura del plan', 'Interés por mora del plan',
+                'Interés de financiación', 'Interés del medio de pago',
+                'Imputación cuota pura', 'Imputación interés capitalizado',
+                'Otros intereses', 'Total línea',
+                'Observación / vínculo plan',
             ],
-            $report->excelRows($data['lineas'], $data['relatedByPlanId'])
+            $report->excelRows($data['lineas'], $data['relatedByPlanId'], $data['planCuotas'])
         );
     }
 

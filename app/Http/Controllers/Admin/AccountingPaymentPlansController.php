@@ -20,36 +20,54 @@ class AccountingPaymentPlansController
         $this->authorizeAccounting();
         $data = $report->report();
         $rows = [];
+        $paid = 0.0;
+        $pure = 0.0;
+        $late = 0.0;
+        $financing = 0.0;
+        $method = 0.0;
+        $imputePure = 0.0;
+        $imputeCapitalized = 0.0;
         foreach ($data['plans'] as $plan) {
             $rows[] = [
                 $plan['student'],
-                $plan['agreed_dues'],
-                $this->money($plan['amount_owed']),
+                $plan['paid'].' / '.$plan['dues'],
                 $plan['opened_on'],
-                $plan['paid'],
-                $plan['dues'],
-                $this->money($plan['debt']),
-                $this->money($plan['late']),
-                $this->money($plan['financing']),
-                $this->money($plan['pending']),
+                $this->money($plan['paid_plan']),
+                $this->money($plan['pure_plan']),
+                $this->money($plan['late_plan']),
+                $this->money($plan['financing_plan']),
+                $this->money($plan['method_plan']),
+                $this->money($plan['impute_pure']),
+                $this->money($plan['impute_capitalized']),
             ];
+            $paid += (float) $plan['paid_plan'];
+            $pure += (float) $plan['pure_plan'];
+            $late += (float) $plan['late_plan'];
+            $financing += (float) $plan['financing_plan'];
+            $method += (float) $plan['method_plan'];
+            $imputePure += (float) $plan['impute_pure'];
+            $imputeCapitalized += (float) $plan['impute_capitalized'];
         }
         $rows[] = [
             'TOTAL',
-            $data['agreed_dues'],
-            $this->money($data['amount_owed']),
             '',
-            $data['paid_installments'],
-            $data['installments'],
-            $this->money($data['debt']),
-            $this->money($data['late']),
-            $this->money($data['financing']),
-            $this->money($data['pending']),
+            '',
+            $this->money($paid),
+            $this->money($pure),
+            $this->money($late),
+            $this->money($financing),
+            $this->money($method),
+            $this->money($imputePure),
+            $this->money($imputeCapitalized),
         ];
 
         return SpreadsheetDownload::fromRows(
             'planes_de_pago_'.date('Y-m-d').'.xlsx',
-            ['Alumno', 'Cuotas', 'Monto total', 'Alta', 'Cuotas pagadas', 'Cuotas generadas', 'Cuota pura a pagar', 'Interés por mora a pagar', 'Interés financiación a pagar', 'Saldo'],
+            [
+                'Alumno', 'Cuotas', 'Alta', 'Importe pagado del plan', 'Cuota pura del plan',
+                'Interés por mora del plan', 'Interés de financiación', 'Interés del medio de pago',
+                'Imputación cuota pura', 'Imputación interés capitalizado',
+            ],
             $rows
         );
     }

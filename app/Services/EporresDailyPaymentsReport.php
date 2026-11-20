@@ -3,11 +3,13 @@
 namespace App\Services;
 
 use App\Models\Eporres\Order;
+use App\Support\Eporres\OrderPaymentBreakdown;
 use App\Support\Eporres\OrderPaymentLines;
 use App\Support\Eporres\ReportePagosDiaCriteria;
 use App\Support\Eporres\ReportePagosDiaMedioPagoOrder;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 
 class EporresDailyPaymentsReport
 {
@@ -36,7 +38,8 @@ class EporresDailyPaymentsReport
      *   tipoPago: ?string,
      *   vista: string,
      *   relatedByPlanId: Collection,
-     *   lineas: Collection
+     *   lineas: Collection,
+     *   planCuotas: array<int, array{paid: float, pure: float, late: float, financing: float, method: float, impute_pure: float, impute_capitalized: float}>
      * }
      */
     public function build(string $fechaDesde, string $fechaHasta, array $mediosPago, ?string $tipoPago, string $vista): array
@@ -98,6 +101,7 @@ class EporresDailyPaymentsReport
             'vista' => $vista,
             'relatedByPlanId' => $relatedByPlanId,
             'lineas' => $lineas,
+            'planCuotas' => $this->planCuotas($pagos),
         ];
     }
 
@@ -105,7 +109,7 @@ class EporresDailyPaymentsReport
      * Mismo detalle que el reporte de cobros de caja, limitado a estos cupones.
      *
      * @param  list<int>  $orderIds
-     * @return array{pagosPorDia: Collection, relatedByPlanId: Collection, vista: string}
+     * @return array{pagosPorDia: Collection, relatedByPlanId: Collection, vista: string, planCuotas: array<int, array<string, float>>}
      */
     public function forOrderIds(array $orderIds): array
     {
@@ -129,6 +133,7 @@ class EporresDailyPaymentsReport
             'pagosPorDia' => $pagosPorDia,
             'relatedByPlanId' => ReportePagosDiaCriteria::coveredArancelByPlanId($pagos),
             'vista' => ReportePagosDiaCriteria::VISTA_COBROS,
+            'planCuotas' => $this->planCuotas($pagos),
         ];
     }
 
@@ -136,7 +141,7 @@ class EporresDailyPaymentsReport
      * @param  list<string>  $mediosPago
      * @return list<list<int|float|string>>
      */
-    public function excelRows(Collection $lineas, Collection $relatedByPlanId): array
+    public function excelRows(Collection $lineas, Collection $relatedByPlanId, array $planCuotas = []): array
     {
         $conceptoAsignado = [];
         $rows = [];
@@ -157,14 +162,21 @@ class EporresDailyPaymentsReport
                     (float) ($line['order_pure'] ?? 0)
                 )
                 : '';
-            $pure = '';
-            $planFin = '';
-            $mora = '';
+            $planCells = ['', '', '', '', '', '', ''];
             if ($line['is_first_line'] && ! isset($conceptoAsignado[$pago->id])) {
                 $conceptoAsignado[$pago->id] = true;
-                $pure = (float) ($line['order_pure'] ?? 0);
-                $planFin = (float) ($line['order_interest_plan'] ?? 0);
-                $mora = (float) ($line['order_interest_late'] ?? 0);
+                $cuotaPlan = $planCuotas[(int) $pago->id] ?? null;
+                if ($cuotaPlan !== null && ReportePagosDiaCriteria::isCuotaPlanPago($pago)) {
+                    $planCells = [
+                        (float) $cuotaPlan['paid'],
+                        (float) $cuotaPlan['pure'],
+                        (float) $cuotaPlan['late'],
+                        (float) $cuotaPlan['financing'],
+                        (float) $cuotaPlan['method'],
+                        (float) $cuotaPlan['impute_pure'],
+                        (float) $cuotaPlan['impute_capitalized'],
+                    ];
+                }
             }
 
             $rows[] = [
@@ -176,10 +188,7 @@ class EporresDailyPaymentsReport
                 ReportePagosDiaCriteria::labelNumeroCuota($pago, $pago->student_plan),
                 $pago->paid_at ? Carbon::parse($pago->paid_at)->format('d/m/Y') : '',
                 OrderPaymentLines::etiquetaMedio($line['payment_type']),
-                OrderPaymentLines::montoDelMedio($line),
-                $pure,
-                $planFin,
-                $mora,
+                ...$planCells,
                 (float) $line['interest_other'],
                 OrderPaymentLines::totalLinea($line),
                 $nota,
@@ -187,6 +196,105 @@ class EporresDailyPaymentsReport
         }
 
         return $rows;
+    }
+
+    /**
+     * @return array<int, array{paid: float, pure: float, late: float, financing: float, method: float, impute_pure: float, impute_capitalized: float}>
+     */
+    private function planCuotas(Collection $orders): array
+    {
+        $planOrders = [];
+        foreach ($orders as $order) {
+            if (! $order instanceof Order || ! ReportePagosDiaCriteria::isCuotaPlanPago($order)) {
+                continue;
+            }
+            $planId = (int) $order->student_plan_id;
+            if ($planId < 1) {
+                continue;
+            }
+            $planOrders[$planId][] = $order;
+        }
+        if ($planOrders === []) {
+            return [];
+        }
+
+        $planIds = array_keys($planOrders);
+        $pend = DB::connection('eporres')->table('orders_pend_plan')
+            ->whereIn('student_plan_id', $planIds)
+            ->get(['student_plan_id', 'order_id', 'type', 'amount']);
+        $amorts = DB::connection('eporres')->table('amortizations')
+            ->whereIn('student_plan_id', $planIds)
+            ->orderBy('quota_number')
+            ->orderBy('id')
+            ->get(['student_plan_id', 'order_id', 'quota_number', 'quota_amount', 'interest_amount', 'capital']);
+
+        $pendByPlan = [];
+        foreach ($pend as $row) {
+            $pendByPlan[(int) $row->student_plan_id][] = $row;
+        }
+        $amortByPlan = [];
+        foreach ($amorts as $row) {
+            $amortByPlan[(int) $row->student_plan_id][] = $row;
+        }
+
+        $out = [];
+        foreach ($planOrders as $planId => $list) {
+            $installments = [];
+            foreach ($amortByPlan[$planId] ?? [] as $row) {
+                $orderId = (int) $row->order_id;
+                if ($orderId < 1) {
+                    continue;
+                }
+                $interest = round(max(0, (float) $row->interest_amount), 2);
+                $capital = $row->capital !== null
+                    ? round(max(0, (float) $row->capital), 2)
+                    : round(max(0, (float) $row->quota_amount - $interest), 2);
+                if (! isset($installments[$orderId])) {
+                    $installments[$orderId] = [
+                        'order_id' => $orderId,
+                        'quota_number' => (int) $row->quota_number,
+                        'capital' => 0.0,
+                        'financing' => 0.0,
+                    ];
+                }
+                $installments[$orderId]['capital'] = round($installments[$orderId]['capital'] + $capital, 2);
+                $installments[$orderId]['financing'] = round($installments[$orderId]['financing'] + $interest, 2);
+                $installments[$orderId]['quota_number'] = min($installments[$orderId]['quota_number'], (int) $row->quota_number);
+            }
+            foreach ($list as $order) {
+                $orderId = (int) $order->id;
+                if (isset($installments[$orderId])) {
+                    continue;
+                }
+                $breakdown = OrderPaymentBreakdown::amountsForReporte($order);
+                $installments[$orderId] = [
+                    'order_id' => $orderId,
+                    'quota_number' => (int) $order->quota_number,
+                    'capital' => round(max(0, (float) $order->quota_amount - $breakdown['interest_plan_financing']), 2),
+                    'financing' => round((float) $breakdown['interest_plan_financing'], 2),
+                ];
+            }
+
+            $opening = PaymentPlanCuotaSplit::opening($pendByPlan[$planId] ?? []);
+            $shares = PaymentPlanCuotaSplit::impute(array_values($installments), $opening['debt'], $opening['late']);
+            foreach ($list as $order) {
+                $orderId = (int) $order->id;
+                $row = $installments[$orderId];
+                $breakdown = OrderPaymentBreakdown::amountsForReporte($order);
+                $share = $shares[$orderId] ?? ['pure' => $row['capital'], 'capitalized' => 0.0];
+                $out[$orderId] = [
+                    'paid' => round((float) $order->amount_paid, 2),
+                    'pure' => $row['capital'],
+                    'late' => round((float) $breakdown['interest_late_fee'], 2),
+                    'financing' => $row['financing'],
+                    'method' => round((float) $breakdown['interest_other'], 2),
+                    'impute_pure' => $share['pure'],
+                    'impute_capitalized' => $share['capitalized'],
+                ];
+            }
+        }
+
+        return $out;
     }
 
     private function applyMedioPago($query, array $mediosPago): void

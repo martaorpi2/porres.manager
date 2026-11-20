@@ -165,6 +165,7 @@
         </a>
     </div>
     <div class="card-body">
+        <p class="text-muted small">En las cuotas de plan, las últimas columnas muestran lo pagado, el capital de esa cuota, su mora, la financiación, el interés del medio y cómo ese capital cubre la cuota original y el interés capitalizado. En el resto de los cobros quedan vacías.</p>
         @forelse($pagosPorDia->sortKeysDesc() as $fechaPago => $pagos)
             @include('admin.accounting.partials.daily_payment_day', [
                 'fechaPago' => $fechaPago,

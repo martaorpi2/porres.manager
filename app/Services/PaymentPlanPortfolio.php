@@ -78,7 +78,7 @@ final class PaymentPlanPortfolio
 
         $amortizations = DB::connection('eporres')->table('amortizations')
             ->whereIn('student_plan_id', $activeIds)
-            ->get(['student_plan_id', 'order_id', 'interest_amount']);
+            ->get(['student_plan_id', 'order_id', 'quota_number', 'quota_amount', 'interest_amount', 'capital']);
 
         $catalogIds = $plans
             ->pluck('plan_id')
@@ -124,6 +124,7 @@ final class PaymentPlanPortfolio
                 'o.quota_number',
                 'o.quota_amount',
                 'o.amount_paid',
+                'o.surcharge_amount',
                 'o.state',
                 'o.paid_at',
                 'o.expirated_at',
@@ -209,7 +210,12 @@ final class PaymentPlanPortfolio
             if ($orderId < 1) {
                 continue;
             }
-            $amortByOrder[$orderId] = ($amortByOrder[$orderId] ?? 0.0) + (float) ($row->interest_amount ?? 0);
+            $slot = $amortByOrder[$orderId] ?? ['interest' => 0.0, 'capital' => null];
+            $slot['interest'] += (float) ($row->interest_amount ?? 0);
+            if (property_exists($row, 'capital')) {
+                $slot['capital'] = (float) ($slot['capital'] ?? 0) + (float) $row->capital;
+            }
+            $amortByOrder[$orderId] = $slot;
         }
 
         $schedule = [];
@@ -229,7 +235,7 @@ final class PaymentPlanPortfolio
                 continue;
             }
             $orderId = (int) ($order->id ?? 0);
-            $schedule[$planId]['financing_due'] += ($amortByOrder[$orderId] ?? 0.0);
+            $schedule[$planId]['financing_due'] += (float) ($amortByOrder[$orderId]['interest'] ?? 0);
             $schedule[$planId]['surcharge_due'] += (float) ($order->surcharge_amount ?? 0);
             $schedule[$planId]['pending'] += (float) $order->quota_amount;
         }
@@ -254,6 +260,7 @@ final class PaymentPlanPortfolio
             );
             $agreed = (int) ($plan->dues ?? 0);
             $catalog = $catalogsById[(int) ($plan->plan_id ?? 0)] ?? null;
+            $schedule = self::scheduleLines($counts['orders'], $amortByOrder, $split['debt'], $split['late'], $agreed);
             $rows[] = [
                 'id' => $planId,
                 'student' => self::studentName($student),
@@ -269,7 +276,14 @@ final class PaymentPlanPortfolio
                 'financing' => $owed['financing'],
                 'pending' => $owed['pending'],
                 'originals' => array_map(fn (object $order) => self::orderLine($order, $agreed), $originalsByPlan[$planId] ?? []),
-                'schedule' => array_map(fn (object $order) => self::orderLine($order, $agreed), $counts['orders']),
+                'schedule' => $schedule,
+                'paid_plan' => round(array_sum(array_column($schedule, 'paid_plan')), 2),
+                'pure_plan' => round(array_sum(array_column($schedule, 'pure_plan')), 2),
+                'late_plan' => round(array_sum(array_column($schedule, 'late_plan')), 2),
+                'financing_plan' => round(array_sum(array_column($schedule, 'financing_plan')), 2),
+                'method_plan' => round(array_sum(array_column($schedule, 'method_plan')), 2),
+                'impute_pure' => round(array_sum(array_column($schedule, 'impute_pure')), 2),
+                'impute_capitalized' => round(array_sum(array_column($schedule, 'impute_capitalized')), 2),
             ];
         }
 
@@ -372,6 +386,58 @@ final class PaymentPlanPortfolio
         }
 
         return self::date($catalog->start_date ?? null).' – '.self::date($catalog->end_date ?? null);
+    }
+
+    /**
+     * @param  list<object>  $orders
+     * @param  array<int, array{interest: float, capital: float|null}>  $amortByOrder
+     * @return list<array<string, mixed>>
+     */
+    private static function scheduleLines(array $orders, array $amortByOrder, float $openingDebt, float $openingLate, int $agreedDues): array
+    {
+        $cuotas = [];
+        foreach ($orders as $order) {
+            $id = (int) ($order->id ?? 0);
+            $amort = $amortByOrder[$id] ?? ['interest' => 0.0, 'capital' => null];
+            $quota = round((float) ($order->quota_amount ?? 0), 2);
+            $financing = round((float) $amort['interest'], 2);
+            $capital = $amort['capital'] === null
+                ? round(max(0, $quota - $financing), 2)
+                : round(max(0, (float) $amort['capital']), 2);
+            $cuotas[] = [
+                'order' => $order,
+                'order_id' => $id,
+                'quota_number' => (int) ($order->quota_number ?? 0),
+                'capital' => $capital,
+                'financing' => $financing,
+            ];
+        }
+
+        $shares = PaymentPlanCuotaSplit::impute(array_map(fn (array $cuota) => [
+            'order_id' => $cuota['order_id'],
+            'quota_number' => $cuota['quota_number'],
+            'capital' => $cuota['capital'],
+        ], $cuotas), $openingDebt, $openingLate);
+
+        $lines = [];
+        foreach ($cuotas as $cuota) {
+            $share = $shares[$cuota['order_id']] ?? ['pure' => $cuota['capital'], 'capitalized' => 0.0];
+            $paid = round((float) ($cuota['order']->amount_paid ?? 0), 2);
+            $late = round(max(0, (float) ($cuota['order']->surcharge_amount ?? 0)), 2);
+            $collected = PaymentPlanSplit::collection($paid, (float) ($cuota['order']->quota_amount ?? 0), $late, $cuota['financing']);
+            $lines[] = array_merge(self::orderLine($cuota['order'], $agreedDues), [
+                'quota_number' => $cuota['quota_number'],
+                'paid_plan' => $collected['paid'],
+                'pure_plan' => $cuota['capital'],
+                'late_plan' => $late,
+                'financing_plan' => $cuota['financing'],
+                'method_plan' => $collected['surcharge'],
+                'impute_pure' => $share['pure'],
+                'impute_capitalized' => $share['capitalized'],
+            ]);
+        }
+
+        return $lines;
     }
 
     /**

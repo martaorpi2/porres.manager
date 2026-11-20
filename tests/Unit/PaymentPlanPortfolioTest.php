@@ -202,6 +202,53 @@ class PaymentPlanPortfolioTest extends TestCase
         $this->assertSame(200000.0, $plan['pending']);
     }
 
+    public function test_each_installment_shows_plan_amounts_and_original_imputation(): void
+    {
+        $report = PaymentPlanPortfolio::assemble(
+            [$this->plan(7, 3, '2026-03-01')],
+            [$this->student(3, 'García', 'Ana', '30111222')],
+            [
+                $this->pend(7, 1, 'Cuota', 800),
+                $this->pend(7, 1, 'Interes', 200),
+            ],
+            [
+                $this->financing(7, 50, 11, 600),
+                $this->financing(7, 20, 12, 400),
+            ],
+            [
+                $this->installment(7, 650, Order::STATE_PAID, '2026-04-01', 11, 101, 750, 50),
+                $this->installment(7, 420, Order::STATE_PENDING, null, 12, 102),
+            ],
+        );
+
+        $paid = $report['plans'][0]['schedule'][0];
+        $this->assertSame(750.0, $paid['paid_plan']);
+        $this->assertSame(600.0, $paid['pure_plan']);
+        $this->assertSame(50.0, $paid['late_plan']);
+        $this->assertSame(50.0, $paid['financing_plan']);
+        $this->assertSame(50.0, $paid['method_plan']);
+        $this->assertSame(480.0, $paid['impute_pure']);
+        $this->assertSame(120.0, $paid['impute_capitalized']);
+
+        $plan = $report['plans'][0];
+        $this->assertSame(750.0, $plan['paid_plan']);
+        $this->assertSame(1000.0, $plan['pure_plan']);
+        $this->assertSame(50.0, $plan['late_plan']);
+        $this->assertSame(70.0, $plan['financing_plan']);
+        $this->assertSame(50.0, $plan['method_plan']);
+        $this->assertSame(800.0, $plan['impute_pure']);
+        $this->assertSame(200.0, $plan['impute_capitalized']);
+
+        $pending = $plan['schedule'][1];
+        $this->assertSame(0.0, $pending['paid_plan']);
+        $this->assertSame(400.0, $pending['pure_plan']);
+        $this->assertSame(0.0, $pending['late_plan']);
+        $this->assertSame(20.0, $pending['financing_plan']);
+        $this->assertSame(0.0, $pending['method_plan']);
+        $this->assertSame(320.0, $pending['impute_pure']);
+        $this->assertSame(80.0, $pending['impute_capitalized']);
+    }
+
     private function plan(int $id, int $studentId, ?string $createdAt, int $current = PaymentPlanPortfolio::ACTIVE): object
     {
         return (object) [
@@ -232,21 +279,29 @@ class PaymentPlanPortfolioTest extends TestCase
         ];
     }
 
-    private function financing(int $planId, float $interest, int $orderId = 0): object
+    private function financing(int $planId, float $interest, int $orderId = 0, ?float $capital = null): object
     {
-        return (object) [
+        $row = [
             'student_plan_id' => $planId,
             'order_id' => $orderId,
             'interest_amount' => $interest,
         ];
+        if ($capital !== null) {
+            $row['capital'] = $capital;
+        }
+
+        return (object) $row;
     }
 
-    private function installment(int $planId, float $quota, string $state, ?string $paidAt, int $id = 0): object
+    private function installment(int $planId, float $quota, string $state, ?string $paidAt, int $id = 0, int $quotaNumber = 0, float $paid = 0, float $surcharge = 0): object
     {
         return (object) [
             'id' => $id,
             'student_plan_id' => $planId,
+            'quota_number' => $quotaNumber,
             'quota_amount' => $quota,
+            'amount_paid' => $paid,
+            'surcharge_amount' => $surcharge,
             'state' => $state,
             'paid_at' => $paidAt,
         ];

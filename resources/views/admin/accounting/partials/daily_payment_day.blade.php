@@ -14,6 +14,8 @@
     use App\Support\Eporres\ReportePagosDiaCriteria;
     use App\Support\Eporres\ReportePagosDiaMedioPagoOrder;
     $lineasDia = ReportePagosDiaMedioPagoOrder::sortLinesForSameDay(OrderPaymentLines::expandOrdersForReport($pagos));
+    $planCuotas = $planCuotas ?? [];
+    $money = fn ($n) => '$'.number_format((float) $n, 2, ',', '.');
 @endphp
 <div class="mb-4">
     <h6 class="text-primary border-bottom pb-2">
@@ -34,17 +36,22 @@
                     <th>Tipo</th>
                     <th class="text-center">Nº cuota</th>
                     <th>Medio de Pago</th>
-                    <th class="text-end">Monto del medio</th>
-                    <th class="text-end">Importe cuota pura</th>
-                    <th class="text-end">Int. financiación plan</th>
-                    <th class="text-end">Interés por mora</th>
+                    <th class="text-end">Importe pagado del plan</th>
+                    <th class="text-end">Cuota pura del plan</th>
+                    <th class="text-end">Interés por mora del plan</th>
+                    <th class="text-end">Interés de financiación</th>
+                    <th class="text-end">Interés del medio de pago</th>
+                    <th class="text-end">Imputación cuota pura</th>
+                    <th class="text-end">Imputación interés capitalizado</th>
                     <th class="text-end">Otros intereses</th>
                     <th class="text-end">Total línea</th>
                 </tr>
             </thead>
             <tbody>
                 @php
-                    $diaPure = 0.0; $diaPlanFin = 0.0; $diaMora = 0.0; $diaOtros = 0.0; $diaPagado = 0.0;
+                    $diaOtros = 0.0; $diaPagado = 0.0;
+                    $diaPlanPaid = 0.0; $diaPlanPure = 0.0; $diaPlanLate = 0.0; $diaPlanFinancing = 0.0;
+                    $diaPlanMethod = 0.0; $diaImputePure = 0.0; $diaImputeCapitalized = 0.0;
                     $conceptoAsignado = [];
                 @endphp
                 @foreach($pagos as $pago)
@@ -57,11 +64,18 @@
                         $labelBeca = ReportePagosDiaCriteria::labelBeca($pago);
                         $rowClass = $esImputacion ? 'row-imputacion' : ($esPlan ? 'row-plan-cuota' : ($esOtro ? 'row-otro-concepto' : ''));
                         $nota = ReportePagosDiaCriteria::notaVinculo($pago, $relatedByPlanId);
+                        $cuotaPlan = ($esPlan && isset($planCuotas[(int) $pago->id])) ? $planCuotas[(int) $pago->id] : null;
                         if (!isset($conceptoAsignado[$pago->id])) {
                             $conceptoAsignado[$pago->id] = true;
-                            $diaPure += (float) ($lines[0]['order_pure'] ?? 0);
-                            $diaPlanFin += (float) ($lines[0]['order_interest_plan'] ?? 0);
-                            $diaMora += (float) ($lines[0]['order_interest_late'] ?? 0);
+                            if ($cuotaPlan !== null) {
+                                $diaPlanPaid += (float) $cuotaPlan['paid'];
+                                $diaPlanPure += (float) $cuotaPlan['pure'];
+                                $diaPlanLate += (float) $cuotaPlan['late'];
+                                $diaPlanFinancing += (float) $cuotaPlan['financing'];
+                                $diaPlanMethod += (float) $cuotaPlan['method'];
+                                $diaImputePure += (float) $cuotaPlan['impute_pure'];
+                                $diaImputeCapitalized += (float) $cuotaPlan['impute_capitalized'];
+                            }
                         }
                         $diaPagado += (float) $pago->amount_paid;
                     @endphp
@@ -92,11 +106,14 @@
                                 <td rowspan="{{ $rowspan }}" class="text-center">{{ ReportePagosDiaCriteria::labelNumeroCuota($pago, $pago->student_plan) }}</td>
                             @endif
                             <td>{{ $line['payment_type'] ?: 'Sin especificar' }}</td>
-                            <td class="text-end">${{ number_format($totalLinea, 2, ',', '.') }}</td>
                             @if($line['is_first_line'])
-                                <td rowspan="{{ $rowspan }}" class="text-end">${{ number_format((float) ($line['order_pure'] ?? 0), 2, ',', '.') }}</td>
-                                <td rowspan="{{ $rowspan }}" class="text-end">${{ number_format((float) ($line['order_interest_plan'] ?? 0), 2, ',', '.') }}</td>
-                                <td rowspan="{{ $rowspan }}" class="text-end">${{ number_format((float) ($line['order_interest_late'] ?? 0), 2, ',', '.') }}</td>
+                                <td rowspan="{{ $rowspan }}" class="text-end">{{ $cuotaPlan ? $money($cuotaPlan['paid']) : '—' }}</td>
+                                <td rowspan="{{ $rowspan }}" class="text-end">{{ $cuotaPlan ? $money($cuotaPlan['pure']) : '—' }}</td>
+                                <td rowspan="{{ $rowspan }}" class="text-end">{{ $cuotaPlan ? $money($cuotaPlan['late']) : '—' }}</td>
+                                <td rowspan="{{ $rowspan }}" class="text-end">{{ $cuotaPlan ? $money($cuotaPlan['financing']) : '—' }}</td>
+                                <td rowspan="{{ $rowspan }}" class="text-end">{{ $cuotaPlan ? $money($cuotaPlan['method']) : '—' }}</td>
+                                <td rowspan="{{ $rowspan }}" class="text-end">{{ $cuotaPlan ? $money($cuotaPlan['impute_pure']) : '—' }}</td>
+                                <td rowspan="{{ $rowspan }}" class="text-end">{{ $cuotaPlan ? $money($cuotaPlan['impute_capitalized']) : '—' }}</td>
                             @endif
                             <td class="text-end">${{ number_format($line['interest_other'], 2, ',', '.') }}</td>
                             <td class="text-end">${{ number_format($totalLinea, 2, ',', '.') }}</td>
@@ -106,10 +123,14 @@
             </tbody>
             <tfoot class="table-light fw-bold">
                 <tr>
-                    <td colspan="8" class="text-end">{{ $vista === 'imputaciones' ? 'Subtotal día (imputado, no caja)' : 'Subtotal día (caja)' }}</td>
-                    <td class="text-end">${{ number_format($diaPure, 2, ',', '.') }}</td>
-                    <td class="text-end">${{ number_format($diaPlanFin, 2, ',', '.') }}</td>
-                    <td class="text-end">${{ number_format($diaMora, 2, ',', '.') }}</td>
+                    <td colspan="7" class="text-end">{{ $vista === 'imputaciones' ? 'Subtotal día (imputado, no caja)' : 'Subtotal día (caja)' }}</td>
+                    <td class="text-end">{{ $money($diaPlanPaid) }}</td>
+                    <td class="text-end">{{ $money($diaPlanPure) }}</td>
+                    <td class="text-end">{{ $money($diaPlanLate) }}</td>
+                    <td class="text-end">{{ $money($diaPlanFinancing) }}</td>
+                    <td class="text-end">{{ $money($diaPlanMethod) }}</td>
+                    <td class="text-end">{{ $money($diaImputePure) }}</td>
+                    <td class="text-end">{{ $money($diaImputeCapitalized) }}</td>
                     <td class="text-end">${{ number_format($diaOtros, 2, ',', '.') }}</td>
                     <td class="text-end">${{ number_format($diaPagado, 2, ',', '.') }}</td>
                 </tr>

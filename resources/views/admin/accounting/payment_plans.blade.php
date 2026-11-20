@@ -107,9 +107,9 @@
 </div>
 
 <div class="alert alert-info text-black" role="alert">
-    El detalle lista los planes vigentes que todavía tienen alguna cuota sin pagar.
-    Cuota pura, interés por mora e interés de financiación muestran solo lo que todavía se debe.
-    El saldo es la suma de las cuotas del plan que todavía no se cobraron.
+    El detalle es un renglón por plan vigente que todavía tiene alguna cuota sin pagar.
+    Los importes suman todas las cuotas de ese plan. La cuota pura es el capital. La imputación reparte ese capital entre la cuota original y el interés capitalizado del alta.
+    Los indicadores de arriba siguen mostrando solo lo que falta cobrar.
 </div>
 
 <h2 class="h4 mb-2">Detalle</h2>
@@ -123,47 +123,59 @@
             <tr>
                 <th>Alumno</th>
                 <th class="text-center">Cuotas</th>
-                <th class="text-end">Monto total</th>
                 <th>Alta</th>
-                <th class="text-center">Pagadas</th>
-                <th class="text-end">Cuota pura</th>
-                <th class="text-end">Interés por mora</th>
-                <th class="text-end">Interés financiación</th>
-                <th class="text-end">Saldo</th>
+                <th class="text-end">Importe pagado del plan</th>
+                <th class="text-end">Cuota pura del plan</th>
+                <th class="text-end">Interés por mora del plan</th>
+                <th class="text-end">Interés de financiación</th>
+                <th class="text-end">Interés del medio de pago</th>
+                <th class="text-end">Imputación cuota pura</th>
+                <th class="text-end">Imputación interés capitalizado</th>
             </tr>
         </thead>
         <tbody>
+            @php
+                $sumPaid = 0.0; $sumPure = 0.0; $sumLate = 0.0; $sumFinancing = 0.0;
+                $sumMethod = 0.0; $sumImputePure = 0.0; $sumImputeCapitalized = 0.0;
+            @endphp
             @foreach($plans as $plan)
                 @php
                     $openedOrder = $plan['opened_on'];
                     if (preg_match('/^(\d{2})\/(\d{2})\/(\d{4})$/', $plan['opened_on'], $openedMatch)) {
                         $openedOrder = $openedMatch[3].$openedMatch[2].$openedMatch[1];
                     }
+                    $sumPaid += (float) $plan['paid_plan'];
+                    $sumPure += (float) $plan['pure_plan'];
+                    $sumLate += (float) $plan['late_plan'];
+                    $sumFinancing += (float) $plan['financing_plan'];
+                    $sumMethod += (float) $plan['method_plan'];
+                    $sumImputePure += (float) $plan['impute_pure'];
+                    $sumImputeCapitalized += (float) $plan['impute_capitalized'];
                 @endphp
                 <tr>
                     <td data-order="{{ $plan['student'] }}">{{ $plan['student'] }}</td>
-                    <td class="text-center" data-order="{{ $plan['agreed_dues'] }}">{{ $plan['agreed_dues'] }}</td>
-                    <td class="text-end" data-order="{{ $plan['amount_owed'] }}">${{ $money($plan['amount_owed']) }}</td>
-                    <td data-order="{{ $openedOrder }}">{{ $plan['opened_on'] }}</td>
                     <td class="text-center" data-order="{{ $plan['paid'] }}">{{ $plan['paid'] }} / {{ $plan['dues'] }}</td>
-                    <td class="text-end" data-order="{{ $plan['debt'] }}">${{ $money($plan['debt']) }}</td>
-                    <td class="text-end" data-order="{{ $plan['late'] }}">${{ $money($plan['late']) }}</td>
-                    <td class="text-end" data-order="{{ $plan['financing'] }}">${{ $money($plan['financing']) }}</td>
-                    <td class="text-end" data-order="{{ $plan['pending'] }}">${{ $money($plan['pending']) }}</td>
+                    <td data-order="{{ $openedOrder }}">{{ $plan['opened_on'] }}</td>
+                    <td class="text-end" data-order="{{ $plan['paid_plan'] }}">${{ $money($plan['paid_plan']) }}</td>
+                    <td class="text-end" data-order="{{ $plan['pure_plan'] }}">${{ $money($plan['pure_plan']) }}</td>
+                    <td class="text-end" data-order="{{ $plan['late_plan'] }}">${{ $money($plan['late_plan']) }}</td>
+                    <td class="text-end" data-order="{{ $plan['financing_plan'] }}">${{ $money($plan['financing_plan']) }}</td>
+                    <td class="text-end" data-order="{{ $plan['method_plan'] }}">${{ $money($plan['method_plan']) }}</td>
+                    <td class="text-end" data-order="{{ $plan['impute_pure'] }}">${{ $money($plan['impute_pure']) }}</td>
+                    <td class="text-end" data-order="{{ $plan['impute_capitalized'] }}">${{ $money($plan['impute_capitalized']) }}</td>
                 </tr>
             @endforeach
         </tbody>
         <tfoot class="table-light fw-bold">
             <tr>
-                <td>Total</td>
-                <td class="text-center">{{ $agreed_dues }}</td>
-                <td class="text-end">${{ $money($amount_owed) }}</td>
-                <td></td>
-                <td class="text-center">{{ $paid_installments }} / {{ $installments }}</td>
-                <td class="text-end">${{ $money($debt) }}</td>
-                <td class="text-end">${{ $money($late) }}</td>
-                <td class="text-end">${{ $money($financing) }}</td>
-                <td class="text-end">${{ $money($pending) }}</td>
+                <td colspan="3">Total</td>
+                <td class="text-end">${{ $money($sumPaid) }}</td>
+                <td class="text-end">${{ $money($sumPure) }}</td>
+                <td class="text-end">${{ $money($sumLate) }}</td>
+                <td class="text-end">${{ $money($sumFinancing) }}</td>
+                <td class="text-end">${{ $money($sumMethod) }}</td>
+                <td class="text-end">${{ $money($sumImputePure) }}</td>
+                <td class="text-end">${{ $money($sumImputeCapitalized) }}</td>
             </tr>
         </tfoot>
     </table>
@@ -187,7 +199,7 @@
         jQuery(table).DataTable({
             pageLength: 10,
             lengthMenu: [[10, 25, 50, -1], [10, 25, 50, 'Todos']],
-            order: [[3, 'desc']],
+            order: [[0, 'asc']],
             scrollX: true,
             language: {
                 decimal: ',',
