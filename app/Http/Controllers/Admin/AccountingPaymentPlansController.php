@@ -32,13 +32,13 @@ class AccountingPaymentPlansController
                 $plan['student'],
                 $plan['paid'].' / '.$plan['dues'],
                 $plan['opened_on'],
-                $this->money($plan['paid_plan']),
-                $this->money($plan['pure_plan']),
-                $this->money($plan['late_plan']),
-                $this->money($plan['financing_plan']),
-                $this->money($plan['method_plan']),
-                $this->money($plan['impute_pure']),
-                $this->money($plan['impute_capitalized']),
+                round((float) $plan['paid_plan'], 2),
+                round((float) $plan['pure_plan'], 2),
+                round((float) $plan['late_plan'], 2),
+                round((float) $plan['financing_plan'], 2),
+                round((float) $plan['method_plan'], 2),
+                round((float) $plan['impute_pure'], 2),
+                round((float) $plan['impute_capitalized'], 2),
             ];
             $paid += (float) $plan['paid_plan'];
             $pure += (float) $plan['pure_plan'];
@@ -52,13 +52,13 @@ class AccountingPaymentPlansController
             'TOTAL',
             '',
             '',
-            $this->money($paid),
-            $this->money($pure),
-            $this->money($late),
-            $this->money($financing),
-            $this->money($method),
-            $this->money($imputePure),
-            $this->money($imputeCapitalized),
+            round($paid, 2),
+            round($pure, 2),
+            round($late, 2),
+            round($financing, 2),
+            round($method, 2),
+            round($imputePure, 2),
+            round($imputeCapitalized, 2),
         ];
 
         return SpreadsheetDownload::fromRows(
@@ -70,11 +70,6 @@ class AccountingPaymentPlansController
             ],
             $rows
         );
-    }
-
-    private function money(float $amount): string
-    {
-        return '$'.number_format($amount, 2, ',', '.');
     }
 
     private function authorizeAccounting(): void
