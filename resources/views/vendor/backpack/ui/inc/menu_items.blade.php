@@ -51,6 +51,7 @@
         <x-backpack::menu-item title="Pagos por Día" icon="la la-money-bill" :link="backpack_url('accounting-daily-payments')" />
         <x-backpack::menu-item title="Liberación MP" icon="la la-calendar-check" :link="backpack_url('accounting-mercadopago-releases')" />
         <x-backpack::menu-item title="Reducciones arancelarias" icon="la la-percent" :link="backpack_url('accounting-tariff-reductions')" />
+        <x-backpack::menu-item title="Informe de becas" icon="la la-graduation-cap" :link="backpack_url('accounting-becas')" />
     @endif
     @if(backpack_user()->hasTesoreriaRole())
         <x-backpack::menu-item title="Ordenes de Pago" icon="la la-money-bill-wave" :link="backpack_url('payment-order')" />
@@ -80,6 +81,7 @@
             <x-backpack::menu-dropdown-item title="Pagos por Día" :link="backpack_url('accounting-daily-payments')" />
             <x-backpack::menu-dropdown-item title="Liberación MP" :link="backpack_url('accounting-mercadopago-releases')" />
             <x-backpack::menu-dropdown-item title="Reducciones arancelarias" :link="backpack_url('accounting-tariff-reductions')" />
+            <x-backpack::menu-dropdown-item title="Informe de becas" :link="backpack_url('accounting-becas')" />
         </x-backpack::menu-dropdown>
     @endif
 

@@ -23,6 +23,21 @@ class EporresTariffReductionReport
     }
 
     /**
+     * Becas vigentes desde la cuota de octubre, y las que cayeron por tres meses seguidos.
+     *
+     * @return array{activas: list<array<string, mixed>>, perdidas: list<array<string, mixed>>}
+     */
+    public function becas(int $year, ?string $today = null): array
+    {
+        $split = ScholarshipStanding::split($this->buildRows($year), $today ?? Carbon::now()->toDateString());
+
+        return [
+            'activas' => $this->numerar($split['activas']),
+            'perdidas' => $this->numerar($split['perdidas']),
+        ];
+    }
+
+    /**
      * @return list<int>
      */
     public function years(): array
@@ -144,12 +159,16 @@ class EporresTariffReductionReport
         $expira = $order->expirated_at ? Carbon::parse($order->expirated_at) : null;
 
         return [
+            'student_id' => (string) $order->student_id,
             'alumno' => $student
                 ? trim($student->last_name.', '.$student->first_name).($student->dni ? ' - '.$student->dni : '')
                 : 'Alumno '.$order->student_id,
             'carrera' => $student?->career?->short_name ?? '',
             'cuota_n' => (int) $order->quota_number,
             'cuota' => $this->cuotaLabel((int) $order->quota_number, $expira),
+            'expirated_on' => $expira?->toDateString(),
+            'paid_on' => $this->dateYmd($order->paid_at ?? null),
+            'pagada' => (string) $order->state === Order::STATE_PAID,
             'cuota_original' => $quota,
             'porcentaje' => $percentage,
             'porcentaje_label' => ReportePagosDiaCriteria::formatBecaPercentage($percentage),
@@ -246,6 +265,26 @@ class EporresTariffReductionReport
 
         return strncasecmp($reason, 'Reducción arancelaria', strlen('Reducción arancelaria')) === 0
             || strncasecmp($reason, 'Reduccion arancelaria', strlen('Reduccion arancelaria')) === 0;
+    }
+
+    private function dateYmd(mixed $value): ?string
+    {
+        if ($value instanceof \DateTimeInterface) {
+            $ymd = $value->format('Y-m-d');
+
+            return str_starts_with($ymd, '0000') ? null : $ymd;
+        }
+
+        $raw = trim((string) $value);
+        if ($raw === '' || str_starts_with($raw, '0000-00-00')) {
+            return null;
+        }
+
+        if (preg_match('/^(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})/', $raw, $m)) {
+            return sprintf('%04d-%02d-%02d', (int) $m[1], (int) $m[2], (int) $m[3]);
+        }
+
+        return null;
     }
 
     private function cuotaLabel(int $number, ?Carbon $expira): string

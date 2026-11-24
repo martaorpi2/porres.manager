@@ -51,6 +51,8 @@ Route::group([
     Route::get('accounting-payment-plans', 'AccountingPaymentPlansController@index')->name('accounting-payment-plans.index');
     Route::get('accounting-tariff-reductions/excel', 'AccountingTariffReductionController@excel')->name('accounting-tariff-reductions.excel');
     Route::get('accounting-tariff-reductions', 'AccountingTariffReductionController@index')->name('accounting-tariff-reductions.index');
+    Route::get('accounting-becas/excel', 'AccountingBecaController@excel')->name('accounting-becas.excel');
+    Route::get('accounting-becas', 'AccountingBecaController@index')->name('accounting-becas.index');
     Route::get('accounting-daily-payments/excel', 'AccountingDailyPaymentsController@excel')->name('accounting-daily-payments.excel');
     Route::get('accounting-daily-payments', 'AccountingDailyPaymentsController@index')->name('accounting-daily-payments.index');
     Route::get('accounting-mercadopago-releases', 'AccountingMercadoPagoReleaseController@index')->name('accounting-mercadopago-releases.index');
