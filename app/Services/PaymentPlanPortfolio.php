@@ -425,15 +425,17 @@ final class PaymentPlanPortfolio
             $paid = round((float) ($cuota['order']->amount_paid ?? 0), 2);
             $late = round(max(0, (float) ($cuota['order']->surcharge_amount ?? 0)), 2);
             $collected = PaymentPlanSplit::collection($paid, (float) ($cuota['order']->quota_amount ?? 0), $late, $cuota['financing']);
+            // El detalle del plan suma solo cuotas cobradas. La pendiente queda en cero.
+            $include = self::isPaid($cuota['order']);
             $lines[] = array_merge(self::orderLine($cuota['order'], $agreedDues), [
                 'quota_number' => $cuota['quota_number'],
-                'paid_plan' => $collected['paid'],
-                'pure_plan' => $cuota['capital'],
-                'late_plan' => $late,
-                'financing_plan' => $cuota['financing'],
-                'method_plan' => $collected['surcharge'],
-                'impute_pure' => $share['pure'],
-                'impute_capitalized' => $share['capitalized'],
+                'paid_plan' => $include ? $collected['paid'] : 0.0,
+                'pure_plan' => $include ? $cuota['capital'] : 0.0,
+                'late_plan' => $include ? $late : 0.0,
+                'financing_plan' => $include ? $cuota['financing'] : 0.0,
+                'method_plan' => $include ? $collected['surcharge'] : 0.0,
+                'impute_pure' => $include ? $share['pure'] : 0.0,
+                'impute_capitalized' => $include ? $share['capitalized'] : 0.0,
             ]);
         }
 

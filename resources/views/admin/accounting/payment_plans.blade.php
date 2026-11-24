@@ -108,8 +108,8 @@
 
 <div class="alert alert-info text-black" role="alert">
     El detalle es un renglón por plan vigente que todavía tiene alguna cuota sin pagar.
-    Los importes suman todas las cuotas de ese plan. La cuota pura es el capital. La imputación reparte ese capital entre la cuota original y el interés capitalizado del alta.
-    Los indicadores de arriba siguen mostrando solo lo que falta cobrar.
+    Los importes suman solo las cuotas ya pagadas. La cuota pura es el capital de esas cuotas. La imputación reparte ese capital entre la cuota original y el interés capitalizado del alta.
+    La cuota pendiente no entra en estos importes. Los indicadores de arriba siguen mostrando solo lo que falta cobrar.
 </div>
 
 <h2 class="h4 mb-2">Detalle</h2>

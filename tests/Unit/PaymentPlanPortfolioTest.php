@@ -232,21 +232,21 @@ class PaymentPlanPortfolioTest extends TestCase
 
         $plan = $report['plans'][0];
         $this->assertSame(750.0, $plan['paid_plan']);
-        $this->assertSame(1000.0, $plan['pure_plan']);
+        $this->assertSame(600.0, $plan['pure_plan']);
         $this->assertSame(50.0, $plan['late_plan']);
-        $this->assertSame(70.0, $plan['financing_plan']);
+        $this->assertSame(50.0, $plan['financing_plan']);
         $this->assertSame(50.0, $plan['method_plan']);
-        $this->assertSame(800.0, $plan['impute_pure']);
-        $this->assertSame(200.0, $plan['impute_capitalized']);
+        $this->assertSame(480.0, $plan['impute_pure']);
+        $this->assertSame(120.0, $plan['impute_capitalized']);
 
         $pending = $plan['schedule'][1];
         $this->assertSame(0.0, $pending['paid_plan']);
-        $this->assertSame(400.0, $pending['pure_plan']);
+        $this->assertSame(0.0, $pending['pure_plan']);
         $this->assertSame(0.0, $pending['late_plan']);
-        $this->assertSame(20.0, $pending['financing_plan']);
+        $this->assertSame(0.0, $pending['financing_plan']);
         $this->assertSame(0.0, $pending['method_plan']);
-        $this->assertSame(320.0, $pending['impute_pure']);
-        $this->assertSame(80.0, $pending['impute_capitalized']);
+        $this->assertSame(0.0, $pending['impute_pure']);
+        $this->assertSame(0.0, $pending['impute_capitalized']);
     }
 
     private function plan(int $id, int $studentId, ?string $createdAt, int $current = PaymentPlanPortfolio::ACTIVE): object
