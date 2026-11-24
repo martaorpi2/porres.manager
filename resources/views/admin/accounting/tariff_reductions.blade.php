@@ -14,6 +14,8 @@
     .btn_bordo { background: #881f1f !important; color: #fff !important; }
     tr.fila-cero { background: #e9f7ef; }
     tr.fila-no-aplicada { background: #fff8e6; }
+    .badge-perdida { background: #9a3412; color: #fff; }
+    .badge-baja { background: #7f1d1d; color: #fff; }
 </style>
 
 <div class="card mb-3">
@@ -49,6 +51,9 @@
             <span style="background:#e9f7ef;border:1px solid #b7e0c2;padding:0 0.35rem;">en verde</span>,
             cuando la cuota original menos la beca menos el saldo a favor da cero, o cuando la beca es del 100%.
             La columna Pagó muestra lo que el alumno pagó en cada cuota.
+            Desde la cuota de octubre, un pago posterior al vencimiento, o una cuota vencida sin pagar,
+            deja la beca de ese mes como <span class="badge badge-perdida">Perdida este mes</span>.
+            Tres meses seguidos así dan la <span class="badge badge-baja">Baja total</span>.
         </p>
     </div>
 </div>
@@ -72,6 +77,8 @@
                 <th class="text-end">Monto beca</th>
                 <th class="text-end">Saldo a favor</th>
                 <th class="text-end">Pagó</th>
+                <th>Situación</th>
+                <th>Beca</th>
                 <th>Motivo</th>
             </tr>
         </thead>
@@ -87,11 +94,21 @@
                     <td class="text-end">{{ $money($row['monto_beca']) }}</td>
                     <td class="text-end">{{ $money($row['saldo_a_favor']) }}</td>
                     <td class="text-end">{{ $money($row['pago']) }}</td>
+                    <td>{{ $row['situacion_label'] }}</td>
+                    <td>
+                        @if(!empty($row['baja_total']))
+                            <span class="badge badge-baja">Baja total</span>
+                        @elseif(!empty($row['perdio_la_beca']))
+                            <span class="badge badge-perdida">Perdida este mes</span>
+                        @else
+                            {{ $row['beca'] }}
+                        @endif
+                    </td>
                     <td>{{ $row['motivo'] }}</td>
                 </tr>
             @empty
                 <tr>
-                    <td colspan="10">No hay reducciones para ese año.</td>
+                    <td colspan="12">No hay reducciones para ese año.</td>
                 </tr>
             @endforelse
         </tbody>

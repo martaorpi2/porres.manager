@@ -46,13 +46,15 @@ class AccountingTariffReductionController
                 $row['monto_beca'],
                 $row['saldo_a_favor'],
                 $row['pago'],
+                $row['situacion_label'],
+                $row['beca'],
                 $row['motivo'],
             ];
         }
 
         return SpreadsheetDownload::fromRows(
             'reporte-reducciones-arancelarias-'.$year.'.xlsx',
-            ['Nº', 'Alumno', 'Carrera', 'Cuota', 'Cuota original', '% beca', 'Monto beca', 'Saldo a favor', 'Pagó', 'Motivo'],
+            ['Nº', 'Alumno', 'Carrera', 'Cuota', 'Cuota original', '% beca', 'Monto beca', 'Saldo a favor', 'Pagó', 'Situación', 'Beca', 'Motivo'],
             $out
         );
     }

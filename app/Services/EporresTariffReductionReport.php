@@ -17,9 +17,14 @@ class EporresTariffReductionReport
     /**
      * @return list<array<string, mixed>>
      */
-    public function rows(int $year, bool $soloCero, bool $soloNoAplicada): array
+    public function rows(int $year, bool $soloCero, bool $soloNoAplicada, ?string $today = null): array
     {
-        return $this->numerar($this->filter($this->buildRows($year), $soloCero, $soloNoAplicada));
+        $rows = ScholarshipStanding::annotate(
+            $this->buildRows($year),
+            $today ?? Carbon::now()->toDateString()
+        );
+
+        return $this->numerar($this->filter($rows, $soloCero, $soloNoAplicada));
     }
 
     /**

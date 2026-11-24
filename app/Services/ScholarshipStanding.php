@@ -31,6 +31,75 @@ final class ScholarshipStanding
     }
 
     /**
+     * Marca cada cuota del reporte. La pérdida se juzga desde octubre.
+     *
+     * @param  list<array<string, mixed>>  $rows
+     * @return list<array<string, mixed>>
+     */
+    public static function annotate(array $rows, string $todayYmd): array
+    {
+        $todayYmd = substr($todayYmd, 0, 10);
+        $byStudent = [];
+        foreach ($rows as $index => $row) {
+            $byStudent[(string) ($row['student_id'] ?? '')][] = $index;
+        }
+
+        $marks = [];
+        foreach ($byStudent as $indexes) {
+            $october = array_values(array_filter(
+                $indexes,
+                fn (int $index) => self::aplica((string) ($rows[$index]['expirated_on'] ?? ''))
+            ));
+            usort($october, function (int $a, int $b) use ($rows) {
+                $byDate = strcmp((string) $rows[$a]['expirated_on'], (string) $rows[$b]['expirated_on']);
+                if ($byDate !== 0) {
+                    return $byDate;
+                }
+
+                return ((int) $rows[$a]['cuota_n']) <=> ((int) $rows[$b]['cuota_n']);
+            });
+
+            $streak = 0;
+            $alreadyLost = false;
+            foreach ($october as $index) {
+                $situacion = self::situacion($rows[$index], $todayYmd);
+                if ($alreadyLost) {
+                    $marks[$index] = self::marca($situacion, 'Baja total', false, true);
+                } elseif ($situacion === self::POR_VENCER) {
+                    $marks[$index] = self::marca($situacion, 'Vigente', false, false);
+                } elseif (self::esCaida($situacion)) {
+                    $streak++;
+                    if ($streak >= 3) {
+                        $alreadyLost = true;
+                        $marks[$index] = self::marca($situacion, 'Baja total', true, true);
+                    } else {
+                        $marks[$index] = self::marca($situacion, 'Perdida este mes', true, false);
+                    }
+                } else {
+                    $streak = 0;
+                    $marks[$index] = self::marca($situacion, 'Vigente', false, false);
+                }
+            }
+
+            foreach ($indexes as $index) {
+                if (isset($marks[$index])) {
+                    continue;
+                }
+                $situacion = self::tieneVencimiento($rows[$index])
+                    ? self::situacion($rows[$index], $todayYmd)
+                    : self::POR_VENCER;
+                $marks[$index] = self::marca($situacion, '—', false, false);
+            }
+        }
+
+        foreach ($rows as $index => $row) {
+            $rows[$index] = array_merge($row, $marks[$index]);
+        }
+
+        return $rows;
+    }
+
+    /**
      * @param  list<array<string, mixed>>  $rows
      * @return array{activas: list<array<string, mixed>>, perdidas: list<array<string, mixed>>}
      */
@@ -134,6 +203,28 @@ final class ScholarshipStanding
         }
 
         return self::POR_VENCER;
+    }
+
+    /**
+     * @return array{situacion: string, situacion_label: string, beca: string, perdio_la_beca: bool, baja_total: bool}
+     */
+    private static function marca(string $situacion, string $beca, bool $perdio, bool $bajaTotal): array
+    {
+        return [
+            'situacion' => $situacion,
+            'situacion_label' => self::etiqueta($situacion),
+            'beca' => $beca,
+            'perdio_la_beca' => $perdio,
+            'baja_total' => $bajaTotal,
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $row
+     */
+    private static function tieneVencimiento(array $row): bool
+    {
+        return (bool) preg_match('/^\d{4}-\d{2}-\d{2}$/', (string) ($row['expirated_on'] ?? ''));
     }
 
     private static function esCaida(string $situacion): bool

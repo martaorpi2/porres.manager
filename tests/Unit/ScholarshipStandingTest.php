@@ -91,6 +91,38 @@ class ScholarshipStandingTest extends TestCase
         $this->assertTrue($split['perdidas'][2]['perdio_la_beca']);
     }
 
+    public function test_el_reporte_de_reducciones_marca_la_beca_perdida_desde_octubre(): void
+    {
+        $rows = ScholarshipStanding::annotate([
+            $this->row(1, '2026-09-15', 7, true, '2026-09-20', 180000),
+            $this->row(1, '2026-10-13', 8, true, '2026-10-20', 180000),
+            $this->row(1, '2026-11-10', 9, false, null, 0),
+            $this->row(1, '2026-12-10', 10, false, null, 0),
+        ], '2026-11-24');
+
+        $this->assertSame(['—', 'Perdida este mes', 'Perdida este mes', 'Vigente'], array_column($rows, 'beca'));
+        $this->assertSame(
+            [ScholarshipStanding::FUERA_DE_TERMINO, ScholarshipStanding::FUERA_DE_TERMINO, ScholarshipStanding::VENCIDA_SIN_PAGAR, ScholarshipStanding::POR_VENCER],
+            array_column($rows, 'situacion')
+        );
+        $this->assertSame([false, true, true, false], array_column($rows, 'perdio_la_beca'));
+        $this->assertFalse($rows[3]['baja_total']);
+    }
+
+    public function test_la_tercera_caida_desde_octubre_marca_la_baja_total_en_la_misma_lista(): void
+    {
+        $rows = ScholarshipStanding::annotate([
+            $this->row(1, '2026-10-13', 8, false, null),
+            $this->row(1, '2026-11-10', 9, false, null, 15000),
+            $this->row(1, '2026-12-10', 10, true, '2026-12-18', 200000),
+        ], '2026-12-20');
+
+        $this->assertSame(['Perdida este mes', 'Perdida este mes', 'Baja total'], array_column($rows, 'beca'));
+        $this->assertSame([false, false, true], array_column($rows, 'baja_total'));
+        $this->assertSame(15000.0, $rows[1]['pago']);
+        $this->assertSame(200000.0, $rows[2]['pago']);
+    }
+
     public function test_la_baja_de_un_alumno_no_arrastra_al_otro(): void
     {
         $split = ScholarshipStanding::split([
