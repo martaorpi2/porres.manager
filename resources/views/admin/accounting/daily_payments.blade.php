@@ -178,20 +178,34 @@
     </div>
 </div>
 <script>
-    document.getElementById('vista').addEventListener('change', function () {
-        var value = this.value;
-        document.querySelectorAll('.vista-ayuda').forEach(function (el) {
-            el.hidden = el.getAttribute('data-vista') !== value;
-        });
-        document.querySelectorAll('.tipo-solo-cobros').forEach(function (opt) {
-            var visible = value === 'cobros';
-            opt.hidden = !visible;
-            opt.disabled = !visible;
-        });
+    (function () {
+        var vista = document.getElementById('vista');
         var tipo = document.getElementById('tipo_pago');
-        if (value !== 'cobros' && (tipo.value === 'plan' || tipo.value === 'otros')) {
-            tipo.value = '';
+        var soloCobros = Array.prototype.slice.call(document.querySelectorAll('.tipo-solo-cobros'));
+
+        function sync() {
+            var esCobros = vista.value === 'cobros';
+            document.querySelectorAll('.vista-ayuda').forEach(function (el) {
+                el.hidden = el.getAttribute('data-vista') !== vista.value;
+            });
+            if (!esCobros && (tipo.value === 'plan' || tipo.value === 'otros')) {
+                tipo.value = '';
+            }
+            soloCobros.forEach(function (opt) {
+                if (esCobros) {
+                    if (!opt.parentNode) {
+                        tipo.appendChild(opt);
+                    }
+                    opt.disabled = false;
+                    opt.hidden = false;
+                } else if (opt.parentNode) {
+                    opt.remove();
+                }
+            });
         }
-    });
+
+        vista.addEventListener('change', sync);
+        sync();
+    })();
 </script>
 @endsection
