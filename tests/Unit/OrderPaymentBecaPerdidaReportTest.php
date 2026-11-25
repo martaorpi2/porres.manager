@@ -3,6 +3,7 @@
 namespace Tests\Unit;
 
 use App\Models\Eporres\Order;
+use App\Services\EporresDailyPaymentsReport;
 use App\Support\Eporres\OrderPaymentBreakdown;
 use App\Support\Eporres\OrderPaymentLines;
 use App\Support\Eporres\ReportePagosDiaCriteria;
@@ -122,6 +123,24 @@ class OrderPaymentBecaPerdidaReportTest extends TestCase
         $this->assertSame(400.0, $reporte['interest_late_fee']);
         $this->assertSame(3000.0, $reporte['interest_other']);
         $this->assertTrue($reporte['beca_perdida']);
+
+        $order->setRelation('pend_plans', collect());
+        $lines = OrderPaymentLines::forOrder($order, true);
+        $desglose = OrderPaymentLines::desgloseCuotaComun($order, $lines);
+        $this->assertSame(203400.0, $desglose['paid']);
+        $this->assertSame(200000.0, $desglose['pure']);
+        $this->assertSame(400.0, $desglose['late']);
+        $this->assertSame(0.0, $desglose['financing']);
+        $this->assertSame(3000.0, $desglose['method']);
+
+        $rows = (new EporresDailyPaymentsReport())->excelRows(collect($lines), collect());
+        $this->assertSame(203400.0, $rows[0][8]);
+        $this->assertSame(200000.0, $rows[0][9]);
+        $this->assertSame(400.0, $rows[0][10]);
+        $this->assertSame(0.0, $rows[0][11]);
+        $this->assertSame(3000.0, $rows[0][12]);
+        $this->assertSame('', $rows[0][13]);
+        $this->assertSame('', $rows[0][14]);
     }
 
     /**

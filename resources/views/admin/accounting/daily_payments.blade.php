@@ -22,7 +22,7 @@
     .mp-pill-check { display: inline-flex; align-items: center; justify-content: center; width: 1.15rem; height: 1.15rem; border-radius: 0.25rem; border: 1px solid #adb5bd; background: #f8f9fa; color: transparent; font-size: 0.7rem; }
     .mp-pill-input:checked + .mp-pill-body { border-color: #198754; background: #e9f7ef; color: #0a3622; }
     .mp-pill-input:checked + .mp-pill-body .mp-pill-check { background: #198754; border-color: #198754; color: #fff; }
-    .vista-hint, .nota-plan { font-size: 0.8rem; color: #6c757d; }
+    .vista-ayuda, .nota-plan { font-size: 0.8rem; color: #6c757d; }
     tr.row-imputacion { background: #fff8e6; }
     tr.row-plan-cuota { background: #f0f7ff; }
     tr.row-otro-concepto { background: #f3faf3; }
@@ -43,19 +43,12 @@
                 <label for="fecha_hasta" class="form-label">Fecha de pago hasta</label>
                 <input type="date" name="fecha_hasta" id="fecha_hasta" class="form-control" value="{{ $fechaHasta }}" required>
             </div>
-            <div class="col-md-2">
-                <label for="vista" class="form-label">Vista</label>
+            <div class="col-md-3">
+                <label for="vista" class="form-label">Qué pagos ver</label>
                 <select name="vista" id="vista" class="form-control">
-                    <option value="cobros" {{ $vista === 'cobros' ? 'selected' : '' }}>Cobros de caja</option>
-                    <option value="imputaciones" {{ $vista === 'imputaciones' ? 'selected' : '' }}>Imputaciones a plan</option>
+                    <option value="cobros" {{ $vista === 'cobros' ? 'selected' : '' }}>Dinero que ingresó</option>
+                    <option value="imputaciones" {{ $vista === 'imputaciones' ? 'selected' : '' }}>Cuotas que cubrió un plan</option>
                 </select>
-                <div class="vista-hint">
-                    @if($vista === 'imputaciones')
-                        Cuotas/matrícula canceladas vía plan (no son ingreso de ese medio).
-                    @else
-                        Plata que entró: matrícula, cuotas, plan y otros. Excluye “Plan de Pago”.
-                    @endif
-                </div>
             </div>
             <div class="col-md-4">
                 <span class="form-label d-block">Medios de pago</span>
@@ -78,15 +71,21 @@
                     <option value="" {{ empty($tipoPago) ? 'selected' : '' }}>Todos</option>
                     <option value="matricula" {{ $tipoPago === 'matricula' ? 'selected' : '' }}>Matrícula</option>
                     <option value="cuota" {{ $tipoPago === 'cuota' ? 'selected' : '' }}>Cuota arancel</option>
-                    @if($vista !== 'imputaciones')
-                        <option value="plan" {{ $tipoPago === 'plan' ? 'selected' : '' }}>Cuota de plan</option>
-                        <option value="otros" {{ $tipoPago === 'otros' ? 'selected' : '' }}>Otros (libreta, etc.)</option>
-                    @endif
+                    <option value="plan" class="tipo-solo-cobros" {{ $tipoPago === 'plan' ? 'selected' : '' }} @if($vista === 'imputaciones') hidden disabled @endif>Cuota de plan</option>
+                    <option value="otros" class="tipo-solo-cobros" {{ $tipoPago === 'otros' ? 'selected' : '' }} @if($vista === 'imputaciones') hidden disabled @endif>Otros (libreta, etc.)</option>
                 </select>
             </div>
             <div class="col-md-3 d-flex align-items-end mt-2">
                 <button type="submit" class="btn btn-primary me-2">Filtrar</button>
                 <a href="{{ backpack_url('accounting-daily-payments') }}" class="btn btn-secondary">Limpiar</a>
+            </div>
+            <div class="col-12">
+                <p class="vista-ayuda mb-0" data-vista="cobros" @if($vista !== 'cobros') hidden @endif>
+                    Plata que realmente entró: matrícula, cuotas, cuotas del plan de pago y otros (libreta, título, etc.). No incluye cuotas que solo figuran pagas porque las cubrió un plan.
+                </p>
+                <p class="vista-ayuda mb-0" data-vista="imputaciones" @if($vista !== 'imputaciones') hidden @endif>
+                    Cuotas y matrículas que figuran pagas porque las cubrió un plan. No es plata que entró: ese cobro está en “Dinero que ingresó”, en las cuotas del plan.
+                </p>
             </div>
         </form>
     </div>
@@ -95,12 +94,12 @@
 <div class="card mb-3">
     <div class="card-header">
         <h5 class="mb-0">
-            {{ $vista === 'imputaciones' ? 'Resumen de imputaciones por medio (informativo)' : 'Resumen por forma/medio de pago (caja)' }}
+            {{ $vista === 'imputaciones' ? 'Resumen de cuotas cubiertas por un plan (no es ingreso)' : 'Resumen del dinero que ingresó, por medio de pago' }}
         </h5>
     </div>
     <div class="card-body">
         @if($vista === 'imputaciones')
-            <p class="text-muted small">Estos montos no deben sumarse como cobro de “Plan de Pago” en caja: el ingreso real está en Cobros de caja.</p>
+            <p class="text-muted small">Estos importes no son plata que entró. El ingreso está en “Dinero que ingresó”, en las cuotas del plan.</p>
         @endif
         <div class="table-responsive">
             <table class="table table-bordered table-sm">
@@ -148,7 +147,7 @@
 
 <div class="card">
     <div class="card-header d-flex justify-content-between align-items-center">
-        <h5 class="mb-0">Detalle por fecha — {{ $vista === 'imputaciones' ? 'imputaciones a plan' : 'cobros de caja' }}</h5>
+        <h5 class="mb-0">Detalle por fecha — {{ $vista === 'imputaciones' ? 'cuotas que cubrió un plan' : 'dinero que ingresó' }}</h5>
         @php
             $excelParams = [
                 'fecha_desde' => $fechaDesde,
@@ -165,7 +164,7 @@
         </a>
     </div>
     <div class="card-body">
-        <p class="text-muted small">En las cuotas de plan, las últimas columnas muestran lo pagado, el capital de esa cuota, su mora, la financiación, el interés del medio y cómo ese capital cubre la cuota original y el interés capitalizado. En el resto de los cobros quedan vacías.</p>
+        <p class="text-muted small">Cada cobro muestra lo pagado, la cuota pura, la mora, la financiación y el interés del medio, con el mismo criterio del resumen. En las cuotas de plan, la imputación indica cuánto de ese capital cubre la cuota original y cuánto el interés capitalizado. En el resto, esas dos columnas quedan vacías.</p>
         @forelse($pagosPorDia->sortKeysDesc() as $fechaPago => $pagos)
             @include('admin.accounting.partials.daily_payment_day', [
                 'fechaPago' => $fechaPago,
@@ -178,4 +177,21 @@
         @endforelse
     </div>
 </div>
+<script>
+    document.getElementById('vista').addEventListener('change', function () {
+        var value = this.value;
+        document.querySelectorAll('.vista-ayuda').forEach(function (el) {
+            el.hidden = el.getAttribute('data-vista') !== value;
+        });
+        document.querySelectorAll('.tipo-solo-cobros').forEach(function (opt) {
+            var visible = value === 'cobros';
+            opt.hidden = !visible;
+            opt.disabled = !visible;
+        });
+        var tipo = document.getElementById('tipo_pago');
+        if (value !== 'cobros' && (tipo.value === 'plan' || tipo.value === 'otros')) {
+            tipo.value = '';
+        }
+    });
+</script>
 @endsection

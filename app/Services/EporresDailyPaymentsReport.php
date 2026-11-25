@@ -145,6 +145,10 @@ class EporresDailyPaymentsReport
     {
         $conceptoAsignado = [];
         $rows = [];
+        $lineasPorOrden = [];
+        foreach ($lineas as $line) {
+            $lineasPorOrden[(int) $line['order']->id][] = $line;
+        }
 
         foreach ($lineas as $line) {
             $pago = $line['order'];
@@ -175,6 +179,17 @@ class EporresDailyPaymentsReport
                         (float) $cuotaPlan['method'],
                         (float) $cuotaPlan['impute_pure'],
                         (float) $cuotaPlan['impute_capitalized'],
+                    ];
+                } else {
+                    $comun = OrderPaymentLines::desgloseCuotaComun($pago, $lineasPorOrden[(int) $pago->id] ?? [$line]);
+                    $planCells = [
+                        $comun['paid'],
+                        $comun['pure'],
+                        $comun['late'],
+                        $comun['financing'],
+                        $comun['method'],
+                        '',
+                        '',
                     ];
                 }
             }

@@ -236,6 +236,30 @@ final class OrderPaymentLines
         return round((float) $line['amount'] + (float) $line['interest_other'], 2);
     }
 
+    /**
+     * Desglose de un cupón que no es cuota de plan.
+     * Usa el mismo criterio que el resumen del reporte de pagos por día.
+     *
+     * @param  list<array<string, mixed>>  $lines
+     * @return array{paid: float, pure: float, late: float, financing: float, method: float}
+     */
+    public static function desgloseCuotaComun(Order $order, array $lines): array
+    {
+        $first = $lines[0] ?? [];
+        $method = 0.0;
+        foreach ($lines as $line) {
+            $method += (float) ($line['interest_other'] ?? 0);
+        }
+
+        return [
+            'paid' => round((float) $order->amount_paid, 2),
+            'pure' => round((float) ($first['order_pure'] ?? 0), 2),
+            'late' => round((float) ($first['order_interest_late'] ?? 0), 2),
+            'financing' => round((float) ($first['order_interest_plan'] ?? 0), 2),
+            'method' => round($method, 2),
+        ];
+    }
+
     public static function montoDelMedio(array $line): float
     {
         return self::totalLinea($line);

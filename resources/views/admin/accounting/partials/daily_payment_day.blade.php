@@ -36,9 +36,9 @@
                     <th>Tipo</th>
                     <th class="text-center">Nº cuota</th>
                     <th>Medio de Pago</th>
-                    <th class="text-end">Importe pagado del plan</th>
-                    <th class="text-end">Cuota pura del plan</th>
-                    <th class="text-end">Interés por mora del plan</th>
+                    <th class="text-end">Importe pagado</th>
+                    <th class="text-end">Cuota pura</th>
+                    <th class="text-end">Interés por mora</th>
                     <th class="text-end">Interés de financiación</th>
                     <th class="text-end">Interés del medio de pago</th>
                     <th class="text-end">Imputación cuota pura</th>
@@ -65,16 +65,30 @@
                         $rowClass = $esImputacion ? 'row-imputacion' : ($esPlan ? 'row-plan-cuota' : ($esOtro ? 'row-otro-concepto' : ''));
                         $nota = ReportePagosDiaCriteria::notaVinculo($pago, $relatedByPlanId);
                         $cuotaPlan = ($esPlan && isset($planCuotas[(int) $pago->id])) ? $planCuotas[(int) $pago->id] : null;
+                        if ($cuotaPlan !== null) {
+                            $desglose = [
+                                'paid' => (float) $cuotaPlan['paid'],
+                                'pure' => (float) $cuotaPlan['pure'],
+                                'late' => (float) $cuotaPlan['late'],
+                                'financing' => (float) $cuotaPlan['financing'],
+                                'method' => (float) $cuotaPlan['method'],
+                                'impute_pure' => (float) $cuotaPlan['impute_pure'],
+                                'impute_capitalized' => (float) $cuotaPlan['impute_capitalized'],
+                            ];
+                        } else {
+                            $comun = OrderPaymentLines::desgloseCuotaComun($pago, $lines);
+                            $desglose = $comun + ['impute_pure' => null, 'impute_capitalized' => null];
+                        }
                         if (!isset($conceptoAsignado[$pago->id])) {
                             $conceptoAsignado[$pago->id] = true;
-                            if ($cuotaPlan !== null) {
-                                $diaPlanPaid += (float) $cuotaPlan['paid'];
-                                $diaPlanPure += (float) $cuotaPlan['pure'];
-                                $diaPlanLate += (float) $cuotaPlan['late'];
-                                $diaPlanFinancing += (float) $cuotaPlan['financing'];
-                                $diaPlanMethod += (float) $cuotaPlan['method'];
-                                $diaImputePure += (float) $cuotaPlan['impute_pure'];
-                                $diaImputeCapitalized += (float) $cuotaPlan['impute_capitalized'];
+                            $diaPlanPaid += (float) $desglose['paid'];
+                            $diaPlanPure += (float) $desglose['pure'];
+                            $diaPlanLate += (float) $desglose['late'];
+                            $diaPlanFinancing += (float) $desglose['financing'];
+                            $diaPlanMethod += (float) $desglose['method'];
+                            if ($desglose['impute_pure'] !== null) {
+                                $diaImputePure += (float) $desglose['impute_pure'];
+                                $diaImputeCapitalized += (float) $desglose['impute_capitalized'];
                             }
                         }
                         $diaPagado += (float) $pago->amount_paid;
@@ -107,13 +121,13 @@
                             @endif
                             <td>{{ $line['payment_type'] ?: 'Sin especificar' }}</td>
                             @if($line['is_first_line'])
-                                <td rowspan="{{ $rowspan }}" class="text-end">{{ $cuotaPlan ? $money($cuotaPlan['paid']) : '—' }}</td>
-                                <td rowspan="{{ $rowspan }}" class="text-end">{{ $cuotaPlan ? $money($cuotaPlan['pure']) : '—' }}</td>
-                                <td rowspan="{{ $rowspan }}" class="text-end">{{ $cuotaPlan ? $money($cuotaPlan['late']) : '—' }}</td>
-                                <td rowspan="{{ $rowspan }}" class="text-end">{{ $cuotaPlan ? $money($cuotaPlan['financing']) : '—' }}</td>
-                                <td rowspan="{{ $rowspan }}" class="text-end">{{ $cuotaPlan ? $money($cuotaPlan['method']) : '—' }}</td>
-                                <td rowspan="{{ $rowspan }}" class="text-end">{{ $cuotaPlan ? $money($cuotaPlan['impute_pure']) : '—' }}</td>
-                                <td rowspan="{{ $rowspan }}" class="text-end">{{ $cuotaPlan ? $money($cuotaPlan['impute_capitalized']) : '—' }}</td>
+                                <td rowspan="{{ $rowspan }}" class="text-end">{{ $money($desglose['paid']) }}</td>
+                                <td rowspan="{{ $rowspan }}" class="text-end">{{ $money($desglose['pure']) }}</td>
+                                <td rowspan="{{ $rowspan }}" class="text-end">{{ $money($desglose['late']) }}</td>
+                                <td rowspan="{{ $rowspan }}" class="text-end">{{ $money($desglose['financing']) }}</td>
+                                <td rowspan="{{ $rowspan }}" class="text-end">{{ $money($desglose['method']) }}</td>
+                                <td rowspan="{{ $rowspan }}" class="text-end">{{ $desglose['impute_pure'] === null ? '—' : $money($desglose['impute_pure']) }}</td>
+                                <td rowspan="{{ $rowspan }}" class="text-end">{{ $desglose['impute_capitalized'] === null ? '—' : $money($desglose['impute_capitalized']) }}</td>
                             @endif
                             <td class="text-end">${{ number_format($line['interest_other'], 2, ',', '.') }}</td>
                             <td class="text-end">${{ number_format($totalLinea, 2, ',', '.') }}</td>

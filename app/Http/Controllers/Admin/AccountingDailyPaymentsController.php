@@ -44,7 +44,7 @@ class AccountingDailyPaymentsController
             [
                 'Comprobante', 'Nro de transacción/cupón', 'Estudiante', 'Carrera', 'Tipo', 'Nº cuota', 'Fecha de pago',
                 'Medio de pago',
-                'Importe pagado del plan', 'Cuota pura del plan', 'Interés por mora del plan',
+                'Importe pagado', 'Cuota pura', 'Interés por mora',
                 'Interés de financiación', 'Interés del medio de pago',
                 'Imputación cuota pura', 'Imputación interés capitalizado',
                 'Otros intereses', 'Total línea',
